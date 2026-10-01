@@ -337,6 +337,19 @@ export interface SurvivalSnapshot {
   /** 今天自动用掉的补给件数（0 = 没动）。医疗 → 健康，保暖 → 庇护所 */
   usedMedicine: number;
   usedWarmth: number;
+  /**
+   * 今天有没有碰上突发事件（§5 的另一半，M2 §12 拍板 v0.9）。
+   *
+   * `null` = 今天没事 —— 突发事件是**低频**的（约三成日子），
+   * 参照夜间事件 60% 的松弛节奏再往下降：它要像意外，不能像日程。
+   * 事件的正文与选项不进快照，它们由 `data/emergencies.ts` 按 id 查 ——
+   * 存文案等于给存档塞一份会过期的副本。
+   */
+  emergencyId: string | null;
+  /** 急用的那几件在不在顺手位。true = 自己化解了，一点健康都没掉 */
+  emergencyResolved: boolean;
+  /** 没化解时受创的件数（按缺货口径）。它只用于叙事，四维的账已经算在 deltas 里 */
+  emergencyLost: number;
 }
 
 /** 生存期累计账（阶段 C）。结算页（阶段 E）要用，所以必须落盘，不能只活在内存里 */
@@ -381,6 +394,17 @@ export interface SurvivalState {
    */
   lastTradeDay: number;
   /**
+   * 「安全感」连续达标天数（M2 §12 拍板 v0.9）。
+   *
+   * 达标 = 当天结算里**没有**出现缺口、没有翻不出来的货、也没在硬撑 ——
+   * 也就是"今天该拿到的都拿到了"。它是一个只回答"连着几天"的数，
+   * 断一天就归零；生涯最好那一条存在 `MetaProfile.bestSafeStreak`。
+   *
+   * 为什么放在夜间/日报语境而不是整理期弹出：§5 的「整理期完全静默」不动，
+   * 快照只出现在玩家已经看完今天发生了什么之后。
+   */
+  safeStreak: number;
+  /**
    * 最近一次结算的增量。
    * 落盘的理由是 §4A「恢复即续玩」：刷新回来必须还能看见"今天掉了哪些点"，
    * 否则玩家只能靠记忆对比昨天和今天的四维，而那个对比正是生存期的全部张力。
@@ -397,6 +421,128 @@ export interface SurvivalState {
  */
 export interface HelpRequestState {
   defId: string;
+}
+
+// ============ 白天随机事件（§6.2 / D-10） ============
+
+/**
+ * 一个白天事件给某个品类加的**限购**：这家店今天这个品类最多卖你几件。
+ *
+ * 它是"限购"这条事件的落点，而且是**按品类**记的 ——
+ * 邻居抢的是米面油，不会连绷带一起限。存档里存的是最终生效值，
+ * 事件表只声明它加多少。
+ */
+export interface ShopLimit {
+  shopId: string;
+  category: CategoryId;
+  /** 今天这个品类在这家店最多能买几件（含玩家已经买走的） */
+  max: number;
+}
+
+/**
+ * 正在等玩家决定的一个白天事件（§6.2「物价波动 / 限购 / 插队大妈 / 黑市商人」）。
+ *
+ * 为什么它落在 `RunState` 而不是 `ShopDayStock`：事件的判定发生在**进店那一下**
+ * （`enterShop`），而那一刻是玩家动作、要落盘；库存是每天生成一次的静态快照。
+ * 混在一起会让"改库存"和"发生了一件事"共用一条生命周期。
+ *
+ * `choice === null` = 还在看；`applied` 的语义与夜间事件完全一致（见 `AppliedEffect`）——
+ * 界面不许拿选项声明的数值去显示，那正是 v7→v8 修掉的那个 bug。
+ */
+export interface DayEventState {
+  defId: string;
+  /** 这件事发生在哪家店（黑市商人之类的事件只在特定点位出现） */
+  shopId: string;
+  choice: number | null;
+  applied: DayEffectApplied | null;
+}
+
+/**
+ * 白天事件选项**实际**生效的后果。和 `AppliedEffect` 分开写，因为两边的字段不一样：
+ * 白天动的是价格、库存、限购与现金，不动四维（那是生存期的事）。
+ */
+export interface DayEffectApplied {
+  /** 现金变化（负数 = 花掉）。同夜间：给不起就按有多少给多少，摘要报真数 */
+  cash: number;
+  /** 今天全城物价倍率的变化（正数 = 涨价） */
+  priceUp: number;
+  /** 这次事件削掉了哪些店的库存：itemId → 件数 */
+  stockCut: { shopId: string; itemId: string; count: number }[];
+  /** 这次事件加上的限购 */
+  limits: ShopLimit[];
+  /** 顺手带回家的一箱货（箱型 id） */
+  gotBox: boolean;
+  /** 这一趟白跑了（插队大妈那类）：true = 这家店今天不用看了 */
+  visitLost: boolean;
+}
+
+/**
+ * 被拒进店这一类事件的出口：`DayEventState.choice` 用的哨兵值。
+ * 与夜间事件同一个套路 —— "不参与"永远是一条合法路径（§4A）。
+ */
+export type DayOptionEffect = {
+  cash?: number;
+  /** 涨价：0.15 = 今天全城贵 15% */
+  priceUp?: number;
+  /** 削库存：指定品类，从这家店今天的货里扣 */
+  stockCut?: { category: CategoryId; count: number };
+  /** 限购：这家店的这个品类今天最多卖几件 */
+  limit?: { category: CategoryId; max: number };
+  /** 顺手带回家的一箱货（箱型 id） */
+  boxDefId?: string;
+  stamina?: number;
+  mood?: number;
+  /**
+   * 这一趟白跑了。用于"插队大妈"——但你也可以不排，所以它只能是**某个选项**的后果，
+   * 不能是事件本身的后果（§4A：任何界面都得有一条"不参与"的路）。
+   */
+  visitLost?: boolean;
+};
+
+export interface DayOption {
+  /** 按钮上的字，≤ 8 字（手机竖屏一行放得下） */
+  label: string;
+  /** 选完那一刻看到的一句话。可以写 `{spentCash}`，同夜间事件 */
+  outcome: string;
+  effect: DayOptionEffect;
+  /** 必须给得起钱才成立（买货那一类），不写 = 有多少给多少 */
+  requireFullCash?: boolean;
+}
+
+export interface DayEventDef {
+  id: string;
+  /** 门前读到的处境，1~2 句 */
+  text: string;
+  /**
+   * 这条事件只在哪几个点位出现。不写 = 哪个点位都可能碰上。
+   * 黑市商人只在五金店后巷那种事，由它表达 —— 而不是在文案里暗示。
+   */
+  onlyShops?: readonly string[];
+  options: readonly DayOption[];
+}
+
+// ============ 突发事件（生存期，§5） ============
+
+/**
+ * 一个突发事件的"要什么"。
+ *
+ * 与夜间/白天事件的**根本区别**：它不是选项题，是**检查题** ——
+ * §5 写的是「应急货架（门口/最顺手位）放急救品 → 突发事件不掉健康」，
+ * 落点就是这里：玩家没法在事情发生的那一刻再决定一次，他早就在整理期决定过了。
+ * 这正是"应急可达率从分数变成战力"的那一环（M2 §12 拍板 v0.9）。
+ */
+export interface EmergencyDef {
+  id: string;
+  /** 陈述处境的 1~2 句。不写台词腔、不煽情（§11） */
+  text: string;
+  /** 要哪个品类 */
+  category: CategoryId;
+  /** 顺手位上要有几件才算化解 */
+  needOnHandy: number;
+  /** 没化解时按缺货口径受创的件数（1 = 一份缺货的疼） */
+  lost: number;
+  /** 这一条要不要消耗掉化解用的那几件（"炉子熄了"要真的烧掉一罐燃料） */
+  consumes?: boolean;
 }
 
 export interface RunState {
@@ -440,6 +586,22 @@ export interface RunState {
    */
   currentShopId: string | null;
 
+  /**
+   * 今天全城的物价倍率（1 = 原价）。逐日上行的"物价波动"落在它身上。
+   *
+   * 它修的是 M1 的一个隐性空洞（D-03：寒潮是天然冷库 → 腐坏恒 0 → "早买 vs 晚买"失去意义）。
+   * 腐坏那条路被拍板关掉了，所以"晚买会贵"必须由另一条路来兑现 ——
+   * 而它恰好是 §6.2 本来就要的「物价波动」。
+   */
+  shopPriceFactor: number;
+  /** 今天生效的限购（来自白天事件）。换天清零 */
+  shopLimits: ShopLimit[];
+  /**
+   * 正等着玩家决定的一个白天事件（null = 没有）。
+   * 与 `night` / `helpRequest` 同一个套路：存的是"发生了哪件事、选到哪一步"。
+   */
+  dayEvent: DayEventState | null;
+
   // ———————— M1 夜间（阶段 B） ————————
 
   /**
@@ -482,14 +644,54 @@ export interface RunState {
    * 没有这个字段就分不出两种结局，结算页会给出完全相反的评语。
    */
   outcome: 'survived' | 'collapsed' | null;
+
+  // ———————— M2 跨局结算（§6.7 图鉴 / §9.6） ————————
+
+  /**
+   * 这一局的成果有没有已经记进 `MetaProfile`。`null` = 还没记。
+   *
+   * ★ 为什么必须有这个字段（三个出口，只允许发一次奖励）：
+   * 结局有**三条**路 —— 撑满 14 天（`advanceSurvivalDay`）、健康归零
+   * （`settleAndMaybeEnd`）、以及**读档自愈**（`normalizeRun` 发现 health ≤ 0 补结局）。
+   * 结算页每渲染一次就发一次奖励的话，玩家反复刷新结算页就能把图鉴与纪录刷满 ——
+   * 那不是上瘾循环，那是记账错误。所以发放时**先写这个字段再发**，
+   * 而且由命令层（`systems/codex.ts` 的 `settleRunMeta`）独占这一段逻辑。
+   */
+  metaSettled: { at: number; outcome: 'survived' | 'collapsed' } | null;
 }
+
+/**
+ * 图鉴（§6.7「保留：物资图鉴、灾难图鉴、关系图鉴」/ §9.6 第三项）。
+ *
+ * 三个数组都是**已点亮 id 的集合**，顺序不重要（比较一律先排序，见 systems/codex.ts）。
+ * 用三个平铺数组而不是一个 `Unlocked[]`：§7 原本就是这么写的，
+ * 而且界面也要按这三个分页显示 —— 一份数据只服务一个读者。
+ */
+export interface CodexState {
+  items: string[];
+  disasters: string[];
+  npcs: string[];
+}
+
+/** 图鉴三页的名字。界面与结算页共用，避免两处各写一份中文 */
+export type CodexPage = keyof CodexState;
 
 export interface MetaProfile {
   // 跨局存档
   version: number;
   identityLevels: Record<string, number>;
-  codex: { items: string[]; disasters: string[]; npcs: string[] };
+  codex: CodexState;
   bestSurvivalDays: Record<string, number>; // 每灾难最佳纪录
+  /**
+   * 「安全感」连续达标天数（M2 §12 拍板 v0.9）。
+   *
+   * 它是**跨局**的：M1 评审确认"当前死亡/通关都零遗产，是上瘾循环的断点"，
+   * 而这个数就是那份遗产里最便宜、最像"我今天过得不错"的一条。
+   * 单局内的连击走 `SurvivalState.safeStreak`（那里才是它会归零的地方），
+   * 这里存的是**生涯最好**的那一条 —— 两者刻意不共用一份数据：
+   * 一个回答"你现在连着几天了"，一个回答"你最好连着过几天"。
+   */
+  bestSafeStreak: number;
 }
 
 export interface SaveGame {

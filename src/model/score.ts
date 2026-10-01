@@ -19,7 +19,7 @@ import {
   isShelfFEFO,
   placementRate,
   readingOrder,
-  zoneAccepts
+  zoneListedFor
 } from './shelf';
 import type { CategoryId, DisasterProfile, Shelf, UnpackBox, Zone } from './types';
 
@@ -36,7 +36,13 @@ export interface OrganizeScore {
   tidyShelfIds: string[];
 }
 
-/** 单架是否"整整齐齐"：按到期日排好，且架上每件物资都被它所属分区接收 */
+/**
+ * 单架是否"整整齐齐"：按到期日排好，且架上每件物资都被它所属分区**明确接收**。
+ *
+ * "明确接收"用的是 `zoneListedFor`（§12 v0.8 归位率修复），与归位率同一把尺子：
+ * 一块贴了空清单的货架既不算归位、也不该拿到"整整齐齐"的徽章 ——
+ * 两处判定只要不一致，玩家就会看到"归位率 0% 但整整齐齐"这种自相矛盾的屏幕。
+ */
 export function isShelfTidy(shelf: Shelf, zones: readonly Zone[]): boolean {
   if (!isShelfFEFO(shelf)) return false;
   const zone = findZone(zones, shelf.zoneId);
@@ -44,7 +50,7 @@ export function isShelfTidy(shelf: Shelf, zones: readonly Zone[]): boolean {
   for (const pos of readingOrder(shelf)) {
     const stack = getStack(shelf, pos);
     if (!stack) continue;
-    if (!zoneAccepts(zone, getItemDef(stack.itemId))) return false;
+    if (!zoneListedFor(zone, getItemDef(stack.itemId))) return false;
   }
   return true;
 }

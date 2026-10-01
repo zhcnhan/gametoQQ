@@ -7,6 +7,7 @@
  * 老版本那句自相矛盾的"物资有没有放在它自己那块分区里"（"它自己的分区"是谁定的？）。
  */
 import { describe, expect, it } from 'vitest';
+import { getItemDef } from '../data/items';
 import { ZONE_COLORS } from '../data/palette';
 import { isOffZone, makeStack, placementRate, setSlotStack, shelfIsEmpty } from '../model/shelf';
 import type { SlotPos, Zone } from '../model/types';
@@ -47,14 +48,16 @@ function rate(store: GameStore): number {
 }
 
 describe('归位率 = 你有没有按自己写的清单放', () => {
-  it('不填清单 = 什么都收，归位率恒满（"我不分类"是正经营法）', () => {
+  it('★ §12 v0.8：不填清单 = 什么都收，但归位率**不再**恒满（loophole 已修）', () => {
     const { store } = setup();
     seedItem(store, 'shelf_a', P0, 'canned_beans');
     seedItem(store, 'shelf_a', P1, 'bandage');
     applyZone(store, 'shelf_a', { name: '随便放', color: RED });
 
+    // 落盘仍然不保留空的 autoAccept —— "我不分类"照样是一种贴法，
+    // 只是它不再能拿归位率的分：没有清单，就无从谈起"按清单放"
     expect(store.run.zones[0]?.autoAccept).toBeUndefined();
-    expect(rate(store)).toBe(1);
+    expect(rate(store)).toBe(0);
   });
 
   it('写了清单、东西放对 → 满', () => {
@@ -116,12 +119,14 @@ describe('归位率的分母：还没拆的纸箱也算', () => {
     expect(placementRate([], [], [])).toBe(1);
   });
 
-  it('上架一部分后归位率是渐进的百分比', () => {
+  it('上架一部分后归位率是渐进的百分比（清单写全了才算归位）', () => {
     const { store } = setup();
     const box = store.run.boxesToUnpack[0];
     expect(box).toBeDefined();
-    // 手动把这箱的每一堆都搬到贴了"什么都收"的货架上
-    applyZone(store, 'shelf_a', { name: '都放这儿', color: RED });
+    // 手动把这箱的每一堆都搬到贴了"明确清单"的货架上。
+    // 清单必须覆盖这一箱里出现过的全部品类 —— §12 v0.8 之后空清单不给分
+    const categories = [...new Set((box?.items ?? []).map((s) => getItemDef(s.itemId).category))];
+    applyZone(store, 'shelf_a', { name: '都放这儿', color: RED, categories });
     const total = store.run.boxesToUnpack.reduce((n, b) => n + b.items.length, 0);
     store.commit((draft) => {
       const first = draft.boxesToUnpack[0];

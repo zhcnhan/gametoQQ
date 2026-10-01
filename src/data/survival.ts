@@ -40,7 +40,10 @@ export const EMPTY_SURVIVAL_SNAPSHOT: SurvivalSnapshot = {
   hardPress: false,
   hardPressLevel: 'none',
   usedMedicine: 0,
-  usedWarmth: 0
+  usedWarmth: 0,
+  emergencyId: null,
+  emergencyResolved: false,
+  emergencyLost: 0
 };
 
 /** `SurvivalState.lastTradeDay` 的"从来没换过"。用一个不可能的天数，省掉一个可空字段 */

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ZONE_COLORS } from '../data/palette';
+import { getItemDef } from '../data/items';
 import { getStack, placementRate } from '../model/shelf';
 import { createSaveGame } from '../state/save';
 import { GameStore } from '../state/store';
@@ -37,16 +38,32 @@ function putOnShelf(store: GameStore, session: ReturnType<typeof createOrganizeS
 }
 
 describe('胶带（分区）行为能力', () => {
-  it('① 贴上一段胶带 → 这架物资算归位，归位率 100%', () => {
+  it('① 贴上一段胶带**并写好清单** → 这架物资算归位，归位率 100%', () => {
     const { store, session, boxId } = setup();
     putOnShelf(store, session, boxId, 'shelf_a');
     expect(placementRate(store.run.shelves, store.run.zones)).toBe(0);
 
-    const res = applyZone(store, 'shelf_a', { name: '主食区', color: ZONE_COLORS[0]! });
+    // 现在货架上是什么，清单就得写什么 —— 否则 §12 v0.8 之后归位率仍是 0
+    const onShelf = new Set(
+      store.run.shelves.flatMap((shelf) =>
+        shelf.slots.flatMap((row) => row.map((slot) => slot.stack?.itemId).filter((id): id is string => Boolean(id)))
+      )
+    );
+    const categories = [...new Set([...onShelf].map((id) => getItemDef(id).category))];
+    const res = applyZone(store, 'shelf_a', { name: '主食区', color: ZONE_COLORS[0]!, categories });
     expect(res.ok).toBe(true);
     expect(store.run.zones.length).toBe(1);
     expect(store.run.shelves[0]!.zoneId).toBe(store.run.zones[0]!.id);
     expect(placementRate(store.run.shelves, store.run.zones)).toBe(1);
+  });
+
+  it('①b ★ §12 v0.8：只贴胶带、不写清单 → 归位率仍是 0（loophole 已修）', () => {
+    const { store, session, boxId } = setup();
+    putOnShelf(store, session, boxId, 'shelf_a');
+    applyZone(store, 'shelf_a', { name: '主食区', color: ZONE_COLORS[0]! });
+
+    expect(store.run.zones[0]?.autoAccept).toBeUndefined();
+    expect(placementRate(store.run.shelves, store.run.zones)).toBe(0);
   });
 
   it('② 换了块货架输同名 → 复用同一张胶带，不再造重名分区（修掉的老缺陷）', () => {
@@ -73,7 +90,13 @@ describe('胶带（分区）行为能力', () => {
   it('④ 撕下 → 这架变"还没贴"；没人用这张胶带了，它自己消失', () => {
     const { store, session, boxId } = setup();
     putOnShelf(store, session, boxId, 'shelf_a');
-    applyZone(store, 'shelf_a', { name: '主食区', color: ZONE_COLORS[0]! });
+    const onShelf = new Set(
+      store.run.shelves.flatMap((shelf) =>
+        shelf.slots.flatMap((row) => row.map((slot) => slot.stack?.itemId).filter((id): id is string => Boolean(id)))
+      )
+    );
+    const categories = [...new Set([...onShelf].map((id) => getItemDef(id).category))];
+    applyZone(store, 'shelf_a', { name: '主食区', color: ZONE_COLORS[0]!, categories });
     expect(placementRate(store.run.shelves, store.run.zones)).toBe(1);
 
     const res = assignZone(store, 'shelf_a', null);

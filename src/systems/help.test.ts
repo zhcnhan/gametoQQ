@@ -110,18 +110,18 @@ describe('求援订单：交付与婉拒', () => {
     expect(medicineOf(store)).toBe(5); // 东西还在
   });
 
-  it('★ 同一单三种摆放：4.5 / 9.9 / 13.5 点体力 —— 这就是"整理得好，几下凑齐"', () => {
+  it('★ §12 v0.8：同一单三种摆放 —— 4.5 / 9.9 / 13.5 变成 4.5 / 9.9 / 13.5，但中间那档变了意思', () => {
     const def = getHelpRequestDef('q_wang_medicine'); // 要 3 件药
 
-    // ① 上了架，而且这张胶带就收药（归位率 1、临期优先 1）
+    // ① 上了架，而且这张胶带**明确收药**（归位率 1、临期优先 1）
     const tidy = storeAtDoor();
     give(tidy.run, 'bandage', 3);
-    tidy.run.zones = [{ id: 'z_med', name: '药', color: '#000000' }];
+    tidy.run.zones = [{ id: 'z_med', name: '药', color: '#000000', autoAccept: { categories: ['medicine'] } }];
     tidy.run.shelves = tidy.run.shelves.map((s) =>
       s.id === tidy.run.shelves[0]?.id ? { ...s, zoneId: 'z_med' } : s
     );
 
-    // ② 上了架，但没贴胶带（归位率 0、临期优先 1）
+    // ② 上了架、但一张清单都没写（归位率 0、临期优先 1）
     const plain = storeAtDoor();
     give(plain.run, 'bandage', 3);
 
@@ -129,11 +129,30 @@ describe('求援订单：交付与婉拒', () => {
     const boxed = storeAtDoor();
     boxed.run.boxesToUnpack = [{ id: 'box_x', defId: 'box_medical', items: [makeStack('bandage', 3, null)] }];
 
-    // 每件 1.5 / 3.3 / 4.5 —— 整整三倍。中间那一档尤其说明问题：
-    // **光把东西摆上架还不够，胶带才是让归位率起作用的东西**
+    // 数字还是 4.5 / 9.9 / 13.5，但**中间那一档的性质变了**（§12 v0.8）：
+    // 老口径下它拿的是"胶带什么都收"的归位率满分；新口径下它的归位率是 0，
+    // 那 0.4 的质量全部来自 fefo —— 也就是"东西至少上架了、而且是按到期日排的"。
+    // 换句话说：**上了架本身仍然算数，算数的那一项从"归位"变成了"排架"**；
+    // 而"守没守自己写的秩序"这一项，只有写了清单才拿得到。
     expect(searchCost(tidy.run, def)).toBe(4.5);
     expect(searchCost(plain.run, def)).toBe(9.9);
     expect(searchCost(boxed.run, def)).toBe(13.5);
+  });
+
+  it('★ §12 v0.8：空清单的胶带 = 没贴胶带的归位率（都是 0），差别只剩排架那 0.4', () => {
+    const def = getHelpRequestDef('q_wang_medicine');
+    const open = storeAtDoor();
+    give(open.run, 'bandage', 3);
+    open.run.zones = [{ id: 'z_med', name: '药', color: '#000000' }]; // 空清单
+    open.run.shelves = open.run.shelves.map((s) =>
+      s.id === open.run.shelves[0]?.id ? { ...s, zoneId: 'z_med' } : s
+    );
+
+    const bare = storeAtDoor();
+    give(bare.run, 'bandage', 3);
+
+    expect(searchCost(open.run, def)).toBe(searchCost(bare.run, def));
+    expect(searchCost(open.run, def)).toBe(9.9);
   });
 });
 

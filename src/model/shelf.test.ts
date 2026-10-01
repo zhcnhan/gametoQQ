@@ -189,11 +189,26 @@ describe('归位率与整理评分', () => {
     expect(placementRate([loose, food], zones)).toBeCloseTo(1 / 3, 5);
   });
 
-  it('分区无规则 = 玩家说了算，一律算归位', () => {
+  it('★ §12 v0.8：空清单的胶带不再算归位（"贴一张空胶带"这个 loophole 已修）', () => {
     let s = shelf(2, 1, 'free');
     s.zoneId = 'z_free';
     s = dropStack(s, { row: 0, col: 0 }, makeStack('toolbox', 1, null)) as Shelf;
-    expect(placementRate([s], zones)).toBe(1);
+    // 老口径：没写清单 = 什么都收 → 归位率恒满 → 最优解退化成"贴一张空胶带"
+    // 新口径：归位率量的是"你有没有按自己写的清单放"，没清单就无从谈起
+    expect(placementRate([s], zones)).toBe(0);
+  });
+
+  it('★ §12 v0.8：明确清单与空清单的差别，就是 100% 与 0% 的差别', () => {
+    let listed = shelf(2, 1, 'listed');
+    listed.zoneId = 'z_food';
+    listed = dropStack(listed, { row: 0, col: 0 }, makeStack('canned_beans', 1, null)) as Shelf;
+
+    let open = shelf(2, 1, 'open');
+    open.zoneId = 'z_free';
+    open = dropStack(open, { row: 0, col: 0 }, makeStack('canned_beans', 1, null)) as Shelf;
+
+    expect(placementRate([listed], zones)).toBe(1);
+    expect(placementRate([open], zones)).toBe(0);
   });
 
   it('空房间：归位率宽容为 1（不出生就给人 0%），但 FEFO 率是 0（一块货架都没用上 = 还没开始排）', () => {

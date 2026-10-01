@@ -8,13 +8,13 @@
  */
 import { describe, expect, it } from 'vitest';
 import { SURVIVAL_DAYS, getDisasterDef } from '../data/disaster';
-import { getItemDef } from '../data/items';
+import { CATEGORY_ORDER, getItemDef } from '../data/items';
 import { NIGHT_SLEEP } from '../data/nightEvents';
 import { moodFromPlacement, dailyDrainOf, hardPressTier, workCostOf } from '../data/survival';
 import { consumeCategory, countCategory } from '../model/consume';
-import { makeStack, setSlotStack } from '../model/shelf';
+import { fefoSorted, makeStack, setSlotStack } from '../model/shelf';
 import { isBatchSpoiled, spoilEverything, virtualDay } from '../model/spoil';
-import type { RunState, SlotPos, Zone } from '../model/types';
+import type { ItemStack, RunState, SlotPos, UnpackBox, Zone } from '../model/types';
 import { createSaveGame } from '../state/save';
 import { GameStore } from '../state/store';
 import { declineRequest } from './help';
@@ -117,15 +117,19 @@ function freePos(run: RunState, shelfId?: string): { shelfId: string; pos: SlotP
  * 默认**备足 15 天的口粮** —— 这一组用例关心的是"日历怎么走、命令收不收账"，
  * 不是"人会不会饿死"。断粮与倒下是另外的用例，它们自己造空货架。
  *
- * `tidy = true` 时再给每块货架贴一张"什么都收"的胶带 —— 要一路点满 14 天的用例
- * 必须用它：不贴胶带的屋子每天净掉 7.8 体力，走到 D+13 就累死了（这正是 v0.7 的本意，
+ * `tidy = true` 时再给每块货架贴一张**写明全部品类**的胶带 —— 要一路点满 14 天的
+ * 用例必须用它：不贴胶带的屋子每天净掉 7.8 体力，走到 D+13 就累死了（这正是 v0.7 的本意，
  * 但那些用例要测的是日历，不是这个）。数值断言（19.8 那组）仍然用默认的乱档。
+ *
+ * ★ §12 v0.8 之后这张胶带必须**写全清单**：空清单的胶带归位率是 0，
+ * 和"全堆在纸箱里"等价 —— 用它来当"整理好的档"已经不成立了。
+ * 清单直接取 `CATEGORY_ORDER`（七个品类全收），也就是造一个"什么都收"的等价物。
  */
 function storeAtDDay(seed = 20261001, days = SURVIVAL_DAYS + 1, tidy = false): GameStore {
   const run = bareRun(seed);
   stockFor(run, days);
   if (tidy) {
-    run.zones = [{ id: 'zone_all', name: '全收', color: '#000000' }];
+    run.zones = [{ id: 'zone_all', name: '全收', color: '#000000', autoAccept: { categories: [...CATEGORY_ORDER] } }];
     run.shelves = run.shelves.map((s) => ({ ...s, zoneId: 'zone_all' }));
   }
   run.phase = 'survival_day';
@@ -453,7 +457,7 @@ describe('M1 平衡改造：整理质量真的会变成体力，撑不住真的�
     expect(workCostOf(0, 0, 0)).toBe(0);
   });
 
-  it('同样的货、同样的天：归位的那一份，第二天体力明显更宽裕', () => {
+  it('同样的货、同样的天：**写了清单**的那一份，第二天体力明显更宽裕', () => {
     const build = (): RunState => {
       const run = bareRun();
       put(run, 'shelf_a', { row: 0, col: 0 }, 'canned_beans', 4, 60);
@@ -465,8 +469,13 @@ describe('M1 平衡改造：整理质量真的会变成体力，撑不住真的�
     };
     const messy = build();
     const tidy = build();
-    // 两份只差一件事：tidy 给这块货架贴了一张"什么都收"的胶带 → 归位率 0 → 100%
-    tidy.zones = [{ id: 'zone_all', name: '全收', color: '#000000' }];
+    // 两份只差一件事：tidy 给这块货架贴了一张**写明三个品类**的胶带 → 归位率 0 → 100%
+    // ★ §12 v0.8：这里必须写清单。空清单的胶带归位率也是 0，
+    // 用它当"整理好的档"会得出"整理完全没用"的结论 —— 而那正是修复要澄清的事：
+    // **真正起作用的是清单，不是胶带本身**。
+    tidy.zones = [
+      { id: 'zone_all', name: '全收', color: '#000000', autoAccept: { categories: ['food', 'water', 'fuel'] } }
+    ];
     tidy.shelves = tidy.shelves.map((s) => (s.id === 'shelf_a' ? { ...s, zoneId: 'zone_all' } : s));
 
     const messyReport = settleSurvivalDay(messy);
@@ -475,8 +484,49 @@ describe('M1 平衡改造：整理质量真的会变成体力，撑不住真的�
     expect(messyReport.quality).toBeLessThan(tidyReport.quality);
     expect(messyReport.workCost).toBeGreaterThan(tidyReport.workCost);
     expect(messy.stats.stamina).toBeLessThan(tidy.stats.stamina);
-    // 一天差 10.8 点体力（19.8 − 9.0）—— 7 天下来就是"能不能睡够觉"的区别
+    // 一天差 10.8 点体力（19.8 − 9.0）—— 14 天下来就是"能不能睡够觉"的区别
     expect(tidy.stats.stamina - messy.stats.stamina).toBeCloseTo(10.8, 1);
+  });
+
+  it('★ §12 v0.8：**只上架、不写清单**与"全堆在纸箱里"的差别，只剩"排架"那 0.4', () => {
+    // 这条用例是那次修复的账本。两者归位率**同为 0** —— loophole 修掉了。
+    // 剩下的差别全部来自 fefo：上了架、而且是按到期日排的，就拿得到那 0.4 的权重；
+    // 纸箱不计入 fefo（fefoRate 只数货架），所以那 0.4 也拿不到。
+    const plain = bareRun();
+    put(plain, 'shelf_a', { row: 0, col: 0 }, 'canned_beans', 4, 60);
+    put(plain, 'shelf_a', { row: 0, col: 1 }, 'mineral_water', 4, 60);
+    put(plain, 'shelf_a', { row: 0, col: 2 }, 'fuel_can', 4, null);
+    plain.day = 3;
+    plain.stats = { health: 90, mood: 60, stamina: 50, shelter: 80 };
+    // 贴一张空胶带（"我不分类"）—— 老口径下这会让归位率恒满
+    plain.zones = [{ id: 'zone_all', name: '全收', color: '#000000' }];
+    plain.shelves = plain.shelves.map((s) => (s.id === 'shelf_a' ? { ...s, zoneId: 'zone_all' } : s));
+
+    const boxed = bareRun();
+    boxed.boxesToUnpack = [
+      {
+        id: 'b1',
+        defId: 'box_staple',
+        items: [makeStack('canned_beans', 4, 60), makeStack('mineral_water', 4, 60), makeStack('fuel_can', 4, null)]
+      }
+    ];
+    boxed.day = 3;
+    boxed.stats = { health: 90, mood: 60, stamina: 50, shelter: 80 };
+
+    const plainReport = settleSurvivalDay(plain);
+    const boxedReport = settleSurvivalDay(boxed);
+
+    expect(plainReport.placement).toBe(0);
+    expect(boxedReport.placement).toBe(0);
+    // 空胶带**没有**给归位率带来任何分：它和"没贴胶带"完全一样
+    expect(plainReport.quality).toBeCloseTo(0.4, 5);
+    expect(boxedReport.quality).toBeCloseTo(0, 5);
+    // 每件 3.3 vs 4.5，6 件 → 19.8 vs 27
+    expect(plainReport.workCost).toBeCloseTo(19.8, 5);
+    expect(boxedReport.workCost).toBeCloseTo(27, 5);
+    // 而"纸箱里翻出来的"这一行仍然只说真话：上了架的一件都不用翻
+    expect(plainReport.fromBoxes).toBe(0);
+    expect(boxedReport.fromBoxes).toBe(6);
   });
 
   it('健康跌破触发线会自动开药箱，补到线上就停（不吃冤枉药）', () => {
@@ -559,6 +609,163 @@ describe('M1 平衡改造：整理质量真的会变成体力，撑不住真的�
     expect(store.run.stats.health).toBe(0);
     expect(store.run.survival.hardPressDays).toBeGreaterThan(0);
     expect(store.run.day).toBeLessThan(SURVIVAL_DAYS); // 没撑到第 7 天就停下来了
+  });
+});
+
+// ———————— 全周期探针用的"同一批货"（§12 v0.7/v0.8 的实测口径） ————————
+
+/**
+ * 四档探针共用的同一批货：14 天口粮 30/30/30 + 药 + 两床被。
+ *
+ * 刻意把它抽成一个常量而不是在四处各写一遍：探针的全部意义就是
+ * **只改"怎么摆"，不改"有什么"** —— 一旦四份货不一样，那四条曲线就没法互相对照了。
+ */
+function probeLarder(): UnpackBox[] {
+  return [
+    {
+      id: 'b1',
+      defId: 'box_staple',
+      items: [
+        makeStack('instant_noodles', 8, null),
+        makeStack('instant_noodles', 8, null),
+        makeStack('instant_noodles', 8, null),
+        makeStack('instant_noodles', 6, null)
+      ]
+    },
+    {
+      id: 'b2',
+      defId: 'box_staple',
+      items: [
+        makeStack('mineral_water', 6, null),
+        makeStack('mineral_water', 6, null),
+        makeStack('mineral_water', 6, null),
+        makeStack('mineral_water', 6, null),
+        makeStack('mineral_water', 6, null)
+      ]
+    },
+    { id: 'b3', defId: 'box_mixed', items: Array.from({ length: 15 }, () => makeStack('fuel_can', 2, null)) },
+    { id: 'b4', defId: 'box_medical', items: [makeStack('bandage', 4, null)] },
+    { id: 'b5', defId: 'box_mixed', items: [makeStack('quilt', 1, null), makeStack('quilt', 1, null)] }
+  ];
+}
+
+/**
+ * 把纸箱里的货全部上架（按"一格一堆、塞满换下一格"铺开），并**贴好写全清单的胶带**。
+ * 这就是"整理好的档" —— §12 v0.8 之后，**没有清单的胶带不算整理**，
+ * 所以这张胶带的清单必须覆盖全部七个品类（`CATEGORY_ORDER`）。
+ */
+function shelveEverything(run: RunState): void {
+  const cursors = run.shelves.map((shelf) => ({ shelf, at: 0 }));
+  const all: ItemStack[] = [];
+  for (const box of run.boxesToUnpack) all.push(...box.items);
+  run.boxesToUnpack = [];
+  for (const stack of all) {
+    for (const c of cursors) {
+      if (c.at < c.shelf.w * c.shelf.h) {
+        const pos = { row: Math.floor(c.at / c.shelf.w), col: c.at % c.shelf.w };
+        c.at += 1;
+        run.shelves = run.shelves.map((s) =>
+          s.id === c.shelf.id ? setSlotStack(s, pos, stack) : s
+        );
+        break;
+      }
+    }
+  }
+  run.zones = [{ id: 'zone_all', name: '全收', color: '#000000', autoAccept: { categories: [...CATEGORY_ORDER] } }];
+  run.shelves = run.shelves.map((s) => ({ ...s, zoneId: 'zone_all' }));
+}
+
+/** 一键 FEFO（等价于整理页那颗按钮） */
+function fefoAll(run: RunState): void {
+  run.shelves = run.shelves.map((s) => fefoSorted(s));
+}
+
+/**
+ * 跑完一整局并回报轨迹。探针只关心四件事：走到第几天、结局、体力最低点、硬撑几天。
+ * `fixAtDay` 非空时在第 N 天结算前"补救"（全上架 + 写清单 + FEFO）——
+ * 那是"中途补救必须有用"那条的落点。
+ */
+function runProbe(build: (run: RunState) => void, fixAtDay: number | null = null) {
+  const run = bareRun();
+  run.boxesToUnpack = probeLarder();
+  run.day = 0;
+  run.phase = 'survival_day';
+  build(run);
+  const store = new GameStore(createSaveGame(run), createSaveSchedulerStub());
+  startSurvival(store);
+  resolveHelpIfAny(store);
+
+  let staminaFloor = store.run.stats.stamina;
+  /** 每天的体力（跑完之后读，用来读"下沉有没有被止住"） */
+  const staminaByDay: number[] = [];
+  let guard = 0;
+  while (store.run.phase === 'survival_day' && guard < 60) {
+    if (fixAtDay !== null && store.run.day === fixAtDay) {
+      shelveEverything(store.run);
+      fefoAll(store.run);
+    }
+    advanceSurvivalDay(store);
+    resolveHelpIfAny(store);
+    staminaFloor = Math.min(staminaFloor, store.run.stats.stamina);
+    staminaByDay.push(store.run.stats.stamina);
+    guard += 1;
+  }
+  return {
+    day: store.run.day,
+    outcome: store.run.outcome,
+    staminaFloor,
+    staminaByDay,
+    hardPressDays: store.run.survival.hardPressDays,
+    health: store.run.stats.health,
+    mood: store.run.stats.mood
+  };
+}
+
+describe('★ 全周期探针（§12.3 v0.7 / §12 v0.8 的永久回归）：好档活、乱档倒、中途补救有用', () => {
+  it('好档：全上架 + 写全清单 + FEFO → 撑过 14 天，体力几乎不掉', () => {
+    const good = runProbe((run) => {
+      shelveEverything(run);
+      fefoAll(run);
+    });
+    expect(good.outcome).toBe('survived');
+    expect(good.day).toBe(SURVIVAL_DAYS);
+    expect(good.hardPressDays).toBe(0);
+    // 整理质量 1.0 → 每天 6 件 × 1.5 = 9 点，睡一觉回 12 —— 净 +3
+    expect(good.staminaFloor).toBeGreaterThan(90);
+  });
+
+  it('乱档：同一批货全堆在纸箱里 → 活不到第 14 天', () => {
+    const messy = runProbe(() => undefined);
+    expect(messy.outcome).toBe('collapsed');
+    expect(messy.day).toBeLessThan(SURVIVAL_DAYS);
+    expect(messy.hardPressDays).toBeGreaterThan(0);
+    // 质量 0 → 每天 27 点，睡一觉只回 12 —— 第一天就在往下掉
+    expect(messy.staminaFloor).toBe(0);
+  });
+
+  it('中途补救：乱档在第 2 天全部上架 + 写清单 + FEFO → 撑过 14 天', () => {
+    const messy = runProbe(() => undefined);
+    const rescued = runProbe(() => undefined, 2);
+
+    // 乱档的轨迹（实测）：体力 70 → 55 → 40 → 23 → 4.5 → 0，D+6 起趴在 0 上，
+    // D+10 健康归零。每天净 -15 体力，睡一觉回的那 12 点根本不够。
+    expect(messy.outcome).toBe('collapsed');
+    expect(messy.day).toBeLessThan(SURVIVAL_DAYS);
+    expect(messy.staminaFloor).toBe(0);
+
+    // 同一天补救（实测）：体力 70 起止跌回升，70 → 73 → 76 …… 一路到 100。
+    // ★ 逆转口的形状是"**在下沉变成欠债之前**把它止住"：
+    // D+2 补救 → 撑过去；D+5 补救 → 只把 D+5 那天多省下 1.5 点体力，照样 D+10 倒下。
+    // 两次实测的差别不是巧合，而是这条链的形状：体力一旦穿底，
+    // "翻不动 → 少拿 → 缺货扣健康"那一段就再也回不来了（§6.4 的雪球）。
+    // 所以 §12.3 v0.5 那句"代价都可逆、都能爬回来"要补一个前提：
+    // **爬回来的窗口是有限的**，过了窗口，账就从体力转成了健康。
+    expect(rescued.outcome).toBe('survived');
+    expect(rescued.day).toBe(SURVIVAL_DAYS);
+    expect(rescued.staminaFloor).toBeGreaterThanOrEqual(70);
+    expect(rescued.hardPressDays).toBe(0);
+    expect(rescued.staminaByDay[0]).toBe(70);
+    expect(rescued.staminaByDay[3] as number).toBeGreaterThan(rescued.staminaByDay[0] as number);
   });
 });
 
