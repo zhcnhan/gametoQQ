@@ -123,22 +123,32 @@ body::before {
   margin-top: 8px;
 }
 
+/* 台账版式：小字标题在上、数字在下 —— 中文标题比英文术语宽，横排会被挤扁 */
 .score-item {
   flex: 1 1 0;
   min-width: 0;
   display: flex;
-  align-items: baseline;
-  gap: 4px;
-  padding: 5px 8px;
+  flex-direction: column;
+  gap: 1px;
+  padding: 5px 8px 6px;
   border: 1.5px solid var(--ink);
   border-radius: var(--radius-sm);
   background: var(--card);
   overflow: hidden;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.score-item:active {
+  background: var(--paper-2);
 }
 
 .score-item i {
   font-style: normal;
   font-size: 11px;
+  letter-spacing: 0.02em;
   color: var(--ink-70);
   white-space: nowrap;
   overflow: hidden;
@@ -146,8 +156,8 @@ body::before {
 }
 
 .score-item b {
-  margin-left: auto;
-  font-size: 14px;
+  font-size: 16px;
+  line-height: 1.1;
   font-variant-numeric: tabular-nums;
 }
 

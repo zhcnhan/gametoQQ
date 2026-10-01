@@ -108,8 +108,8 @@ export class OrganizeScreen {
       removeZone: (zoneId: string) => this.consume(deleteZone(this.store, zoneId))
     });
 
-    this.roomEl.addEventListener('click', (e) => this.onDelegatedClick(e));
-    this.dockEl.addEventListener('click', (e) => this.onDelegatedClick(e));
+    // 只挂一个委托监听（顶栏指标卡 / 货架按钮 / 底部工具都从这里走），少一层心智负担
+    this.root.addEventListener('click', (e) => this.onDelegatedClick(e));
 
     this.render();
   }
@@ -135,10 +135,18 @@ export class OrganizeScreen {
   private renderScore(view: OrganizeView): void {
     const p = Math.round(view.score.placement * 100);
     const f = Math.round(view.score.fefo * 100);
+    const capacity = this.store.run.shelves.reduce((n, s) => n + s.w * s.h, 0);
+    // 全中文台账。术语解释放 title（鼠标）＋点一下弹提示（手机没 hover，只能点）
     this.scoreEl.innerHTML = `
-      <span class="score-item"><i>归位率</i><b>${p}%</b></span>
-      <span class="score-item"><i>FEFO</i><b>${f}%</b></span>
-      <span class="score-item"><i>堆数</i><b>${view.score.stacks}</b></span>
+      <button class="score-item" data-action="explain" data-explain="归位率：物资有没有放在它自己那块分区里" title="物资有没有放在它自己那块分区里">
+        <i>归位率</i><b>${p}%</b>
+      </button>
+      <button class="score-item" data-action="explain" data-explain="临期优先：同架按到期日排好没有 —— 越快到期的越靠前，也越先被用掉" title="同架按到期日排好没有：越快到期的越靠前，也越先被用掉">
+        <i>临期优先</i><b>${f}%</b>
+      </button>
+      <button class="score-item" data-action="explain" data-explain="已上架：占了 ${view.score.stacks} 个格子，全房间一共 ${capacity} 格" title="已占用 ${view.score.stacks} 个格子，全房间共 ${capacity} 格">
+        <i>已上架</i><b>${view.score.stacks}</b>
+      </button>
     `;
   }
 
@@ -277,6 +285,9 @@ export class OrganizeScreen {
     const action = hit.dataset['action'];
     const shelfId = hit.dataset['shelf'];
     switch (action) {
+      case 'explain':
+        showToast(this.fxLayer, hit.dataset['explain'] ?? '', 'ink');
+        return;
       case 'edit-zone':
         if (shelfId) this.sheet.open(shelfId);
         return;
