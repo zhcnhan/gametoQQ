@@ -27,6 +27,7 @@ import { consumeItem, countByItem } from '../model/consume';
 import { createCursor } from '../model/rng';
 import type { RunState } from '../model/types';
 import type { GameStore } from '../state/store';
+import { isShutOut } from './help';
 import { generateBoxStacks, nextBoxSeq } from './setup';
 
 /** 换一箱要几件东西 */
@@ -61,10 +62,14 @@ export function tradeCooldownLeft(run: RunState): number {
 }
 
 /**
- * 现在能不能开这个口。三个条件缺一不可：在生存期、正在硬撑、冷却已过。
- * 界面用它决定要不要把那一块显出来。
+ * 现在能不能开这个口。四个条件缺一不可：没被人记恨、在生存期、正在硬撑、冷却已过。
+ *
+ * ★ 第一条是 §6.5 那句「婉拒 → **后续交易关闭**」的落点，也是人情在 M1 里唯一的用途。
+ * 它足够重 —— 一次婉拒就能关掉整局的救急出口 —— 所以它必须**看得见**：
+ * 界面要明说"你不好意思再去了"，而不是让玩家点了才发现按钮没反应。
  */
 export function canTrade(run: RunState): boolean {
+  if (isShutOut(run)) return false;
   return run.phase === 'survival_day' && run.survival.last.hardPress && tradeCooldownLeft(run) === 0;
 }
 
@@ -75,6 +80,7 @@ export function canTrade(run: RunState): boolean {
  */
 export function tradeForBox(store: GameStore, picks: readonly TradePick[]): TradeResult {
   const run = store.run;
+  if (isShutOut(run)) return reject('上次拒了人家，这会儿不好再去敲门');
   if (run.phase !== 'survival_day') return reject('现在不在生存期');
   if (!run.survival.last.hardPress) return reject('日子还过得去，先别去麻烦人家');
   const wait = tradeCooldownLeft(run);

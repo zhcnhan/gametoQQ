@@ -12,6 +12,7 @@ import { showToast } from './fx/popup';
 import { openDeferred } from './meta/deferred';
 import type { GamePhase } from './model/types';
 import { bootstrapStore } from './state/store';
+import { declineRequest, fulfillRequest, leaveRequest, type HelpResult } from './systems/help';
 import { createOrganizeSession, resetSession } from './systems/organize';
 import { tradeForBox } from './systems/trade';
 import {
@@ -33,6 +34,7 @@ import { OrganizeScreen } from './ui/OrganizeScreen';
 import { PendingScreen } from './ui/PendingScreen';
 import { PrologueScreen } from './ui/PrologueScreen';
 import { Router, type Screen, type ScreenKey } from './ui/Router';
+import { HelpScreen } from './ui/HelpScreen';
 import { ShopScreen } from './ui/ShopScreen';
 import { SurvivalScreen } from './ui/SurvivalScreen';
 
@@ -67,10 +69,11 @@ function keyOfPhase(phase: GamePhase): ScreenKey {
       return 'night';
     case 'survival_day':
       return 'survival';
+    case 'help_request':
+      return 'help';
     case 'ending':
       return 'ending';
     default:
-      // help_request 属阶段 D
       return 'pending';
   }
 }
@@ -119,10 +122,42 @@ function consumePhase(result: PhaseResult): void {
         playSfx('crush');
         showToast(fxRoot, '撑不住了', 'warn');
         break;
+      case 'helpKnocked':
+        // 门响的表现交给 HelpScreen 自己（它要在同一屏里把清单摊开给玩家看）
+        playSfx('preview');
+        break;
       case 'nightResolved':
+      case 'helpResolved':
       case 'dayStarted':
       case 'wentHome':
       case 'wentOut':
+        break;
+    }
+  }
+}
+
+/**
+ * 求援订单的后果提示。
+ *
+ * 单独一条函数（而不是并进 consumePhase），因为订单命令返回的是 `HelpEvent` 而不是
+ * `PhaseEvent` —— 两者的生命周期不一样：前者只在这一屏有效，后者要驱动换页。
+ */
+function consumeHelp(result: HelpResult): void {
+  for (const ev of result.events) {
+    switch (ev.type) {
+      case 'helpFulfilled':
+        playSfx('tidy');
+        showToast(fxRoot, ev.thanks ? `${ev.npcName}留下了 ${ev.thanks}` : `给了${ev.npcName}`);
+        break;
+      case 'helpDeclined':
+        showToast(fxRoot, `人情 -${ev.trustLoss}`, 'warn');
+        break;
+      case 'helpFailed':
+        playSfx('reject');
+        showToast(fxRoot, ev.reason, 'warn');
+        break;
+      case 'rejected':
+        showToast(fxRoot, ev.reason, 'warn');
         break;
     }
   }
@@ -191,6 +226,22 @@ function makeScreen(key: ScreenKey): Screen {
           }
           router.render();
           return result.ok;
+        }
+      });
+    case 'help':
+      return new HelpScreen(root as HTMLElement, store, {
+        onFulfill: () => {
+          consumeHelp(fulfillRequest(store));
+          router.render();
+        },
+        onDecline: () => {
+          consumeHelp(declineRequest(store));
+          router.render();
+        },
+        onLeave: () => {
+          // 兜底出口，没有提示 —— 它本不该发生，弹一条浮字只会让玩家以为自己弄坏了什么
+          consumeHelp(leaveRequest(store));
+          router.render();
         }
       });
     case 'ending':

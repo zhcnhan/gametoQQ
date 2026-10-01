@@ -122,6 +122,7 @@ export function createStartingRun(seed: number = randomSeed()): RunState {
     visitedShopIds: [],
     currentShopId: null,
     night: null,
+    helpRequest: null,
     survival: {
       spoiled: 0,
       shortageDays: 0,

@@ -20,6 +20,7 @@ import { countByItem, countCategory } from '../model/consume';
 import { computeOrganizeScore } from '../model/score';
 import type { HardPressLevel, RunState, SurvivalSnapshot } from '../model/types';
 import type { GameStore } from '../state/store';
+import { isShutOut } from '../systems/help';
 import { householdTotals } from '../systems/organize';
 import { TRADE_COST_PIECES, tradeCooldownLeft } from '../systems/trade';
 import type { Screen } from './Router';
@@ -205,6 +206,16 @@ export class SurvivalScreen implements Screen {
    */
   private tradeHtml(run: RunState): string {
     if (!run.survival.last.hardPress) return '';
+    // §6.5 的「婉拒 → 后续交易关闭」。**必须显出来**：
+    // 让玩家点了才发现没反应，等于把那一次婉拒的代价藏起来了
+    if (isShutOut(run)) {
+      return `
+        <section class="block">
+          <h2 class="block-title">去敲个门</h2>
+          <p class="press-line">这一片你已经不好意思再去张口了。上次那回，人家记着呢。</p>
+        </section>
+      `;
+    }
     const left = tradeCooldownLeft(run);
     return `
       <section class="block">

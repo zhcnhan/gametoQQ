@@ -17,6 +17,7 @@ import { isBatchSpoiled, spoilEverything, virtualDay } from '../model/spoil';
 import type { RunState, SlotPos, Zone } from '../model/types';
 import { createSaveGame } from '../state/save';
 import { GameStore } from '../state/store';
+import { declineRequest } from './help';
 import { advanceSurvivalDay, chooseIdentity, chooseNightOption, endDay, goHome, sleep, startSurvival } from './phases';
 import { settleSurvivalDay } from './survival';
 import { createStartingRun } from './setup';
@@ -69,6 +70,20 @@ function stockFor(run: RunState, days: number): void {
       at += 1;
     }
   }
+}
+
+/**
+ * 把"门口有人"这件事处理掉。
+ *
+ * ★ 这个函数本身就是阶段 D 的行为说明：`advanceSurvivalDay` 之后 phase 可能**不是**
+ * `survival_day` 而是 `help_request` —— 门口站着人时，玩家得先给个答复，日历才走得下去。
+ * 所以任何"连续过 N 天"的用例都必须带上它，否则会在门口被卡住。
+ *
+ * 这里一律选婉拒 —— 这一组用例关心的是日历与四维，不是人情。
+ */
+function resolveHelpIfAny(store: GameStore): void {
+  if (store.run.phase !== 'help_request') return;
+  declineRequest(store);
 }
 
 /** 找这块货架上第一个空格（测试用；找不到就抛，免得用例静默地什么都没测到） */
@@ -387,8 +402,10 @@ describe('生存期命令与状态机', () => {
   it('过一天：day +1 并结算；第 7 天之后再推进 → ending', () => {
     const store = storeAtDDay();
     startSurvival(store);
+    resolveHelpIfAny(store);
     for (let day = 1; day < SURVIVAL_DAYS; day++) {
       expect(advanceSurvivalDay(store).ok).toBe(true);
+      resolveHelpIfAny(store);
       expect(store.run.day).toBe(day + 1);
     }
     expect(store.run.day).toBe(SURVIVAL_DAYS);
@@ -498,13 +515,19 @@ describe('M1 平衡改造：整理质量真的会变成体力，撑不住真的�
 
   it('★ 一直点"过一天"不会自动通关：断粮的人会走到 collapsed，而且撑不到第 7 天', () => {
     const store = new GameStore(createSaveGame(bareRun()), createSaveSchedulerStub());
-    store.run.phase = 'survival_day';
-    store.run.day = 0;
+    // 用 commit 摆状态，而不是直接写 `store.run.phase = 'survival_day'`：
+    // 直接赋值会让 TS 把 `store.run.phase` 收窄成 `'survival_day'`，
+    // 于是下面那句"什么时候走到 ending"的比较会被判成**不可能成立**。
+    store.commit((d) => {
+      d.phase = 'survival_day';
+      d.day = 0;
+    });
     startSurvival(store);
 
     let guard = 0;
-    while (store.run.phase === 'survival_day' && guard < 30) {
-      advanceSurvivalDay(store);
+    while (store.run.phase !== 'ending' && guard < 40) {
+      if (store.run.phase === 'help_request') declineRequest(store);
+      else advanceSurvivalDay(store);
       guard += 1;
     }
 

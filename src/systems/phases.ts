@@ -23,6 +23,7 @@ import { dayLabel } from '../model/calendar';
 import { createCursor, type RngCursor } from '../model/rng';
 import type { GamePhase, RunState } from '../model/types';
 import type { GameStore } from '../state/store';
+import { rollHelpRequest } from './help';
 import { NO_EFFECT, applyNightEffect, cashCost, describeEffect, optionAt, rollNight } from './night';
 import { rollShopStocks } from './shop';
 import { settleSurvivalDay, type SurvivalReport } from './survival';
@@ -71,6 +72,10 @@ export type PhaseEvent =
   | { type: 'survivalCompleted'; days: number }
   /** 健康归零，这一局停在这里（§12.3 v0.5 修订：硬撑不是免死金牌） */
   | { type: 'survivalEnded'; outcome: 'collapsed'; day: number }
+  /** 门口有人（§6.5）。phase 会推进到 'help_request'，等玩家决定给还是不给 */
+  | { type: 'helpKnocked'; defId: string }
+  /** 这一单处理完了（交付 / 婉拒 / 凑不齐），回到日报 */
+  | { type: 'helpResolved'; npcName: string; outcome: 'fulfilled' | 'declined' | 'failed' }
   | { type: 'rejected'; reason: string };
 
 export interface PhaseResult {
@@ -255,9 +260,20 @@ export function sleep(store: GameStore): PhaseResult {
  * "什么算结束"**只**在这一个地方定义 —— `systems/survival.ts` 只负责把四维算对，
  * 它不知道"输赢"这回事。这样存档层不用猜，界面也不用各处复制同一套阈值。
  */
-function settleAndMaybeEnd(run: RunState, events: PhaseEvent[]): void {
+function settleAndMaybeEnd(run: RunState, events: PhaseEvent[], cursor: RngCursor): void {
   events.push({ type: 'survivalSettled', report: settleSurvivalDay(run) });
-  if (run.stats.health > 0) return;
+  if (run.stats.health > 0) {
+    // §6.5：结算完之后、玩家离开日报之前，门口可能站着人。
+    // 放在**结算之后**是刻意的 —— 求援要用的是"今天过完之后"的库存与体力，
+    // 顺序反了会出现"用还没到手的物资去凑单"。
+    const defId = rollHelpRequest(cursor);
+    if (defId) {
+      run.helpRequest = { defId };
+      run.phase = 'help_request';
+      events.push({ type: 'helpKnocked', defId });
+    }
+    return;
+  }
   run.outcome = 'collapsed';
   run.phase = 'ending';
   run.log.push(`${dayLabel(run.day)} · 撑不住了。`);
@@ -279,8 +295,10 @@ export function startSurvival(store: GameStore): PhaseResult {
 
   const events: PhaseEvent[] = [];
   store.commit((draft) => {
+    const cursor = createCursor(draft.seed);
     draft.day = 1;
-    settleAndMaybeEnd(draft, events);
+    settleAndMaybeEnd(draft, events, cursor);
+    draft.seed = cursor.state;
   });
   return ok(events);
 }
@@ -300,16 +318,19 @@ export function advanceSurvivalDay(store: GameStore): PhaseResult {
 
   const events: PhaseEvent[] = [];
   store.commit((draft) => {
+    const cursor = createCursor(draft.seed);
     const next = draft.day + 1;
     if (next > SURVIVAL_DAYS) {
       draft.phase = 'ending';
       draft.outcome = 'survived';
       draft.log.push(`撑过 ${SURVIVAL_DAYS} 天。`);
       events.push({ type: 'survivalCompleted', days: SURVIVAL_DAYS });
+      draft.seed = cursor.state;
       return;
     }
     draft.day = next;
-    settleAndMaybeEnd(draft, events);
+    settleAndMaybeEnd(draft, events, cursor);
+    draft.seed = cursor.state;
   });
   return ok(events);
 }

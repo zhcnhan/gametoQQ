@@ -203,6 +203,20 @@ export const DEFERRED_ITEMS: readonly DeferredItem[] = [
     status: 'open'
   },
   {
+    id: 'D-13',
+    kind: 'code',
+    title: '§6.5 的「情报」回报还没做',
+    impact:
+      '§6.5 写交付后获得「人情 / 情报 / 以物易物」三种回报。阶段 D 做了两种：' +
+      '人情（trust，已在结算页显示）与以物易物（thanks：现金或一箱货）。**情报没有做** ——' +
+      '它需要一个能被追加的先知日历（"提前知道 D+5 会到 -30°C"这种），' +
+      '而 M1 的 `DisasterProfile.calendar` 是静态表，没有"玩家得知之后往里补一条预告"的位置。' +
+      '硬做的话只能塞进 log，那它就成了一句没有作用的文本。',
+    plan: 'M2（与先知日历的动态化一起做）',
+    markedIn: ['data/helpRequests.ts'],
+    status: 'open'
+  },
+  {
     id: 'D-12',
     kind: 'process',
     title: '§12.3「弹尽粮绝不死人」已由玩家授权修订（v0.5）',

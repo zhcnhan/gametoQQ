@@ -12,8 +12,10 @@
  * 图鉴解锁（§9.6 第三项）属 M2，这里仍然只有生存天数 + 整理评分。
  */
 import { SURVIVAL_DAYS, getDisasterDef } from '../data/disaster';
+import { NPC_DEFS } from '../data/npcs';
 import { dayLabel, hintAt } from '../model/calendar';
 import { computeOrganizeScore, gradeLabel, toPercent } from '../model/score';
+import type { RunState } from '../model/types';
 import type { GameStore } from '../state/store';
 import { householdTotals } from '../systems/organize';
 import type { Screen } from './Router';
@@ -99,6 +101,7 @@ export class EndingScreen implements Screen {
                 unreachablePieces: run.survival.unreachablePieces
               })
             )}</p>
+            ${trustNote(run) ? `<p class="block-note">${escapeHtml(trustNote(run))}</p>` : ''}
           </section>
 
           <section class="block">
@@ -197,6 +200,24 @@ function runStory(input: {
   const head = parts.join('，');
   if (hardPressDays > 0) return `${head}。撑是撑过来了，但后半程不轻松。`;
   return `${head}。没到伤筋动骨的地步。`;
+}
+
+/**
+ * 关系的一句话总结（§6.5 的人情）。
+ *
+ * §6.7 的"关系图鉴"属 M2，M1 只做这一行 —— 但这一行必须有：
+ * 人情是这个局里唯一会**跨天累积**、又会影响别的东西的数值（它决定「去敲个门」开不开），
+ * 不显示出来，玩家就永远不知道那次婉拒到底付了什么代价。
+ *
+ * 全是 0 时不显示 —— 一个从没和人来往过的局，不该被硬塞一句"人情：0"。
+ */
+function trustNote(run: RunState): string {
+  const rows = NPC_DEFS.map((npc) => ({ name: npc.name, value: run.trust[npc.id] ?? 0 })).filter(
+    (r) => r.value !== 0
+  );
+  if (rows.length === 0) return '';
+  const parts = rows.map((r) => `${r.name} ${r.value > 0 ? '+' : ''}${r.value}`);
+  return `这一片还剩下多少人情：${parts.join(' · ')}`;
 }
 
 function escapeHtml(text: string): string {

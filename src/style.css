@@ -1970,6 +1970,60 @@ button:disabled {
   margin-top: 10px;
 }
 
+/* ================================================================
+ * 求援订单（§6.5）
+ * 这一屏只回答一件事：你给不给得起。所以清单必须一眼扫得完。
+ * ================================================================ */
+
+.need-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* 三列：品类 / 他要多少 / 你有多少。第三列右对齐，扫一眼就知道卡在哪一项 */
+.need-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 4.6em 5.4em;
+  align-items: baseline;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1.5px solid var(--ink-16);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+}
+
+.need-row b {
+  font-size: 15px;
+}
+
+.need-row span {
+  font-size: 12px;
+  color: var(--ink-70);
+  font-variant-numeric: tabular-nums;
+}
+
+.need-row em {
+  font-style: normal;
+  font-size: 13px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 凑不出来的那一项上朱红：§5A 规定朱红 = 警告，而"这项给不出"确实是警告 */
+.need-row.is-short {
+  border-color: var(--vermilion);
+}
+
+.need-row.is-short em {
+  color: var(--vermilion);
+  font-weight: 600;
+}
+
 .trade-count {
   font-size: 13px;
   font-variant-numeric: tabular-nums;

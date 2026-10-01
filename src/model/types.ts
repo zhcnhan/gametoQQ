@@ -381,6 +381,17 @@ export interface SurvivalState {
   last: SurvivalSnapshot;
 }
 
+/**
+ * 今天的求援订单（§6.5）。
+ *
+ * 刻意只有 `defId` 一个字段 —— 结果（交付 / 婉拒 / 凑不齐）当场就落成了
+ * `trust`、库存与日志，不需要再存一份"刚才发生了什么"。
+ * 多存一份状态，就多一处可能与事实不符的地方。
+ */
+export interface HelpRequestState {
+  defId: string;
+}
+
 export interface RunState {
   // 当局存档
   phase: GamePhase;
@@ -440,6 +451,17 @@ export interface RunState {
    * 用状态而不是标志位来保证幂等，比多存一个布尔量可靠。
    */
   survival: SurvivalState;
+
+  // ———————— M1 求援订单（阶段 D，§6.5） ————————
+
+  /**
+   * 今天门口站着谁（`null` = 今天没人来）。
+   *
+   * 用 `phase === 'help_request'` 表示"正在处理"，用这个字段表示"来处理的是哪一单"。
+   * 分开的理由与 `night` 完全一样：刷新回来要精确恢复成"第 N 天 + 王阿姨站在门口"，
+   * 而不是退回日报、让玩家再等一次门响。
+   */
+  helpRequest: HelpRequestState | null;
 
   // ———————— M1 结局（平衡改造，§12.3 v0.5 修订） ————————
 

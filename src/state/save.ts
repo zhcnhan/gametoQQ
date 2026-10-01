@@ -8,6 +8,7 @@
 import { BOX_DEFS } from '../data/boxes';
 import { FIRST_STOCKPILE_DAY, SURVIVAL_DAYS } from '../data/disaster';
 import { IDENTITY_DEFS, hasIdentityDef } from '../data/identities';
+import { findHelpRequestDef } from '../data/helpRequests';
 import { NIGHT_SLEEP, findNightEvent } from '../data/nightEvents';
 import { ACTION_POINTS_PER_DAY } from '../data/shops';
 import { EMPTY_SURVIVAL_SNAPSHOT, NEVER_TRADED } from '../data/survival';
@@ -40,9 +41,10 @@ export const STORAGE_KEY = 'tunhuo.save';
  *  - v9：硬撑分档（§12.3 v0.6）—— `survival` 增加连续硬撑天数，结算快照增加档位
  *  - v10：结算页的口径修正 —— `survival` 增加"累计缺口件数"与"有货拿不动件数"，
  *        取代那个会被"缺 1 件"和"缺 5 件"糊成同一个数的缺货天数
- *  - v11（规划中）：M3 图鉴 MetaProfile 扩展
+ *  - v11：求援订单（§6.5）—— 新增 `helpRequest`，并让"卡在门口"的坏档能自愈
+ *  - v12（规划中）：M3 图鉴 MetaProfile 扩展
  */
-export const SAVE_VERSION = 10;
+export const SAVE_VERSION = 11;
 /** 落盘节流上限（提示词 0：debounce ≤ 300ms） */
 export const SAVE_DEBOUNCE_MS = 250;
 
@@ -132,7 +134,22 @@ export function migrate(raw: unknown): SaveGame | null {
   if (declared < 8) save = migrateV7ToV8(save);
   if (declared < 9) save = migrateV8ToV9(save);
   if (declared < 10) save = migrateV9ToV10(save);
+  if (declared < 11) save = migrateV10ToV11(save);
   return normalizeRun(save);
+}
+
+/**
+ * v10 → v11：求援订单（§6.5）。
+ *
+ * 老档补 `null`。**刻意不动 `phase`** —— 老档不存在 `'help_request'` 这个值，
+ * 所以补完 `null` 之后没有任何东西会卡住（真正的自愈在 `normalizeHelpRequest` 里，
+ * 它同时挡住"手改出来的 `phase: 'help_request'` + 空订单"那种死胡同）。
+ */
+export function migrateV10ToV11(save: SaveGame): SaveGame {
+  const run = save.run;
+  if (run) run.helpRequest = null;
+  save.meta.version = SAVE_VERSION;
+  return save;
 }
 
 /**
@@ -360,6 +377,9 @@ function normalizeRun(save: SaveGame): SaveGame | null {
   // ———————— M1 夜间字段 ————————
   normalizeNight(run);
 
+  // ———————— M1 求援订单（§6.5） ————————
+  normalizeHelpRequest(run);
+
   // ———————— M1 生存期字段 ————————
   const survival = isObject(run.survival) ? (run.survival as Record<string, unknown>) : {};
   const last = isObject(survival.last) ? (survival.last as Record<string, unknown>) : {};
@@ -460,6 +480,30 @@ function normalizeNight(run: RunState): void {
     choice,
     applied: choice === null ? null : normalizeApplied((raw as { applied?: unknown }).applied)
   };
+}
+
+/**
+ * 门口那一单的自愈。
+ *
+ * 它和夜色是**同一类问题**：`phase === 'help_request'` 是一个没有出口的房间 ——
+ * 界面上只有「凑单」和「婉拒」两个按钮，而两个都要求"门口真的站着人"。
+ * 所以两种坏法都必须被拦住：
+ *
+ *  ① `phase === 'help_request'` 但订单空 / 认不出来 → 退回日报（否则玩家被永远关在门口）；
+ *  ② 不在门口却留着订单 → 清掉，否则明天的日报会读到今天这一单的残影。
+ */
+function normalizeHelpRequest(run: RunState): void {
+  const raw = run.helpRequest;
+  const defId = isObject(raw) && typeof raw.defId === 'string' ? raw.defId : '';
+  const def = findHelpRequestDef(defId);
+
+  if (run.phase !== 'help_request' || !def) {
+    run.helpRequest = null;
+    if (run.phase === 'help_request') run.phase = 'survival_day';
+    return;
+  }
+
+  run.helpRequest = { defId: def.id };
 }
 
 /**
