@@ -169,7 +169,7 @@ export class OrganizeScreen {
     const handyCount = this.store.run.shelves.filter((s) => s.handyRank !== null).length;
     // 全中文台账。术语解释放 title（鼠标）＋点一下弹提示（手机没 hover，只能点）
     this.scoreEl.innerHTML = `
-      <button class="score-item" data-action="explain" data-explain="归位率：你自己给胶带写的清单，东西有没有照放。没写清单的胶带什么都收 —— 规矩你定，只帮你数。" title="你自己给胶带写的清单，东西有没有照放。没写清单的胶带什么都收。">
+      <button class="score-item" data-action="explain" data-explain="归位率：你自己给胶带写的清单，东西有没有照放。只有被某张清单明确写进去的东西才算归位 —— 贴了胶带但没写清单，和没贴一样是 0。" title="你自己给胶带写的清单，东西有没有照放。只有被清单明确写进去的才算归位；没写清单就不算。">
         <i>归位率</i><b>${p}%</b>
       </button>
       <button class="score-item" data-action="explain" data-explain="临期优先：同架按到期日排好没有 —— 越快到期的越靠前，也越先被用掉" title="同架按到期日排好没有：越快到期的越靠前，也越先被用掉">

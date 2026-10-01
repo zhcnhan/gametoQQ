@@ -1,5 +1,5 @@
 /**
- * 生存期每日结算（§6.4 + M1 平衡改造）。
+ * 生存期每日结算（§6.4 + M1 平衡改造 + M2 突发事件）。
  *
  * 一天只结算一次，结算只发生在这个文件里。顺序**不能改**：
  *
@@ -8,13 +8,22 @@
  *   ③ 劳作  —— 把今天翻出来的货"搬"到桌上要花体力，成本由**整理质量**决定（§6.4「乱 → 翻找耗时」）。
  *   ④ 缺货  —— 没凑齐就扣健康 / 心情 / 体力。
  *   ⑤ 硬撑  —— 四维跌破线就进入硬撑，代价再叠一层（§12.3 v0.5 修订）。
- *   ⑥ 补给  —— 健康低自动开药箱、屋子冷自动添被（两个"囤了却没用"的品类在这里兑现）。
- *   ⑦ 落定  —— 一次性写回四维，并留一份增量快照给界面。
+ *   ⑥ 突发事件 —— §5 的另一半：顺手位上有急救品就自己化解，没有才按缺货口径受创（M2）。
+ *   ⑦ 补给  —— 健康低自动开药箱、屋子冷自动添被（两个"囤了却没用"的品类在这里兑现）。
+ *   ⑧ 落定  —— 一次性写回四维，并留一份增量快照给界面。
  *
  * ## 为什么 ③ 必须排在 ④ 之前
  *
  * 劳作算的是"你今天真的翻了多少件"，而翻出来的件数正是 ② 的结果。
  * 如果把它写在缺货判断之后，断粮那天反而会变成"最轻松的一天"（没东西可翻）。
+ *
+ * ## ⑥ 为什么排在 ⑦ 之前
+ *
+ * 突发事件的"没化解"按**缺货口径**受创（§5 的措辞就是"否则按缺货口径受创"），
+ * 而缺货的账记在 ④。把它放在自动补给之前，意味着**药能救你，但不能免掉今天的伤** ——
+ * 与 ⑤ 硬撑的判定位置是同一条道理（"药能把你救回来，但今天确实难受过"）。
+ * 反过来放，会出现"磕破了手 → 自动吃药 → 屏幕上什么也没发生"这种事，
+ * 那 §5 那句「突发事件不掉健康」就变成了不可见的常量。
  *
  * ## 关于 `health` 归零
  *
@@ -35,6 +44,7 @@ import { consumeCategory } from '../model/consume';
 import { countOnHandy } from '../model/shelf';
 import { computeOrganizeScore } from '../model/score';
 import { spoilEverything, virtualDay } from '../model/spoil';
+import { EMERGENCY_DEFS, EMERGENCY_NONE_WEIGHT } from '../data/emergencies';
 import { getDisasterDef } from '../data/disaster';
 import { CATEGORY_LABELS, getItemDef } from '../data/items';
 import {
@@ -59,10 +69,83 @@ import {
   shelterOf,
   workCostOf
 } from '../data/survival';
-import type { CategoryId, HardPressLevel, RunState } from '../model/types';
+import { nextFloat, type RngCursor } from '../model/rng';
+import type { CategoryId, EmergencyDef, HardPressLevel, RunState } from '../model/types';
 
 /** 每天最多自动用掉几件补给（医疗 / 保暖各算一份）。它只防"一次吃光库存"，不限制正常情况下按需取用 */
 const SUPPLY_MAX_PER_DAY = 2;
+
+/**
+ * 今天有没有碰上突发事件？有则返回它，没有返回 null。消耗一次 RNG。
+ *
+ * 抽签池里混了一个"今天没事"的虚拟条目（`EMERGENCY_NONE_WEIGHT`）——
+ * 一次抽签只有一个 RNG 消耗点，"某一天有没有事"因此只依赖一个数，
+ * 回放与调试都更容易对账。
+ *
+ * ★ 权重**相等**的那些事件在这里是均匀的（每个权重都是 1，总权重 = 事件数）。
+ * 不写成"按表里顺序逐个累加权重"是因为这张表的权重目前全等，
+ * 加一层读不出来的通用机制只会让"到底几天有事"更难算。
+ * 将来真要给某条事件调频率时，再把 `WEIGHT` 加进来。
+ *
+ * ★ 它是**纯函数**（只吃游标），所以调用方负责决定"这一天算不算"：
+ * 只有真的结算了一天才会走到这里（见 `settleSurvivalDay`），
+ * 于是"重复点过一天""刷新页面""读档"都不会多抽一次。
+ */
+export function rollEmergency(cursor: RngCursor): EmergencyDef | null {
+  const total = EMERGENCY_NONE_WEIGHT + EMERGENCY_DEFS.length;
+  const roll = nextFloat(cursor) * total;
+  if (roll < EMERGENCY_NONE_WEIGHT) return null;
+  const index = Math.min(EMERGENCY_DEFS.length - 1, Math.floor(roll - EMERGENCY_NONE_WEIGHT));
+  return EMERGENCY_DEFS[index] ?? null;
+}
+
+/**
+ * 突发事件的结果：化解了没有、丢了几件（按缺货口径）。
+ *
+ * 它就是 §5 那句话的落点：
+ *
+ *   > 应急货架（门口/最顺手位）放急救品 → 突发事件不掉健康
+ *
+ * 判定只有一条：**该品类在顺手位货架上有几件**（`countOnHandy`）。
+ * 分母算全屋那句话在这里变成了"纸箱里的绷带不算"—— 箱底那卷确实没在门口。
+ */
+export interface EmergencyOutcome {
+  def: EmergencyDef;
+  resolved: boolean;
+  /** 没化解时按缺货口径受创的件数（= `def.lost`；化解了就是 0） */
+  lost: number;
+  /** 化解时顺手位上有几件（用于日志与界面说清"是靠什么化解的"） */
+  handyHave: number;
+}
+
+/**
+ * 判定并结算一次突发事件（就地改 run）。
+ *
+ * 两条刻意的口径：
+ *
+ *  1. **化解不消耗库存**（除非 `def.consumes`）。§5 说的是「放急救品 → 不掉健康」——
+ *     它奖励的是"放在顺手位"这个**整理动作**，不是"有存货"。若化解也要扣一件，
+ *     那和"从箱子里翻出来用掉"就没有区别，而 §6.3 的应急可达率也就白算了。
+ *     需要真烧掉的（"炉子熄了"）由 `consumes` 显式声明；
+ *  2. **没化解时按缺货口径受创**，与 ④ 缺货**共用同一组常量**（`SHORTAGE_*`）。
+ *     另造一套数字会让"突发事件"和"断粮"变成两种疼法，而玩家的账本只有一个。
+ *     封顶同样共用 `SHORTAGE_MAX_STACK` —— 一次意外不该比断粮还狠。
+ */
+export function settleEmergency(run: RunState, def: EmergencyDef): EmergencyOutcome {
+  const handyHave = countOnHandy(run.shelves, def.category);
+  const resolved = handyHave >= def.needOnHandy;
+  if (resolved) {
+    if (def.consumes) {
+      // 真要烧掉的那几种：从顺手位所在的货架按 FEFO 取。取不满就退化成"没化解"——
+      // 但那不可能发生（上面刚数过），所以这里只做防御性处理
+      const drawn = consumeCategory(run.shelves, run.zones, run.boxesToUnpack, def.category, def.needOnHandy);
+      run.shelves = drawn.shelves;
+      run.boxesToUnpack = drawn.boxes;
+    }
+    return { def, resolved: true, lost: 0, handyHave };
+  }
+  return { def, resolved: false, lost: def.lost, handyHave };
+}
 
 export interface DrainLine {
   category: CategoryId;
@@ -101,6 +184,12 @@ export interface SurvivalReport {
   hardPressLevel: HardPressLevel;
   usedMedicine: number;
   usedWarmth: number;
+  /** 今天碰上的突发事件（`null` = 没碰上）。事件的正文由 `data/emergencies.ts` 按 id 查 */
+  emergencyId: string | null;
+  /** 急用的那几件在不在顺手位。true = 自己化解了，一点健康都没掉（§5） */
+  emergencyResolved: boolean;
+  /** 没化解时受创的件数（按缺货口径） */
+  emergencyLost: number;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -122,9 +211,14 @@ function round2(value: number): number {
 
 /**
  * 结算生存期第 `run.day` 天。**就地修改 run**（调用方负责包在 store.commit 里）。
+ *
+ * @param cursor 供突发事件抽签用的 RNG 游标。**不传就认为今天不掷** ——
+ *   这是刻意的默认值：结算的绝大多数调用点（单测、结算页预览）关心的是账怎么算，
+ *   不是"今天有没有意外"。真正的命令层（`systems/phases.ts`）一律显式传游标，
+ *   这样"同 seed 同事件序列"仍然只在一条路径上成立，不会因为某个调用点忘了传而漂移。
  * @returns 一份给界面看的报告 —— 表现层不认识规则，只显示这份报告。
  */
-export function settleSurvivalDay(run: RunState): SurvivalReport {
+export function settleSurvivalDay(run: RunState, cursor?: RngCursor): SurvivalReport {
   const disaster = getDisasterDef(run.disasterId);
   const severity = severityAt(disaster, run.day);
   // 腐坏按"虚拟天"推进：寒潮 spoilRate=0.5 时它跑得比真实天慢（等于全屋成了冷库）
@@ -228,7 +322,21 @@ export function settleSurvivalDay(run: RunState): SurvivalReport {
   }
   deltas.mood = clamp(deltas.mood, -MOOD_DELTA_CAP, MOOD_DELTA_CAP);
 
-  // ⑥ 自动补给：囤了却一直没有用途的两个品类在这里兑现（医疗 → 健康，保暖 → 庇护所）
+  // ⑥ 突发事件（§5 的另一半）：顺手位上有急救品就自己化解，没有才按缺货口径受创。
+  //    判定必须在 ⑦ 自动补给**之前** —— 药能把你救回来，但免不掉今天的伤（见文件头的顺序说明）
+  const emergency = cursor ? rollEmergency(cursor) : null;
+  let emergencyOutcome: EmergencyOutcome | null = null;
+  if (emergency) {
+    emergencyOutcome = settleEmergency(run, emergency);
+    if (!emergencyOutcome.resolved) {
+      const pain = Math.min(SHORTAGE_MAX_STACK, emergencyOutcome.lost);
+      deltas.health -= SHORTAGE_HEALTH * pain;
+      deltas.mood -= SHORTAGE_MOOD * pain;
+      deltas.stamina -= SHORTAGE_STAMINA * pain;
+    }
+  }
+
+  // ⑦ 自动补给：囤了却一直没有用途的两个品类在这里兑现（医疗 → 健康，保暖 → 庇护所）
   const supply = autoSupply(run, {
     health: run.stats.health + deltas.health,
     shelter: run.stats.shelter + deltas.shelter
@@ -236,7 +344,7 @@ export function settleSurvivalDay(run: RunState): SurvivalReport {
   deltas.health += supply.heal;
   deltas.shelter += supply.warmth;
 
-  // ⑦ 落定四维（结尾统一收一次小数，见 round2 的注释）
+  // ⑧ 落定四维（结尾统一收一次小数，见 round2 的注释）
   deltas.health = round2(deltas.health);
   deltas.mood = round2(deltas.mood);
   deltas.stamina = round2(deltas.stamina);
@@ -246,6 +354,14 @@ export function settleSurvivalDay(run: RunState): SurvivalReport {
   run.stats.mood = clamp(round2(run.stats.mood + deltas.mood), 0, 100);
   run.stats.stamina = clamp(round2(run.stats.stamina + deltas.stamina), 0, 100);
   run.stats.shelter = clamp(round2(run.stats.shelter + deltas.shelter), 0, 100);
+
+  // 「安全感」连击（§12 拍板 v0.9）：达标 = 今天该拿到的都拿到了。
+  // 三条都是"今天过得顺不顺"的直接读数，而且**全部来自已经算完的账** ——
+  // 不另立一套判定，玩家才能对着日报上的数字自己验证这个连击是不是真的。
+  const safeToday =
+    shortageUnits === 0 && unreachableUnits === 0 && !hardPress && emergencyOutcome?.resolved !== false;
+  if (safeToday) run.survival.safeStreak += 1;
+  else run.survival.safeStreak = 0;
 
   // 落盘一份增量快照：刷新回来还要能看见"今天掉了哪些点"（§4A 恢复即续玩）
   run.survival.last = {
@@ -262,7 +378,10 @@ export function settleSurvivalDay(run: RunState): SurvivalReport {
     hardPress,
     hardPressLevel: todayTier?.level ?? 'none',
     usedMedicine: supply.usedMedicine,
-    usedWarmth: supply.usedWarmth
+    usedWarmth: supply.usedWarmth,
+    emergencyId: emergencyOutcome?.def.id ?? null,
+    emergencyResolved: emergencyOutcome?.resolved ?? false,
+    emergencyLost: emergencyOutcome?.lost ?? 0
   };
 
   // ⑧ 报到日志里（阶段 E 的日报按 'D+3 · ' 前缀分组）
@@ -307,6 +426,23 @@ export function settleSurvivalDay(run: RunState): SurvivalReport {
     const names = sweep.losses.map((l) => `${getItemDef(l.itemId).name}×${l.count}`).join('、');
     run.log.push(`${stamp} · 坏了 ${names}`);
   }
+  // 突发事件要写进日志，而且**两句话都写全**：化解了是靠什么化解的（顺手位），
+  // 没化解是缺了什么。只写"今天出了件事"等于把一条可见的因果链藏起来。
+  if (emergencyOutcome) {
+    const name = CATEGORY_LABELS[emergencyOutcome.def.category];
+    if (emergencyOutcome.resolved) {
+      run.log.push(`${stamp} · ${emergencyOutcome.def.text}顺手位上的${name}够用，没耽误什么。`);
+    } else {
+      run.log.push(
+        `${stamp} · ${emergencyOutcome.def.text}顺手位上只有 ${emergencyOutcome.handyHave} 件${name}，不够。`
+      );
+    }
+  }
+  // 连击只在"达到 2 天以上"时才写：第一天就报会显得像在评价玩家，
+  // 而 §5 引擎① 的纪律是"只陈述，不夸"
+  if (safeToday && run.survival.safeStreak >= 2) {
+    run.log.push(`${stamp} · 该拿到的都拿到了，连着第 ${run.survival.safeStreak} 天。`);
+  }
 
   return {
     day: run.day,
@@ -325,7 +461,10 @@ export function settleSurvivalDay(run: RunState): SurvivalReport {
     hardPress,
     hardPressLevel: todayTier?.level ?? 'none',
     usedMedicine: supply.usedMedicine,
-    usedWarmth: supply.usedWarmth
+    usedWarmth: supply.usedWarmth,
+    emergencyId: emergencyOutcome?.def.id ?? null,
+    emergencyResolved: emergencyOutcome?.resolved ?? false,
+    emergencyLost: emergencyOutcome?.lost ?? 0
   };
 }
 

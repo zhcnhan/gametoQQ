@@ -429,8 +429,12 @@ export interface HelpRequestState {
  * 一个白天事件给某个品类加的**限购**：这家店今天这个品类最多卖你几件。
  *
  * 它是"限购"这条事件的落点，而且是**按品类**记的 ——
- * 邻居抢的是米面油，不会连绷带一起限。存档里存的是最终生效值，
- * 事件表只声明它加多少。
+ * 邻居抢的是米面油，不会连绷带一起限。
+ *
+ * ★ `max` 是"**今天这家店这个品类总共**能卖你几件"，是一件**全程**的上限，
+ * 不是"下一次结账最多几件"。所以判定时必须减去今天已经买走的量
+ * （`RunState.shopBoughtToday`）—— 否则玩家可以分批结账把限购绕过去，
+ * 而"每人限购两袋"这句话就成了一句空话。
  */
 export interface ShopLimit {
   shopId: string;
@@ -438,6 +442,18 @@ export interface ShopLimit {
   /** 今天这个品类在这家店最多能买几件（含玩家已经买走的） */
   max: number;
 }
+
+/**
+ * 今天已经买走的件数（`shopId|itemId` → 件数）。
+ *
+ * 它存在的唯一理由就是上面那条限购的语义：限购必须是**全程**上限。
+ * 不记这个账的话，"限购 2 件"在玩家眼里等于"每次结账最多 2 件"——
+ * 分两趟结账就买到了 4 件。那是机制漏了，不是玩家狡猾。
+ *
+ * 刻意按 `itemId` 而不是品类记：界面要能逐行显示"这件还能买几件"，
+ * 而品类层面的汇总随时可以从它算出来。存细的、算粗的，不会算错。
+ */
+export type ShopBoughtToday = Record<string, number>;
 
 /**
  * 正在等玩家决定的一个白天事件（§6.2「物价波动 / 限购 / 插队大妈 / 黑市商人」）。
@@ -470,8 +486,20 @@ export interface DayEffectApplied {
   stockCut: { shopId: string; itemId: string; count: number }[];
   /** 这次事件加上的限购 */
   limits: ShopLimit[];
+  /**
+   * 四维里白天**唯二**会被动的两项。
+   *
+   * 健康与庇护所不在这个列表里，而且那不是遗漏：它们只由生存期的结算
+   * （`data/survival.ts`）负责。在囤货期凭空扣健康没有下游 —— 灾难还没来，
+   * 也没有任何一条日报会解释那几点是怎么掉的。
+   * 体力与心情不一样：它们本来就是"今天过得顺不顺"的容器，囤货期读得到也用得上。
+   */
+  stamina: number;
+  mood: number;
   /** 顺手带回家的一箱货（箱型 id） */
   gotBox: boolean;
+  /** 带回来的那箱叫什么（`gotBox` 为真时填，界面直接读它，不用再查一次表） */
+  boxName: string;
   /** 这一趟白跑了（插队大妈那类）：true = 这家店今天不用看了 */
   visitLost: boolean;
 }
@@ -596,6 +624,12 @@ export interface RunState {
   shopPriceFactor: number;
   /** 今天生效的限购（来自白天事件）。换天清零 */
   shopLimits: ShopLimit[];
+  /**
+   * 今天已经买走的件数（`shopId|itemId` → 件数）。换天清零。
+   *
+   * 它只服务一件事：让**限购**成为全程上限而不是"每次结账的上限"（见 `ShopLimit`）。
+   */
+  shopBoughtToday: ShopBoughtToday;
   /**
    * 正等着玩家决定的一个白天事件（null = 没有）。
    * 与 `night` / `helpRequest` 同一个套路：存的是"发生了哪件事、选到哪一步"。

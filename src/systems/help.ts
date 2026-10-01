@@ -66,7 +66,7 @@ export interface HelpShortfall {
 
 /** 这一单你凑不凑得齐。界面要在玩家按下去之前就把答案告诉他 */
 export function inspectRequest(run: RunState, def: HelpRequestDef): HelpShortfall {
-  const lines = def.needs.map(({ category, count }) => ({
+  const lines = def.demands.map(({ category, count }) => ({
     category,
     need: count,
     // 全屋口径（货架 + 纸箱）：纸箱里的东西当然能翻出来，只是更费劲 —— 费劲体现在成本上
@@ -139,7 +139,7 @@ export function fulfillRequest(store: GameStore): HelpResult {
       return;
     }
 
-    for (const need of def.needs) {
+    for (const need of def.demands) {
       const result = consumeCategory(draft.shelves, draft.zones, draft.boxesToUnpack, need.category, need.count);
       draft.shelves = result.shelves;
       draft.boxesToUnpack = result.boxes;
@@ -218,5 +218,5 @@ export function leaveRequest(store: GameStore): HelpResult {
 
 /** 需求的人话（日志与界面共用同一套说法） */
 export function describeNeeds(def: HelpRequestDef): string {
-  return def.needs.map((n) => `${CATEGORY_LABELS[n.category]}×${n.count}`).join('、');
+  return def.demands.map((n) => `${CATEGORY_LABELS[n.category]}×${n.count}`).join('、');
 }

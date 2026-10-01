@@ -142,7 +142,14 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
         {
           label: '装作没看见',
           outcome: '你从巷口走过去了。后视镜里那辆车一直没动。',
+          // §4A：每条事件都得有一条"不参与"的路。这里的代价只有一点心情 ——
+          // 你没买东西、也没白跑一趟（店还开着，可以照常进去买）
           effect: { mood: -2 }
+        },
+        {
+          label: '这店今天不进了',
+          outcome: '你调头走了。那辆车还停在巷子里。',
+          effect: { visitLost: true }
         }
       ]
     }

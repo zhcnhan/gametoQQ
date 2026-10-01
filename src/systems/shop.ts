@@ -12,29 +12,34 @@
  * 分趟刻意不扣行动点：行动点的语义是"进几家店门"（1 点 = 一个点位），
  * 若再拿它扣分趟，"1 点 = 一个点位"当场失效。
  *
- * DEFERRED(D-10): §6.2 还写了「随机事件：物价波动、限购、插队大妈、黑市商人（文本 1~2 句，
- * 选项 2~3 个）」，目前**一条都没做** —— 白天采购是纯数值操作，没有变数。
- * 接入点应该在 `enterShop` 之前：进店时用当前 seed 游标判定"今天这家店有没有事"。
- * 阶段 B 的夜间事件已经把"文本 + 选项 + 后果"那套跑通了，这里可以直接复用同一套数据结构。
+ * DEFERRED(D-10): 已清偿（M2）。§6.2 的「随机事件：物价波动、限购、插队大妈、黑市商人」
+ * 现在落在 `enterShop` 之前：进店那一下用当前 seed 游标判定"这家店今天有没有事"，
+ * 事件本体在 `data/dayEvents.ts`，判定与落账在本文件下半部分。
+ * 「物价波动」走的是另一条路（它没得选，见下面的 `rollDaySetup`）。
  */
 import { getBoxDef } from '../data/boxes';
+import { DAY_EVENT_DEFS, DAY_EVENT_NONE_WEIGHT, dayEventWeight, dayPriceFactor, findDayEvent } from '../data/dayEvents';
 import { getIdentityDef } from '../data/identities';
 import { getItemDef } from '../data/items';
 import { SHOP_DEFS, getShopDef } from '../data/shops';
 import { dayLabel } from '../model/calendar';
-import { createCursor, nextInt, type RngCursor } from '../model/rng';
+import { createCursor, nextFloat, nextInt, type RngCursor } from '../model/rng';
 import { makeStack } from '../model/shelf';
 import type {
+  DayEffectApplied,
+  DayEventDef,
+  DayOption,
   IdentityDef,
   ItemDef,
   ItemStack,
   RunState,
   ShopDayStock,
   ShopDef,
+  ShopLimit,
   UnpackBox
 } from '../model/types';
 import type { GameStore } from '../state/store';
-import { nextBoxSeq, rollExpiry } from './setup';
+import { generateBoxStacks, nextBoxSeq, rollExpiry } from './setup';
 
 // ———————— 事件（表现层的唯一输入） ————————
 
@@ -44,6 +49,10 @@ export type ShopEvent =
   | { type: 'leftShop' }
   /** 一趟货搬上了车：一箱进待拆队列（引擎③ 拆箱惊喜） */
   | { type: 'loaded'; boxId: string; boxName: string; pieces: number; weight: number; cost: number }
+  /** 门口出了一件事，日历停在原地等玩家决定（白天事件，§6.2 / D-10） */
+  | { type: 'dayEventHit'; defId: string; shopId: string }
+  /** 白天事件处理完了（`visitLost` = 这一趟白跑了，界面据此退回点位列表） */
+  | { type: 'dayEventResolved'; defId: string; choice: number; summary: string[]; visitLost: boolean }
   | { type: 'rejected'; reason: string };
 
 export interface ShopResult {
@@ -83,8 +92,18 @@ export function priceOf(item: ItemDef, shop: ShopDef, identity: IdentityDef): nu
 /**
  * 生成"某一天"的全部点位库存。
  * 种子化：库存基数 ±1 抖动，抖动顺序 = 静态表里点位与商品的声明顺序（绝不依赖 Map 遍历顺序）。
+ *
+ * ★ M2：`price` 里**烘进了当天的物价倍率**（`data/dayEvents.dayPriceFactor`）。
+ * 这样做而不是"每次显示时再乘"的理由：囤货期一个玩家的全部决策都建立在
+ * "今天这件多少钱"上，而这个数在一天之内必须**只有一个来源** ——
+ * 否则"界面显示 7 元、结账扣 8 元"这种事迟早会发生（`buildCartView` 与 `buyCart`
+ * 共用同一份 line.price，同源的代价只有一处）。
+ *
+ * 事件带来的涨价（`run.shopPriceFactor`）不走这里：它在事件发生**之后**才存在，
+ * 所以由 `basePriceOf()` 叠一次。两份倍率各管一段，账在 `basePriceOf` 上合。
  */
 export function rollShopStocks(identity: IdentityDef, cursor: RngCursor, day: number): ShopDayStock[] {
+  const factor = dayPriceFactor(day);
   return SHOP_DEFS.map((shop) => ({
     shopId: shop.id,
     day,
@@ -92,11 +111,71 @@ export function rollShopStocks(identity: IdentityDef, cursor: RngCursor, day: nu
       const item = getItemDef(offer.itemId);
       return {
         itemId: offer.itemId,
-        price: priceOf(item, shop, identity),
+        price: Math.max(1, Math.round(priceOf(item, shop, identity) * factor)),
         stock: Math.max(1, offer.stock + nextInt(cursor, -1, 1))
       };
     })
   }));
+}
+
+/**
+ * 当天的**实际**单价 = 生成时烘进 line.price 的那一份（点位系数 × 身份折扣 × 当日物价倍率）
+ * × 事件带来的额外倍率。
+ *
+ * 界面与结账都必须走这个函数。任何一处直接读 `line.price` 都会漏掉事件那一段。
+ */
+export function basePriceOf(run: RunState, line: { price: number }): number {
+  return Math.max(1, Math.round(line.price * run.shopPriceFactor));
+}
+
+/**
+ * 今天能不能再买这件（限购，来自白天事件）。
+ *
+ * ★ 它是**全程**上限：要减去今天已经买走的量。不减的话，
+ * "每人限购两袋"就变成了"每次结账最多两袋"—— 分两趟就能买四袋。
+ * 那不是玩家狡猾，是机制漏了。
+ *
+ * @returns 今天这件在这家店还能买几件；没有限购则返回 `Number.POSITIVE_INFINITY`
+ */
+export function purchaseLimitOf(run: RunState, shopId: string, itemId: string): number {
+  const category = getItemDef(itemId).category;
+  const limits = run.shopLimits.filter((l) => l.shopId === shopId && l.category === category);
+  if (limits.length === 0) return Number.POSITIVE_INFINITY;
+  // 同一品类有多条限购时取**最严**的那条：玩家不会记得自己触发过几条，
+  // 界面只能给一个答案，而那个答案必须是不会让他"买了又被拒"的那个
+  const cap = Math.min(...limits.map((l) => l.max));
+  const bought = boughtTodayOf(run, shopId, itemId);
+  return Math.max(0, cap - bought);
+}
+
+/** 今天这件在这家店已经买走多少（记账见 `ShopBoughtToday`） */
+export function boughtTodayOf(run: RunState, shopId: string, itemId: string): number {
+  return run.shopBoughtToday[`${shopId}|${itemId}`] ?? 0;
+}
+
+/**
+ * 进店**之前**掷一次：今天这家店有没有事？有则返回事件 id，没有返回 null。消耗一次 RNG。
+ *
+ * 权重池里混了一个"今天没事"的虚拟条目（`DAY_EVENT_NONE_WEIGHT`），
+ * 所以"有没有事"和"是哪件事"共用同一次抽签 —— 与突发事件同一套做法（见 data/dayEvents.ts）。
+ *
+ * `dayEventWeight` 负责把 `onlyShops` 之外的店门权重压成 0：
+ * 黑市商人只会出现在五金店后巷，别处抽不到他。
+ */
+export function rollDayEvent(cursor: RngCursor, shopId: string): string | null {
+  const pool = DAY_EVENT_DEFS.map((def) => ({ def, weight: dayEventWeight(def, shopId) })).filter(
+    (e) => e.weight > 0
+  );
+  const total = DAY_EVENT_NONE_WEIGHT + pool.reduce((n, e) => n + e.weight, 0);
+  if (total <= 0) return null;
+  const roll = nextFloat(cursor) * total;
+  if (roll < DAY_EVENT_NONE_WEIGHT) return null;
+  let acc = DAY_EVENT_NONE_WEIGHT;
+  for (const entry of pool) {
+    acc += entry.weight;
+    if (roll < acc) return entry.def.id;
+  }
+  return pool[pool.length - 1]?.def.id ?? null;
 }
 
 export function findShopStock(run: RunState, shopId: string): ShopDayStock | null {
@@ -177,14 +256,28 @@ export function buildCartView(run: RunState, shopId: string, lines: readonly Car
       problems.push(`${item.name}：今天卖完了`);
       continue;
     }
-    const count = Math.min(line.count, sku.stock);
-    if (count < line.count) notes.push(`${item.name}：只剩 ${sku.stock} 件，先按这些算`);
-    const lineCost = sku.price * count;
+    // 限购（来自白天事件）：先按"店里还剩多少"降到今天还能卖的量
+    const limit = purchaseLimitOf(run, shopId, line.itemId);
+    const available = limit === Number.POSITIVE_INFINITY ? sku.stock : Math.min(sku.stock, limit);
+    if (available <= 0) {
+      problems.push(`${item.name}：今天限购，你已经买满了`);
+      continue;
+    }
+    const count = Math.min(line.count, available);
+    if (count < line.count) {
+      notes.push(
+        limit === Number.POSITIVE_INFINITY
+          ? `${item.name}：只剩 ${sku.stock} 件，先按这些算`
+          : `${item.name}：今天限购 ${limit} 件，先按这些算`
+      );
+    }
+    const unitPrice = basePriceOf(run, sku);
+    const lineCost = unitPrice * count;
     const lineWeight = roundKg(item.unitWeight * count);
     views.push({
       itemId: line.itemId,
       count,
-      unitPrice: sku.price,
+      unitPrice,
       lineCost,
       unitWeight: item.unitWeight,
       lineWeight,
@@ -233,7 +326,18 @@ function identityOf(run: RunState): IdentityDef | null {
 
 // ———————— 命令 ————————
 
-/** 进一个店门：消耗 1 行动点（同一天再进一次也允许，但很浪费 —— 库存不会自己补） */
+/**
+ * 进一个店门：消耗 1 行动点（同一天再进一次也允许，但很浪费 —— 库存不会自己补）。
+ *
+ * ★ 扣完行动点之后、把 `currentShopId` 立起来之前，**先掷一次白天事件**
+ * （§6.2 / D-10 的接入点）。掷中就把 `dayEvent` 挂上，界面据此先画事件、不画货架。
+ *
+ * 三件事的顺序是有讲究的：
+ *   · 行动点**照扣**。事件是"进店路上的遭遇"，不是"没进成店"——
+ *     玩家的时间确实花掉了，这也是"插队大妈"那条事件里"不排了"仍然要花钱的原因；
+ *   · `visitedShopIds` 照记。今天来过就是来过；
+ *   · `currentShopId` 立起来，因为界面要站在门口把那件事读完（"换一家"才是出口）。
+ */
 export function enterShop(store: GameStore, shopId: string): ShopResult {
   const run = store.run;
   if (run.phase !== 'stockpile_shop') return reject('现在不是在外面的时候');
@@ -242,24 +346,209 @@ export function enterShop(store: GameStore, shopId: string): ShopResult {
   if (run.carLoad >= identityLimitOf(run)) return reject('车已经装满了，先回家卸货');
 
   const firstTime = !run.visitedShopIds.includes(shopId);
+  const events: ShopEvent[] = [];
   store.commit((draft) => {
+    const cursor = createCursor(draft.seed);
     draft.actionPoints -= 1;
     draft.currentShopId = shopId;
     if (!draft.visitedShopIds.includes(shopId)) draft.visitedShopIds.push(shopId);
     if (firstTime) {
       draft.log.push(`${dayLabel(draft.day)} · 进了${getShopDef(shopId).name}。`);
     }
+    const eventId = rollDayEvent(cursor, shopId);
+    if (eventId) {
+      draft.dayEvent = { defId: eventId, shopId, choice: null, applied: null };
+      events.push({ type: 'dayEventHit', defId: eventId, shopId });
+    }
+    draft.seed = cursor.state;
   });
-  return ok([{ type: 'enteredShop', shopId }]);
+  events.unshift({ type: 'enteredShop', shopId });
+  return ok(events);
 }
 
-/** 从货架前退回点位列表。刻意不做"退回也要花行动点"这种设计 —— 看一圈不买是玩家的权利 */
+// ———————— 白天事件（§6.2 / D-10） ————————
+
+/** 取第 `choice` 个选项。越界返回 null（调用方据此走"不参与"的分支） */
+export function dayOptionAt(def: DayEventDef, choice: number): DayOption | null {
+  return def.options[choice] ?? null;
+}
+
+/**
+ * 把选项后果落到状态上，并返回**实际生效**的数值。
+ *
+ * 与 `systems/night.ts` 的 `applyNightEffect` 同一条纪律：现金给不起就按有多少给多少，
+ * 摘要与结果文案一律读**实际值**，绝不读选项声明的数 ——
+ * 屏幕报一件没发生的事，比数值本身更糟（见 `AppliedEffect` 的注释）。
+ *
+ * 事件对库存的削减走**品类**：`stockCut.category` 落到当天该店所有该品类的行上，
+ * 按比例扣（每行至少 1 件）。按比例而不是按固定件数，是因为各行的基数差很多 ——
+ * "主食少 4 件"落在只有 3 件库存的店和落在 12 件的店，不该是同一件事。
+ */
+export function applyDayEffect(run: RunState, effect: DayOption['effect'], shopId: string, cursor: RngCursor): DayEffectApplied {
+  const applied: DayEffectApplied = {
+    cash: 0,
+    priceUp: 0,
+    stockCut: [],
+    limits: [],
+    stamina: 0,
+    mood: 0,
+    gotBox: false,
+    boxName: '',
+    visitLost: false
+  };
+
+  if (effect.cash) {
+    const next = Math.max(0, run.cash + effect.cash);
+    applied.cash = next - run.cash;
+    run.cash = next;
+  }
+  if (effect.priceUp) {
+    // 涨价只影响今天剩下的时间，所以直接乘在当天的倍率上（换天时被 rollDaySetup 清掉）
+    const factor = 1 + effect.priceUp;
+    run.shopPriceFactor = Math.round(run.shopPriceFactor * factor * 1000) / 1000;
+    applied.priceUp = effect.priceUp;
+  }
+  if (effect.stockCut) {
+    const { category, count } = effect.stockCut;
+    const stock = run.shopStocks.find((s) => s.shopId === shopId);
+    if (stock) {
+      for (const line of stock.lines) {
+        if (getItemDef(line.itemId).category !== category) continue;
+        const cut = Math.min(line.stock, Math.max(1, Math.round(count / 2)));
+        if (cut <= 0) continue;
+        line.stock -= cut;
+        applied.stockCut.push({ shopId, itemId: line.itemId, count: cut });
+      }
+    }
+  }
+  if (effect.limit) {
+    // 限购的语义是"**今天这家店这个品类最多卖你几件**"。
+    // ★ 这里**不减去"已经买走的量"**，而且那是可证的：事件只在 `enterShop` 那一下触发，
+    // 而进店之前玩家站在点位列表上 —— 当天还没在这家店买过任何东西。
+    // 若将来把事件挪到店内触发（比如"货架前有人插队"），这里必须补一笔买入记账，
+    // 否则会出现"事件发生前买过的人拿到一个比实际更宽松的上限"。
+    const limit: ShopLimit = { shopId, category: effect.limit.category, max: effect.limit.max };
+    run.shopLimits.push(limit);
+    applied.limits.push(limit);
+  }
+  if (effect.stamina) {
+    // 与夜间事件同一条纪律：摘要必须报**实际**变化，不能报选项声明的数
+    const next = clampStat(run.stats.stamina + effect.stamina);
+    applied.stamina = next - run.stats.stamina;
+    run.stats.stamina = next;
+  }
+  if (effect.mood) {
+    const next = clampStat(run.stats.mood + effect.mood);
+    applied.mood = next - run.stats.mood;
+    run.stats.mood = next;
+  }
+  if (effect.boxDefId) {
+    const def = getBoxDef(effect.boxDefId);
+    run.boxesToUnpack.push({
+      id: `box_${nextBoxSeq(run.boxesToUnpack)}`,
+      defId: def.id,
+      // 批次到期日以**当前天**为基准，与白天采购、夜间事件共用同一套 FEFO 尺子
+      items: generateBoxStacks(cursor, def, run.day)
+    });
+    applied.gotBox = true;
+    applied.boxName = def.name;
+  }
+  if (effect.visitLost) {
+    applied.visitLost = true;
+  }
+
+  return applied;
+}
+
+function clampStat(value: number): number {
+  return Math.max(0, Math.min(100, value));
+}
+
+/**
+ * 决定白天事件怎么办。`choice` 为选项下标。
+ *
+ * 与夜间事件同一个两段式：先选，再看后果。`applied` 落盘的理由也一样 ——
+ * 刷新回来要能复现"你已经决定过、结果是这样"，而不是按选项声明的数值重算一遍。
+ *
+ * `visitLost` 的出口是**把玩家退回点位列表**（`currentShopId = null`）：
+ * "这趟白跑"必须真的结束这一趟，否则它和"照常买"没有区别。
+ */
+export function resolveDayEvent(store: GameStore, choice: number): ShopResult {
+  const run = store.run;
+  if (run.phase !== 'stockpile_shop') return reject('现在不是在外面的时候');
+  const state = run.dayEvent;
+  if (!state) return reject('门口没什么事');
+  if (state.choice !== null) return reject('已经决定了');
+  const def = findDayEvent(state.defId);
+  if (!def) return reject('没有这件事');
+  const option = dayOptionAt(def, choice);
+  if (!option) return reject('没有这个选项');
+  if (option.requireFullCash) {
+    const cost = Math.max(0, -(option.effect.cash ?? 0));
+    if (run.cash < cost) return reject(`钱不够，还差 ${cost - run.cash} 元`);
+  }
+
+  const events: ShopEvent[] = [];
+  store.commit((draft) => {
+    const cursor = createCursor(draft.seed);
+    const target = draft.dayEvent;
+    const applied = applyDayEffect(draft, option.effect, target?.shopId ?? '', cursor);
+    if (target) {
+      target.choice = choice;
+      target.applied = applied;
+    }
+    const summary = describeDayEffect(applied);
+    draft.log.push(
+      `${dayLabel(draft.day)} · ${getShopDef(target?.shopId ?? '').name}门口：${option.label}${
+        summary.length > 0 ? `（${summary.join('，')}）` : ''
+      }`
+    );
+    // 白跑一趟 = 这一趟到此为止：退回点位列表（行动点照扣，那是"进店"的价钱）
+    if (applied.visitLost) {
+      draft.currentShopId = null;
+      draft.dayEvent = null;
+    }
+    draft.seed = cursor.state;
+    events.push({ type: 'dayEventResolved', defId: def.id, choice, summary, visitLost: applied.visitLost });
+  });
+
+  return ok(events);
+}
+
+/** 把事件的实际后果写成一行数值摘要。空数组 = 什么都没变，界面据此不渲染数值行 */
+export function describeDayEffect(applied: DayEffectApplied): string[] {
+  const parts: string[] = [];
+  const signed = (n: number): string => (n > 0 ? `+${n}` : String(n));
+  if (applied.cash) parts.push(`现金 ${signed(applied.cash)}`);
+  if (applied.stamina) parts.push(`体力 ${signed(applied.stamina)}`);
+  if (applied.mood) parts.push(`心情 ${signed(applied.mood)}`);
+  if (applied.priceUp) parts.push(`物价 +${Math.round(applied.priceUp * 100)}%`);
+  const cut = applied.stockCut.reduce((n, c) => n + c.count, 0);
+  if (cut > 0) parts.push(`货架少了 ${cut} 件`);
+  for (const limit of applied.limits) parts.push(`限购 ${limit.max} 件`);
+  if (applied.gotBox) parts.push(`带回来一${applied.boxName}`);
+  return parts;
+}
+
+/** 结果文案里的 `{spentCash}` 换成实际花掉的现金（正数）。同夜间事件的 `resolveOutcome` */
+export function resolveDayOutcome(option: DayOption, applied: DayEffectApplied): string {
+  return option.outcome.replace('{spentCash}', String(Math.abs(applied.cash)));
+}
+
+/**
+ * 从货架前退回点位列表。刻意不做"退回也要花行动点"这种设计 —— 看一圈不买是玩家的权利。
+ *
+ * 同时清掉门口那件事（如果还没处理）：`dayEvent` 只在"站在某家店门口"时有意义，
+ * 而"先不进去"就是 §4A 要求的那条**不参与的路**。留着它会让玩家下次进门时
+ * 看到一段属于上一趟的文案。
+ */
 export function leaveShop(store: GameStore): ShopResult {
   const run = store.run;
   if (run.phase !== 'stockpile_shop') return reject('现在不在外面');
-  if (run.currentShopId === null) return ok([]);
+  if (run.currentShopId === null && run.dayEvent === null) return ok([]);
   store.commit((draft) => {
     draft.currentShopId = null;
+    draft.dayEvent = null;
   });
   return ok([{ type: 'leftShop' }]);
 }
@@ -290,6 +579,13 @@ export function buyCart(store: GameStore, shopId: string, lines: readonly CartLi
         const sku = stock.lines.find((l) => l.itemId === line.itemId);
         if (sku) sku.stock = Math.max(0, sku.stock - line.count);
       }
+    }
+    // 记账：限购要减掉"今天已经买走的"（见 model/types.ts 的 ShopBoughtToday）。
+    // 它和上面那句扣库存是两件事 —— 库存是"店里还剩多少"，记账是"我买过多少"，
+    // 只有后者能让限购成为全程上限
+    for (const line of view.lines) {
+      const key = `${shopId}|${line.itemId}`;
+      draft.shopBoughtToday[key] = (draft.shopBoughtToday[key] ?? 0) + line.count;
     }
     // 批次到期日以"当前天"为基准：D-7 买的和 D-1 买的会差出好几天，FEFO 才排得出意义（§5 引擎④）
     const items: ItemStack[] = view.lines.map((line) =>

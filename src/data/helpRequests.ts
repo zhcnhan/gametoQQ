@@ -28,7 +28,7 @@ import type { CategoryId } from '../model/types';
  */
 export const HELP_REQUEST_CHANCE = 0.45;
 
-export interface HelpNeed {
+export interface HelpDemand {
   category: CategoryId;
   count: number;
 }
@@ -38,7 +38,7 @@ export interface HelpRequestDef {
   npcId: string;
   /** 门口那句话。1~2 句，陈述处境与需求 */
   text: string;
-  needs: readonly HelpNeed[];
+  demands: readonly HelpDemand[];
   /** 交付后涨多少人情 */
   trustGain: number;
   /** 婉拒扣多少 */
@@ -53,7 +53,7 @@ export const HELP_REQUEST_DEFS: readonly HelpRequestDef[] = [
     id: 'q_wang_medicine',
     npcId: 'npc_wang',
     text: '王阿姨站在门口，说孙子半夜烧起来了，家里的药已经吃完。',
-    needs: [{ category: 'medicine', count: 3 }],
+    demands: [{ category: 'medicine', count: 3 }],
     trustGain: 2,
     trustLoss: 2,
     thanks: { cash: 60 }
@@ -62,7 +62,7 @@ export const HELP_REQUEST_DEFS: readonly HelpRequestDef[] = [
     id: 'q_wang_water',
     npcId: 'npc_wang',
     text: '楼上水管冻住了。她拿着两个空桶，问能不能接点水。',
-    needs: [{ category: 'water', count: 4 }],
+    demands: [{ category: 'water', count: 4 }],
     trustGain: 1,
     trustLoss: 2,
     thanks: { cash: 30 }
@@ -73,7 +73,7 @@ export const HELP_REQUEST_DEFS: readonly HelpRequestDef[] = [
     id: 'q_classmate_food',
     npcId: 'npc_classmate',
     text: '老同学在楼下等着，说家里断了两天，能不能先挪一点吃的。',
-    needs: [{ category: 'food', count: 4 }],
+    demands: [{ category: 'food', count: 4 }],
     trustGain: 2,
     trustLoss: 3,
     thanks: { cash: 80 }
@@ -82,7 +82,7 @@ export const HELP_REQUEST_DEFS: readonly HelpRequestDef[] = [
     id: 'q_classmate_fuel',
     npcId: 'npc_classmate',
     text: '他搓着手说家里的炉子灭了，还差一点烧的。',
-    needs: [{ category: 'fuel', count: 2 }],
+    demands: [{ category: 'fuel', count: 2 }],
     trustGain: 2,
     trustLoss: 2,
     thanks: { cash: 100 }
@@ -93,7 +93,7 @@ export const HELP_REQUEST_DEFS: readonly HelpRequestDef[] = [
     id: 'q_shopkeeper_tool',
     npcId: 'npc_shopkeeper',
     text: '老陈想借把扳手，说店门被风掀坏了，关不上。',
-    needs: [{ category: 'tool', count: 2 }],
+    demands: [{ category: 'tool', count: 2 }],
     trustGain: 2,
     trustLoss: 1,
     // 他自己就是存货的人 —— 这类回报是他唯一给得起的东西
@@ -103,7 +103,7 @@ export const HELP_REQUEST_DEFS: readonly HelpRequestDef[] = [
     id: 'q_shopkeeper_warmth',
     npcId: 'npc_shopkeeper',
     text: '他说晚上店里守不住了，问有没有多的被子能匀一床。',
-    needs: [{ category: 'warmth', count: 1 }],
+    demands: [{ category: 'warmth', count: 1 }],
     trustGain: 2,
     trustLoss: 1,
     thanks: { boxDefId: 'box_medical' }

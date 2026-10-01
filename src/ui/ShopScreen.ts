@@ -10,19 +10,26 @@
  *     （和"手里捏着的物资回到原位即可"同一条）。真正要活下来的是"我站在哪家店"，那个已经进存档。
  */
 import { getIdentityDef } from '../data/identities';
+import { findDayEvent } from '../data/dayEvents';
 import { getItemDef } from '../data/items';
 import { SHOP_DEFS, getShopDef } from '../data/shops';
 import { playSfx } from '../fx/audio';
 import { itemIconSvg } from '../fx/icons';
 import { showToast } from '../fx/popup';
 import { dayLabel, daysUntilDisaster } from '../model/calendar';
+import type { DayEffectApplied } from '../model/types';
 import type { GameStore } from '../state/store';
 import {
+  basePriceOf,
   buildCartView,
   buyCart,
+  describeDayEffect,
   enterShop,
   findShopStock,
   leaveShop,
+  purchaseLimitOf,
+  resolveDayEvent,
+  resolveDayOutcome,
   type ShopResult
 } from '../systems/shop';
 import type { Screen } from './Router';
@@ -109,8 +116,61 @@ export class ShopScreen implements Screen {
   // ———————— 主区：点位列表 or 货架 ————————
 
   private renderMain(): void {
-    const shopId = this.store.run.currentShopId;
-    this.mainEl.innerHTML = shopId ? this.goodsHtml(shopId) : this.shopListHtml();
+    const run = this.store.run;
+    // 白天事件优先：它发生在**门口**，所以这一屏先只讲那件事，货架等处理完再画。
+    // 与夜间事件同一个两段式 —— 玩家必须看得见后果，也需要一条"不参与"的路。
+    const event = run.dayEvent;
+    if (event && run.currentShopId) {
+      const def = findDayEvent(event.defId);
+      if (def) {
+        this.mainEl.innerHTML = this.dayEventHtml(def, event.choice, event.applied);
+        return;
+      }
+    }
+    this.mainEl.innerHTML = run.currentShopId ? this.goodsHtml(run.currentShopId) : this.shopListHtml();
+  }
+
+  /**
+   * 门口那件事。两段式与夜间一致：先只给选项（不看货架），
+   * 选完再看后果 —— 然后把出口交给「换一家」或底部那条"回家整理"。
+   *
+   * 数值摘要读的是**实际生效值**（`event.applied`），不是选项声明的数：
+   * 兜里只有 25 元的人点了"递包烟"，屏幕上必须写 25。
+   */
+  private dayEventHtml(def: ReturnType<typeof findDayEvent>, choice: number | null, applied: DayEffectApplied | null): string {
+    if (!def) return '';
+    const decided = choice !== null;
+    const option = decided ? def.options[choice as number] : null;
+    const summary = applied ? describeDayEffect(applied) : [];
+    return `
+      <section class="block">
+        <p class="night-text">${escapeHtml(def.text)}</p>
+        ${
+          decided && option && applied
+            ? `<p class="night-outcome">${escapeHtml(resolveDayOutcome(option, applied))}</p>
+               ${
+                 summary.length > 0
+                   ? `<div class="night-deltas">${summary
+                       .map((text) => `<span class="delta">${escapeHtml(text)}</span>`)
+                       .join('')}</div>`
+                   : ''
+               }
+               ${applied.visitLost ? '<p class="block-note">这一趟到此为止。</p>' : ''}`
+            : decided
+              ? '<p class="block-note">这件事已经过去了。</p>'
+              : `<div class="night-options">${def.options
+                  .map((opt, index) => {
+                    const cost = Math.max(0, -(opt.effect.cash ?? 0));
+                    const blocked = Boolean(opt.requireFullCash) && cost > this.store.run.cash;
+                    return `<button class="night-option" data-day-choice="${index}"${blocked ? ' disabled' : ''}>
+                      <b>${escapeHtml(opt.label)}</b>
+                      ${blocked ? `<em class="night-option-note">还差 ${cost - this.store.run.cash} 元</em>` : ''}
+                    </button>`;
+                  })
+                  .join('')}</div>`
+        }
+      </section>
+    `;
   }
 
   private shopListHtml(): string {
@@ -142,26 +202,40 @@ export class ShopScreen implements Screen {
   }
 
   private goodsHtml(shopId: string): string {
+    const run = this.store.run;
     const shop = getShopDef(shopId);
-    const stock = findShopStock(this.store.run, shopId);
+    const stock = findShopStock(run, shopId);
     if (!stock) return '<section class="block"><p class="block-note">这家店今天没开门。</p></section>';
 
     const rows = stock.lines
       .map((line) => {
         const item = getItemDef(line.itemId);
         const count = this.cart.get(line.itemId) ?? 0;
-        const soldOut = line.stock <= 0;
+        // 限购只影响"还能加几件"，不改库存本身 —— 库存是"店里还剩多少"，
+        // 限购是"今天最多卖你几件"，两件事分开显示，玩家才对得上账
+        const limit = purchaseLimitOf(run, shopId, line.itemId);
+        const available = Number.isFinite(limit) ? Math.min(line.stock, limit) : line.stock;
+        const soldOut = available <= 0;
+        const capped = Number.isFinite(limit) && limit < line.stock;
         return `
           <li class="good${soldOut ? ' is-out' : ''}">
             <span class="good-icon">${itemIconSvg(item.icon)}</span>
             <span class="good-text">
               <b>${escapeHtml(item.name)}</b>
-              <em>${line.price} 元 · ${item.unitWeight}kg · ${soldOut ? '卖完了' : `剩 ${line.stock}`}</em>
+              <em>${basePriceOf(run, line)} 元 · ${item.unitWeight}kg · ${
+                soldOut
+                  ? capped
+                    ? '限购买满了'
+                    : '卖完了'
+                  : capped
+                    ? `限购，还能买 ${available}`
+                    : `剩 ${line.stock}`
+              }</em>
             </span>
             <span class="stepper">
               <button class="step" data-action="dec" data-item="${line.itemId}" aria-label="少一件" ${count <= 0 ? 'disabled' : ''}>−</button>
               <b class="step-count">${count}</b>
-              <button class="step" data-action="inc" data-item="${line.itemId}" aria-label="多一件" ${soldOut || count >= line.stock ? 'disabled' : ''}>+</button>
+              <button class="step" data-action="inc" data-item="${line.itemId}" aria-label="多一件" ${soldOut || count >= available ? 'disabled' : ''}>+</button>
             </span>
           </li>
         `;
@@ -185,6 +259,22 @@ export class ShopScreen implements Screen {
   private renderDock(): void {
     const run = this.store.run;
     const shopId = run.currentShopId;
+    // 门口有事的时候底栏只剩两条路：「回家整理」与（选完之后）「换一家」。
+    // 购物车这时候是空的，不该出现 —— 一个点不动的按钮比没有按钮更糟
+    if (run.dayEvent) {
+      const decided = run.dayEvent.choice !== null;
+      this.dockEl.innerHTML = `
+        <div class="dock-tools">
+          ${
+            decided
+              ? `<button class="btn btn-primary" data-action="back">换一家</button>`
+              : `<button class="btn" data-action="leave-event">先不进去</button>`
+          }
+          <button class="btn" data-action="home">回家整理</button>
+        </div>
+      `;
+      return;
+    }
     if (!shopId) {
       this.dockEl.innerHTML = `
         <div class="dock-tools">
@@ -247,6 +337,14 @@ export class ShopScreen implements Screen {
     }
 
     const hit = target.closest<HTMLElement>('[data-action]');
+    const dayChoice = target.closest<HTMLElement>('[data-day-choice]');
+    if (dayChoice) {
+      const index = Number(dayChoice.dataset['dayChoice']);
+      if (!Number.isInteger(index)) return;
+      this.cart.clear();
+      this.consume(resolveDayEvent(this.store, index));
+      return;
+    }
     if (!hit) return;
     switch (hit.dataset['action']) {
       case 'inc':
@@ -256,6 +354,11 @@ export class ShopScreen implements Screen {
         this.stepItem(hit.dataset['item'], -1);
         return;
       case 'back':
+        this.cart.clear();
+        this.consume(leaveShop(this.store));
+        return;
+      case 'leave-event':
+        // "先不进去"：不处理那件事，直接退回点位列表（行动点照扣，那是进门的价钱）
         this.cart.clear();
         this.consume(leaveShop(this.store));
         return;
@@ -305,6 +408,19 @@ export class ShopScreen implements Screen {
         case 'loaded':
           playSfx('place');
           showToast(this.fxLayer, `${ev.boxName} · ${ev.pieces} 件 ${ev.weight}kg 已搬上车`);
+          break;
+        case 'dayEventHit':
+          // 门口那件事的表现交给这一屏自己（它要在同一屏里把处境读完），
+          // 这里只补一个"有事了"的听觉提示
+          playSfx('preview');
+          break;
+        case 'dayEventResolved':
+          if (ev.visitLost) {
+            playSfx('reject');
+            showToast(this.fxLayer, '这趟白跑了', 'warn');
+          } else {
+            playSfx('pick');
+          }
           break;
       }
     }

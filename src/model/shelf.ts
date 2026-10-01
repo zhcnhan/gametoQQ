@@ -282,7 +282,19 @@ export function autoPlace(
 
 // ———————— FEFO（引擎④ 对齐的快感） ————————
 
-/** 把整架物资按到期日升序重排，从左上角开始紧凑码放；不易腐的排最后 */
+/**
+ * 把整架物资按到期日升序重排，从左上角开始紧凑码放；不易腐的排最后。
+ *
+ * ★ 排序只动**东西的次序**，绝不动这架货架的属性：`zoneId`（贴的胶带）与
+ * `handyRank`（顺手位）都必须原样带过去。
+ *
+ * 这不是可选的严谨 —— 它曾经是个真 bug：重建货架时只传了 `zoneId`，
+ * 于是"帮我按保质期排"这颗按钮会把顺手位悄悄抹掉。
+ * 而顺手位是 `HANDY_SLOTS = 1` 的**全屋唯一**标记（§12.3 v0.7.1），
+ * 玩家按一次排序就丢掉它、而且屏幕上没有任何提示 —— 那正是最难查的一类 bug：
+ * 数值全都对，只是你之前做过的那个决定不见了。
+ * 单测里有一条专门盯着它（`shelf.test.ts` 的"排序不动货架属性"）。
+ */
 export function fefoSorted(shelf: Shelf): Shelf {
   const stacks = readingOrder(shelf)
     .map((pos) => getStack(shelf, pos))
@@ -293,6 +305,7 @@ export function fefoSorted(shelf: Shelf): Shelf {
       return a.itemId.localeCompare(b.itemId);
     });
   let next = createShelf(shelf.id, shelf.roomId, shelf.kind, shelf.w, shelf.h, shelf.zoneId);
+  next.handyRank = shelf.handyRank;
   const order = readingOrder(next);
   for (let i = 0; i < stacks.length; i++) {
     const pos = order[i];

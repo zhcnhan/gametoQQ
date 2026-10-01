@@ -161,8 +161,15 @@ describe('buyCart：把一趟货搬上车', () => {
     buyCart(store, 'supermarket', [{ itemId: 'canned_beans', count: 1 }]);
     const box = store.run.boxesToUnpack[store.run.boxesToUnpack.length - 1];
     const expiry = box?.items[0]?.batches[0]?.expiresAtDay ?? 0;
-    // 罐头保质期 720 天 ±12%，从 D-7 起算 → 必然 < 720
-    expect(expiry).toBeLessThan(720);
+    // 罐头保质期 720 天 ±12% 抖动，从 D-7 起算。
+    // 断言写成"落在 [保质期 - 抖动, 保质期 + 抖动] 之内、且明显小于 720"，
+    // 而不是死写一个上界：抖动是**故意的**（否则 FEFO 排不出意义），
+    // 写死上界会变成"抖动一改测试就红"的伪约束
+    const def = getItemDef('canned_beans');
+    const life = def.shelfLifeDays ?? 0;
+    const jitter = Math.max(1, Math.round(life * 0.12));
+    expect(expiry).toBeGreaterThanOrEqual(-7 + life - jitter);
+    expect(expiry).toBeLessThanOrEqual(-7 + life + jitter);
   });
 
   it('失败时不改任何状态（存档点必须是原子的）', () => {

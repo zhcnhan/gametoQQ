@@ -12,6 +12,7 @@ import {
 } from './save';
 import { createStartingRun } from '../systems/setup';
 import { SURVIVAL_DAYS } from '../data/disaster';
+import { EMPTY_SURVIVAL_SNAPSHOT } from '../data/survival';
 import { bootstrapStore } from './store';
 
 describe('存档 schema 与迁移', () => {
@@ -205,22 +206,11 @@ describe('存档 schema 与迁移', () => {
       unreachablePieces: 0,
       hardPressDays: 0,
       hardPressStreak: 0,
+      // M2（v13）：安全感连击从 0 起算 —— 老档没有"连击"这个概念，补 0 是诚实的
+      safeStreak: 0,
       lastTradeDay: -99,
       last: {
-        health: 0,
-        mood: 0,
-        stamina: 0,
-        shelter: 0,
-        shortage: 0,
-        spoiled: 0,
-        fromShelves: 0,
-        fromBoxes: 0,
-        unreachable: 0,
-        workCost: 0,
-        hardPress: false,
-        hardPressLevel: 'none',
-        usedMedicine: 0,
-        usedWarmth: 0
+        ...EMPTY_SURVIVAL_SNAPSHOT
       }
     });
     // v5 一路抬到 v7：outcome 补 null，且**不反推**——那时生存期还不存在
@@ -303,22 +293,7 @@ describe('存档 schema 与迁移', () => {
     const back = deserialize(raw);
     expect(back?.run?.survival.spoiled).toBe(0);
     expect(back?.run?.survival.shortageDays).toBe(0);
-    expect(back?.run?.survival.last).toEqual({
-      health: 0,
-      mood: 0,
-      stamina: 0,
-      shelter: 0,
-      shortage: 0,
-      spoiled: 0,
-      fromShelves: 0,
-      fromBoxes: 0,
-      unreachable: 0,
-      workCost: 0,
-      hardPress: false,
-      hardPressLevel: 'none',
-      usedMedicine: 0,
-      usedWarmth: 0
-    });
+    expect(back?.run?.survival.last).toEqual({ ...EMPTY_SURVIVAL_SNAPSHOT });
   });
 
   it('停在生存期却把手改成第 20 天 → 夹回第 14 天（day 的上限就是生存期长度）', () => {

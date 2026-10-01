@@ -20,7 +20,7 @@ import {
 } from './shelf';
 import { computeOrganizeScore } from './score';
 import { createCursor, nextInt, shuffle } from './rng';
-import type { Shelf, Zone } from './types';
+import type { ItemStack, Shelf, Zone } from './types';
 
 function shelf(w = 6, h = 4, id = 's1'): Shelf {
   return createShelf(id, 'room_living', 'shelf', w, h, null);
@@ -169,6 +169,21 @@ describe('FEFO', () => {
     b = dropStack(b, { row: 0, col: 1 }, makeStack('milk', 1, 40)) as Shelf;
     const empty = shelf(2, 1, 'c');
     expect(fefoRate([a, b, empty])).toBeCloseTo(0.5, 5);
+  });
+  it('★ 排序只动货物的次序，绝不动这架货架的属性（曾经把顺手位抹掉的真 bug）', () => {
+    // 现场：玩家在整理页给 shelf_a 贴了胶带、标了顺手位，然后点了"按保质期排"。
+    // 老实现重建货架时只带走了 zoneId，handyRank 被静默清成 null ——
+    // 顺手位是全屋唯一的标记（HANDY_SLOTS = 1），丢一次就要玩家自己发现并重标。
+    // 这类 bug 最难查：数值全对，只是你之前做过的那个决定不见了。
+    let s = createShelf('shelf_x', 'room_living', 'shelf', 2, 1, 'z_food');
+    s.handyRank = 1;
+    s = dropStack(s, { row: 0, col: 0 }, makeStack('milk', 1, 300)) as Shelf;
+    s = dropStack(s, { row: 0, col: 1 }, makeStack('milk', 1, 20)) as Shelf;
+
+    const sorted = fefoSorted(s);
+    expect(sorted.handyRank).toBe(1);
+    expect(sorted.zoneId).toBe('z_food');
+    expect(firstBatchExpiry(getStack(sorted, { row: 0, col: 0 }) as ItemStack)).toBe(20);
   });
 });
 

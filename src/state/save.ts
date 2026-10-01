@@ -6,7 +6,9 @@
  *  - 不直接摸 window，介质由 state/storage.ts 注入。
  */
 import { BOX_DEFS } from '../data/boxes';
+import { findDayEvent } from '../data/dayEvents';
 import { FIRST_STOCKPILE_DAY, SURVIVAL_DAYS } from '../data/disaster';
+import { findEmergency } from '../data/emergencies';
 import { IDENTITY_DEFS, hasIdentityDef } from '../data/identities';
 import { findHelpRequestDef } from '../data/helpRequests';
 import { NIGHT_SLEEP, findNightEvent } from '../data/nightEvents';
@@ -14,6 +16,7 @@ import { ACTION_POINTS_PER_DAY } from '../data/shops';
 import { EMPTY_SURVIVAL_SNAPSHOT, NEVER_TRADED } from '../data/survival';
 import type {
   AppliedEffect,
+  DayEffectApplied,
   Shelf,
   GamePhase,
   ItemStack,
@@ -46,9 +49,15 @@ export const STORAGE_KEY = 'tunhuo.save';
  *  - v11：求援订单（§6.5）—— 新增 `helpRequest`，并让"卡在门口"的坏档能自愈
  *  - v12：顺手位（§5「应急货架（门口/最顺手位）」）—— `Shelf` 新增 `handyRank`，
  *        同时补齐 §6.3 的第三维「应急可达率」
- *  - v13（规划中）：M3 图鉴 MetaProfile 扩展
+ *  - v13：M2 四件套 ——
+ *        ① 图鉴与 meta 闭环（§6.7/§9.6）：`MetaProfile` 增加 `bestSafeStreak`
+ *           与 `codex` 的三页（`items`/`disasters`/`npcs`）；
+ *        ② `survival` 增加 `safeStreak`（夜间"安全感"连击）、
+ *           `last` 快照增加突发事件三项；
+ *        ③ 白天随机事件（§6.2 / D-10）：`shopPriceFactor` / `shopLimits` / `dayEvent`；
+ *        ④ `metaSettled` —— 这一局的成果记没记进 meta（三个结局出口只许发一次奖励）
  */
-export const SAVE_VERSION = 12;
+export const SAVE_VERSION = 13;
 /** 落盘节流上限（提示词 0：debounce ≤ 300ms） */
 export const SAVE_DEBOUNCE_MS = 250;
 
@@ -64,7 +73,8 @@ export function createMetaProfile(): MetaProfile {
     version: SAVE_VERSION,
     identityLevels: {},
     codex: { items: [], disasters: [], npcs: [] },
-    bestSurvivalDays: {}
+    bestSurvivalDays: {},
+    bestSafeStreak: 0
   };
 }
 
@@ -110,10 +120,10 @@ export function migrate(raw: unknown): SaveGame | null {
         : 0;
   if (declared > SAVE_VERSION) return null; // 未来版本存档，本端不认，避免写坏别人的档
 
-  const meta: MetaProfile = {
+  const meta: MetaProfile = normalizeMeta({
     ...createMetaProfile(),
     ...(rawMeta as Partial<MetaProfile>)
-  };
+  });
 
   let run: RunState | null = null;
   if (isObject(raw.run)) {
@@ -140,7 +150,79 @@ export function migrate(raw: unknown): SaveGame | null {
   if (declared < 10) save = migrateV9ToV10(save);
   if (declared < 11) save = migrateV10ToV11(save);
   if (declared < 12) save = migrateV11ToV12(save);
+  if (declared < 13) save = migrateV12ToV13(save);
   return normalizeRun(save);
+}
+
+/**
+ * 跨局存档的字段级兜底。
+ *
+ * 和 `normalizeRun` 同一个原则：任何来源（迁移产物 / 手改过的档 / 版本号撒谎的档）
+ * 都要被整成"界面一定接得住"的形态。这里尤其重要的是 `codex` ——
+ * 结算页要往它上面挂"本局新点亮 X 项"，一个 undefined 会让整个结算页崩掉。
+ */
+function normalizeMeta(meta: MetaProfile): MetaProfile {
+  const codex = (isObject(meta.codex) ? meta.codex : {}) as Partial<Record<'items' | 'disasters' | 'npcs', unknown>>;
+  const strList = (v: unknown): string[] =>
+    asArray<unknown>(v).filter((x): x is string => typeof x === 'string');
+  return {
+    version: SAVE_VERSION,
+    identityLevels: isObject(meta.identityLevels) ? (meta.identityLevels as Record<string, number>) : {},
+    codex: {
+      items: strList(codex.items),
+      disasters: strList(codex.disasters),
+      npcs: strList(codex.npcs)
+    },
+    bestSurvivalDays: isObject(meta.bestSurvivalDays)
+      ? (meta.bestSurvivalDays as Record<string, number>)
+      : {},
+    bestSafeStreak:
+      typeof meta.bestSafeStreak === 'number' && Number.isFinite(meta.bestSafeStreak)
+        ? Math.max(0, Math.round(meta.bestSafeStreak))
+        : 0
+  };
+}
+
+/**
+ * v12 → v13：M2 四件套（图鉴与 meta 闭环 / 安全感连击 / 白天事件 / 一次性的 meta 结算）。
+ *
+ * 四组字段全部补"空值"，而且**每一项都刻意不反推**：
+ *
+ *  ① `codex` 三页补空数组。老档走过的那几局**不给补记** ——
+ *     图鉴的语义是"你在本端见过它"，而 M1 时期根本没有这个账本，
+ *     凭空补一份等于告诉玩家他见过一些他从没见过的物资；
+ *  ② `bestSafeStreak` 补 0。老档没有"安全感"这个概念，补 0 是诚实的；
+ *  ③ `survival.safeStreak` 补 0（同上）；
+ *  ④ `shopPriceFactor` 补 **1**（原价）而不是当天的物价倍率 ——
+ *     老档的当日库存是按旧价生成的，突然乘一个 0.95 会让"存档里的价格"
+ *     和"玩家昨天看到的价格"对不上。补 1 = 这一天的价格不因为迁移而变；
+ *  ⑤ `shopLimits` / `dayEvent` 补空 / null；`metaSettled` 补 null。
+ *
+ *     ★ `metaSettled` 补 null 有一个**必须接受的后果**：一个正卡在 `ending`
+ *     的老档读档之后会被重算一次 meta（发一次图鉴）。这是可接受的 ——
+ *     他确实打完了那一局，而 M1 时代没有账本，所以那不是"重复发奖"，
+ *     是"第一次发"。相对的，如果补成一个非 null 的值，老玩家会永远拿不到那一局的东西。
+ */
+export function migrateV12ToV13(save: SaveGame): SaveGame {
+  const run = save.run;
+  save.meta = normalizeMeta(save.meta);
+  if (run) {
+    run.shopPriceFactor = 1;
+    run.shopLimits = [];
+    run.shopBoughtToday = {};
+    run.dayEvent = null;
+    run.metaSettled = null;
+    const survival = run.survival as unknown as Record<string, unknown> | undefined;
+    if (survival && typeof survival.safeStreak !== 'number') survival.safeStreak = 0;
+    const last = survival && isObject(survival.last) ? survival.last : null;
+    if (last) {
+      if (typeof last.emergencyId !== 'string') last.emergencyId = null;
+      if (typeof last.emergencyResolved !== 'boolean') last.emergencyResolved = false;
+      if (typeof last.emergencyLost !== 'number') last.emergencyLost = 0;
+    }
+  }
+  save.meta.version = SAVE_VERSION;
+  return save;
 }
 
 /**
@@ -263,6 +345,7 @@ export function migrateV5ToV6(save: SaveGame): SaveGame {
       unreachablePieces: 0,
       hardPressDays: 0,
       hardPressStreak: 0,
+      safeStreak: 0,
       lastTradeDay: NEVER_TRADED,
       last: { ...EMPTY_SURVIVAL_SNAPSHOT }
     };
@@ -397,6 +480,28 @@ function normalizeRun(save: SaveGame): SaveGame | null {
   run.visitedShopIds = asArray<string>(run.visitedShopIds).filter((v) => typeof v === 'string');
   run.currentShopId = typeof run.currentShopId === 'string' ? run.currentShopId : null;
 
+  // ———————— M2 白天事件（§6.2 / D-10） ————————
+  // 物价倍率兜底成 1（原价）。手改出来的 0 或负数会让所有价格夹到 1 元，
+  // 那比"贵"更糟 —— 它会让整条经济链失效而玩家看不出来。
+  run.shopPriceFactor =
+    typeof run.shopPriceFactor === 'number' && Number.isFinite(run.shopPriceFactor) && run.shopPriceFactor > 0
+      ? run.shopPriceFactor
+      : 1;
+  run.shopLimits = asArray<unknown>(run.shopLimits).filter(
+    (l): l is RunState['shopLimits'][number] =>
+      isObject(l) && typeof l.shopId === 'string' && typeof l.category === 'string' && typeof l.max === 'number'
+  );
+  // 买入记账：只留合法的非负整数，坏值一律丢掉。
+  // 它被手改大 = 玩家自己把限购调松了，那是他的存档；
+  // 但一个字符串会让 `purchaseLimitOf` 算出 NaN，进而让整条购物车静态失效
+  const boughtRaw = isObject(run.shopBoughtToday) ? run.shopBoughtToday : {};
+  const bought: Record<string, number> = {};
+  for (const [key, value] of Object.entries(boughtRaw)) {
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0) bought[key] = Math.round(value);
+  }
+  run.shopBoughtToday = bought;
+  normalizeDayEvent(run);
+
   // ———————— M1 夜间字段 ————————
   normalizeNight(run);
 
@@ -421,6 +526,8 @@ function normalizeRun(save: SaveGame): SaveGame | null {
       typeof survival.hardPressStreak === 'number' && survival.hardPressStreak >= 0
         ? Math.round(survival.hardPressStreak)
         : 0,
+    safeStreak:
+      typeof survival.safeStreak === 'number' && survival.safeStreak >= 0 ? Math.round(survival.safeStreak) : 0,
     // 它可以是负数（没换过时是 -99），所以不夹 ≥ 0
     lastTradeDay: typeof survival.lastTradeDay === 'number' ? Math.round(survival.lastTradeDay) : NEVER_TRADED,
     last: {
@@ -442,12 +549,30 @@ function normalizeRun(save: SaveGame): SaveGame | null {
           ? last.hardPressLevel
           : 'none',
       usedMedicine: Math.max(0, num(last.usedMedicine)),
-      usedWarmth: Math.max(0, num(last.usedWarmth))
+      usedWarmth: Math.max(0, num(last.usedWarmth)),
+      // 认不出来的突发事件退化成"今天没事" —— 事件表被改过名字时，
+      // 宁可少显示一条旧叙事，也不要让日报去查一个不存在的 id
+      emergencyId: typeof last.emergencyId === 'string' && findEmergency(last.emergencyId) ? last.emergencyId : null,
+      emergencyResolved: last.emergencyResolved === true,
+      emergencyLost: Math.max(0, num(last.emergencyLost))
     }
   };
 
   // ———————— 结局 ————————
   run.outcome = run.outcome === 'survived' || run.outcome === 'collapsed' ? run.outcome : null;
+
+  // ———————— M2 跨局结算（§6.7 图鉴 / §9.6） ————————
+  // `metaSettled` 只在真的结算过时才算数：`at` 不是数字 = 没记过（或被手改坏了）
+  run.metaSettled =
+    isObject(run.metaSettled) &&
+    typeof (run.metaSettled as { at?: unknown }).at === 'number' &&
+    ((run.metaSettled as { outcome?: unknown }).outcome === 'survived' ||
+      (run.metaSettled as { outcome?: unknown }).outcome === 'collapsed')
+      ? {
+          at: (run.metaSettled as { at: number }).at,
+          outcome: (run.metaSettled as { outcome: 'survived' | 'collapsed' }).outcome
+        }
+      : null;
 
   // 状态一致性：day 已经走到灾难日（>= 0），就不该还停在囤货期的三个界面上，
   // 否则玩家点"过一天"会原地打转，而且永远见不到 D-Day。
@@ -551,6 +676,74 @@ function normalizeHelpRequest(run: RunState): void {
   }
 
   run.helpRequest = { defId: def.id };
+}
+
+/**
+ * 白天事件的自愈。
+ *
+ * 与夜色、门口那一单是**同一类问题**：`dayEvent` 非空时界面只画事件、不画货架，
+ * 所以一个认不出来的 `dayEvent` 会把玩家永久关在一段没有文字的文案前面。
+ * 三种坏法全部拦住：
+ *
+ *  ① `defId` 在事件表里找不到（事件被删/改名）→ 清掉，回到货架；
+ *  ② `choice` 是越界下标 / 选项数变了 → 退成 `null`（重新选），而不是清掉整件事；
+ *  ③ `applied` 只在"已经决定过"时有意义，否则会显示上一件事的摘要。
+ *
+ * 还有一条 `dayEvent` 独有的：它只在**站在某家店门口**时才有意义。
+ * 不在 `stockpile_shop`、或 `currentShopId` 是空的 → 清掉。
+ */
+function normalizeDayEvent(run: RunState): void {
+  const raw = run.dayEvent;
+  const defId = isObject(raw) && typeof raw.defId === 'string' ? raw.defId : '';
+  const def = findDayEvent(defId);
+  const shopId = isObject(raw) && typeof raw.shopId === 'string' ? raw.shopId : '';
+  const standing = run.phase === 'stockpile_shop' && typeof run.currentShopId === 'string';
+  const sameShop = standing && run.currentShopId === shopId;
+
+  if (!def || !sameShop) {
+    run.dayEvent = null;
+    return;
+  }
+
+  const rawChoice = (raw as { choice?: unknown }).choice;
+  let choice: number | null = null;
+  if (typeof rawChoice === 'number' && Number.isInteger(rawChoice) && rawChoice >= 0 && rawChoice < def.options.length) {
+    choice = rawChoice;
+  }
+  run.dayEvent = {
+    defId: def.id,
+    shopId,
+    choice,
+    applied: choice === null ? null : normalizeDayApplied((raw as { applied?: unknown }).applied)
+  };
+}
+
+/**
+ * 把白天事件的实际后果收成合法形状。
+ *
+ * 与 `normalizeApplied` 同一条纪律：**坏掉时退化成 0，绝不拿选项声明的数值去补** ——
+ * 那正是 `NightState.applied` 存在的理由（见 v7 → v8 的注释）。
+ */
+function normalizeDayApplied(raw: unknown): DayEffectApplied | null {
+  if (!isObject(raw)) return null;
+  const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : 0);
+  return {
+    cash: num(raw.cash),
+    priceUp: typeof raw.priceUp === 'number' && Number.isFinite(raw.priceUp) ? raw.priceUp : 0,
+    stockCut: asArray<unknown>(raw.stockCut).filter(
+      (c): c is DayEffectApplied['stockCut'][number] =>
+        isObject(c) && typeof c.shopId === 'string' && typeof c.itemId === 'string' && typeof c.count === 'number'
+    ),
+    limits: asArray<unknown>(raw.limits).filter(
+      (l): l is DayEffectApplied['limits'][number] =>
+        isObject(l) && typeof l.shopId === 'string' && typeof l.category === 'string' && typeof l.max === 'number'
+    ),
+    stamina: num(raw.stamina),
+    mood: num(raw.mood),
+    gotBox: raw.gotBox === true,
+    boxName: typeof raw.boxName === 'string' ? raw.boxName : '',
+    visitLost: raw.visitLost === true
+  };
 }
 
 /**

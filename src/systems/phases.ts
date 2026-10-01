@@ -114,6 +114,12 @@ export function chooseIdentity(store: GameStore, identityId: string): PhaseResul
     draft.carLoad = 0;
     draft.visitedShopIds = [];
     draft.currentShopId = null;
+    // M2：新的一天从"没有事件、原价、没买过"开始
+    // （事件涨价、限购与买入记账都只活一天，见 data/dayEvents.ts）
+    draft.shopPriceFactor = 1;
+    draft.shopLimits = [];
+    draft.shopBoughtToday = {};
+    draft.dayEvent = null;
     draft.shopStocks = rollShopStocks(identity, cursor, FIRST_STOCKPILE_DAY);
     draft.seed = cursor.state;
     draft.log.push(`${dayLabel(FIRST_STOCKPILE_DAY)} · ${identity.name}。${identity.perk}`);
@@ -261,7 +267,9 @@ export function sleep(store: GameStore): PhaseResult {
  * 它不知道"输赢"这回事。这样存档层不用猜，界面也不用各处复制同一套阈值。
  */
 function settleAndMaybeEnd(run: RunState, events: PhaseEvent[], cursor: RngCursor): void {
-  events.push({ type: 'survivalSettled', report: settleSurvivalDay(run) });
+  // 突发事件（§5 的另一半）在结算里抽签 —— 因此"同 seed 同事件序列"
+  // 和每日四维的账是同一条 RNG 流，回放一次结算就能复现整天的经过
+  events.push({ type: 'survivalSettled', report: settleSurvivalDay(run, cursor) });
   if (run.stats.health > 0) {
     // §6.5：结算完之后、玩家离开日报之前，门口可能站着人。
     // 放在**结算之后**是刻意的 —— 求援要用的是"今天过完之后"的库存与体力，
@@ -363,6 +371,13 @@ function startNextDay(run: RunState, cursor: RngCursor): PhaseEvent {
   run.visitedShopIds = [];
   run.currentShopId = null;
   run.night = null; // 新的一天从白天开始，昨晚的事不跟着走
+  // M2：事件涨价、限购与买入记账都只活一天 —— 不在这里清，
+  // 昨天的限购会跟着玩家走到今天。这是最容易漏的一处
+  // （`rollShopStocks` 只负责货，不负责这些"今天的状态"）
+  run.shopPriceFactor = 1;
+  run.shopLimits = [];
+  run.shopBoughtToday = {};
+  run.dayEvent = null;
   run.shopStocks = rollShopStocks(identity, cursor, next);
   run.log.push(`${dayLabel(next)} · 新的一天，${ACTION_POINTS_PER_DAY} 个行动点。`);
   return { type: 'dayStarted', day: next };

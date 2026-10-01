@@ -11,6 +11,7 @@
  * D-Day 是特例：`day === 0` 时灾难刚落地，还没有结算过任何一天，所以那一屏只负责"揭晓 + 盘点"。
  */
 import { SURVIVAL_DAYS, getDisasterDef, outdoorTemp } from '../data/disaster';
+import { findEmergency } from '../data/emergencies';
 import { CATEGORY_LABELS, getItemDef } from '../data/items';
 import { SHELTER_SLEEP_LINE, STAMINA_RECOVER, dailyDrainOf, moodFromPlacement, organizeQuality } from '../data/survival';
 import { playSfx } from '../fx/audio';
@@ -152,10 +153,13 @@ export class SurvivalScreen implements Screen {
           ${last.spoiled > 0 ? `坏掉 ${last.spoiled} 件。` : ''}
         </p>
         ${last.hardPress ? `<p class="press-line is-${last.hardPressLevel}">${escapeHtml(hardPressLine(last.hardPressLevel))}</p>` : ''}
+        ${emergencyHtml(last)}
         ${coldHouseNote(run)}
         ${last.usedMedicine > 0 || last.usedWarmth > 0 ? `<p class="block-note">${escapeHtml(supplyText(last))}</p>` : ''}
         ${this.stockHtml(disaster)}
       </section>
+
+      ${this.safetyHtml(run)}
 
       <section class="block">
         <h2 class="block-title">四维</h2>
@@ -202,6 +206,47 @@ export class SurvivalScreen implements Screen {
       <section class="block">
         <h2 class="block-title">明天</h2>
         <p class="block-note">${escapeHtml(tomorrowHint(disaster, run.day))}</p>
+      </section>
+    `;
+  }
+
+  /**
+   * 「安全感」快照（§12 拍板 v0.9）。
+   *
+   * ## 为什么它必须出现在这里，而不是整理期
+   *
+   * M1 评审的原话是：整理的正反馈要等 8 天后的生存期才兑现，**奖励延迟太长**。
+   * 但 §5 又明说「整理期完全静默」—— 那条不能动。所以快照的落点只能是夜间/日报语境，
+   * 也就是这一屏：玩家已经看完今天发生了什么之后，再给他三行中性陈述。
+   *
+   * ## 为什么是"三格中性陈述"而不是一个分数
+   *
+   * 三个数（归位率 / 临期优先 / 顺手位）各自回答一个具体问题，
+   * 合起来正好是 §6.3 的三个维度。给一个复合分数会让玩家算不出它是怎么来的，
+   * 而"我能不能自己验证这个数"是整理这件事唯一的学习路径。
+   *
+   * ## 连击的口径
+   *
+   * 只陈述，不夸（§5 引擎①）。达到 2 天以上才写那一行 ——
+   * 第一天就报"连过 1 天"听起来像在发奖状。
+   */
+  private safetyHtml(run: RunState): string {
+    const score = computeOrganizeScore(run.shelves, run.zones, run.boxesToUnpack, getDisasterDef(run.disasterId));
+    const handy = score.emergency;
+    const streak = run.survival.safeStreak;
+    return `
+      <section class="block">
+        <h2 class="block-title">今天屋里的样子</h2>
+        <div class="stat-grid">
+          <div class="stat"><i>归位率</i><b>${Math.round(score.placement * 100)}%</b></div>
+          <div class="stat"><i>临期优先</i><b>${Math.round(score.fefo * 100)}%</b></div>
+          <div class="stat"><i>顺手位</i><b>${Math.round(handy * 100)}%</b></div>
+        </div>
+        ${
+          streak >= 2
+            ? `<p class="block-note">连着 ${streak} 天，该拿到的都拿到了。</p>`
+            : `<p class="block-note">${escapeHtml(safetyNote(run, score.placement, score.emergency))}</p>`
+        }
       </section>
     `;
   }
@@ -456,6 +501,48 @@ function qualityNote(quality: number): string {
   if (quality >= 0.5) return '大致知道在哪，但偶尔还得翻两下。';
   if (quality > 0) return '东西散着放，找一件要挪三件。';
   return '货架基本没派上用场，今天全靠翻箱子。';
+}
+
+/**
+ * 突发事件的当天叙述（§5 的另一半，M2）。
+ *
+ * 两句话都要说清楚：**是什么事** + **靠什么化解的（或缺了什么）**。
+ * 只写"今天出了件事"等于把一条可见的因果链藏起来 ——
+ * 而 §5 那句话的力量恰恰在于"你之前在整理期做的那个决定救了今天的你"。
+ *
+ * 化解成功时用暖黄：它属于 M2 新增的正反馈（安全感 / 交付成功 / 图鉴点亮）那一类，
+ * 是暖黄**第二次上岗**（§5A 限定暖黄只用于"安全 / 窗内"语义）。
+ * 没化解时用中性的 press-line，不用朱红 —— 朱红专指警告，
+ * 而"你没把药放在门口"不是一个需要报警的事，它是一个结果。
+ */
+function emergencyHtml(last: SurvivalSnapshot): string {
+  if (!last.emergencyId) return '';
+  const def = findEmergency(last.emergencyId);
+  if (!def) return '';
+  if (last.emergencyResolved) {
+    return `<p class="block-note warm">${escapeHtml(def.text)}顺手位上的东西够用 —— 这件事没耽误什么。</p>`;
+  }
+  return `<p class="press-line">${escapeHtml(def.text)}${
+    def.needOnHandy > 1
+      ? `顺手位上不够 ${def.needOnHandy} 件${CATEGORY_LABELS[def.category]}。`
+      : `顺手位上没有${CATEGORY_LABELS[def.category]}。`
+  }</p>`;
+}
+
+/**
+ * 连击断掉时的那一句。**必须说清是哪一格拖住了** ——
+ * 三个数里有一个掉下去，玩家才知道明天该动哪里；
+ * 只写"今天没达标"是一句空话。
+ */
+function safetyNote(run: RunState, placement: number, emergency: number): string {
+  const last = run.survival.last;
+  if (last.shortage > 0) return `今天没凑齐 ${last.shortage} 件 —— 连着的那几天到这里为止。`;
+  if (last.unreachable > 0) return `有 ${last.unreachable} 件在屋里却没翻出来 —— 连着的那几天到这里为止。`;
+  if (last.hardPress) return '今天是在硬撑。';
+  if (run.survival.safeStreak > 0) return `连着 ${run.survival.safeStreak} 天，该拿到的都拿到了。`;
+  if (placement < 0.5) return '东西还没放进你自己写的清单里 —— 每天找它们要多花力气。';
+  if (emergency < 1) return '急用的那几件还不在顺手位上 —— 出了事得现翻。';
+  return '今天就到这里。';
 }
 
 function escapeHtml(text: string): string {

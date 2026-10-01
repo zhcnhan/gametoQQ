@@ -10,7 +10,7 @@ import { BOX_DEFS, type BoxDef } from '../data/boxes';
 import { FIRST_STOCKPILE_DAY, M1_DISASTER_ID } from '../data/disaster';
 import { getItemDef } from '../data/items';
 import { EMPTY_SURVIVAL_SNAPSHOT, NEVER_TRADED } from '../data/survival';
-import { createCursor, nextInt, randomSeed, shuffle, type RngCursor } from '../model/rng';
+import { createCursor, nextFloat, nextInt, pick, randomSeed, shuffle, type RngCursor } from '../model/rng';
 import { createShelf, makeStack, ROOM_ID, SHELF_H, SHELF_W } from '../model/shelf';
 import type { ItemStack, RunState, Shelf, UnpackBox } from '../model/types';
 
@@ -70,7 +70,29 @@ export function generateBoxStacks(cursor: RngCursor, def: BoxDef, dayRef = 0): I
     out.push(makeStack(itemId, splitAt, rollExpiry(cursor, itemId, dayRef)));
     if (splitAt < count) out.push(makeStack(itemId, count - splitAt, rollExpiry(cursor, itemId, dayRef)));
   }
+  // 奢侈品是**额外**的一抽，不占上面那些名额（M2，§12 拍板 v0.9）。
+  // 放在最后掷的理由：这样"这一箱有几件正经货"与"有没有开到好东西"是两件独立的事，
+  // 玩家拆到箱底那一下的期待才是纯粹的 —— 而不是"少了一件罐头换来的"。
+  const luxury = rollLuxury(cursor, def, dayRef);
+  if (luxury) out.push(luxury);
   return out;
+}
+
+/**
+ * 这一箱有没有开出奢侈品（M2）。没有 `luxuryChance` 的箱型直接返回 null，**不消耗 RNG**。
+ *
+ * 不消耗那一次掷很要紧：`box_staple` / `box_medical` 是玩家按品类买的确定性商品，
+ * 它们不该因为"表里没有奢侈品"而在 RNG 流里留下一个空位 ——
+ * 那会让同 seed 下粮油箱的内容随着"混合箱的奢侈品概率"变化而变化。
+ */
+function rollLuxury(cursor: RngCursor, def: BoxDef, dayRef: number): ItemStack | null {
+  const chance = def.luxuryChance ?? 0;
+  const pool = def.luxuryPool ?? [];
+  if (chance <= 0 || pool.length === 0) return null;
+  if (nextFloat(cursor) >= chance) return null;
+  const itemId = pick(cursor, pool);
+  // 每次只开出一件：多件会让"开出一件好东西"这件事贬值
+  return makeStack(itemId, 1, rollExpiry(cursor, itemId, dayRef));
 }
 
 /**
@@ -121,6 +143,12 @@ export function createStartingRun(seed: number = randomSeed()): RunState {
     shopStocks: [],
     visitedShopIds: [],
     currentShopId: null,
+    // M2：开局还没有白天事件。物价倍率给 1，真正的当日价由 chooseIdentity /
+    // 换天时的 rollDaySetup 按"那一天"的倍率算进 line.price（见 systems/shop.ts）
+    shopPriceFactor: 1,
+    shopLimits: [],
+    shopBoughtToday: {},
+    dayEvent: null,
     night: null,
     helpRequest: null,
     survival: {
@@ -130,10 +158,12 @@ export function createStartingRun(seed: number = randomSeed()): RunState {
       unreachablePieces: 0,
       hardPressDays: 0,
       hardPressStreak: 0,
+      safeStreak: 0,
       lastTradeDay: NEVER_TRADED,
       last: { ...EMPTY_SURVIVAL_SNAPSHOT }
     },
-    outcome: null
+    outcome: null,
+    metaSettled: null
   };
   return run;
 }

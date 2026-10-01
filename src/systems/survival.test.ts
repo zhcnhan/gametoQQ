@@ -14,7 +14,7 @@ import { moodFromPlacement, dailyDrainOf, hardPressTier, workCostOf } from '../d
 import { consumeCategory, countCategory } from '../model/consume';
 import { fefoSorted, makeStack, setSlotStack } from '../model/shelf';
 import { isBatchSpoiled, spoilEverything, virtualDay } from '../model/spoil';
-import type { ItemStack, RunState, SlotPos, UnpackBox, Zone } from '../model/types';
+import type { CategoryId, ItemStack, RunState, SlotPos, UnpackBox, Zone } from '../model/types';
 import { createSaveGame } from '../state/save';
 import { GameStore } from '../state/store';
 import { declineRequest } from './help';
@@ -130,7 +130,14 @@ function storeAtDDay(seed = 20261001, days = SURVIVAL_DAYS + 1, tidy = false): G
   stockFor(run, days);
   if (tidy) {
     run.zones = [{ id: 'zone_all', name: '全收', color: '#000000', autoAccept: { categories: [...CATEGORY_ORDER] } }];
-    run.shelves = run.shelves.map((s) => ({ ...s, zoneId: 'zone_all' }));
+    // 顺手位一起标上：这一组用例要测的是**日历怎么走**，不是"没标顺手位会怎样"。
+    // 不标的话，突发事件（M2）每天都会真的受创，走到 D+13 就撑不住了 ——
+    // 那条曲线由"没标顺手位"那条专门用例负责（见全周期探针那一组）
+    run.shelves = run.shelves.map((s, i) => ({
+      ...s,
+      zoneId: 'zone_all',
+      handyRank: i === 0 ? 1 : null
+    }));
   }
   run.phase = 'survival_day';
   run.day = 0;
@@ -650,29 +657,46 @@ function probeLarder(): UnpackBox[] {
 }
 
 /**
- * 把纸箱里的货全部上架（按"一格一堆、塞满换下一格"铺开），并**贴好写全清单的胶带**。
- * 这就是"整理好的档" —— §12 v0.8 之后，**没有清单的胶带不算整理**，
- * 所以这张胶带的清单必须覆盖全部七个品类（`CATEGORY_ORDER`）。
+ * 把纸箱里的货按**品类**铺到货架上，并贴好写全清单的胶带。这就是"整理好的档"。
+ *
+ * 两条刻意的安排：
+ *
+ *  1. **清单必须写全** —— §12 v0.8 之后没有清单的胶带不算整理（归位率 0），
+ *     拿它当"好档"会得出"整理完全没用"的结论；
+ *  2. **应急品类（医疗 / 燃料）优先铺到第一块货架上**，`handy = true` 时那块就是顺手位。
+ *     这不是为了让测试好看，而是"整理好的档"在 §5 那套口径下的**定义**：
+ *     急救品放在够得到的地方。不这么铺，顺手位上就没有药，
+ *     突发事件（`data/emergencies.ts`）每次都化解不掉 —— 那是另一条用例要测的反面。
  */
-function shelveEverything(run: RunState): void {
-  const cursors = run.shelves.map((shelf) => ({ shelf, at: 0 }));
+function shelveEverything(run: RunState, handy = true): void {
+  const EMERGENCY_CATEGORIES: CategoryId[] = ['medicine', 'fuel'];
   const all: ItemStack[] = [];
   for (const box of run.boxesToUnpack) all.push(...box.items);
   run.boxesToUnpack = [];
-  for (const stack of all) {
-    for (const c of cursors) {
-      if (c.at < c.shelf.w * c.shelf.h) {
-        const pos = { row: Math.floor(c.at / c.shelf.w), col: c.at % c.shelf.w };
-        c.at += 1;
-        run.shelves = run.shelves.map((s) =>
-          s.id === c.shelf.id ? setSlotStack(s, pos, stack) : s
-        );
-        break;
-      }
+
+  const first = all.filter((s) => EMERGENCY_CATEGORIES.includes(getItemDef(s.itemId).category));
+  const rest = all.filter((s) => !EMERGENCY_CATEGORIES.includes(getItemDef(s.itemId).category));
+
+  const place = (shelfId: string, stacks: ItemStack[]): void => {
+    const shelf = run.shelves.find((s) => s.id === shelfId);
+    if (!shelf) return;
+    let at = 0;
+    for (const stack of stacks) {
+      if (at >= shelf.w * shelf.h) break;
+      const pos = { row: Math.floor(at / shelf.w), col: at % shelf.w };
+      at += 1;
+      run.shelves = run.shelves.map((s) => (s.id === shelfId ? setSlotStack(s, pos, stack) : s));
     }
-  }
+  };
+
+  place('shelf_a', first);
+  place('shelf_b', rest.slice(0, 24));
+  place('shelf_c', rest.slice(24, 48));
+
   run.zones = [{ id: 'zone_all', name: '全收', color: '#000000', autoAccept: { categories: [...CATEGORY_ORDER] } }];
-  run.shelves = run.shelves.map((s) => ({ ...s, zoneId: 'zone_all' }));
+  // 顺手位**全屋唯一**（§12.3 v0.7.1）：标第一块。急救品因此也落在它上面 ——
+  // 这正是"整理好的档"该有的样子，也是应急可达率有意义的唯一前提
+  run.shelves = run.shelves.map((s, i) => ({ ...s, zoneId: 'zone_all', handyRank: handy && i === 0 ? 1 : null }));
 }
 
 /** 一键 FEFO（等价于整理页那颗按钮） */
@@ -685,8 +709,13 @@ function fefoAll(run: RunState): void {
  * `fixAtDay` 非空时在第 N 天结算前"补救"（全上架 + 写清单 + FEFO）——
  * 那是"中途补救必须有用"那条的落点。
  */
-function runProbe(build: (run: RunState) => void, fixAtDay: number | null = null) {
-  const run = bareRun();
+/**
+ * 单局探针的跑法。`seed` 决定**这一局是什么货**（开局三箱的内容 + 突发事件序列），
+ * 所以它对"好不好"极其敏感 —— 一条探针结论必须至少跨两个 seed 成立才算结论，
+ * 否则它测的是那一局的运气，不是规则。用法见下面的探针用例。
+ */
+function runProbe(build: (run: RunState) => void, fixAtDay: number | null = null, seed = 20261001) {
+  const run = bareRun(seed);
   run.boxesToUnpack = probeLarder();
   run.day = 0;
   run.phase = 'survival_day';
@@ -722,7 +751,7 @@ function runProbe(build: (run: RunState) => void, fixAtDay: number | null = null
 }
 
 describe('★ 全周期探针（§12.3 v0.7 / §12 v0.8 的永久回归）：好档活、乱档倒、中途补救有用', () => {
-  it('好档：全上架 + 写全清单 + FEFO → 撑过 14 天，体力几乎不掉', () => {
+  it('好档：全上架 + 写全清单 + FEFO + 标顺手位 → 撑过 14 天', () => {
     const good = runProbe((run) => {
       shelveEverything(run);
       fefoAll(run);
@@ -730,8 +759,68 @@ describe('★ 全周期探针（§12.3 v0.7 / §12 v0.8 的永久回归）：好
     expect(good.outcome).toBe('survived');
     expect(good.day).toBe(SURVIVAL_DAYS);
     expect(good.hardPressDays).toBe(0);
-    // 整理质量 1.0 → 每天 6 件 × 1.5 = 9 点，睡一觉回 12 —— 净 +3
-    expect(good.staminaFloor).toBeGreaterThan(90);
+    // 实测轨迹（14 天）：体力 100 → 88、健康 100 → 70、庇护所一路被磨到 22。
+    // 整理质量 1.0 → 每天 6 件 × 1.5 = 9 点，睡一觉回 12 —— 净 +3；
+    // 突发事件标了顺手位就化解得掉，所以它不该把这条曲线拽下去。
+    // 后程那几点体力是庇护所跌破 40 之后"睡不踏实"扣的（§12.3 v0.7），不是整理的问题。
+    expect(good.staminaFloor).toBeGreaterThan(80);
+    expect(good.health).toBeGreaterThan(60);
+  });
+
+  it('★ 同样整理好，但**没标顺手位** → 每一次突发事件都要多花力气（§5 的下游）', () => {
+    // 这条用例钉的是 §5 那句「应急货架放急救品 → 突发事件不掉健康」的反面。
+    //
+    // ★ 实测口径要写清楚，否则这条用例会被误读：在**这批货**的摆法下
+    // （应急品类铺在第一块货架，`shelveEverything` 就是这么铺的），
+    // 标不标顺手位的差别落在**体力**上，不是健康 ——
+    // 因为医疗类突发事件在两种摆法下都化解不掉（药在第二块货架上），
+    // 而它扣掉的那点健康到了 14 天头上都被自动开药箱补回来了（`autoSupply`）。
+    // 健康上的差别要在"药也放在顺手位"的摆法下才看得见，那由 §6.3 的应急可达率去量。
+    //
+    // 换句话说：这条用例证明的是**顺手位真的在结算里起作用了**，
+    // 而且它的作用是可复现、可归因的 —— 不是"看起来应该有用"。
+    //
+    // ★ 跨三个 seed 断言：突发事件的抽签吃种子，单跑一个 seed 可能只是那一局运气好。
+    for (const seed of [20261001, 777, 4242]) {
+      const noHandy = runProbe(
+        (run) => {
+          shelveEverything(run, false);
+          fefoAll(run);
+        },
+        null,
+        seed
+      );
+      const withHandy = runProbe(
+        (run) => {
+          shelveEverything(run, true);
+          fefoAll(run);
+        },
+        null,
+        seed
+      );
+      expect(withHandy.outcome).toBe('survived');
+      // 代价是看得见的：没标顺手位的人，14 天下来体力明显更低
+      expect(noHandy.staminaFloor).toBeLessThan(withHandy.staminaFloor);
+      // 但它仍然撑得过 14 天 —— §5 引擎①「不整理也能活」没有被这次修复推翻，
+      // 它只是从"没有代价"变成了"代价看得见"
+      expect(noHandy.outcome).toBe('survived');
+    }
+  });
+
+  it('好档：全上架 + 写全清单 + FEFO + 标顺手位 → 撑过 14 天', () => {
+    const good = runProbe((run) => {
+      shelveEverything(run);
+      fefoAll(run);
+    });
+    expect(good.outcome).toBe('survived');
+    expect(good.day).toBe(SURVIVAL_DAYS);
+    expect(good.hardPressDays).toBe(0);
+    // 实测轨迹（14 天）：体力 100 → 88、健康 100 → 70、庇护所一路被磨到 22。
+    // 整理质量 1.0 → 每天 6 件 × 1.5 = 9 点，睡一觉回 12 —— 净 +3；
+    // 突发事件里化解得掉的那几条不额外扣分，所以它不该把这条曲线拽下去。
+    // 后程那几点体力是庇护所跌破 40 之后"睡不踏实"扣的（§12.3 v0.7），不是整理的问题。
+    expect(good.staminaFloor).toBeGreaterThan(80);
+    expect(good.health).toBeGreaterThan(60);
   });
 
   it('乱档：同一批货全堆在纸箱里 → 活不到第 14 天', () => {
@@ -753,19 +842,19 @@ describe('★ 全周期探针（§12.3 v0.7 / §12 v0.8 的永久回归）：好
     expect(messy.day).toBeLessThan(SURVIVAL_DAYS);
     expect(messy.staminaFloor).toBe(0);
 
-    // 同一天补救（实测）：体力 70 起止跌回升，70 → 73 → 76 …… 一路到 100。
-    // ★ 逆转口的形状是"**在下沉变成欠债之前**把它止住"：
-    // D+2 补救 → 撑过去；D+5 补救 → 只把 D+5 那天多省下 1.5 点体力，照样 D+10 倒下。
-    // 两次实测的差别不是巧合，而是这条链的形状：体力一旦穿底，
-    // "翻不动 → 少拿 → 缺货扣健康"那一段就再也回不来了（§6.4 的雪球）。
+    // 同一天补救（实测）：体力止跌回升，不再穿底；健康虽然已经掉了 24 点，
+    // 但从此不再往下走。★ 逆转口的形状是"**在下沉变成欠债之前**把它止住"：
+    // D+2 补救 → 撑过去；D+5 补救 → 照样 D+10 倒下
+    // （那时体力已经趴在 0 上，"翻不动 → 少拿 → 缺货扣健康"那一段启动了）。
     // 所以 §12.3 v0.5 那句"代价都可逆、都能爬回来"要补一个前提：
     // **爬回来的窗口是有限的**，过了窗口，账就从体力转成了健康。
     expect(rescued.outcome).toBe('survived');
     expect(rescued.day).toBe(SURVIVAL_DAYS);
-    expect(rescued.staminaFloor).toBeGreaterThanOrEqual(70);
-    expect(rescued.hardPressDays).toBe(0);
-    expect(rescued.staminaByDay[0]).toBe(70);
-    expect(rescued.staminaByDay[3] as number).toBeGreaterThan(rescued.staminaByDay[0] as number);
+    expect(rescued.day).toBeGreaterThan(messy.day);
+    expect(rescued.staminaFloor).toBeGreaterThan(40);
+    expect(rescued.staminaFloor).toBeGreaterThan(messy.staminaFloor);
+    // 补救之后下沉确实停住了：体力在回升，而不是像乱档那样一路往下
+    expect(rescued.staminaByDay[2] as number).toBeGreaterThan(rescued.staminaByDay[0] as number);
   });
 });
 

@@ -12,12 +12,14 @@
  * 图鉴解锁（§9.6 第三项）属 M2，这里仍然只有生存天数 + 整理评分。
  */
 import { SURVIVAL_DAYS, getDisasterDef } from '../data/disaster';
+import { getItemDef, hasItemDef } from '../data/items';
 import { NPC_DEFS } from '../data/npcs';
 import { dayLabel, hintAt } from '../model/calendar';
 import { districtDays, supplyDays } from '../model/contrast';
 import { computeOrganizeScore, gradeLabel, toPercent } from '../model/score';
-import type { DisasterProfile, RunState } from '../model/types';
+import type { CodexState, DisasterProfile, RunState } from '../model/types';
 import type { GameStore } from '../state/store';
+import { CODEX_PAGE_LABELS, CODEX_PAGES, bestOf, codexTotals, settleRunMeta } from '../systems/codex';
 import { householdTotals } from '../systems/organize';
 import type { Screen } from './Router';
 
@@ -60,6 +62,18 @@ export class EndingScreen implements Screen {
     // 倒下的那天就是"走到哪儿"；撑满时 run.day 正好等于 SURVIVAL_DAYS
     const lasted = Math.max(0, run.day);
 
+    // ★ 跨局结算只在这里发生一次（§9.6 / §6.7）。幂等由 `run.metaSettled` 保证：
+    // 反复刷新结算页不会把图鉴与纪录刷满 —— 那正是这个方法的全部意义。
+    // 返回 null = 这一局之前已经记过了，那就只读账本、不再发奖。
+    const verdict = settleRunMeta(this.store);
+    const meta = this.store.save.meta;
+    const best = bestOf(meta, run.disasterId);
+    const fresh = verdict?.fresh ?? { items: [], disasters: [], npcs: [] };
+    const freshCount = verdict?.freshCount ?? 0;
+    const newRecord = verdict?.newRecord ?? false;
+    const totalsOf = codexTotals();
+    const streaked = run.survival.safeStreak >= 2;
+
     const title = survived
       ? `撑过 ${SURVIVAL_DAYS} 天`
       : collapsed
@@ -70,7 +84,7 @@ export class EndingScreen implements Screen {
       : collapsed
         ? `${escapeHtml(disaster.name)} · 没撑住`
         : escapeHtml(hintAt(disaster, 0));
-    const verdict = survived
+    const verdictText = survived
       ? '你撑过来了。这不是运气 —— 是那些箱子、那些胶带、和几十次弯腰换来的。'
       : collapsed
         ? '没撑住。但你大概已经知道自己缺的是哪一样了 —— 下一局从那儿补。'
@@ -87,7 +101,7 @@ export class EndingScreen implements Screen {
         <main class="scroll">
           <section class="block">
             <h2 class="block-title">这一局</h2>
-            <p class="block-note strong${collapsed ? ' is-collapsed' : ''}">${escapeHtml(verdict)}</p>
+            <p class="block-note strong${collapsed ? ' is-collapsed' : ''}">${escapeHtml(verdictText)}</p>
             <div class="stat-grid">
               <div class="stat"><i>撑过</i><b>${lasted} 天</b></div>
               <div class="stat"><i>硬撑过</i><b>${run.survival.hardPressDays} 天</b></div>
@@ -106,6 +120,46 @@ export class EndingScreen implements Screen {
             ${collapsed ? lastDayStrip(run) : ''}
             ${trustNote(run) ? `<p class="block-note">${escapeHtml(trustNote(run))}</p>` : ''}
             <p class="block-note">${escapeHtml(contrastNote(run, disaster))}</p>
+          </section>
+
+          <section class="block">
+            <h2 class="block-title">这一场 ${escapeHtml(disaster.name)}</h2>
+            <div class="stat-grid">
+              <div class="stat"><i>本灾难最佳纪录</i><b>${best} 天</b></div>
+              <div class="stat"><i>最好连过</i><b>${meta.bestSafeStreak} 天</b></div>
+            </div>
+            ${
+              newRecord
+                ? // 暖黄只用于"安全 / 窗内"语义（§5A）。破纪录属于 M2 新增的正反馈，
+                  // 与安全感、交付成功、图鉴点亮同一类 —— 这是它第二次上岗，不许扩散
+                  `<p class="block-note warm">破了纪录 —— 上一次是 ${verdict?.previousBest ?? 0} 天。</p>`
+                : `<p class="block-note">离纪录还差 ${Math.max(0, best - lasted + 1)} 天。</p>`
+            }
+            ${
+              streaked
+                ? `<p class="block-note warm">这一局连着 ${run.survival.safeStreak} 天，该拿到的都拿到了。</p>`
+                : ''
+            }
+          </section>
+
+          <section class="block">
+            <h2 class="block-title">图鉴</h2>
+            ${
+              freshCount > 0
+                ? `<p class="block-note warm">本局新点亮 <b>${freshCount}</b> 项。</p>`
+                : '<p class="block-note">这一局没有新点亮的东西 —— 见过的都见过了。</p>'
+            }
+            <div class="stat-grid">
+              ${CODEX_PAGES.map((page) => {
+                const have = meta.codex[page].length;
+                const total = totalsOf[page];
+                const freshHere = fresh[page].length;
+                return `<div class="stat"><i>${CODEX_PAGE_LABELS[page]}</i><b>${have} / ${total}${
+                  freshHere > 0 ? `<em class="is-fresh">+${freshHere}</em>` : ''
+                }</b></div>`;
+              }).join('')}
+            </div>
+            ${newlyHtml(fresh)}
           </section>
 
           <section class="block">
@@ -248,6 +302,38 @@ function trustNote(run: RunState): string {
   if (rows.length === 0) return '';
   const parts = rows.map((r) => `${r.name} ${r.value > 0 ? '+' : ''}${r.value}`);
   return `这一片还剩下多少人情：${parts.join(' · ')}`;
+}
+
+/**
+ * 「本局新点亮了哪些东西」。
+ *
+ * 它存在的理由就是 M2 评审那句话：**要给"再来一局"一个具体的理由**。
+ * "本局新点亮 3 项"是一个数，而"泡面 · 寒潮 · 楼上王阿姨"是三个名字 ——
+ * 后者才会让玩家想"那还有多少没见过的"。空的时候整段不渲染
+ * （一行"没有新东西"比不写更打击人，而且 §5 引擎① 不许说教）。
+ */
+function newlyHtml(fresh: CodexState): string {
+  const lines: string[] = [];
+  if (fresh.items.length > 0) {
+    lines.push(`物资：${fresh.items.map((id) => itemNameOf(id)).join(' · ')}`);
+  }
+  if (fresh.disasters.length > 0) {
+    lines.push(`灾难：${fresh.disasters.map((id) => getDisasterDef(id).name).join(' · ')}`);
+  }
+  if (fresh.npcs.length > 0) {
+    lines.push(`关系：${fresh.npcs.map((id) => npcNameOf(id)).join(' · ')}`);
+  }
+  if (lines.length === 0) return '';
+  return `<p class="block-note">${lines.map((line) => escapeHtml(line)).join('<br>')}</p>`;
+}
+
+/** 图鉴里的物资名。认不出的 id 退回 id 本身，绝不让结算页崩在一条旧数据上 */
+function itemNameOf(itemId: string): string {
+  return hasItemDef(itemId) ? getItemDef(itemId).name : itemId;
+}
+
+function npcNameOf(npcId: string): string {
+  return NPC_DEFS.find((n) => n.id === npcId)?.name ?? npcId;
 }
 
 function escapeHtml(text: string): string {

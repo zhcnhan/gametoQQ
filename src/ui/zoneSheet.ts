@@ -31,7 +31,13 @@ export class ZoneSheet {
   private shelfId: string | null = null;
   private name = '';
   private color: string = DEFAULT_ZONE_COLOR;
-  /** 这张胶带收哪些品类；空数组 = 什么都收（归位率恒满，"我不分类"是正经营法） */
+  /**
+   * 这张胶带收哪些品类。空数组 = **还没写清单**。
+   *
+   * ★ §12 v0.8：空清单**不再**等于"什么都收 + 归位率恒满"。
+   * 老口径让"贴一张空胶带"成为最优解（引擎① 的决策乐趣被绕过），
+   * 现在空清单的胶带归位率是 0 —— 胶带本身不给分，清单才给分。
+   */
   private categories: CategoryId[] = [];
 
   constructor(root: HTMLElement, host: ZoneSheetHost, onClose?: () => void) {
@@ -170,16 +176,24 @@ export class ZoneSheet {
   /** 一张胶带的清单，说人话 */
   private ruleText(zone: Zone): string {
     const cats = zone.autoAccept?.categories ?? [];
-    if (cats.length === 0) return '什么都收';
+    // ★ §12 v0.8：空清单不再等于"归位率恒满"。它现在的准确说法是"收什么没写"——
+    // 贴了胶带但没写清单，归位率仍然是 0（与"没贴胶带"一样）。
+    // 这里不许再写"什么都收"：那句话在数值上已经不成立了
+    if (cats.length === 0) return '还没写清单';
     return cats.map((c) => CATEGORY_LABELS[c]).join('/');
   }
 
   /**
    * 胶囊下方的说明。刻意只说"规则是什么"，不说"你该怎么做" ——
    * §5 引擎①：游戏不评判对错，所以这里连"建议"都不给。
+   *
+   * ★ 但归位率的**事实**必须说清（§12 v0.8）：没写清单就量不出"有没有按清单放"，
+   * 所以归位率是 0。这不是评价，是一条算法口径 —— 不说，玩家只会觉得这个数坏了。
    */
   private categoryNote(): string {
-    if (this.categories.length === 0) return '什么都没选 = 什么都收，归位率恒满。';
+    if (this.categories.length === 0) {
+      return '什么都没选 = 这张胶带还没写清单。归位率量的是"你有没有按自己写的清单放"，所以它现在是 0。';
+    }
     return `只收 ${this.categories.map((c) => CATEGORY_LABELS[c]).join(' / ')}。别的东西放上来会点一个小墨点。`;
   }
 

@@ -179,6 +179,101 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     nutrition: {},
     basePrice: 80,
     tags: ['tool', 'heavy']
+  },
+
+  // ———————— M2：luxury 品类实装（§12 拍板 v0.9） ————————
+  //
+  // ## 为什么需要它们
+  //
+  // `CategoryId` 里一直有 `luxury`，但**一件物品都没有** —— 于是：
+  //   · 胶带清单上的"享受"胶囊永远选不出意义（一个空品类）；
+  //   · §5 引擎③「拆箱惊喜」没有"赌"性：神秘混合箱开出来的永远是能算清账的东西，
+  //     玩家拆箱时不会有一次"这次会不会开出点好的"的心跳；
+  //   · 图鉴（§9.6）缺一批收集目标。
+  //
+  // ## 三条硬约束（写在这里，免得后来者"顺手"给它们加数值）
+  //
+  //  1. **不参与生存数值**：`nutrition` 全空、不是任何灾难的 `priorityCategories`。
+  //     它们不进 `dailyDrainOf`，也不会被自动补给取用 —— 买了不会让你活得久一点。
+  //     这是刻意的：一个"买奢侈品能活更久"的机制会把整理期变成又一道算术题；
+  //  2. **只在神秘混合箱里低概率开出**（`data/boxes.ts` 的 `luxuryChance`），
+  //     而且**商店里一件都不卖**（`data/shops.ts` 里没有它们的 offer）。
+  //     唯一的来源是运气，这才叫"赌"；
+  //  3. **它们的价值只有两条**：点亮图鉴 + 心情（`comfort` 读得到的地方见下）。
+  //     心情那一格走的是**整理期的摆放**而不是生存期的消耗 —— 见 `tags` 里的 'keepsake'。
+  //
+  // 价格写成"贵得离谱"但其实买不到：`basePrice` 只用于图鉴与结算的估值展示，
+  // 商店不卖它们，所以这个数不进任何一次结账。
+  {
+    id: 'cocoa_tin',
+    name: '可可粉铁罐',
+    category: 'luxury',
+    icon: 'can',
+    unitWeight: 0.5,
+    slotSize: 1,
+    stackLimit: 2,
+    perishable: true,
+    shelfLifeDays: 400,
+    nutrition: {},
+    basePrice: 30,
+    tags: ['treat', 'luxury', 'keepsake']
+  },
+  {
+    id: 'cigarettes',
+    name: '一条烟',
+    category: 'luxury',
+    icon: 'toolbox',
+    unitWeight: 0.3,
+    slotSize: 1,
+    stackLimit: 5,
+    perishable: false,
+    nutrition: {},
+    // 它在末世里的用途不用解释：硬通货
+    basePrice: 60,
+    tags: ['treat', 'luxury', 'keepsake']
+  },
+  {
+    id: 'coffee_beans',
+    name: '半袋咖啡豆',
+    category: 'luxury',
+    icon: 'flour',
+    unitWeight: 0.4,
+    slotSize: 1,
+    stackLimit: 2,
+    perishable: true,
+    shelfLifeDays: 120,
+    nutrition: {},
+    basePrice: 45,
+    tags: ['treat', 'luxury', 'keepsake']
+  },
+  {
+    id: 'picture_book',
+    name: '一本画册',
+    category: 'luxury',
+    icon: 'toolbox',
+    unitWeight: 0.9,
+    slotSize: 2,
+    stackLimit: 1,
+    perishable: false,
+    nutrition: {},
+    basePrice: 70,
+    tags: ['treat', 'luxury', 'keepsake']
+  },
+  {
+    id: 'hot_water_bag_gift',
+    name: '印花的暖水袋',
+    category: 'luxury',
+    icon: 'quilt',
+    unitWeight: 0.6,
+    slotSize: 1,
+    stackLimit: 1,
+    perishable: false,
+    nutrition: {},
+    // 刻意**不给 comfort**：给了它就会进自动添被那条链，于是"奢侈品"变成了
+    // 保暖品的一个更便宜的替代 —— 那条路会让 §8 的 warmth 刚需失效。
+    // 它只是个好看的东西
+    basePrice: 35,
+    tags: ['treat', 'luxury', 'keepsake']
   }
 ];
 
