@@ -2,11 +2,11 @@
  * 开局装配（纯逻辑，禁止 DOM）。
  * M0 只做"一间房 + 3 货架 + 3 箱待拆物资"，采购 / 身份 / 灾难全部留到 M1。
  */
-import { BOX_DEFS, getBoxDef, type BoxDef } from '../data/boxes';
+import { BOX_DEFS, type BoxDef } from '../data/boxes';
 import { getItemDef } from '../data/items';
 import { createCursor, nextInt, randomSeed, shuffle, type RngCursor } from '../model/rng';
 import { createShelf, makeStack, ROOM_ID, SHELF_H, SHELF_W } from '../model/shelf';
-import type { ItemStack, RunState, Shelf } from '../model/types';
+import type { ItemStack, RunState, Shelf, UnpackBox } from '../model/types';
 
 export const STARTING_SHELF_COUNT = 3;
 export const STARTING_BOX_COUNT = 3;
@@ -56,10 +56,11 @@ export function generateBoxStacks(cursor: RngCursor, def: BoxDef): ItemStack[] {
   return out;
 }
 
-export function createStartingBoxes(cursor: RngCursor, count: number = STARTING_BOX_COUNT): ItemStack[][] {
-  const boxes: ItemStack[][] = [];
+export function createStartingBoxes(cursor: RngCursor, count: number = STARTING_BOX_COUNT): UnpackBox[] {
+  const boxes: UnpackBox[] = [];
   for (let i = 0; i < count; i++) {
-    boxes.push(generateBoxStacks(cursor, boxDefAt(i)));
+    const def = boxDefAt(i);
+    boxes.push({ id: `box_${i + 1}`, defId: def.id, items: generateBoxStacks(cursor, def) });
   }
   return boxes;
 }
@@ -90,21 +91,23 @@ export function createStartingRun(seed: number = randomSeed()): RunState {
   return run;
 }
 
-/** 箱子正面的手写标签：有箱型定义就用定义里的，越界（M1 会拆箱补充）就自己编 */
-export function boxLabel(index: number, items: readonly ItemStack[]): string {
-  if (items.length === 0) return '空箱';
-  const def = BOX_DEFS[index];
+/** 箱子正面的手写标签：有箱型定义就用定义里的，没有就按里面的头一件自己编 */
+export function boxLabel(box: UnpackBox): string {
+  if (box.items.length === 0) return '空箱';
+  const def = BOX_DEFS.find((b) => b.id === box.defId);
   if (def) return def.name;
-  const first = items[0];
+  const first = box.items[0];
   return first ? `${getItemDef(first.itemId).name} 一箱` : '没写标签的箱';
 }
 
-export function boxHint(index: number): string {
-  return BOX_DEFS[index]?.hint ?? '';
+/** 箱内序号：整局唯一（'box_1' / 'box_stray_3'），空箱被摘掉也不会让别的箱串位 */
+export function nextBoxSeq(boxes: readonly UnpackBox[]): number {
+  let max = 0;
+  for (const box of boxes) {
+    const m = /(\d+)$/.exec(box.id);
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  return max + 1;
 }
 
-export function boxDefIdAt(index: number): string | null {
-  return BOX_DEFS[index]?.id ?? null;
-}
-
-export { getBoxDef, createCursor };
+export { createCursor };

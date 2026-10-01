@@ -5,7 +5,7 @@
  * 副作用只有一处 —— 通过 store.commit() 改状态并落盘；手感（音效/拟声字/动画）
  * 由本文件返回的 OrganizeEvent 描述，交给 fx/ 与 ui/ 去演。
  */
-import { BOX_DEFS } from '../data/boxes';
+import { getBoxDef, STRAY_BOX_ID } from '../data/boxes';
 import { getItemDef } from '../data/items';
 import { DEFAULT_ZONE_COLOR } from '../data/palette';
 import {
@@ -26,16 +26,18 @@ import {
 import { computeOrganizeScore, type OrganizeScore } from '../model/score';
 import type { CategoryId, ItemStack, RunState, Shelf, SlotPos, Zone } from '../model/types';
 import type { GameStore } from '../state/store';
+import { boxLabel, nextBoxSeq } from './setup';
 
 // ———————— 事件（表现层的唯一输入） ————————
 
 export type OrganizeEvent =
-  | { type: 'boxOpened'; boxIndex: number; itemId: string; leftInBox: number }
-  | { type: 'boxEmptied'; boxIndex: number }
+  | { type: 'boxOpened'; boxId: string; itemId: string; leftInBox: number }
+  | { type: 'boxEmptied'; boxId: string; label: string }
   | { type: 'picked'; itemId: string; shelfId: string; pos: SlotPos }
   | { type: 'placed'; itemId: string; shelfId: string; pos: SlotPos; partial: boolean; count: number }
   | { type: 'swapped'; itemId: string; shelfId: string; pos: SlotPos }
-  | { type: 'returned'; itemId: string }
+  /** 放回：toWhere 是给玩家看的一句人话（"粮油箱" / "货架 B 的原位" / "临时搁置箱"） */
+  | { type: 'returned'; itemId: string; toWhere: string }
   | { type: 'sorted'; changedShelves: number }
   | { type: 'tidy'; shelfId: string }
   | { type: 'zoneUpdated'; shelfId: string }
@@ -62,7 +64,7 @@ function ok(events: OrganizeEvent[]): CommandResult {
  */
 export type HeldOrigin =
   | { kind: 'none' }
-  | { kind: 'box'; boxRef: number }
+  | { kind: 'box'; boxId: string }
   | { kind: 'shelf'; shelfId: string; pos: SlotPos };
 
 export interface OrganizeSession {
@@ -86,7 +88,8 @@ export function resetSession(session: OrganizeSession): void {
 // ———————— 视图模型（ui 只读） ————————
 
 export interface BoxView {
-  index: number;
+  id: string;
+  defId: string;
   name: string;
   hint: string;
   items: ItemStack[];
@@ -104,16 +107,16 @@ export interface OrganizeView {
 }
 
 export function buildBoxViews(run: RunState): BoxView[] {
-  return run.boxesToUnpack.map((items, index) => {
-    // 箱型按顺序贴在开局生成的箱子上；超出定义范围的箱（M1 采购补货）走兜底名字
-    const def = BOX_DEFS[index % BOX_DEFS.length];
+  return run.boxesToUnpack.map((box) => {
+    const def = getBoxDef(box.defId);
     return {
-      index,
-      name: def?.name ?? '没写标签的箱',
-      hint: def?.hint ?? '',
-      items,
-      total: items.reduce((sum, s) => sum + stackCount(s), 0),
-      top: items[0] ?? null
+      id: box.id,
+      defId: box.defId,
+      name: def.name,
+      hint: def.hint,
+      items: box.items,
+      total: box.items.reduce((sum, s) => sum + stackCount(s), 0),
+      top: box.items[0] ?? null
     };
   });
 }
@@ -150,32 +153,35 @@ export function inventoryTotals(run: RunState): { stacks: number; pieces: number
 
 // ———————— 命令：拆箱 ————————
 
-export function takeFromBox(store: GameStore, session: OrganizeSession, boxIndex: number): CommandResult {
+export function takeFromBox(store: GameStore, session: OrganizeSession, boxId: string): CommandResult {
   if (session.held) {
     return reject('手里还捏着东西，先放上去');
   }
   const run = store.run;
-  const box = run.boxesToUnpack[boxIndex];
-  if (!box || box.length === 0) return reject('这是个空箱');
+  const box = run.boxesToUnpack.find((b) => b.id === boxId);
+  if (!box) return reject('没有这个箱子');
+  if (box.items.length === 0) return reject('这是个空箱');
 
-  const item = box[0] as ItemStack;
-  const leftInBox = Math.max(0, box.length - 1); // 先记下来：commit 会就地改到同一个数组对象上
+  const item = box.items[0] as ItemStack;
+  const leftInBox = Math.max(0, box.items.length - 1); // 先记下来：commit 会就地改到同一个对象上
+  const label = boxLabel(box);
   const events: OrganizeEvent[] = [];
 
   store.commit((draft) => {
-    const target = draft.boxesToUnpack[boxIndex];
-    if (!target || target.length === 0) return;
-    target.shift();
-    // 空箱自动压扁消失：直接把箱从队列里摘掉，ui 依据 boxEmptied 事件在旧位置放压扁动画
-    if (target.length === 0) {
-      draft.boxesToUnpack.splice(boxIndex, 1);
-      events.push({ type: 'boxEmptied', boxIndex });
+    const target = draft.boxesToUnpack.find((b) => b.id === boxId);
+    if (!target || target.items.length === 0) return;
+    target.items.shift();
+    // 空箱自动压扁消失：直接把箱从队列里摘掉，ui 依据 boxEmptied 事件在旧位置放压扁动画。
+    // 箱子用稳定 id 标识，摘箱不会让别的箱子"串位"，手里那件物资的来处依然准确。
+    if (target.items.length === 0) {
+      draft.boxesToUnpack.splice(draft.boxesToUnpack.indexOf(target), 1);
+      events.push({ type: 'boxEmptied', boxId, label });
     }
   });
 
   session.held = item;
-  session.heldFrom = { kind: 'box', boxRef: boxIndex };
-  events.unshift({ type: 'boxOpened', boxIndex, itemId: item.itemId, leftInBox });
+  session.heldFrom = { kind: 'box', boxId };
+  events.unshift({ type: 'boxOpened', boxId, itemId: item.itemId, leftInBox });
   return ok(events);
 }
 
@@ -253,63 +259,107 @@ export function placeHeld(store: GameStore, session: OrganizeSession, shelfId: s
   return ok(events);
 }
 
-// ———————— 命令：把手里的东西放回去（永不丢件） ————————
+// ———————— 命令：把手里的东西放回去（名副其实的"回原位"，永不丢件） ————————
 
+function clearHeld(session: OrganizeSession): void {
+  session.held = null;
+  session.heldFrom = { kind: 'none' };
+}
+
+function shelfLabelOf(run: RunState, shelfId: string, index: number): string {
+  const shelf = run.shelves.find((s) => s.id === shelfId);
+  if (!shelf) return '货架';
+  const kind = shelf.kind === 'fridge' ? '冰箱' : shelf.kind === 'cabinet' ? '柜子' : '货架';
+  return `${kind} ${['A', 'B', 'C', 'D', 'E', 'F'][index] ?? index + 1}`;
+}
+
+/**
+ * 放回 = 把这件物资送回**它来的地方**，按"越接近原位越优先"降落：
+ *   ① 从货架拿的 → 原格（原位）
+ *   ② 原格回不去 / 从箱子拿的 → 原货架自动找位 → 原箱内首位
+ *   ③ 原位都回不去（比如原箱已经被压扁收走了）→ 全房间找位置
+ *   ④ 实在放不下 → 开一个"临时搁置箱"（策划案 §12.3：永远留逆转口）
+ */
 export function returnHeld(store: GameStore, session: OrganizeSession): CommandResult {
   const held = session.held;
   if (!held) return reject('手里是空的');
   const run = store.run;
+  const from = session.heldFrom;
 
-  // ① 先试原格 / 原货架
-  if (session.heldFrom.kind === 'shelf') {
-    const origin = session.heldFrom;
-    const idx = run.shelves.findIndex((s) => s.id === origin.shelfId);
-    const shelf = idx >= 0 ? run.shelves[idx] : undefined;
-    if (shelf) {
-      const exact = getStack(shelf, origin.pos) === null && roomInSlot(shelf, origin.pos, held.itemId) > 0;
-      const pos = exact ? origin.pos : null;
-      const placed = pos
-        ? { shelf: dropStack(shelf, pos, held), pos }
-        : (() => {
-            const auto = autoPlace(shelf, held);
-            return auto ? { shelf: auto.shelf, pos: auto.pos } : null;
-          })();
-      const nextShelf = placed ? placed.shelf : null;
-      if (nextShelf) {
+  // ① 原格（原位优先，放回就是放回）
+  if (from.kind === 'shelf') {
+    const origin = from;
+    const shelfIndex = run.shelves.findIndex((s) => s.id === origin.shelfId);
+    const shelf = shelfIndex >= 0 ? run.shelves[shelfIndex] : undefined;
+    if (shelf && getStack(shelf, origin.pos) === null && roomInSlot(shelf, origin.pos, held.itemId) > 0) {
+      const restored = dropStack(shelf, origin.pos, held);
+      if (restored) {
         store.commit((draft) => {
-          const target = draft.shelves.find((s) => s.id === origin.shelfId);
-          if (!target) return;
-          const i = draft.shelves.indexOf(target);
-          draft.shelves[i] = nextShelf;
+          const i = draft.shelves.findIndex((s) => s.id === origin.shelfId);
+          if (i >= 0) draft.shelves[i] = restored;
         });
-        session.held = null;
-        session.heldFrom = { kind: 'none' };
-        return ok([{ type: 'returned', itemId: held.itemId }]);
+        clearHeld(session);
+        return ok([{ type: 'returned', itemId: held.itemId, toWhere: `${shelfLabelOf(run, origin.shelfId, shelfIndex)} 原位` }]);
       }
     }
   }
 
-  // ② 再试全房间任意有位置的货架
+  // ② 原货架 / 原箱
+  if (from.kind === 'shelf') {
+    const origin = from;
+    const shelfIndex = run.shelves.findIndex((s) => s.id === origin.shelfId);
+    const shelf = shelfIndex >= 0 ? run.shelves[shelfIndex] : undefined;
+    const auto = shelf ? autoPlace(shelf, held) : null;
+    if (auto && shelf) {
+      const next = auto.shelf;
+      store.commit((draft) => {
+        const i = draft.shelves.findIndex((s) => s.id === origin.shelfId);
+        if (i >= 0) draft.shelves[i] = next;
+      });
+      clearHeld(session);
+      return ok([{ type: 'returned', itemId: held.itemId, toWhere: `${shelfLabelOf(run, origin.shelfId, shelfIndex)}（同架就近）` }]);
+    }
+  }
+
+  if (from.kind === 'box') {
+    const originBoxId = from.boxId;
+    const box = run.boxesToUnpack.find((b) => b.id === originBoxId);
+    if (box) {
+      const label = boxLabel(box);
+      store.commit((draft) => {
+        const target = draft.boxesToUnpack.find((b) => b.id === originBoxId);
+        // 塞回箱内首位：下一个摸出来的还是它，玩家的思路不会断
+        if (target) target.items.unshift(held);
+      });
+      clearHeld(session);
+      return ok([{ type: 'returned', itemId: held.itemId, toWhere: label }]);
+    }
+  }
+
+  // ③ 全房间找位置
   for (let i = 0; i < run.shelves.length; i++) {
     const auto = autoPlace(run.shelves[i] as Shelf, held);
     if (!auto) continue;
     const shelfIndex = i;
+    const next = auto.shelf;
     store.commit((draft) => {
       const target = draft.shelves[shelfIndex];
-      if (target) draft.shelves[shelfIndex] = auto.shelf;
+      if (target) draft.shelves[shelfIndex] = next;
     });
-    session.held = null;
-    session.heldFrom = { kind: 'none' };
-    return ok([{ type: 'returned', itemId: held.itemId }]);
+    clearHeld(session);
+    return ok([{ type: 'returned', itemId: held.itemId, toWhere: shelfLabelOf(run, (run.shelves[i] as Shelf).id, i) }]);
   }
 
-  // ③ 实在放不下：新开一个箱子装着，等玩家腾出地方（策划案 §12.3：永远留逆转口）
+  // ④ 临时搁置箱
   store.commit((draft) => {
-    draft.boxesToUnpack.push([held]);
+    draft.boxesToUnpack.push({
+      id: `box_${nextBoxSeq(draft.boxesToUnpack)}`,
+      defId: STRAY_BOX_ID,
+      items: [held]
+    });
   });
-  session.held = null;
-  session.heldFrom = { kind: 'none' };
-  return ok([{ type: 'returned', itemId: held.itemId }]);
+  clearHeld(session);
+  return ok([{ type: 'returned', itemId: held.itemId, toWhere: '临时搁置箱' }]);
 }
 
 // ———————— 命令：FEFO 一键排序（"帮我按保质期排"） ————————

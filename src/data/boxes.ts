@@ -59,7 +59,24 @@ export const BOX_DEFS: readonly BoxDef[] = [
   }
 ];
 
+/**
+ * 临时搁置箱：不参与开局生成，只在"手里这件实在没地方放"时兜底（策划案 §12.3 永远留逆转口）。
+ * pool 故意留空 —— generateBoxStacks 遇到空池会直接返回空列表，不会被误生成。
+ */
+export const STRAY_BOX_ID = 'box_stray';
+
+export const STRAY_BOX_DEF: BoxDef = {
+  id: STRAY_BOX_ID,
+  name: '临时搁置箱',
+  hint: '放不下的先搁这儿',
+  pool: [],
+  minItems: 0,
+  maxItems: 0,
+  maxCountPerItem: 1
+};
+
 export function getBoxDef(boxId: string): BoxDef {
+  if (boxId === STRAY_BOX_ID) return STRAY_BOX_DEF;
   const def = BOX_DEFS.find((b) => b.id === boxId);
   if (!def) throw new Error(`未知箱型 id: ${boxId}`);
   return def;

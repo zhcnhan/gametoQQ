@@ -76,6 +76,19 @@ export interface ItemStack {
   batches: ItemBatch[]; // 按批次记录保质期，FEFO 取 batches[0]
 }
 
+/**
+ * 待拆箱（相对 §7 的 `boxesToUnpack: ItemStack[][]` 的一处模型变更，理由如下）：
+ * §7 用"二维数组 + 下标"当箱子身份，一旦空箱被摘除，后面所有箱子的下标全部位移 ——
+ * 玩家手里那件物资的"来处"就会指向另一个箱子（串箱），"放回原处"必然放错。
+ * 而且 M1 采购要按箱型补货（同一天可能补两批同型箱），也必须区分"箱型"与"这一箱"。
+ * 故：箱子升级为带稳定 id + 箱型 defId 的对象。
+ */
+export interface UnpackBox {
+  id: string; // 'box_1'，整局唯一且不随摘箱变化
+  defId: string; // 箱型：data/boxes.ts 的 BoxDef.id
+  items: ItemStack[]; // items[0] 是下一个被摸出来的
+}
+
 export interface Slot {
   stack: ItemStack | null;
 }
@@ -116,7 +129,7 @@ export interface RunState {
   cash: number;
   shelves: Shelf[];
   zones: Zone[];
-  boxesToUnpack: ItemStack[][]; // 待拆箱队列（引擎3）
+  boxesToUnpack: UnpackBox[]; // 待拆箱队列（引擎3）
   stats: { health: number; mood: number; stamina: number; shelter: number };
   trust: Record<string, number>; // npcId → 关系值
   deliveredOrders: number;

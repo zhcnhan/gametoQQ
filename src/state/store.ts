@@ -7,6 +7,7 @@
  */
 import type { RunState, SaveGame } from '../model/types';
 import { createSaveGame, createSaveScheduler, loadSave, touch, type SaveScheduler } from './save';
+import { resolveStorage, type StorageLike } from './storage';
 
 export type StoreListener = () => void;
 
@@ -65,6 +66,18 @@ export class GameStore {
     this.notify();
   }
 
+  /**
+   * 读档后立即把（可能刚迁移过的）存档落盘。
+   * 注意 flush() 只在"有待写内容"时才有写动作，所以这里必须显式 schedule 一次，
+   * 否则 v1 → v2 这类 schema 升级只活在内存里，每次开页面都要重迁一遍。
+   */
+  persistNow(): void {
+    touch(this.saveGame);
+    this.revision += 1;
+    this.scheduler.schedule(this.saveGame);
+    this.scheduler.flush();
+  }
+
   /** pagehide / visibilitychange 时调用，把待写的档立刻砸进磁盘 */
   flush(): void {
     this.scheduler.flush();
@@ -84,14 +97,15 @@ export class GameStore {
  * 启动装配：读档 → 有档就用档；没档（或档坏了）就用 factory 开新局。
  * 返回的 store 已经持有已落盘的初始状态。
  */
-export function bootstrapStore(factory: () => RunState): GameStore {
-  const existing = loadSave();
+export function bootstrapStore(factory: () => RunState, storage: StorageLike = resolveStorage()): GameStore {
+  const existing = loadSave(storage);
   if (existing && existing.run) {
-    const store = new GameStore(existing);
-    store.flush();
+    const store = new GameStore(existing, createSaveScheduler(storage));
+    // 迁移立刻落盘，别让"版本升级"只活在内存里
+    store.persistNow();
     return store;
   }
-  const store = new GameStore(existing ?? createSaveGame(null));
+  const store = new GameStore(existing ?? createSaveGame(null), createSaveScheduler(storage));
   const run = factory();
   // 老档的 meta（图鉴/纪录）要保住，只换 run
   store.replaceRun(run);

@@ -205,7 +205,7 @@ export class OrganizeScreen {
       .map((box) => {
         const def = box.top ? getItemDef(box.top.itemId) : null;
         const isEmpty = box.items.length === 0;
-        return `<button class="box${isEmpty ? ' is-empty' : ''}" data-box="${box.index}" data-drop="box" aria-label="${escapeHtml(box.name)}，还有 ${box.total} 件">
+        return `<button class="box${isEmpty ? ' is-empty' : ''}" data-box="${box.id}" data-drop="box" aria-label="${escapeHtml(box.name)}，还有 ${box.total} 件">
           <span class="box-icon">${iconSvg('box')}</span>
           <span class="box-name">${escapeHtml(box.name)}</span>
           <span class="box-count">${box.total} 件</span>
@@ -254,12 +254,12 @@ export class OrganizeScreen {
 
   private bindBoxGestures(): void {
     this.dockEl.querySelectorAll<HTMLElement>('[data-box]').forEach((el) => {
-      const index = Number(el.dataset['box']);
-      if (!Number.isFinite(index)) return;
+      const boxId = el.dataset['box'];
+      if (!boxId) return;
       attachPointerGesture(el, {
-        onTap: () => this.consume(takeFromBox(this.store, this.session, index)),
+        onTap: () => this.consume(takeFromBox(this.store, this.session, boxId)),
         onDragStart: () => {
-          if (!this.session.held) this.consume(takeFromBox(this.store, this.session, index));
+          if (!this.session.held) this.consume(takeFromBox(this.store, this.session, boxId));
           this.beginDrag('box');
         },
         onDragMove: (point) => this.moveDrag(point),
@@ -435,13 +435,14 @@ export class OrganizeScreen {
           break;
         case 'boxOpened':
           playSfx('unbox');
-          after.push(() => this.wordOn(`[data-box="${ev.boxIndex}"]`, 'unbox'));
+          after.push(() => this.wordOn(`[data-box="${ev.boxId}"]`, 'unbox'));
           break;
         case 'boxEmptied': {
           // 立刻量位置：重绘之后这个箱子就不在了
-          const rect = this.rectOf(`[data-box="${ev.boxIndex}"]`);
+          const rect = this.rectOf(`[data-box="${ev.boxId}"]`);
           if (rect) spawnCrushGhost(this.fxLayer, rect);
           playSfx('crush');
+          showToast(this.fxLayer, `${ev.label} 拆空了`);
           break;
         }
         case 'picked':
@@ -460,6 +461,8 @@ export class OrganizeScreen {
           break;
         case 'returned':
           playSfx('return');
+          // 放回哪儿去了必须说清楚 —— 否则玩家不知道东西跑哪了（"名副其实"的一半靠这句话）
+          showToast(this.fxLayer, `放回 ${ev.toWhere}`);
           break;
         case 'sorted':
           playSfx('sort');

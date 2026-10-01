@@ -5,12 +5,18 @@
  *  - 只负责"序列化 / 校验 / 迁移 / 落盘节流"，不认识任何玩法规则；
  *  - 不直接摸 window，介质由 state/storage.ts 注入。
  */
-import type { MetaProfile, RunState, SaveGame } from '../model/types';
+import { BOX_DEFS } from '../data/boxes';
+import type { ItemStack, MetaProfile, RunState, SaveGame, UnpackBox } from '../model/types';
 import { createMemoryStorage, resolveStorage, type StorageLike } from './storage';
 
 export const STORAGE_KEY = 'tunhuo.save';
-/** 当前 schema 版本。M3 会升到 2（图鉴 MetaProfile 扩展），届时在这里加迁移函数。 */
-export const SAVE_VERSION = 1;
+/**
+ * 当前 schema 版本。
+ *  - v1：M0 首版（待拆箱是 `ItemStack[][]`）
+ *  - v2：待拆箱升级为 `UnpackBox[]`（稳定 id + 箱型），"放回原箱"才可能是对的
+ *  - v3（规划中）：M3 图鉴 MetaProfile 扩展
+ */
+export const SAVE_VERSION = 2;
 /** 落盘节流上限（提示词 0：debounce ≤ 300ms） */
 export const SAVE_DEBOUNCE_MS = 250;
 
@@ -82,7 +88,7 @@ export function migrate(raw: unknown): SaveGame | null {
     run = raw.run as unknown as RunState;
   }
 
-  const save: SaveGame = {
+  let save: SaveGame = {
     meta,
     run,
     savedAt: typeof raw.savedAt === 'number' ? raw.savedAt : Date.now(),
@@ -90,11 +96,35 @@ export function migrate(raw: unknown): SaveGame | null {
     deviceId: typeof raw.deviceId === 'string' && raw.deviceId ? raw.deviceId : createDeviceId()
   };
 
-  if (declared < 1) return migrateV0ToV1(save);
-  return normalizeV1(save);
+  if (declared < 1) save = migrateV0ToV1(save);
+  if (declared < 2) save = migrateV1ToV2(save);
+  return normalizeV2(save);
 }
 
-function normalizeV1(save: SaveGame): SaveGame | null {
+/**
+ * v1 → v2：待拆箱从 `ItemStack[][]` 升级为 `UnpackBox[]`。
+ * 老档里箱子只有下标没有身份，迁移时按出现顺序补 `box_1..n` 与对应箱型 —— 内容一件不丢。
+ */
+export function migrateV1ToV2(save: SaveGame): SaveGame {
+  const run = save.run;
+  if (run) {
+    const raw = asArray<unknown>(run.boxesToUnpack);
+    run.boxesToUnpack = raw.map((box, index) => {
+      if (Array.isArray(box)) {
+        return {
+          id: `box_${index + 1}`,
+          defId: BOX_DEFS[index % BOX_DEFS.length]?.id ?? 'box_mixed',
+          items: box as ItemStack[]
+        } satisfies UnpackBox;
+      }
+      return box as UnpackBox;
+    });
+  }
+  save.meta.version = SAVE_VERSION;
+  return save;
+}
+
+function normalizeV2(save: SaveGame): SaveGame | null {
   if (!save.run) return save;
   const run = save.run;
   if (!Array.isArray(run.shelves) || !Array.isArray(run.zones) || !Array.isArray(run.boxesToUnpack)) {
@@ -104,6 +134,10 @@ function normalizeV1(save: SaveGame): SaveGame | null {
   run.log = asArray(run.log);
   run.trust = isObject(run.trust) ? (run.trust as Record<string, number>) : {};
   if (typeof run.seed !== 'number') run.seed = Date.now() >>> 0;
+  // 兜底：任何非 UnpackBox 形态的箱（例如手改过的档）一律丢弃，宁可开新局也不让 UI 崩
+  run.boxesToUnpack = asArray<unknown>(run.boxesToUnpack).filter(
+    (box): box is UnpackBox => isObject(box) && typeof box.id === 'string' && Array.isArray(box.items)
+  );
   save.meta.version = SAVE_VERSION;
   return save;
 }
