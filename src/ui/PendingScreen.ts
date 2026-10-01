@@ -48,7 +48,6 @@ export class PendingScreen implements Screen {
         <main class="scroll">
           <section class="block">
             <p class="block-note strong">${escapeHtml(this.props.note)}</p>
-            <p class="block-note">这一页是占位。囤货期（D-7 到 D-Day）现在已经可以完整玩通了。</p>
           </section>
         </main>
         <footer class="dock">

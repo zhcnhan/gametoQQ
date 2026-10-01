@@ -7,13 +7,18 @@
  * 白屏是最差的处理方式。
  */
 import './style.css';
+import { CATEGORY_ORDER } from './data/items';
+import { getIdentityDef } from './data/identities';
+import { ACTION_POINTS_PER_DAY } from './data/shops';
 import { initAudio, playSfx } from './fx/audio';
 import { showToast } from './fx/popup';
 import { openDeferred } from './meta/deferred';
+import { createCursor } from './model/rng';
 import type { GamePhase } from './model/types';
 import { bootstrapStore } from './state/store';
 import { declineRequest, fulfillRequest, leaveRequest, type HelpResult } from './systems/help';
 import { createOrganizeSession, resetSession } from './systems/organize';
+import { rollShopStocks } from './systems/shop';
 import { tradeForBox } from './systems/trade';
 import {
   advanceSurvivalDay,
@@ -247,9 +252,13 @@ function makeScreen(key: ScreenKey): Screen {
     case 'ending':
       return new EndingScreen(root as HTMLElement, store, { onRestart: restart });
     default:
+      // 兜底页。走到这里说明存档里是一个**当前版本不认识的 phase**（手改过的档、
+      // 或者从更新的版本降级回来）。它不该断言任何"还没做"的东西 ——
+      // M2 收尾时这里还写着"夜晚事件 / 生存期 / 求援订单会在后续里程碑实装"，
+      // 而那时它们都已经能玩了：一句过期的占位文案比白屏更糟，因为它是在骗玩家。
       return new PendingScreen(root as HTMLElement, {
-        title: '这里还没开',
-        note: '这个阶段（夜晚事件 / 生存期 / 求援订单）会在后续里程碑实装。',
+        title: '这一局读不出来',
+        note: '存档里的进度状态这个版本不认识。可以重开一局，或者回到上一页继续。',
         onRestart: restart
       });
   }
@@ -274,15 +283,78 @@ document.addEventListener('visibilitychange', () => {
 // 调试用：控制台可以直接看当前存档、整理会话、路由，以及欠账清单
 if (import.meta.env.DEV) {
   const debts = openDeferred();
+
+  /**
+   * 一键跳到某一天 —— **只在 dev 构建里存在**。
+   *
+   * 它存在的理由是"人工走测"这件事本身：M2 的验收要求逐条读事件文案，
+   * 而白天事件（约六成的店门）、突发事件（约三成的日子）都是**随机**才碰得到的，
+   * 夜间事件还叠了一层 60%。没有这个钩子，想读一遍全部文案就得反复重开、走满 7 天，
+   * 于是"逐条读一遍"这件事事实上没人会做。
+   *
+   * 用法（浏览器控制台）：
+   *   __tunhuo.jump(-7)     囤货期第一天，从扫货开始
+   *   __tunhuo.jump(-1, { actionPoints: 3 })  囤货期最后一天，行动点满
+   *   __tunhuo.jump(0)      D-Day
+   *   __tunhuo.jump(3)      生存期第 3 天（会先结算一次，日报上就有东西了）
+   *   __tunhuo.jump(3, { handy: false })       顺手位不标，看突发事件受创的那一版
+   *   __tunhuo.jump(3, { zone: 'none' })       一张胶带都不贴
+   *
+   * 它**只改 phase / day / 身份**，不伪造货物与库存 —— 所以看到的仍然是真实规则下的屏幕。
+   */
+  const jump = (day: number, opts: { actionPoints?: number; handy?: boolean; zone?: 'none' | 'all' } = {}): void => {
+    store.commit((draft) => {
+      if (!draft.identityId) draft.identityId = 'group_buyer';
+      const identity = getIdentityDef(draft.identityId);
+      draft.day = day;
+      draft.actionPoints = opts.actionPoints ?? ACTION_POINTS_PER_DAY;
+      draft.carLoad = 0;
+      draft.currentShopId = null;
+      draft.dayEvent = null;
+      draft.shopPriceFactor = 1;
+      draft.shopLimits = [];
+      draft.shopBoughtToday = {};
+      draft.night = null;
+      if (day < 0) {
+        draft.phase = 'stockpile_shop';
+        draft.shopStocks = rollShopStocks(identity, createCursor(draft.seed), day);
+        draft.seed = createCursor(draft.seed).state;
+      } else {
+        draft.phase = 'survival_day';
+      }
+      if (opts.handy !== undefined) {
+        draft.shelves.forEach((s, i) => {
+          s.handyRank = opts.handy && i === 0 ? 1 : null;
+        });
+      }
+      if (opts.zone === 'none') {
+        draft.zones = [];
+        draft.shelves.forEach((s) => {
+          s.zoneId = null;
+        });
+      } else if (opts.zone === 'all') {
+        draft.zones = [
+          { id: 'zone_all', name: '全收', color: '#000000', autoAccept: { categories: [...CATEGORY_ORDER] } }
+        ];
+        draft.shelves.forEach((s) => {
+          s.zoneId = 'zone_all';
+        });
+      }
+    });
+    router.render();
+  };
+
   (window as unknown as Record<string, unknown>)['__tunhuo'] = {
     store,
     session,
     router,
-    deferred: debts
+    deferred: debts,
+    jump
   };
   // 每开一次页面报一次账。目的很具体：让"寒潮是冷库 → M1 无腐坏""冰箱没效果"
   // 这类**已被记录的空转**，在任何人准备动手"修好"它之前先自我解释一次。
   console.info(
-    `[囤货末世] 已知欠账 ${debts.length} 笔：${debts.map((d) => d.id).join(' / ')} —— 详见 src/meta/deferred.ts`
+    `[囤货末世] 已知欠账 ${debts.length} 笔：${debts.map((d) => d.id).join(' / ')}，详见 src/meta/deferred.ts`
   );
+  console.info('[囤货末世] 走测用：__tunhuo.jump(day) 可以跳到任意一天（只在 dev 构建里存在）');
 }
