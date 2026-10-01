@@ -85,9 +85,9 @@ export class EndingScreen implements Screen {
         ? `${escapeHtml(disaster.name)} · 没撑住`
         : escapeHtml(hintAt(disaster, 0));
     const verdictText = survived
-      ? '你撑过来了。这不是运气 —— 是那些箱子、那些胶带、和几十次弯腰换来的。'
+      ? '撑过来了。'
       : collapsed
-        ? '没撑住。但你大概已经知道自己缺的是哪一样了 —— 下一局从那儿补。'
+        ? '没撑住。'
         : '囤货期结束了。';
 
     this.root.innerHTML = `
@@ -132,7 +132,7 @@ export class EndingScreen implements Screen {
               newRecord
                 ? // 暖黄只用于"安全 / 窗内"语义（§5A）。破纪录属于 M2 新增的正反馈，
                   // 与安全感、交付成功、图鉴点亮同一类 —— 这是它第二次上岗，不许扩散
-                  `<p class="block-note warm">破了纪录 —— 上一次是 ${verdict?.previousBest ?? 0} 天。</p>`
+                  `<p class="block-note warm">破纪录。上一次是 ${verdict?.previousBest ?? 0} 天。</p>`
                 : `<p class="block-note">离纪录还差 ${Math.max(0, best - lasted + 1)} 天。</p>`
             }
             ${
@@ -147,7 +147,7 @@ export class EndingScreen implements Screen {
             ${
               freshCount > 0
                 ? `<p class="block-note warm">本局新点亮 <b>${freshCount}</b> 项。</p>`
-                : '<p class="block-note">这一局没有新点亮的东西 —— 见过的都见过了。</p>'
+                : '<p class="block-note">这一局没有新点亮的。</p>'
             }
             <div class="stat-grid is-triple">
               ${CODEX_PAGES.map((page) => {
@@ -165,10 +165,9 @@ export class EndingScreen implements Screen {
           <section class="block">
             <h2 class="block-title">整理体检</h2>
             <div class="score-rows">
-              ${this.scoreRow('归位率', placement, '你自己给胶带写的清单，东西有没有照放 —— 它决定每天找东西要花多少体力')}
-              ${this.scoreRow('临期优先', fefo, '同架按到期日排好没有 —— 越快到期的越靠前，也越先被用掉')}
-              ${this.scoreRow('应急可达率', emergency, '急用的东西有没有放在顺手位 —— 体力见底的那天，只有它们还够得到')}
-            </div>
+              ${this.scoreRow('归位率', placement, '你自己给胶带写的清单，东西有没有照放。它决定每天找东西要花多少体力')}
+              ${this.scoreRow('临期优先', fefo, '同一块货架有没有按到期日排好，快到期的排在前面')}
+              ${this.scoreRow('应急可达率', emergency, '急用的东西有多少放在顺手位。体力见底的那天，只有它们还够得到')}            </div>
             ${
               score.tidyShelfIds.length > 0
                 ? `<p class="block-note">有 ${score.tidyShelfIds.length} 块货架做到了「整整齐齐」。${
@@ -181,8 +180,8 @@ export class EndingScreen implements Screen {
           <section class="block">
             <h2 class="block-title">接下来</h2>
             <p class="block-note">
-              换一个身份、换一套整理思路再来一次 —— 这一局的物资会清空，但你已经知道
-              "东西放在哪"到底值多少体力了。
+              换一个身份、换一套整理思路再来一次。这一局的物资会清空，
+              但"东西放在哪值多少体力"你已经知道了。
             </p>
           </section>
         </main>
@@ -232,12 +231,12 @@ function lastDayStrip(run: RunState): string {
   const last = run.survival.last;
   const bits: string[] = [];
   if (last.shortage > 0) bits.push(`缺 ${last.shortage} 件`);
-  if (last.unreachable > 0) bits.push(`有 ${last.unreachable} 件就在屋里，没翻出来`);
-  bits.push(`翻找花掉 ${last.workCost} 点体力（整整齐齐的屋子只要 4.5）`);
+  if (last.unreachable > 0) bits.push(`有 ${last.unreachable} 件在屋里，没翻出来`);
+  bits.push(`翻找花了 ${last.workCost} 点体力（一整架排好的屋子是 4.5）`);
   if (run.survival.hardPressStreak > 0) {
     bits.push(`硬撑连续第 ${run.survival.hardPressStreak} 天`);
   }
-  if (last.usedMedicine > 0) bits.push(`最后那晚还吃上了 ${last.usedMedicine} 件药`);
+  if (last.usedMedicine > 0) bits.push(`用了 ${last.usedMedicine} 件药`);
   return `<p class="block-note strong is-collapsed">最后一天：${escapeHtml(bits.join(' · '))}。</p>`;
 }
 
@@ -253,26 +252,26 @@ function runStory(input: {
   if (!survived) {
     // 没撑住的时候，"缺的是吃的"和"缺的是力气"是两种完全不同的死法，必须分开说
     if (unreachablePieces > shortPieces) {
-      return `走到第 ${lasted} 天就没撑住。屋里其实还有东西 —— 是没能翻出来。`;
+      return `第 ${lasted} 天没撑住。屋里还有东西，是没能翻出来。`;
     }
     if (shortPieces > 0) {
-      return `走到第 ${lasted} 天就没撑住。前后一共短了 ${shortPieces} 件口粮，缺口是从那时候开始的。`;
+      return `第 ${lasted} 天没撑住。前后一共短了 ${shortPieces} 件口粮。`;
     }
-    return `走到第 ${lasted} 天就没撑住。奇怪的是吃的不缺 —— 是别的先垮了。`;
+    return `第 ${lasted} 天没撑住。吃的不缺。`;
   }
 
   if (hardPressDays === 0 && shortPieces === 0 && unreachablePieces === 0) {
-    return '一路都没短过什么。你甚至没怎么动过最后那点余粮。';
+    return '一路没短过什么，最后那点余粮也没怎么动。';
   }
 
   const parts: string[] = [];
   if (hardPressDays > 0) parts.push(`有 ${hardPressDays} 天在硬撑`);
   if (shortPieces > 0) parts.push(`前后短了 ${shortPieces} 件口粮`);
-  if (unreachablePieces > 0) parts.push(`还有 ${unreachablePieces} 件明明在屋里、却没力气翻出来`);
+  if (unreachablePieces > 0) parts.push(`还有 ${unreachablePieces} 件在屋里、没力气翻出来`);
 
   const head = parts.join('，');
-  if (hardPressDays > 0) return `${head}。撑是撑过来了，但后半程不轻松。`;
-  return `${head}。没到伤筋动骨的地步。`;
+  if (hardPressDays > 0) return `${head}。撑是撑过来了。`;
+  return parts.length > 0 ? `${head}。` : '';
 }
 
 /**
@@ -283,7 +282,7 @@ function runStory(input: {
  * 后者才是让玩家明白自己那几十次弯腰究竟换来了什么的东西。
  */
 function contrastNote(run: RunState, disaster: DisasterProfile): string {
-  return `走到最后，你手上的余粮还够 ${supplyDays(run, disaster)} 天 —— 同期街区平均是 ${districtDays(run.day)} 天。`;
+  return `你手上的余粮还够 ${supplyDays(run, disaster)} 天。同期街区平均是 ${districtDays(run.day)} 天。`;
 }
 
 /**
@@ -301,7 +300,7 @@ function trustNote(run: RunState): string {
   );
   if (rows.length === 0) return '';
   const parts = rows.map((r) => `${r.name} ${r.value > 0 ? '+' : ''}${r.value}`);
-  return `这一片还剩下多少人情：${parts.join(' · ')}`;
+  return `人情：${parts.join(' · ')}`;
 }
 
 /**

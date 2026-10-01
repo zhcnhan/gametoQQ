@@ -461,7 +461,7 @@ export function applyZone(store: GameStore, shelfId: string, input: ZoneInput): 
   const shelfIndex = run.shelves.findIndex((s) => s.id === shelfId);
   if (shelfIndex < 0) return reject('货架不存在');
   const name = input.name.trim();
-  if (!name) return reject('胶带上得写个字');
+  if (!name) return reject('胶带得有个名字');
   const color = input.color || DEFAULT_ZONE_COLOR;
   const categories = normalizeCategories(input.categories);
   const editId = input.zoneId;

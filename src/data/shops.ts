@@ -13,7 +13,7 @@ export const SHOP_DEFS: readonly ShopDef[] = [
   {
     id: 'supermarket',
     name: '超市',
-    blurb: '粮油菜水最全，也是最早被抢空的地方',
+    blurb: '粮油、菜、水都在这一层。人最多，也空得最快。',
     priceFactor: 1,
     offers: [
       { itemId: 'canned_beans', stock: 8 },
@@ -28,7 +28,7 @@ export const SHOP_DEFS: readonly ShopDef[] = [
   {
     id: 'pharmacy',
     name: '药店',
-    blurb: '绷带与感冒药，柜台后面还堆着几箱水',
+    blurb: '绷带和感冒药。柜台后面还堆着几箱水。',
     priceFactor: 1.15,
     offers: [
       { itemId: 'bandage', stock: 10 },
@@ -39,7 +39,7 @@ export const SHOP_DEFS: readonly ShopDef[] = [
   {
     id: 'hardware',
     name: '五金店',
-    blurb: '燃料、工具、棉被 —— 寒潮一来，这里最贵',
+    blurb: '燃料、工具、棉被。比超市贵两成。',
     priceFactor: 1.2,
     offers: [
       { itemId: 'fuel_can', stock: 5 },

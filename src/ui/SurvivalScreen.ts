@@ -111,10 +111,10 @@ export class SurvivalScreen implements Screen {
 
     return `
       <section class="block">
-        <p class="night-text">日历上那一天到了。窗外开始下雪，风速比预报的更大。</p>
+        <p class="night-text">日历上那一天到了。外面开始下雪，风比预报的大。</p>
         <p class="block-note">
           从明天起，每天要消耗 ${needs.map((n) => `${CATEGORY_LABELS[n.category]} ${n.need}`).join('、')}。
-          你囤的东西会开始被检验 —— 摆在哪里、排得怎么样，都会变成数字。
+          你囤的东西每天会被取一次，摆在哪儿、排得怎么样，都会变成数字。
         </p>
       </section>
       <section class="block">
@@ -146,8 +146,8 @@ export class SurvivalScreen implements Screen {
           ${
             last.shortage > 0
               ? last.unreachable > 0
-                ? `<b>缺 ${last.shortage} 件</b> —— 其中 ${last.unreachable} 件是没力气翻出来的。`
-                : `<b>缺 ${last.shortage} 件</b> —— 没能凑齐。`
+                ? `<b>缺 ${last.shortage} 件</b>，其中 ${last.unreachable} 件是没力气翻出来的。`
+                : `<b>缺 ${last.shortage} 件</b>，没能凑齐。`
               : '该吃该烧的都凑齐了。'
           }
           ${last.spoiled > 0 ? `坏掉 ${last.spoiled} 件。` : ''}
@@ -188,7 +188,7 @@ export class SurvivalScreen implements Screen {
               ? `货架上取了 ${last.fromShelves} 件，另外 <b>${last.fromBoxes} 件是从没拆的纸箱里翻出来的</b>。`
               : last.fromShelves > 0
                 ? `今天要的 ${last.fromShelves} 件全在货架上，伸手就够到了。`
-                : '今天什么也没能拿到 —— 屋里已经翻不出东西了。'
+                : '今天什么也没拿到，屋里翻不出东西了。'
           }
         </p>
         <p class="block-note">
@@ -234,6 +234,10 @@ export class SurvivalScreen implements Screen {
     const score = computeOrganizeScore(run.shelves, run.zones, run.boxesToUnpack, getDisasterDef(run.disasterId));
     const handy = score.emergency;
     const streak = run.survival.safeStreak;
+    // 连击那一行与"为什么没连上"那一行互斥，而且**空的时候不渲染任何东西** ——
+    // 一切都正常的日子不该被硬塞一句话（§5 引擎①：只陈述，不夸）
+    const note =
+      streak >= 2 ? `连着 ${streak} 天，该拿到的都拿到了。` : safetyNote(run, score.placement, score.emergency);
     return `
       <section class="block">
         <h2 class="block-title">今天屋里的样子</h2>
@@ -242,11 +246,7 @@ export class SurvivalScreen implements Screen {
           <div class="stat"><i>临期优先</i><b>${Math.round(score.fefo * 100)}%</b></div>
           <div class="stat"><i>顺手位</i><b>${Math.round(handy * 100)}%</b></div>
         </div>
-        ${
-          streak >= 2
-            ? `<p class="block-note">连着 ${streak} 天，该拿到的都拿到了。</p>`
-            : `<p class="block-note">${escapeHtml(safetyNote(run, score.placement, score.emergency))}</p>`
-        }
+        ${note ? `<p class="block-note">${escapeHtml(note)}</p>` : ''}
       </section>
     `;
   }
@@ -290,7 +290,7 @@ export class SurvivalScreen implements Screen {
       return `
         <section class="block">
           <h2 class="block-title">去敲个门</h2>
-          <p class="press-line">这一片你已经不好意思再去张口了。上次那回，人家记着呢。</p>
+          <p class="press-line">上次没给他，这会儿再去开口不太合适。</p>
         </section>
       `;
     }
@@ -299,11 +299,11 @@ export class SurvivalScreen implements Screen {
       <section class="block">
         <h2 class="block-title">去敲个门</h2>
         <p class="block-note">
-          拿三件东西，换邻居一箱粮油。他挑，你给 —— 箱子里装着什么，他自己也说不准。
+          拿三件东西，换邻居一箱粮油。品类不限，他自己挑。
         </p>
         ${
           left > 0
-            ? `<p class="press-line">上次刚换过。再过 ${left} 天，你才好意思再去。</p>`
+            ? `<p class="press-line">上次换过了。再过 ${left} 天再去。</p>`
             : `<div data-trade>${this.tradePickerHtml()}</div>`
         }
       </section>
@@ -455,7 +455,7 @@ function hardPressLine(level: HardPressLevel): string {
     case 'failing':
       return '撑不住已经好几天了。今天起，身体每天要多烧一份口粮。';
     case 'collapsing':
-      return '快垮了。多烧的不止一份 —— 再这样下去，撑不到寒潮过去。';
+      return '快垮了。多烧的不止一份。';
     default:
       return '';
   }
@@ -471,9 +471,9 @@ function coldHouseNote(run: RunState): string {
   if (run.stats.shelter >= SHELTER_SLEEP_LINE) return '';
   const hint =
     countCategory(run.shelves, run.boxesToUnpack, 'warmth') > 0
-      ? '屋里还有保暖的东西，今晚就会自己添上。'
-      : '屋里没有保暖的东西了 —— 棉被在五金店，但现在下不了楼。';
-  return `<p class="press-line is-cold">屋子太冷（庇护所 ${Math.round(run.stats.shelter)}）—— 今晚睡觉只能回一半体力。${escapeHtml(hint)}</p>`;
+      ? '屋里还有保暖的东西，今晚会自己添上。'
+      : '屋里没有保暖的东西了。棉被在五金店，但今天下不了楼。';
+  return `<p class="press-line is-cold">屋子太冷（庇护所 ${Math.round(run.stats.shelter)}），今晚睡觉只能回一半体力。${escapeHtml(hint)}</p>`;
 }
 
 /** 明日预告（§9 界面清单第 5 条的最后一项）。它让"今天要不要省着过"变成一个可以想的问题 */
@@ -487,7 +487,7 @@ function supplyText(last: SurvivalSnapshot): string {
   const parts: string[] = [];
   if (last.usedMedicine > 0) parts.push(`用了 ${last.usedMedicine} 件药`);
   if (last.usedWarmth > 0) parts.push(`添了 ${last.usedWarmth} 件保暖`);
-  return `${parts.join('，')} —— 这两样都是自己动的，不用你操心。`;
+  return `${parts.join('，')}。这两样是自动用的，不用管。`;
 }
 
 /**
@@ -497,10 +497,10 @@ function supplyText(last: SurvivalSnapshot): string {
  * 所以玩家看到的话和身上的体力是一回事 —— 这里不能说一套、数值算另一套。
  */
 function qualityNote(quality: number): string {
-  if (quality >= 0.8) return '东西都在你自己划的区里，闭着眼也拿得到 —— 今天没在"找东西"上花力气。';
-  if (quality >= 0.5) return '大致知道在哪，但偶尔还得翻两下。';
+  if (quality >= 0.8) return '东西都在你自己划的区里，闭着眼也拿得到。';
+  if (quality >= 0.5) return '大致知道在哪，偶尔还得翻两下。';
   if (quality > 0) return '东西散着放，找一件要挪三件。';
-  return '货架基本没派上用场，今天全靠翻箱子。';
+  return '货架没派上用场，今天全靠翻箱子。';
 }
 
 /**
@@ -520,7 +520,7 @@ function emergencyHtml(last: SurvivalSnapshot): string {
   const def = findEmergency(last.emergencyId);
   if (!def) return '';
   if (last.emergencyResolved) {
-    return `<p class="block-note warm">${escapeHtml(def.text)}顺手位上的东西够用 —— 这件事没耽误什么。</p>`;
+    return `<p class="block-note warm">${escapeHtml(def.text)}顺手位上有，用上了。</p>`;
   }
   return `<p class="press-line">${escapeHtml(def.text)}${
     def.needOnHandy > 1
@@ -536,13 +536,13 @@ function emergencyHtml(last: SurvivalSnapshot): string {
  */
 function safetyNote(run: RunState, placement: number, emergency: number): string {
   const last = run.survival.last;
-  if (last.shortage > 0) return `今天没凑齐 ${last.shortage} 件 —— 连着的那几天到这里为止。`;
-  if (last.unreachable > 0) return `有 ${last.unreachable} 件在屋里却没翻出来 —— 连着的那几天到这里为止。`;
+  if (last.shortage > 0) return `今天没凑齐 ${last.shortage} 件。`;
+  if (last.unreachable > 0) return `有 ${last.unreachable} 件在屋里，没翻出来。`;
   if (last.hardPress) return '今天是在硬撑。';
   if (run.survival.safeStreak > 0) return `连着 ${run.survival.safeStreak} 天，该拿到的都拿到了。`;
-  if (placement < 0.5) return '东西还没放进你自己写的清单里 —— 每天找它们要多花力气。';
-  if (emergency < 1) return '急用的那几件还不在顺手位上 —— 出了事得现翻。';
-  return '今天就到这里。';
+  if (placement < 0.5) return '东西还没放进你自己写的清单里，每天找它们要多花力气。';
+  if (emergency < 1) return '急用的那几件还不在顺手位上，出了事得现翻。';
+  return '';
 }
 
 function escapeHtml(text: string): string {

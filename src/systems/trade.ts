@@ -80,9 +80,9 @@ export function canTrade(run: RunState): boolean {
  */
 export function tradeForBox(store: GameStore, picks: readonly TradePick[]): TradeResult {
   const run = store.run;
-  if (isShutOut(run)) return reject('上次拒了人家，这会儿不好再去敲门');
+  if (isShutOut(run)) return reject('上次没给他，现在去不合适');
   if (run.phase !== 'survival_day') return reject('现在不在生存期');
-  if (!run.survival.last.hardPress) return reject('日子还过得去，先别去麻烦人家');
+  if (!run.survival.last.hardPress) return reject('还没到要开口的地步');
   const wait = tradeCooldownLeft(run);
   if (wait > 0) return reject(`上次刚换过，再过 ${wait} 天`);
 

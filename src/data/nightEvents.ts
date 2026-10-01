@@ -19,27 +19,27 @@ export const NIGHT_SLEEP = -1;
 export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
   {
     id: 'n_night_shift',
-    text: '单位群里在喊人顶夜班，双倍工资。手机亮着，等你回话。',
+    text: '单位群里在喊人顶夜班，双倍工资。',
     options: [
       {
         label: '去顶班',
-        outcome: '你在单位坐到天亮，回来时楼道里正有人出门上班。',
+        outcome: '你在单位坐到天亮。回来的时候，楼道里已经有人出门上班了。',
         effect: { stamina: -25, cash: 120 }
       },
       {
         label: '说家里有事',
-        outcome: '你没去。群里很快安静了。',
+        outcome: '你没去。群里很快没人说话了。',
         effect: { mood: -3 }
       }
     ]
   },
   {
     id: 'n_neighbor_soup',
-    text: '楼上的王阿姨敲门，说她家煮了汤，让你过去坐坐。',
+    text: '王阿姨敲门，说她家煮了汤，让你过去坐坐。',
     options: [
       {
         label: '过去坐坐',
-        outcome: '喝了两碗汤，听她念了半小时儿子。回来时身上是暖的。',
+        outcome: '喝了两碗汤，听她念了半小时儿子。回来的时候身上是暖的。',
         effect: { mood: 12, stamina: -8 }
       },
       {
@@ -51,7 +51,7 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
   },
   {
     id: 'n_midnight_restock',
-    text: '有人说南边那家超市半夜补货。你们小区已经有车出门了。',
+    text: '有人说南边那家超市半夜补货。小区里已经有车出去了。',
     options: [
       {
         // 买货：钱不够就是买不成（界面上会置灰并写明还差多少）
@@ -95,7 +95,7 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
          * 屏幕上是"你转过去 80"还是"你转过去 25"，取决于这个人当时有多少。
          */
         label: '转他 80',
-        outcome: '你转过去 {spentCash}。他回了一串谢谢，你没有问什么时候还。',
+        outcome: '你转过去 {spentCash}。他回了一串谢谢。',
         effect: { cash: -80, mood: 8 }
       },
       {
@@ -111,12 +111,12 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
     options: [
       {
         label: '蹲下来数一遍',
-        outcome: '数到一半忘了数到哪，但心里踏实了。',
+        outcome: '数到一半忘了数到哪。',
         effect: { stamina: -6, mood: 10 }
       },
       {
         label: '看一眼就睡',
-        outcome: '你站了会儿，关上灯。',
+        outcome: '你站了会儿，关了灯。',
         effect: { mood: 3 }
       }
     ]

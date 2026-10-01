@@ -29,7 +29,7 @@ export const NPC_DEFS: readonly NpcDef[] = [
   {
     id: 'npc_shopkeeper',
     name: '老陈',
-    blurb: '小区门口那家小卖部的。货比谁都全，就是不爱多说话。'
+    blurb: '小区门口小卖部的。货比谁都齐，话不多。'
   }
 ];
 

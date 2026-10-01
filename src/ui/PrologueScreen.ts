@@ -52,7 +52,7 @@ export class PrologueScreen implements Screen {
           <div class="topbar-row">
             <div class="title">
               <h1>囤货末世</h1>
-              <p class="sub">重生回灾难前 7 天</p>
+              <p class="sub">重生在灾难前 7 天</p>
             </div>
           </div>
         </header>
@@ -87,8 +87,7 @@ export class PrologueScreen implements Screen {
             </p>
             <p class="block-note">
               最要紧的是 ${disaster.priorityCategories.map((c) => `<b>${CATEGORY_LABELS[c]}</b>`).join(' 和 ')}。
-            </p>
-          </section>
+            </p>          </section>
         </main>
         <footer class="dock">
           <div class="dock-tools">

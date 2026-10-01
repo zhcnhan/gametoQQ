@@ -397,12 +397,12 @@ export function settleSurvivalDay(run: RunState, cursor?: RngCursor): SurvivalRe
   if (short.length > 0) run.log.push(`${stamp} · 缺 ${short.join('、')}`);
   // 这条日志是"没整理"的体感来源：货架空了，只能去撕箱子
   if (fromBoxes > 0) {
-    run.log.push(`${stamp} · 其中 ${fromBoxes} 件是从没拆的纸箱里翻出来的（翻找耗掉 ${workCost} 点体力）`);
+    run.log.push(`${stamp} · 其中 ${fromBoxes} 件是从没拆的纸箱里翻出来的（翻找花了 ${workCost} 点体力）`);
   } else if (workCost > 0) {
-    run.log.push(`${stamp} · 翻找耗掉 ${workCost} 点体力`);
+    run.log.push(`${stamp} · 翻找花了 ${workCost} 点体力`);
   }
   if (unreachableUnits > 0) {
-    run.log.push(`${stamp} · 实在翻不动，少拿了 ${unreachableUnits} 件`);
+    run.log.push(`${stamp} · 翻不动，少拿了 ${unreachableUnits} 件`);
   }
   // 没睡踏实要写进日志：它是三条体力流失路径（劳作 / 缺货 / 受冻）里唯一不写在
   // ④⑤ 里的，不记下来玩家只会看到"体力莫名少回了一半"
@@ -431,7 +431,7 @@ export function settleSurvivalDay(run: RunState, cursor?: RngCursor): SurvivalRe
   if (emergencyOutcome) {
     const name = CATEGORY_LABELS[emergencyOutcome.def.category];
     if (emergencyOutcome.resolved) {
-      run.log.push(`${stamp} · ${emergencyOutcome.def.text}顺手位上的${name}够用，没耽误什么。`);
+      run.log.push(`${stamp} · ${emergencyOutcome.def.text}顺手位上有${name}，用上了。`);
     } else {
       run.log.push(
         `${stamp} · ${emergencyOutcome.def.text}顺手位上只有 ${emergencyOutcome.handyHave} 件${name}，不够。`

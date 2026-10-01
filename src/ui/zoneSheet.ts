@@ -192,7 +192,7 @@ export class ZoneSheet {
    */
   private categoryNote(): string {
     if (this.categories.length === 0) {
-      return '什么都没选 = 这张胶带还没写清单。归位率量的是"你有没有按自己写的清单放"，所以它现在是 0。';
+      return '什么都没选。归位率量的是"有没有按自己写的清单放"，所以没写清单时它是 0。';
     }
     return `只收 ${this.categories.map((c) => CATEGORY_LABELS[c]).join(' / ')}。别的东西放上来会点一个小墨点。`;
   }
@@ -247,7 +247,7 @@ export class ZoneSheet {
             </button>`;
           })
           .join('')
-      : '<p class="zone-empty">还没撕过胶带。写下你要给这片区域定的名字，贴上去就是你的第一条规矩。</p>';
+      : '<p class="zone-empty">还没撕过胶带。给它起个名字，贴到货架上就行。</p>';
 
     const currentBlock = current
       ? `<div class="tape-current" style="--zone:${current.color}">
@@ -255,7 +255,7 @@ export class ZoneSheet {
            <span class="tape-current-meta">这架贴着它 · ${this.usageCount(current.id)} 架在用 · ${escapeHtml(this.ruleText(current))}</span>
            <button class="mini mini-danger" data-zone-act="detach">撕下来</button>
          </div>`
-      : `<p class="zone-empty">这架还没贴胶带 —— 没清单就没法量这架的归位率。</p>`;
+      : `<p class="zone-empty">这架还没贴胶带。没清单就算不出这架的归位率。</p>`;
 
     this.root.innerHTML = `
       <div class="drawer-blocker" data-zone-act="close"></div>

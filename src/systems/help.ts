@@ -142,9 +142,9 @@ export function fulfillRequest(store: GameStore): HelpResult {
     // 都不额外扣人情 —— §6.5 只把"婉拒"算作不讲情面
     const why =
       info.missing > 0
-        ? `翻遍了也只凑出${info.pieces - info.missing} 件`
+        ? `翻遍了也只凑出 ${info.pieces - info.missing} 件`
         : draft.stats.stamina < cost
-          ? `要翻这一趟得 ${cost} 点体力，你今天没有`
+          ? `翻这一趟要 ${cost} 点体力，你今天不够`
           : '';
 
     if (why) {

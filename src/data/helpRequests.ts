@@ -52,7 +52,7 @@ export const HELP_REQUEST_DEFS: readonly HelpRequestDef[] = [
   {
     id: 'q_wang_medicine',
     npcId: 'npc_wang',
-    text: '王阿姨站在门口，说孙子半夜烧起来了，家里的药已经吃完。',
+    text: '王阿姨站在门口，说孙子半夜烧起来了，家里的药吃完了。',
     demands: [{ category: 'medicine', count: 3 }],
     trustGain: 2,
     trustLoss: 2,
@@ -72,7 +72,7 @@ export const HELP_REQUEST_DEFS: readonly HelpRequestDef[] = [
   {
     id: 'q_classmate_food',
     npcId: 'npc_classmate',
-    text: '老同学在楼下等着，说家里断了两天，能不能先挪一点吃的。',
+    text: '老同学在楼下等着，说家里断了两天，想先挪一点吃的。',
     demands: [{ category: 'food', count: 4 }],
     trustGain: 2,
     trustLoss: 3,
@@ -81,7 +81,7 @@ export const HELP_REQUEST_DEFS: readonly HelpRequestDef[] = [
   {
     id: 'q_classmate_fuel',
     npcId: 'npc_classmate',
-    text: '他搓着手说家里的炉子灭了，还差一点烧的。',
+    text: '他搓着手，说家里的炉子灭了，还差一点烧的。',
     demands: [{ category: 'fuel', count: 2 }],
     trustGain: 2,
     trustLoss: 2,
@@ -102,7 +102,7 @@ export const HELP_REQUEST_DEFS: readonly HelpRequestDef[] = [
   {
     id: 'q_shopkeeper_warmth',
     npcId: 'npc_shopkeeper',
-    text: '他说晚上店里守不住了，问有没有多的被子能匀一床。',
+    text: '他说晚上店里守不住，问有没有多的被子能匀一床。',
     demands: [{ category: 'warmth', count: 1 }],
     trustGain: 2,
     trustLoss: 1,

@@ -90,10 +90,10 @@ export class HelpScreen implements Screen {
               凑这一趟要花 ${cost} 点体力（你还有 ${stamina}）。
               ${
                 info.missing > 0
-                  ? `<b>还差 ${info.missing} 件</b> —— 现在去凑，多半要当着他的面翻箱倒柜。`
+                  ? `<b>还差 ${info.missing} 件。</b>现在凑，得当着面翻箱子。`
                   : tooTired
                     ? '<b>你今天翻不动了。</b>'
-                    : '东西都在手边的话，几下就能凑齐。'
+                    : '东西都在手上，几下就齐。'
               }
             </p>
           </section>

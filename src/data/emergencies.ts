@@ -57,7 +57,7 @@ export const EMERGENCY_NONE_WEIGHT = 16.3;
 export const EMERGENCY_DEFS: readonly EmergencyDef[] = [
   {
     id: 'e_cut_hand',
-    text: '拆木箱的时候手滑了一下，虎口拉开一道口子。血滴在地板上。',
+    text: '拆木箱的时候手滑了一下，虎口拉开一道口子。',
     category: 'medicine',
     needOnHandy: 1,
     lost: 1
@@ -66,7 +66,7 @@ export const EMERGENCY_DEFS: readonly EmergencyDef[] = [
   },
   {
     id: 'e_stove_out',
-    text: '炉子自己熄了。凑近听，罐子已经空了。',
+    text: '炉子熄了。凑近听，罐子已经空了。',
     category: 'fuel',
     needOnHandy: 1,
     lost: 2,
@@ -74,7 +74,7 @@ export const EMERGENCY_DEFS: readonly EmergencyDef[] = [
   },
   {
     id: 'e_pipe_burst',
-    text: '水管冻裂了，水顺着墙往下淌。地上很快结了一层。',
+    text: '水管冻裂了，水顺着墙往下淌。',
     category: 'tool',
     needOnHandy: 1,
     lost: 2
@@ -88,7 +88,7 @@ export const EMERGENCY_DEFS: readonly EmergencyDef[] = [
   },
   {
     id: 'e_window_gap',
-    text: '风把窗缝吹开了，窗帘一直在动。屋里那点热气正往外跑。',
+    text: '风把窗缝吹开了。屋里那点热气正往外跑。',
     category: 'warmth',
     needOnHandy: 1,
     lost: 1

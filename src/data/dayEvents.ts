@@ -62,7 +62,7 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
     weight: 1.0,
     def: {
       id: 'd_queue_aunt',
-      text: '前面排了很长的队。收银台只开了两个，一位大妈正把购物车横在过道上。',
+      text: '前面排了很长的队。收银台只开了两个，一个购物车横在过道上。',
       options: [
         {
           label: '排到底',
@@ -93,7 +93,7 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
       options: [
         {
           label: '先抢一轮',
-          outcome: '你把架子上的主食扫掉一半。旁边有人看你。',
+          outcome: '你把架子上的主食拿掉一半。旁边有人看你。',
           // 削库存是**今天真实发生的**：抢完了就是抢完了，不是"你被禁止买"
           effect: { stockCut: { category: 'food', count: 4 }, mood: 5 }
         },
@@ -104,7 +104,7 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
         },
         {
           label: '今天不买了',
-          outcome: '你空着手出来，站在门口听了会儿风。',
+          outcome: '你空着手出来，在门口站了会儿。',
           effect: { visitLost: true, mood: -2 }
         }
       ]
@@ -123,12 +123,12 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
         },
         {
           label: '换一家看看',
-          outcome: '你转身去了别处。这里的队伍还在长。',
+          outcome: '你转身去了别处。这里的队还在排。',
           effect: { visitLost: true }
         },
         {
           label: '找熟人通融',
-          outcome: '你给理货员递了包烟，他装作没看见你多拿的那两件。',
+          outcome: '你给理货员递了包烟。他多给了你两件。',
           effect: { cash: -20, limit: { category: 'food', max: 5 } }
         }
       ]
@@ -138,26 +138,26 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
     weight: 0.6,
     def: {
       id: 'd_black_market',
-      text: '五金店后巷停着一辆没牌照的面包车。有人从车窗里递出一箱货，收了钱就走。',
+      text: '五金店后巷停着一辆没牌照的面包车。有人从车窗里递出一箱货，收钱就走。',
       // 只在五金店 —— 后巷这件事有地址，到处都能碰上就假了
       onlyShops: ['hardware'],
       options: [
         {
           label: '问一句价钱',
-          outcome: '他伸出两根手指。你数出 {spentCash} 递过去，他把箱子塞进你怀里。',
+          outcome: '他伸出两根手指。你数出 {spentCash} 递过去。',
           effect: { cash: -120, boxDefId: 'box_mixed' },
           requireFullCash: true
         },
         {
           label: '装作没看见',
-          outcome: '你从巷口走过去了。后视镜里那辆车一直没动。',
+          outcome: '你从巷口走过去了。',
           // §4A：每条事件都得有一条"不参与"的路。这里的代价只有一点心情 ——
           // 你没买东西、也没白跑一趟（店还开着，可以照常进去买）
           effect: { mood: -2 }
         },
         {
           label: '这店今天不进了',
-          outcome: '你调头走了。那辆车还停在巷子里。',
+          outcome: '你调头走了。',
           effect: { visitLost: true }
         }
       ]

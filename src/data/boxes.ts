@@ -43,7 +43,7 @@ export const BOX_DEFS: readonly BoxDef[] = [
   {
     id: 'box_staple',
     name: '粮油箱',
-    hint: '粮油 · 保重',
+    hint: '粮油',
     pool: ['canned_beans', 'instant_noodles', 'rice_bag', 'flour', 'mineral_water', 'milk'],
     minItems: 5,
     maxItems: 7,
@@ -52,7 +52,7 @@ export const BOX_DEFS: readonly BoxDef[] = [
   {
     id: 'box_medical',
     name: '医疗箱',
-    hint: '常用药 · 别硬撑',
+    hint: '常用药',
     pool: ['bandage', 'cold_medicine', 'mineral_water', 'battery'],
     minItems: 3,
     maxItems: 5,
@@ -61,7 +61,7 @@ export const BOX_DEFS: readonly BoxDef[] = [
   {
     id: 'box_mixed',
     name: '神秘混合箱',
-    hint: '隔壁单位拼的 · 说不上都有啥',
+    hint: '隔壁单位拼的，说不上都有啥',
     pool: [
       'canned_beans',
       'instant_noodles',
@@ -101,8 +101,7 @@ export const STRAY_BOX_ID = 'box_stray';
 export const STRAY_BOX_DEF: BoxDef = {
   id: STRAY_BOX_ID,
   name: '临时搁置箱',
-  hint: '放不下的先搁这儿',
-  pool: [],
+  hint: '放不下的先搁这儿',  pool: [],
   minItems: 0,
   maxItems: 0,
   maxCountPerItem: 1
