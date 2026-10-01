@@ -1,0 +1,19 @@
+{
+  "name": "tunhuo-moshi",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "《囤货末世》—— 末日囤货手账 · 整理模拟（手机竖屏 H5）",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "~5.6.3",
+    "vite": "^5.4.10",
+    "vitest": "^2.1.4"
+  }
+}
