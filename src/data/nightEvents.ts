@@ -54,14 +54,17 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
     text: '有人说南边那家超市半夜补货。你们小区已经有车出门了。',
     options: [
       {
+        // 买货：钱不够就是买不成（界面上会置灰并写明还差多少）
         label: '开车去看看',
         outcome: '你摸黑拉回来一箱，箱子上没写标签。',
-        effect: { stamina: -18, cash: -50, boxDefId: 'box_mixed' }
+        effect: { stamina: -18, cash: -50, boxDefId: 'box_mixed' },
+        requireFullCash: true
       },
       {
         label: '托邻居捎一箱',
         outcome: '他答应得爽快，也说好了要抽两成。',
-        effect: { cash: -70, boxDefId: 'box_staple' }
+        effect: { cash: -70, boxDefId: 'box_staple' },
+        requireFullCash: true
       }
     ]
   },
@@ -86,8 +89,13 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
     text: '一个很久没联系的同学发来消息，说手头紧，想周转一下。',
     options: [
       {
+        /**
+         * 人情这一类**允许少给**（不写 requireFullCash）：兜里只有 25 元的人照样能帮上忙，
+         * 只是帮得少一点。`{spentCash}` 会换成真的转出去的那个数 ——
+         * 屏幕上是"你转过去 80"还是"你转过去 25"，取决于这个人当时有多少。
+         */
         label: '转他 80',
-        outcome: '他回了一串谢谢。你没有问什么时候还。',
+        outcome: '你转过去 {spentCash}。他回了一串谢谢，你没有问什么时候还。',
         effect: { cash: -80, mood: 8 }
       },
       {

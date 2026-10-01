@@ -23,7 +23,7 @@ import { dayLabel } from '../model/calendar';
 import { createCursor, type RngCursor } from '../model/rng';
 import type { GamePhase, RunState } from '../model/types';
 import type { GameStore } from '../state/store';
-import { applyNightEffect, describeEffect, optionAt, rollNight } from './night';
+import { NO_EFFECT, applyNightEffect, cashCost, describeEffect, optionAt, rollNight } from './night';
 import { rollShopStocks } from './shop';
 import { settleSurvivalDay, type SurvivalReport } from './survival';
 
@@ -69,6 +69,8 @@ export type PhaseEvent =
   | { type: 'survivalSettled'; report: SurvivalReport }
   /** 撑满 7 天 */
   | { type: 'survivalCompleted'; days: number }
+  /** 健康归零，这一局停在这里（§12.3 v0.5 修订：硬撑不是免死金牌） */
+  | { type: 'survivalEnded'; outcome: 'collapsed'; day: number }
   | { type: 'rejected'; reason: string };
 
 export interface PhaseResult {
@@ -164,7 +166,7 @@ export function endDay(store: GameStore): PhaseResult {
     const cursor = createCursor(draft.seed);
     const eventId = rollNight(cursor);
     if (eventId) {
-      draft.night = { eventId, choice: null };
+      draft.night = { eventId, choice: null, applied: null };
       draft.phase = 'night';
       events.push({ type: 'nightFell', eventId });
     } else {
@@ -195,14 +197,24 @@ export function chooseNightOption(store: GameStore, choice: number): PhaseResult
   if (!def) return reject('没有这件事');
   const option = optionAt(def, choice);
   if (choice !== NIGHT_SLEEP && !option) return reject('没有这个选项');
+  // 买货那一类必须给得起钱。界面会把它置灰，这里再挡一道 ——
+  // 存档是玩家能改的，而"多少钱能买什么"不该只由界面说了算。
+  if (option?.requireFullCash) {
+    const cost = cashCost(option);
+    if (run.cash < cost) return reject(`钱不够，还差 ${cost - run.cash} 元`);
+  }
 
   const events: PhaseEvent[] = [];
   store.commit((draft) => {
     const cursor = createCursor(draft.seed);
-    if (option) applyNightEffect(draft, option.effect, cursor);
+    // applied 是**实际**生效的数值（现金可能给不满），摘要与结果文案都用它，不用选项声明的数
+    const applied = option ? applyNightEffect(draft, option.effect, cursor) : NO_EFFECT;
     const target = draft.night;
-    if (target) target.choice = choice;
-    const summary = option ? describeEffect(option.effect) : [];
+    if (target) {
+      target.choice = choice;
+      target.applied = applied;
+    }
+    const summary = describeEffect(applied);
     draft.log.push(
       `夜间 · ${option ? option.label : '直接睡'}${summary.length > 0 ? `（${summary.join('，')}）` : ''}`
     );
@@ -238,6 +250,21 @@ export function sleep(store: GameStore): PhaseResult {
 // 所以后者每一步都必须带一份**结算报告**回去，否则界面没有东西可显示。
 
 /**
+ * 结算一天，然后判断这一局是不是到这里为止了。
+ *
+ * "什么算结束"**只**在这一个地方定义 —— `systems/survival.ts` 只负责把四维算对，
+ * 它不知道"输赢"这回事。这样存档层不用猜，界面也不用各处复制同一套阈值。
+ */
+function settleAndMaybeEnd(run: RunState, events: PhaseEvent[]): void {
+  events.push({ type: 'survivalSettled', report: settleSurvivalDay(run) });
+  if (run.stats.health > 0) return;
+  run.outcome = 'collapsed';
+  run.phase = 'ending';
+  run.log.push(`${dayLabel(run.day)} · 撑不住了。`);
+  events.push({ type: 'survivalEnded', outcome: 'collapsed', day: run.day });
+}
+
+/**
  * 从 D-Day 迈出第一步：`day 0 → 1`，并**立刻结算 D+1**。
  *
  * 为什么结算是"进入某一天"而不是"离开某一天"的代价：这样界面永远在显示
@@ -253,12 +280,19 @@ export function startSurvival(store: GameStore): PhaseResult {
   const events: PhaseEvent[] = [];
   store.commit((draft) => {
     draft.day = 1;
-    events.push({ type: 'survivalSettled', report: settleSurvivalDay(draft) });
+    settleAndMaybeEnd(draft, events);
   });
   return ok(events);
 }
 
-/** 撑过一天。第 7 天之后再推进 → 结算页（§12.3：撑过 7 天就是撑过去了） */
+/**
+ * 撑过一天。第 7 天之后再推进 → 结算页。
+ *
+ * 这里有两个出口，**顺序不能反**：
+ *   ① 先看这次结算有没有把健康打到 0（`settleAndMaybeEnd` 会接住，直接进 collapsed 结局）；
+ *   ② 否则再看是不是撑满了 —— 撑满 7 天就是撑过去了（§12.3）。
+ * 反过来的话，"第 7 天倒下"的人会拿到"你撑过去了"的评语。
+ */
 export function advanceSurvivalDay(store: GameStore): PhaseResult {
   const run = store.run;
   if (run.phase !== 'survival_day') return reject('现在不是生存期');
@@ -269,12 +303,13 @@ export function advanceSurvivalDay(store: GameStore): PhaseResult {
     const next = draft.day + 1;
     if (next > SURVIVAL_DAYS) {
       draft.phase = 'ending';
+      draft.outcome = 'survived';
       draft.log.push(`撑过 ${SURVIVAL_DAYS} 天。`);
       events.push({ type: 'survivalCompleted', days: SURVIVAL_DAYS });
       return;
     }
     draft.day = next;
-    events.push({ type: 'survivalSettled', report: settleSurvivalDay(draft) });
+    settleAndMaybeEnd(draft, events);
   });
   return ok(events);
 }

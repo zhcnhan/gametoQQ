@@ -38,7 +38,7 @@ import {
   stackCount,
   zoneAccepts
 } from './shelf';
-import type { CategoryId, ItemStack, Shelf, UnpackBox, Zone } from './types';
+import type { CategoryId, ItemStack, Shelf, SlotPos, UnpackBox, Zone } from './types';
 
 export interface TakenBatch {
   itemId: string;
@@ -225,4 +225,102 @@ export function countCategory(
     }
   }
   return total;
+}
+
+/**
+ * 全屋每种物资各有多少件（**货架 + 还没拆的纸箱**）。按件数从多到少。
+ *
+ * 交易界面要用它列出"你能拿什么去换"。只数货架是不够的 ——
+ * 一个东西全在箱子里的人，恰恰是最需要这个出口的人。
+ */
+export function countByItem(
+  shelves: readonly Shelf[],
+  boxes: readonly UnpackBox[]
+): { itemId: string; count: number }[] {
+  const tally = new Map<string, number>();
+  const add = (itemId: string, n: number): void => {
+    if (n <= 0) return;
+    tally.set(itemId, (tally.get(itemId) ?? 0) + n);
+  };
+  for (const shelf of shelves) {
+    for (const pos of readingOrder(shelf)) {
+      const stack = getStack(shelf, pos);
+      if (stack) add(stack.itemId, stackCount(stack));
+    }
+  }
+  for (const box of boxes) {
+    for (const stack of box.items) add(stack.itemId, stackCount(stack));
+  }
+  return [...tally.entries()]
+    .map(([itemId, count]) => ({ itemId, count }))
+    .sort((a, b) => (b.count !== a.count ? b.count - a.count : a.itemId.localeCompare(b.itemId)));
+}
+
+/**
+ * 按 **itemId** 取走 N 件（货架优先、同架按 FEFO、纸箱兜底）。
+ *
+ * 与 `consumeCategory` 的分工：那个按品类（生存期的每日消耗，系统自己挑），
+ * 这个精确到物资本身 —— 因为交易要玩家**指认**他拿什么去换，
+ * 而那正是"取舍感"唯一可能的来源。
+ *
+ * @returns 新的货架与纸箱（都是 clone 过的），以及实际取走的件数
+ */
+export function consumeItem(
+  shelves: readonly Shelf[],
+  boxes: readonly UnpackBox[],
+  itemId: string,
+  need: number
+): { shelves: Shelf[]; boxes: UnpackBox[]; taken: number } {
+  const nextShelves = shelves.map(cloneShelf);
+  const nextBoxes = boxes.map((box) => ({ ...box, items: box.items.slice() }));
+  if (need <= 0) return { shelves: nextShelves, boxes: nextBoxes, taken: 0 };
+
+  let remain = need;
+
+  // ① 货架：同一种物资里按到期日升序（FEFO），先把快过期的换出去
+  const spots: { shelfIndex: number; pos: SlotPos; expiry: number }[] = [];
+  for (let i = 0; i < shelves.length; i++) {
+    const shelf = shelves[i];
+    if (!shelf) continue;
+    for (const pos of readingOrder(shelf)) {
+      const stack = getStack(shelf, pos);
+      if (!stack || stack.itemId !== itemId) continue;
+      spots.push({ shelfIndex: i, pos, expiry: expiryKey(stack) });
+    }
+  }
+  spots.sort((a, b) => (a.expiry !== b.expiry ? a.expiry - b.expiry : a.shelfIndex - b.shelfIndex));
+
+  for (const spot of spots) {
+    if (remain <= 0) break;
+    const shelf = nextShelves[spot.shelfIndex];
+    if (!shelf) continue;
+    const current = getStack(shelf, spot.pos);
+    if (!current) continue;
+    const take = Math.min(remain, stackCount(current));
+    if (take <= 0) continue;
+    const { taken, left } = splitStack(current, take);
+    nextShelves[spot.shelfIndex] = setSlotStack(shelf, spot.pos, left);
+    remain -= taken.batches.reduce((n, b) => n + b.count, 0);
+  }
+
+  // ② 纸箱兜底
+  for (let i = 0; i < nextBoxes.length && remain > 0; i++) {
+    const box = nextBoxes[i];
+    if (!box) continue;
+    for (let k = 0; k < box.items.length && remain > 0; k++) {
+      const stack = box.items[k];
+      if (!stack || stack.itemId !== itemId) continue;
+      const take = Math.min(remain, stackCount(stack));
+      if (take <= 0) continue;
+      const { taken, left } = splitStack(stack, take);
+      if (left) box.items[k] = left;
+      else {
+        box.items.splice(k, 1);
+        k -= 1; // 摘掉一堆之后下标要退一格，否则会跳过下一堆
+      }
+      remain -= taken.batches.reduce((n, b) => n + b.count, 0);
+    }
+  }
+
+  return { shelves: nextShelves, boxes: nextBoxes, taken: need - remain };
 }

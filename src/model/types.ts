@@ -228,12 +228,39 @@ export interface NightEffect {
   boxDefId?: string;
 }
 
+/**
+ * 选项**实际**生效的后果（不是它声明的那些）。
+ *
+ * 两个数字会不一样，而且这是刻意的：现金支出走"有多少给多少"（见 `applyNightEffect`），
+ * 所以「转他 80」落在一个只有 25 元的人身上，只扣 25。
+ * 摘要与结果文案必须报**真数** —— 否则界面会告诉玩家一件根本没发生的事，这比数值本身更糟。
+ */
+export interface AppliedEffect {
+  cash: number;
+  health: number;
+  mood: number;
+  stamina: number;
+  shelter: number;
+  gotBox: boolean;
+}
+
 export interface NightOption {
   /** 按钮上的字。手机竖屏，一行放得下为准（≤ 8 字） */
   label: string;
-  /** 选完那一刻看到的一句话，说清发生了什么。不许有台词腔（§11） */
+  /**
+   * 选完那一刻看到的一句话，说清发生了什么。不许有台词腔（§11）。
+   *
+   * 可以写 `{spentCash}` —— 它会被替换成**实际花掉的现金**（正数）。
+   * 例：「你转过去 {spentCash}。他回了一串谢谢。」
+   * 这是唯一一个占位符，因为现金是唯一一个"声明值可能不等于实际值"的字段。
+   */
   outcome: string;
   effect: NightEffect;
+  /**
+   * 这个选项必须**给得起钱**才成立（买货那一类）。
+   * 不写 = 有多少给多少（人情那一类）：钱不够时照样执行，只是结果文案会说出真相。
+   */
+  requireFullCash?: boolean;
 }
 
 export interface NightEventDef {
@@ -250,7 +277,23 @@ export interface NightEventDef {
 export interface NightState {
   eventId: string;
   choice: number | null;
+  /**
+   * 决定之后填：这一晚**实际**发生了什么。
+   *
+   * 落盘的理由是 §4A：刷新回来要能复现"你已经决定过、结果是这样"，
+   * 而不是按选项声明的数值重算一遍 —— 那样会算错（见 `AppliedEffect` 的注释）。
+   */
+  applied: AppliedEffect | null;
 }
+
+/**
+ * 硬撑的档位（§12.3 v0.6）。
+ *
+ * 分档的理由：连续硬撑的第 1 天和第 5 天不是一回事。不分档的话，玩家看到的只是一个
+ * 恒定的"每天掉几点"，既看不出自己正在下沉，也不知道再不好转会怎样。
+ * 具体的代价表在 data/survival.ts 的 `HARD_PRESS_TIERS`。
+ */
+export type HardPressLevel = 'none' | 'straining' | 'failing' | 'collapsing';
 
 /** 最近一次生存期结算的快照（"今天发生了什么"）。下一次结算覆盖它 */
 export interface SurvivalSnapshot {
@@ -262,14 +305,74 @@ export interface SurvivalSnapshot {
   shortage: number;
   /** 今天坏掉的件数 */
   spoiled: number;
+  /**
+   * 今天的取用是从哪儿翻出来的。
+   *
+   * `fromBoxes > 0` 只有一个意思：**货架上不够了**，只能去撕还没拆的纸箱。
+   * 这是"没整理"在日报上唯一看得见的一行 —— §5 说整理决定的是"活得漂亮"而不是
+   * "能不能活"，所以它的形式是**数字**，不是惩罚（策划案 §5 引擎①：游戏不评判对错）。
+   */
+  fromShelves: number;
+  fromBoxes: number;
+  /**
+   * 有货、但今天**没力气翻到**的件数（体力跌破 `EXHAUSTED_STAMINA` 时才会出现）。
+   *
+   * 与 `shortage` 分开记是必须的：一个是"屋里没有"，一个是"有却拿不动"，
+   * 界面要说清是哪一种，玩家才知道明天该拆箱还是该歇着。
+   */
+  unreachable: number;
+  /** 今天的翻找劳作吃掉了多少体力（正数 = 消耗）。整理质量越差这个数越大（§6.4「乱 → 翻找耗时」） */
+  workCost: number;
+  /** 今天是不是在硬撑（体力 / 健康 / 心情跌破线，见 data/survival.ts 的三条阈值） */
+  hardPress: boolean;
+  /** 今天是硬撑里的哪一档（`'none'` = 没在硬撑）。界面按它决定说"硬撑"还是"快垮了" */
+  hardPressLevel: HardPressLevel;
+  /** 今天自动用掉的补给件数（0 = 没动）。医疗 → 健康，保暖 → 庇护所 */
+  usedMedicine: number;
+  usedWarmth: number;
 }
 
 /** 生存期累计账（阶段 C）。结算页（阶段 E）要用，所以必须落盘，不能只活在内存里 */
 export interface SurvivalState {
   /** 累计腐坏损耗（件） */
   spoiled: number;
-  /** 累计"没能凑齐当天消耗"的天数 */
+  /** 累计"没能凑齐当天消耗"的天数。**结算页不再显示它**，改用下面的 shortagePieces */
   shortageDays: number;
+  /**
+   * 累计短了多少件口粮（**真的没有**，不含"有货但拿不动"）。
+   *
+   * 为什么需要它，而不是只用上面的天数：天数的粒度太粗 —— 缺 1 件和缺 5 件都记成一天，
+   * 于是"7 天里有 7 天短了口粮"读起来像"七天没吃上饭"，而实际上可能只是每天少半瓶水。
+   * 件数才是玩家能对上账的那个数。
+   */
+  shortagePieces: number;
+  /**
+   * 累计"有货、但没力气翻出来"的件数。
+   *
+   * 刻意与 `shortagePieces` 分开：一个是**没囤够**，一个是**没整理**。
+   * 混在一起的话，结算页就说不清这一局到底栽在哪 —— 而"栽在哪"正是它唯一该回答的问题。
+   */
+  unreachablePieces: number;
+  /**
+   * 累计"在硬撑"的天数。结算页读它给评语（0 天 = 从容，接近全程 = 一路硬撑）。
+   * 单独记一个累计值而不是每次回扫 `run.log`：日志是给人看的，不是查询用的。
+   */
+  hardPressDays: number;
+  /**
+   * **连续**硬撑的天数（好转的第二天就归零）。
+   *
+   * 与上面的累计值是两件事：累计值回答"这一局过得怎么样"，连续值回答
+   * "你现在掉到哪一档了" —— 档位只看连续值，因为"硬撑一下就好"和
+   * "已经第五天爬不起来"对身体的含义完全不同。
+   */
+  hardPressStreak: number;
+  /**
+   * 上一次"以物易物"发生在第几天（`-99` = 从来没换过）。
+   *
+   * 它只用来限制频率（每 2 天一次），不是玩法数值 —— 所以不从 `run.log` 里反查：
+   * 日志是给人看的，不是查询用的。
+   */
+  lastTradeDay: number;
   /**
    * 最近一次结算的增量。
    * 落盘的理由是 §4A「恢复即续玩」：刷新回来必须还能看见"今天掉了哪些点"，
@@ -337,6 +440,19 @@ export interface RunState {
    * 用状态而不是标志位来保证幂等，比多存一个布尔量可靠。
    */
   survival: SurvivalState;
+
+  // ———————— M1 结局（平衡改造，§12.3 v0.5 修订） ————————
+
+  /**
+   * 这一局是怎么结束的。`null` = 还没结束。
+   *
+   *  - `'survived'`  = 撑满了 `SURVIVAL_DAYS` 天
+   *  - `'collapsed'` = 健康归零，没撑住
+   *
+   * 必须落盘而不是从 `day` 推：撑满 7 天和"第 7 天倒下"的 `day` 都是 7，
+   * 没有这个字段就分不出两种结局，结算页会给出完全相反的评语。
+   */
+  outcome: 'survived' | 'collapsed' | null;
 }
 
 export interface MetaProfile {

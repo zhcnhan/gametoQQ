@@ -399,10 +399,22 @@ export function placementRate(
   return total === 0 ? 1 : ok / total;
 }
 
-/** FEFO 率 = 非空货架中已按到期日升序的比例（同一套尺子，不许含糊） */
+/**
+ * FEFO 率 = 非空货架中已按到期日升序的比例（同一套尺子，不许含糊）。
+ *
+ * ★ 货架全空时返回 **0**，不是 1（M1 手测后修正）。
+ *
+ * 这里跟 `placementRate` 的"空房间宽容规则"刻意相反，理由是两个指标问的问题不一样：
+ *   · 归位率问"你摆好了多少" —— 手上真的没货时给 1（开局第一秒不该是 0%）；
+ *   · FEFO 率问"你排好了多少" —— 一块货架都没用上是**还没开始排**，不是"全都排好了"。
+ *
+ * 原来返回 1 的后果被玩家当场抓到：**囤了 17 箱一口没拆、货架全空，临期优先却显示 100%**。
+ * 它同时还是"整理质量"的输入之一（见 data/survival.ts 的 organizeQuality），
+ * 所以这个 1 会直接漏进生存期的体力结算里 —— 不整理的人反而拿到满分的排架成绩。
+ */
 export function fefoRate(shelves: readonly Shelf[]): number {
   const nonEmpty = shelves.filter((s) => !shelfIsEmpty(s));
-  if (nonEmpty.length === 0) return 1;
+  if (nonEmpty.length === 0) return 0;
   const ok = nonEmpty.filter((s) => isShelfFEFO(s)).length;
   return ok / nonEmpty.length;
 }

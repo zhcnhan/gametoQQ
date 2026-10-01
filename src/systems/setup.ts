@@ -9,7 +9,7 @@
 import { BOX_DEFS, type BoxDef } from '../data/boxes';
 import { FIRST_STOCKPILE_DAY, M1_DISASTER_ID } from '../data/disaster';
 import { getItemDef } from '../data/items';
-import { EMPTY_SURVIVAL_SNAPSHOT } from '../data/survival';
+import { EMPTY_SURVIVAL_SNAPSHOT, NEVER_TRADED } from '../data/survival';
 import { createCursor, nextInt, randomSeed, shuffle, type RngCursor } from '../model/rng';
 import { createShelf, makeStack, ROOM_ID, SHELF_H, SHELF_W } from '../model/shelf';
 import type { ItemStack, RunState, Shelf, UnpackBox } from '../model/types';
@@ -122,7 +122,17 @@ export function createStartingRun(seed: number = randomSeed()): RunState {
     visitedShopIds: [],
     currentShopId: null,
     night: null,
-    survival: { spoiled: 0, shortageDays: 0, last: { ...EMPTY_SURVIVAL_SNAPSHOT } }
+    survival: {
+      spoiled: 0,
+      shortageDays: 0,
+      shortagePieces: 0,
+      unreachablePieces: 0,
+      hardPressDays: 0,
+      hardPressStreak: 0,
+      lastTradeDay: NEVER_TRADED,
+      last: { ...EMPTY_SURVIVAL_SNAPSHOT }
+    },
+    outcome: null
   };
   return run;
 }

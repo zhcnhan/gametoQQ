@@ -1686,12 +1686,18 @@ button:disabled {
  */
 .slot-off {
   position: absolute;
-  left: 4px;
-  top: 4px;
-  width: 9px;
-  height: 9px;
-  border: 1.5px solid var(--ink-40);
+  left: 5px;
+  top: 5px;
+  width: 11px;
+  height: 11px;
+  border: 2px solid var(--ink-70);
   border-radius: 50%;
+  /*
+   * ★ M1 手测修正：原来是 9px + 1.5px + var(--ink-40)，在 56px 的白格子上根本看不见
+   * （玩家反馈"墨色空心小圈未出现，只有悬停提示"）。克制过头等于不存在，比不做还糟。
+   * 现在的对比度足以在亮光下的手机屏上被认出来，但仍然不填色、不闪、不发声 ——
+   * 它陈述一个事实，不指责（§5 引擎①：游戏不评判对错）。
+   */
 }
 
 /* ================================================================
@@ -1718,8 +1724,12 @@ button:disabled {
 /* 64px：这一屏只有 2~3 个按钮，没有任何理由做小 */
 .night-option {
   display: flex;
+  /* 有的选项底下带一行小字（"还差 30 元" / "你只有 25，能给多少给多少"），
+     所以是纵向排列；只有一个子元素时它就等价于居中 */
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 3px;
   width: 100%;
   min-height: 64px;
   padding: 8px 16px;
@@ -1742,6 +1752,15 @@ button:disabled {
   font-size: 16px;
   font-weight: 600;
   letter-spacing: 0.05em;
+}
+
+/* 选项底下那行小字：说清"钱够不够"。它是墨色而不是朱红 —— 买不起不是事故，只是今天买不起 */
+.night-option-note {
+  font-style: normal;
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--ink-70);
+  font-variant-numeric: tabular-nums;
 }
 
 /* 结论句：左侧一条朱红竖线。朱红在本案里 = 重要，而"你刚才的选择换来了什么"就是这一刻最重要的事 */
@@ -1840,4 +1859,118 @@ button:disabled {
 
 .stat em.is-down {
   color: var(--vermilion);
+}
+
+/*
+ * 硬撑（§12.3 v0.5）。
+ * 刻意**不用朱红**：朱红留给"今天就没得吃"那一种确定性的事故（见上面的 .is-tight）。
+ * 硬撑是一条墨色实线 + 灰底的旁注，说的是"今天过得不轻松"，不是"你出错了"。
+ */
+.press-line {
+  margin: 8px 0 0;
+  padding: 7px 10px;
+  border-left: 5px solid var(--ink);
+  background: var(--paper-2);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink);
+}
+
+/* 结算页上"没撑住"的判词：同样不上朱红（那会读成宣判），用灰底与墨栏压一压就够了 */
+.block-note.strong.is-collapsed {
+  display: inline-block;
+  padding: 6px 10px;
+  background: var(--paper-2);
+  border-left: 5px solid var(--ink-40);
+}
+
+/* ================================================================
+ * 以物易物（§12.3 v0.6 的那条出口）
+ * 这一块只在硬撑时才出现，所以它可以比别处更"实"一点 ——
+ * 玩家此刻正需要它，不需要再花力气去发现。
+ * ================================================================ */
+
+.trade-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.trade-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 56px;
+  padding: 4px 10px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* 已经给他的那些：朱红描边。这里是"你亲手挑出去的"，是本屏最重的一次取舍 */
+.trade-item.is-chosen {
+  border-color: var(--vermilion);
+}
+
+.trade-item.is-out {
+  opacity: 0.42;
+}
+
+.trade-icon {
+  flex: 0 0 auto;
+}
+
+.trade-icon .ico {
+  width: 22px;
+  height: 22px;
+}
+
+/* min-width:0 是关键：没有它，长名字会把右边的件数挤出屏幕 */
+.trade-item b {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trade-item em {
+  flex: 0 0 auto;
+  font-style: normal;
+  font-size: 12px;
+  color: var(--ink-70);
+  font-variant-numeric: tabular-nums;
+}
+
+.trade-chosen {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--vermilion);
+  color: var(--paper);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.trade-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.trade-count {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }

@@ -1,16 +1,29 @@
 /**
- * 生存期数值（§8「MVP 刻意压简，先求闭环」）。
+ * 生存期数值（§8「MVP 刻意压简，先求闭环」+ M1 平衡改造）。
  *
  * 集中放一个文件，是为了让"数值平衡"这件事将来只需要改一处 ——
  * §8 只给了「每日基础消耗 食物 2 / 水 2 / 燃料(寒潮) 2」一行，
- * 其余全是我按"能跑通闭环"定的初始值。**这些数字都还没有经过一轮完整的手感验证**，
+ * 其余全是按"能跑通闭环"定的初始值。**这些数字都还没有经过一轮完整的手感验证**，
  * 第一次调平衡时请直接改这里，不要去 systems/ 里找。
  *
- * 一条贯穿始终的原则：**代价都是可逆的缓慢下降，不是死亡判定**。
- * §12.3 明确写了「弹尽粮绝不死人，进入'硬撑'状态（心情/健康缓降），永远留逆转口」，
- * 所以这里没有任何"归零即结束"的数值。
+ * ## 一条贯穿始终的原则：代价都是可逆的缓慢下降，但**累积起来会要命**
+ *
+ * §12.3 原本写的是「弹尽粮绝不死人，永远留逆转口」。M1 手测后发现这句话被执行成了
+ * "一直点过一天就能撑满 7 天" —— 生存期没有任何张力，整理也就没有意义。
+ * 玩家已授权修订（见策划案 §12.3 的 v0.5 标注），改成：
+ *
+ *   · 每一步都有代价、都能爬回来，**但健康归零这一局就停在这里**；
+ *   · 支撑你活下去的是**两件事**：囤够了 + 拿得到。
+ *     后者由整理质量决定 —— 这就是 §5「整理即战力」在数值上的落点。
+ *
+ * ## 整理质量怎么变成体力
+ *
+ * §6.4 原文：「分区正确 + FEFO 排好 → 自动、无损耗、心情+」「乱 → 翻找耗时」。
+ * "翻找耗时"落成的就是这里的 `workCostOf()`：一天要从屋里翻出 6 件货，
+ * 东西在自己划的区里就是伸手拿，埋在一堆纸箱里就是翻箱倒柜 ——
+ * 后者一天能耗掉不止一整觉的体力。
  */
-import type { CategoryId, DisasterProfile, SurvivalSnapshot } from '../model/types';
+import type { CategoryId, DisasterProfile, HardPressLevel, ItemDef, SurvivalSnapshot } from '../model/types';
 
 /** `SurvivalState.last` 的零值（D-Day 还没结算过时用它） */
 export const EMPTY_SURVIVAL_SNAPSHOT: SurvivalSnapshot = {
@@ -19,14 +32,172 @@ export const EMPTY_SURVIVAL_SNAPSHOT: SurvivalSnapshot = {
   stamina: 0,
   shelter: 0,
   shortage: 0,
-  spoiled: 0
+  spoiled: 0,
+  fromShelves: 0,
+  fromBoxes: 0,
+  unreachable: 0,
+  workCost: 0,
+  hardPress: false,
+  hardPressLevel: 'none',
+  usedMedicine: 0,
+  usedWarmth: 0
 };
+
+/** `SurvivalState.lastTradeDay` 的"从来没换过"。用一个不可能的天数，省掉一个可空字段 */
+export const NEVER_TRADED = -99;
 
 /** §8：每日基础消耗（件）。灾难独有的加成由 `DisasterProfile.dailyDrain` 叠加 */
 export const BASE_DRAIN: Readonly<Partial<Record<CategoryId, number>>> = { food: 2, water: 2 };
 
+// ———————— 体力：整理质量的直接代价（§6.4「乱 → 翻找耗时」） ————————
+
 /** 睡一觉恢复的体力 */
-export const STAMINA_RECOVER = 15;
+export const STAMINA_RECOVER = 12;
+
+/**
+ * 体力跌破这条线 = **翻不动了**。
+ *
+ * 这是"整理差"唯一会滚成雪球的地方，也是它必须存在的原因：
+ * 没有它的话，不整理最多让人累一点，但永远活得下去，生存期就退化成了"点过一天"。
+ * 有了它，一条能走完的因果链才成立：
+ *
+ *   东西堆在箱子里 → 每天多花两倍体力 → 体力见底 → 翻不动 → 少吃到东西 → 健康掉
+ *
+ * 注意它**不是判死**：好档与中档的体力都远在这条线上（实测 7 天下限 64），
+ * 只有真正没整理的人会掉进来，而且一旦开始补整理，第二天就能爬回去。
+ */
+export const EXHAUSTED_STAMINA = 30;
+/** 翻不动的那一天，能取到的比例。刻意不是 0 —— 饿死人不该由"累"来完成 */
+export const EXHAUSTED_REACH = 0.5;
+
+/** 整理质量里归位率占的权重，其余归临期优先率（§6.4 两句话：分区正确、FEFO 排好） */
+export const QUALITY_PLACEMENT_WEIGHT = 0.6;
+
+/** 每取一件货的体力成本：整理质量满时这么多… */
+export const WORK_PER_ITEM_EASY = 1.5;
+/** …质量归零时这么多。这两个数的差直接决定"整理有没有意义"，必须拉得开 */
+export const WORK_PER_ITEM_HARD = 4.5;
+
+/**
+ * 整理质量（0..1）= 归位率 × 0.6 + 临期优先率 × 0.4。
+ *
+ * 单独抽出来是因为**三个地方要读同一个数**（体力劳作、日报叙事、结算评分），
+ * 各算一套权重迟早会不一致。
+ */
+export function organizeQuality(placement: number, fefo: number): number {
+  return clamp01(placement) * QUALITY_PLACEMENT_WEIGHT + clamp01(fefo) * (1 - QUALITY_PLACEMENT_WEIGHT);
+}
+
+/**
+ * 当天的翻找劳作 = 件数 × 每件成本。正数，单位是体力。
+ *
+ * 举例（一天 6 件：主食 2 + 饮水 2 + 燃料 2）：
+ *   · 全归位 + FEFO 排好（质量 1.0）→ 9.0  → 睡一觉 +12，净 +3
+ *   · 一半归位（质量 0.5）           → 18.0 → 净 -6
+ *   · 全堆在纸箱里（质量 0）         → 27.0 → 净 -15（第 6 天就会掉进硬撑）
+ */
+export function workCostOf(placement: number, fefo: number, pieces: number): number {
+  const quality = organizeQuality(placement, fefo);
+  const perItem = WORK_PER_ITEM_HARD - (WORK_PER_ITEM_HARD - WORK_PER_ITEM_EASY) * quality;
+  return round1(perItem * Math.max(0, pieces));
+}
+
+// ———————— 硬撑（§12.3 v0.5 修订） ————————
+
+/** 四维里任意一项跌破这条线 → 这一整天都在硬撑。三条线分开写，因为三者的崩法不一样 */
+export const HARD_PRESS_STAMINA = 40;
+export const HARD_PRESS_HEALTH = 45;
+export const HARD_PRESS_MOOD = 25;
+
+/** 今天算不算硬撑。只看「不能做事的三种状态」，不看庇护所 —— 屋子冷不会让人垮，没柴烧才会 */
+export function isHardPress(stats: { health: number; mood: number; stamina: number }): boolean {
+  return stats.stamina < HARD_PRESS_STAMINA || stats.health < HARD_PRESS_HEALTH || stats.mood < HARD_PRESS_MOOD;
+}
+
+/**
+ * 硬撑分三档（§12.3 v0.6）。
+ *
+ * 为什么要分档：连续硬撑的第 1 天和第 5 天不是一回事。不分档的话，玩家看到的只是
+ * 一个恒定的"每天掉几点"，既看不出自己正在下沉，也不知道再不好转会怎样 ——
+ * 而"硬撑"只有变成一条**看得见的下坡**，清理货架这件事才有分量。
+ *
+ * 判档用 `streak` = **到今天为止已经连续硬撑了几天**（读的是进入当天时的值）：
+ *
+ *   streak 0~1 → 今天是第 1~2 天 → `straining`「硬撑」
+ *   streak 2~3 → 今天是第 3~4 天 → `failing`「撑不住」
+ *   streak 4+  → 今天是第 5 天起  → `collapsing`「快垮了」
+ */
+export const HARD_PRESS_FAIL_STREAK = 2;
+export const HARD_PRESS_COLLAPSE_STREAK = 4;
+
+export interface HardPressTier {
+  level: HardPressLevel;
+  /** 界面上叫它什么。玩家要能一眼看出自己现在在哪一档 */
+  name: string;
+  mood: number;
+  health: number;
+  stamina: number;
+  /**
+   * 这一天**额外多消耗**的件数。
+   *
+   * 它才是"不痛不痒"的解药：光掉四维只会让人难受，掉到见底也还能爬起来；
+   * 而多烧一份食物，是真的在你最缺的时候把库存往下拽 —— 这才叫难度。
+   */
+  extraDrain: Partial<Record<CategoryId, number>>;
+}
+
+/** 从轻到重。下标即严重度，`hardPressTier()` 按它取 */
+export const HARD_PRESS_TIERS: readonly HardPressTier[] = [
+  { level: 'straining', name: '硬撑', mood: 4, health: 3, stamina: 2, extraDrain: {} },
+  { level: 'failing', name: '撑不住', mood: 8, health: 6, stamina: 3, extraDrain: { food: 1 } },
+  { level: 'collapsing', name: '快垮了', mood: 12, health: 10, stamina: 4, extraDrain: { food: 2, fuel: 1 } }
+];
+
+/**
+ * 连续硬撑 `streak` 天时，今天的档位。
+ *
+ * 注意它回答的是"**如果**今天还硬撑，会是哪一档" —— 是否真的在硬撑由 `isHardPress` 判定。
+ * 拆成两步是因为它们的取值时机不同：档位要在**当天消耗之前**就知道（额外消耗要加上去），
+ * 而"今天算不算硬撑"要看结算之后的状态。
+ */
+export function hardPressTier(streak: number): HardPressTier {
+  if (streak >= HARD_PRESS_COLLAPSE_STREAK) return HARD_PRESS_TIERS[2] as HardPressTier;
+  if (streak >= HARD_PRESS_FAIL_STREAK) return HARD_PRESS_TIERS[1] as HardPressTier;
+  return HARD_PRESS_TIERS[0] as HardPressTier;
+}
+
+// ———————— 自动补给：让"囤了却没用"的品类真的有用 ————————
+
+/**
+ * 医疗品自动用（清偿 D-09：健康曾经只减不增）。
+ *
+ * 读 `ItemDef.nutrition.health` —— 绷带 2 / 感冒药 3，乘这个系数就是回血值。
+ * 这同时清偿了 D-07 的一半：`nutrition` 终于有消费者了。
+ * 做法是**自动**而不是加一个"用药"按钮：§4A 要求生存期不产生新的操作负担。
+ */
+export const MEDICINE_HEAL_FACTOR = 3;
+/** 健康低于这条线才去开药箱（小磕小碰不值得动库存） */
+export const MEDICINE_TRIGGER = 70;
+
+/**
+ * 保暖品自动用（§8 把寒潮刚需写成 fuel + warmth，但 warmth 原本零消耗 —— 囤了完全没用）。
+ * 读 `ItemDef.nutrition.comfort` —— 棉被 3，乘这个系数就是庇护所回复值。
+ */
+export const SHELTER_PER_COMFORT = 4;
+/** 庇护所低于这条线才去添被 */
+export const WARMTH_TRIGGER = 60;
+
+/** 一件医疗品能回多少健康（读 nutrition.health，没写就不回） */
+export function healOf(item: ItemDef): number {
+  return (item.nutrition.health ?? 0) * MEDICINE_HEAL_FACTOR;
+}
+
+/** 一件保暖品能回多少庇护所（读 nutrition.comfort，没写就不回） */
+export function shelterOf(item: ItemDef): number {
+  return (item.nutrition.comfort ?? 0) * SHELTER_PER_COMFORT;
+}
+
+// ———————— 其余 ————————
 
 /** 庇护所每天被灾难磨损 = 灾难强度 × 这个数（寒潮强度 0.55~1.0 → 每天 -4.4 ~ -8） */
 export const SHELTER_WEAR_PER_SEVERITY = 8;
@@ -45,7 +216,7 @@ export const MOOD_DELTA_CAP = 12;
  * 当天要消耗的品类与件数。
  * ⚠ 消耗按**件数**，不读 `ItemDef.nutrition` —— 已拍板（见策划案 §6.4 与 §8 的拍板标注）：
  * 燃料走件数消耗，其余品类一并沿用同一把尺子，避免"半袋大米"这种需要拆分的算法。
- * `nutrition` 因此暂时是个没人读的字段，记在 src/meta/deferred.ts 的 D-07 里。
+ * `nutrition` 里真正被读的只有 `health` 与 `comfort` 两个键，都用在**自动补给**上（见上）。
  */
 export function dailyDrainOf(disaster: DisasterProfile): { category: CategoryId; need: number }[] {
   const merged = new Map<CategoryId, number>();
@@ -65,11 +236,20 @@ export function dailyDrainOf(disaster: DisasterProfile): { category: CategoryId;
  * 东西都在自己该在的地方，闭着眼也拿得到；满屋翻找则会一天天磨掉耐心。
  *
  * 为什么不给硬性惩罚（比如"没归位就多消耗一件"）：那会让玩家在整理期被迫做减法，
- * 与 §5 引擎①「游戏不评判对错」相冲。心情是代价，不是判罚。
+ * 与 §5 引擎①「游戏不评判对错」相冲。心情与体力是代价，不是判罚。
+ * 体力的那一半见 `workCostOf()` —— 它同样不阻断任何操作，只是让你更累。
  */
 export function moodFromPlacement(placement: number): number {
   if (placement >= 0.8) return 4;
   if (placement >= 0.5) return 1;
   if (placement > 0) return -2;
   return -4;
+}
+
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
+function round1(value: number): number {
+  return Math.round(value * 10) / 10;
 }

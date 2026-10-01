@@ -195,10 +195,12 @@ describe('归位率与整理评分', () => {
     expect(placementRate([s], zones)).toBe(1);
   });
 
-  it('空房间不惩罚：归位率与 FEFO 率均为 1', () => {
+  it('空房间：归位率宽容为 1（不出生就给人 0%），但 FEFO 率是 0（一块货架都没用上 = 还没开始排）', () => {
     const score = computeOrganizeScore([shelf()], zones);
     expect(score.placement).toBe(1);
-    expect(score.fefo).toBe(1);
+    // ★ M1 手测修正：这里原来是 1，导致"囤了 17 箱一口没拆、货架全空"的人
+    // 依然拿着 100% 的临期优先 —— 而它还是生存期体力劳作质量的输入之一。
+    expect(score.fefo).toBe(0);
     expect(score.stacks).toBe(0);
     expect(score.tidyShelfIds).toEqual([]);
   });

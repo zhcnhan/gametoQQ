@@ -1,12 +1,17 @@
 /**
  * 结算界面（§9.6：生存天数 / 整理评分 / 图鉴解锁）。
  *
- * ★ M1 阶段 A 的边界：囤货期第 7 天过完 → day 走到 0 = **D-Day**，
- * 状态机把 phase 推到 `ending`。按已拍板，阶段 A 在这里**停住**：
- * 演出灾难揭晓 + 给"整理成果"的最小体检，并明确写出生存期尚未实装。
- * 阶段 C/D/E 会在这同一个界面上把生存天数、应急可达率、数字日报补齐。
+ * ★ M1 的结局有**两种**，界面必须把它们说清楚（§12.3 v0.5 修订）：
+ *
+ *   · `outcome === 'survived'`  —— 撑满了 7 天；
+ *   · `outcome === 'collapsed'` —— 健康归零，走到第 N 天停下来了；
+ *   · `outcome === null`        —— 老档（阶段 A 时期"囤货期走完就结束"），按"囤货期结束"说。
+ *
+ * 三种都说成"你撑过去了"是最糟的处理：那会让"没撑住"变成一个没有重量的结局。
+ *
+ * 图鉴解锁（§9.6 第三项）属 M2，这里仍然只有生存天数 + 整理评分。
  */
-import { getDisasterDef } from '../data/disaster';
+import { SURVIVAL_DAYS, getDisasterDef } from '../data/disaster';
 import { dayLabel, hintAt } from '../model/calendar';
 import { computeOrganizeScore, gradeLabel, toPercent } from '../model/score';
 import type { GameStore } from '../state/store';
@@ -46,40 +51,66 @@ export class EndingScreen implements Screen {
     const totals = householdTotals(run);
     const placement = toPercent(score.placement);
     const fefo = toPercent(score.fefo);
+    const collapsed = run.outcome === 'collapsed';
+    const survived = run.outcome === 'survived';
+    // 倒下的那天就是"走到哪儿"；撑满时 run.day 正好等于 SURVIVAL_DAYS
+    const lasted = Math.max(0, run.day);
+
+    const title = survived
+      ? `撑过 ${SURVIVAL_DAYS} 天`
+      : collapsed
+        ? `第 ${lasted} 天 · 停在这里`
+        : `${dayLabel(0)} · ${escapeHtml(disaster.name)}登陆`;
+    const sub = survived
+      ? `${escapeHtml(disaster.name)}过去了`
+      : collapsed
+        ? `${escapeHtml(disaster.name)} · 没撑住`
+        : escapeHtml(hintAt(disaster, 0));
+    const verdict = survived
+      ? '你撑过来了。这不是运气 —— 是那些箱子、那些胶带、和几十次弯腰换来的。'
+      : collapsed
+        ? '没撑住。但你大概已经知道自己缺的是哪一样了 —— 下一局从那儿补。'
+        : '囤货期结束了。';
 
     this.root.innerHTML = `
       <div class="screen screen-plain">
         <header class="topbar">
           <div class="title">
-            <h1>${dayLabel(0)} · ${escapeHtml(disaster.name)}登陆</h1>
-            <p class="sub">${escapeHtml(hintAt(disaster, 0))}</p>
+            <h1>${title}</h1>
+            <p class="sub">${sub}</p>
           </div>
         </header>
         <main class="scroll">
           <section class="block">
-            <h2 class="block-title">${dayLabel(run.day)} · 囤货期结束</h2>
-            <p class="block-note">
-              你从 D-7 一路走到了这里。外面的世界从今天起不再按小时算 ——
-              它只在你点"过一天"的时候流动。
-            </p>
+            <h2 class="block-title">这一局</h2>
+            <p class="block-note strong${collapsed ? ' is-collapsed' : ''}">${escapeHtml(verdict)}</p>
             <div class="stat-grid">
-              <div class="stat"><i>现金余额</i><b>${run.cash}</b></div>
-              <div class="stat"><i>囤到</i><b>${totals.pieces} 件</b></div>
-              <div class="stat"><i>总重</i><b>${totals.weight.toFixed(1)}kg</b></div>
-              <div class="stat"><i>还没拆</i><b>${run.boxesToUnpack.length} 箱</b></div>
+              <div class="stat"><i>撑过</i><b>${lasted} 天</b></div>
+              <div class="stat"><i>硬撑过</i><b>${run.survival.hardPressDays} 天</b></div>
+              <div class="stat"><i>没凑齐</i><b>${run.survival.shortagePieces} 件</b></div>
+              <div class="stat"><i>最后剩下</i><b>${totals.pieces} 件</b></div>
             </div>
+            <p class="block-note">${escapeHtml(
+              runStory({
+                survived,
+                lasted,
+                hardPressDays: run.survival.hardPressDays,
+                shortPieces: run.survival.shortagePieces,
+                unreachablePieces: run.survival.unreachablePieces
+              })
+            )}</p>
           </section>
 
           <section class="block">
             <h2 class="block-title">整理体检</h2>
             <div class="score-rows">
-              ${this.scoreRow('归位率', placement, '你自己给胶带写的清单，东西有没有照放')}
+              ${this.scoreRow('归位率', placement, '你自己给胶带写的清单，东西有没有照放 —— 它决定每天找东西要花多少体力')}
               ${this.scoreRow('临期优先', fefo, '同架按到期日排好没有 —— 越快到期的越靠前，也越先被用掉')}
               <!-- DEFERRED(D-05): §6.3 的第三个维度「应急可达率」还没做。
                    它卡在 D-06（Shelf 没有"离门多近"这个信息）上，不是卡在算分公式上。 -->
               <div class="score-row is-pending">
                 <span class="score-row-name">应急可达率</span>
-                <span class="score-row-value">随生存期实装</span>
+                <span class="score-row-value">随 M2 实装</span>
               </div>
             </div>
             ${
@@ -93,12 +124,9 @@ export class EndingScreen implements Screen {
 
           <section class="block">
             <h2 class="block-title">接下来</h2>
-            <p class="block-note strong">
-              生存期（每日消耗 / 腐坏 / 求援订单 / 数字日报）将在下一阶段实装。
-            </p>
             <p class="block-note">
-              现在你可以重开一局，换一个身份、换一套整理思路 ——
-              这一局的物资会清空，但你已经学会怎么码货了。
+              换一个身份、换一套整理思路再来一次 —— 这一局的物资会清空，但你已经知道
+              "东西放在哪"到底值多少体力了。
             </p>
           </section>
         </main>
@@ -128,6 +156,47 @@ export class EndingScreen implements Screen {
     const action = target.closest<HTMLElement>('[data-action]')?.dataset['action'];
     if (action === 'restart') this.props.onRestart();
   }
+}
+
+/**
+ * 把四个孤立的数字讲成一句话。
+ *
+ * 它存在的原因很具体：结算页曾经出现过一组自相矛盾的格子 —— **「撑过 7 天 · 断粮 7 天」**。
+ * 数据其实没错（每天确实都短了点东西，但没短到垮掉），错的是没人把它们串起来。
+ * 玩家看到四个互不相干的数，只能自己猜；而结算页只该回答一个问题：**这一局栽在哪。**
+ */
+function runStory(input: {
+  survived: boolean;
+  lasted: number;
+  hardPressDays: number;
+  shortPieces: number;
+  unreachablePieces: number;
+}): string {
+  const { survived, lasted, hardPressDays, shortPieces, unreachablePieces } = input;
+
+  if (!survived) {
+    // 没撑住的时候，"缺的是吃的"和"缺的是力气"是两种完全不同的死法，必须分开说
+    if (unreachablePieces > shortPieces) {
+      return `走到第 ${lasted} 天就没撑住。屋里其实还有东西 —— 是没能翻出来。`;
+    }
+    if (shortPieces > 0) {
+      return `走到第 ${lasted} 天就没撑住。前后一共短了 ${shortPieces} 件口粮，缺口是从那时候开始的。`;
+    }
+    return `走到第 ${lasted} 天就没撑住。奇怪的是吃的不缺 —— 是别的先垮了。`;
+  }
+
+  if (hardPressDays === 0 && shortPieces === 0 && unreachablePieces === 0) {
+    return '一路都没短过什么。你甚至没怎么动过最后那点余粮。';
+  }
+
+  const parts: string[] = [];
+  if (hardPressDays > 0) parts.push(`有 ${hardPressDays} 天在硬撑`);
+  if (shortPieces > 0) parts.push(`前后短了 ${shortPieces} 件口粮`);
+  if (unreachablePieces > 0) parts.push(`还有 ${unreachablePieces} 件明明在屋里、却没力气翻出来`);
+
+  const head = parts.join('，');
+  if (hardPressDays > 0) return `${head}。撑是撑过来了，但后半程不轻松。`;
+  return `${head}。没到伤筋动骨的地步。`;
 }
 
 function escapeHtml(text: string): string {

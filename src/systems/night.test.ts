@@ -8,7 +8,7 @@ import { NIGHT_EVENT_DEFS, NIGHT_SLEEP, findNightEvent, hasNightEvent } from '..
 import { createCursor } from '../model/rng';
 import { createSaveGame } from '../state/save';
 import { GameStore } from '../state/store';
-import { NIGHT_EVENT_CHANCE, describeEffect, optionAt, rollNight } from './night';
+import { NIGHT_EVENT_CHANCE, NO_EFFECT, describeEffect, optionAt, resolveOutcome, rollNight } from './night';
 import { chooseIdentity, chooseNightOption, endDay, goHome, sleep } from './phases';
 import { createStartingRun } from './setup';
 
@@ -197,7 +197,7 @@ describe('决定今晚怎么办', () => {
     const store = storeAtHome(20261001);
     const before = store.run.boxesToUnpack.length;
     store.run.phase = 'night';
-    store.run.night = { eventId: 'n_midnight_restock', choice: null };
+    store.run.night = { eventId: 'n_midnight_restock', choice: null, applied: null };
 
     const result = chooseNightOption(store, 0);
     expect(result.ok).toBe(true);
@@ -213,7 +213,7 @@ describe('决定今晚怎么办', () => {
     store.run.stats.stamina = 3;
     store.run.cash = 0;
     store.run.phase = 'night';
-    store.run.night = { eventId: 'n_night_shift', choice: null };
+    store.run.night = { eventId: 'n_night_shift', choice: null, applied: null };
 
     chooseNightOption(store, 0); // 体力 -25，现金 +120
     expect(store.run.stats.stamina).toBe(0);
@@ -222,9 +222,69 @@ describe('决定今晚怎么办', () => {
     const store2 = storeAtHome(20261001);
     store2.run.cash = 10;
     store2.run.phase = 'night';
-    store2.run.night = { eventId: 'n_old_classmate', choice: null };
+    store2.run.night = { eventId: 'n_old_classmate', choice: null, applied: null };
     chooseNightOption(store2, 0); // 现金 -80
     expect(store2.run.cash).toBe(0);
+  });
+});
+
+describe('钱不够的时候，界面要说实话', () => {
+  /** 兜里只有 25 元、正被老同学借钱的一晚 */
+  function storeBroke(): GameStore {
+    const store = storeAtHome(20261001);
+    store.run.cash = 25;
+    store.run.phase = 'night';
+    store.run.night = { eventId: 'n_old_classmate', choice: null, applied: null };
+    return store;
+  }
+
+  it('人情类选项允许少给：只有 25 就只扣 25', () => {
+    const store = storeBroke();
+    expect(chooseNightOption(store, 0).ok).toBe(true);
+    expect(store.run.cash).toBe(0);
+    expect(store.run.night?.applied?.cash).toBe(-25);
+  });
+
+  it('★ 摘要报的是**实际**扣掉的数，不是选项里写的 80', () => {
+    const store = storeBroke();
+    chooseNightOption(store, 0);
+    const applied = store.run.night?.applied;
+    expect(applied).toBeTruthy();
+    if (!applied) return;
+    expect(describeEffect(applied)).toContain('现金 -25');
+    expect(describeEffect(applied)).not.toContain('现金 -80');
+  });
+
+  it('结果文案里的 {spentCash} 换成真数：钱够说 80，钱不够说 25', () => {
+    const option = findNightEvent('n_old_classmate')?.options[0];
+    expect(option).toBeTruthy();
+    if (!option) return;
+    expect(resolveOutcome(option, { ...NO_EFFECT, cash: -80 })).toContain('转过去 80');
+    expect(resolveOutcome(option, { ...NO_EFFECT, cash: -25 })).toContain('转过去 25');
+  });
+
+  it('买货类选项必须给得起钱：钱不够就拒，也不能白给一箱', () => {
+    const store = storeAtHome(20261001);
+    const before = store.run.boxesToUnpack.length;
+    store.run.cash = 10;
+    store.run.phase = 'night';
+    store.run.night = { eventId: 'n_midnight_restock', choice: null, applied: null };
+
+    expect(chooseNightOption(store, 0).ok).toBe(false); // 这一趟要 50 元
+    expect(store.run.boxesToUnpack.length).toBe(before);
+    expect(store.run.cash).toBe(10);
+  });
+
+  it('钱够的时候一切照旧', () => {
+    const store = storeAtHome(20261001);
+    const before = store.run.boxesToUnpack.length;
+    store.run.cash = 200;
+    store.run.phase = 'night';
+    store.run.night = { eventId: 'n_midnight_restock', choice: null, applied: null };
+
+    expect(chooseNightOption(store, 0).ok).toBe(true);
+    expect(store.run.cash).toBe(150);
+    expect(store.run.boxesToUnpack.length).toBe(before + 1);
   });
 });
 
@@ -265,7 +325,7 @@ function storeAtNightFrom(seed: number): GameStore {
   if (store.run.phase !== 'night') {
     // 这个种子今晚没事 —— 直接手工安一个夜色，测的还是同一条命令链
     store.run.phase = 'night';
-    store.run.night = { eventId: 'n_neighbor_soup', choice: null };
+    store.run.night = { eventId: 'n_neighbor_soup', choice: null, applied: null };
   }
   return store;
 }
@@ -276,13 +336,13 @@ function clamp(value: number): number {
 
 describe('后果摘要（界面用）', () => {
   it('空后果返回空数组 —— 界面据此不渲染数值行（"直接睡"不该被写一句"无变化"）', () => {
-    expect(describeEffect({})).toEqual([]);
-    expect(describeEffect({ mood: 0 })).toEqual([]);
+    expect(describeEffect(NO_EFFECT)).toEqual([]);
+    expect(describeEffect({ ...NO_EFFECT, mood: 0 })).toEqual([]);
   });
 
   it('正负号看得懂', () => {
-    expect(describeEffect({ mood: 12, stamina: -8 })).toEqual(['心情 +12', '体力 -8']);
-    expect(describeEffect({ boxDefId: 'box_mixed' })).toEqual(['带回来一箱货']);
+    expect(describeEffect({ ...NO_EFFECT, mood: 12, stamina: -8 })).toEqual(['心情 +12', '体力 -8']);
+    expect(describeEffect({ ...NO_EFFECT, gotBox: true })).toEqual(['带回来一箱货']);
   });
 
   it('optionAt 把 NIGHT_SLEEP 解成 null（= 什么都不做）', () => {

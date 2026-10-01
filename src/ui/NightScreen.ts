@@ -14,8 +14,9 @@
 import { NIGHT_SLEEP, findNightEvent } from '../data/nightEvents';
 import { playSfx } from '../fx/audio';
 import { dayLabel } from '../model/calendar';
+import type { NightOption } from '../model/types';
 import type { GameStore } from '../state/store';
-import { describeEffect } from '../systems/night';
+import { NO_EFFECT, cashCost, describeEffect, resolveOutcome } from '../systems/night';
 import type { Screen } from './Router';
 
 export interface NightScreenProps {
@@ -69,6 +70,8 @@ export class NightScreen implements Screen {
     const choice = night.choice;
     const decided = choice !== null;
     const option = choice !== null && choice !== NIGHT_SLEEP ? def.options[choice] : null;
+    // 实际发生了什么（不是选项声明的那些）。老档没有这份记录时退化成"无变化"。
+    const applied = night.applied ?? NO_EFFECT;
 
     this.query('[data-head]').innerHTML = `
       <div class="topbar-row">
@@ -84,17 +87,12 @@ export class NightScreen implements Screen {
         <p class="night-text">${escapeHtml(def.text)}</p>
         ${
           decided
-            ? `<p class="night-outcome">${escapeHtml(option ? option.outcome : '你把灯关了。这件事留到明天再说。')}</p>
-               ${this.deltasHtml(option ? describeEffect(option.effect) : [])}`
+            ? `<p class="night-outcome">${escapeHtml(
+                option ? resolveOutcome(option, applied) : '你把灯关了。这件事留到明天再说。'
+              )}</p>
+               ${this.deltasHtml(describeEffect(applied))}`
             : `<div class="night-options">
-                 ${def.options
-                   .map(
-                     (opt, index) =>
-                       `<button class="night-option" data-choice="${index}">
-                          <b>${escapeHtml(opt.label)}</b>
-                        </button>`
-                   )
-                   .join('')}
+                 ${def.options.map((opt, index) => this.optionHtml(opt, index)).join('')}
                </div>`
         }
       </section>
@@ -112,6 +110,26 @@ export class NightScreen implements Screen {
         }
       </div>
     `;
+  }
+
+  /**
+   * 一个选项按钮。
+   *
+   * 两种"钱不够"在这里是**分开**的，因为它们是两件事：
+   *  · 买货（`requireFullCash`）→ 置灰，并写明还差多少。买不起就是买不起；
+   *  · 人情（不写这个字段）→ 照旧可点，只提示一句"你只有 N"。帮得少也是帮。
+   *
+   * 把它们混成一种，要么让人情变得势利，要么让买货变得可疑。
+   */
+  private optionHtml(opt: NightOption, index: number): string {
+    const run = this.store.run;
+    const short = Math.max(0, cashCost(opt) - run.cash);
+    const blocked = Boolean(opt.requireFullCash) && short > 0;
+    const note = blocked ? `还差 ${short} 元` : short > 0 ? `你只有 ${run.cash}，能给多少给多少` : '';
+    return `<button class="night-option" data-choice="${index}"${blocked ? ' disabled' : ''}>
+      <b>${escapeHtml(opt.label)}</b>
+      ${note ? `<em class="night-option-note">${escapeHtml(note)}</em>` : ''}
+    </button>`;
   }
 
   /** 选完之后的数值变化。空数组（"直接睡"）时不渲染 —— 非要显示一行"无变化"反而像在评价玩家 */

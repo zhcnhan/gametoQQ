@@ -161,9 +161,12 @@ describe('已拍板的设计决定：不许被"顺手修好"', () => {
     expect(item?.impact).toContain('装饰');
   });
 
-  it('M1 验收清单第 3 条作废这件事在册（避免被误读成"没做完"）', () => {
-    expect(findDeferred('D-04')?.kind).toBe('process');
-    expect(findDeferred('D-04')?.status).toBe('open');
+  it('M1 验收清单第 3 条已改口径清偿，且留档说明换成了什么', () => {
+    const item = findDeferred('D-04');
+    expect(item?.kind).toBe('process');
+    expect(item?.status).toBe('done');
+    // 必须说清"腐坏那条换成了什么"，否则后来者只会看到一条被悄悄关掉的欠账
+    expect(item?.impact).toContain('体力');
   });
 
   it('冰箱的"没效果"是被记录的，不是被忽略的', () => {

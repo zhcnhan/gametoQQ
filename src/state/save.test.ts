@@ -200,11 +200,100 @@ describe('存档 schema 与迁移', () => {
     expect(migrated?.run?.survival).toEqual({
       spoiled: 0,
       shortageDays: 0,
-      last: { health: 0, mood: 0, stamina: 0, shelter: 0, shortage: 0, spoiled: 0 }
+      shortagePieces: 0,
+      unreachablePieces: 0,
+      hardPressDays: 0,
+      hardPressStreak: 0,
+      lastTradeDay: -99,
+      last: {
+        health: 0,
+        mood: 0,
+        stamina: 0,
+        shelter: 0,
+        shortage: 0,
+        spoiled: 0,
+        fromShelves: 0,
+        fromBoxes: 0,
+        unreachable: 0,
+        workCost: 0,
+        hardPress: false,
+        hardPressLevel: 'none',
+        usedMedicine: 0,
+        usedWarmth: 0
+      }
     });
-    expect(migrated?.run?.night).toEqual({ eventId: 'n_neighbor_soup', choice: null });
+    // v5 一路抬到 v7：outcome 补 null，且**不反推**——那时生存期还不存在
+    expect(migrated?.run?.outcome).toBeNull();
+    expect(migrated?.run?.night).toEqual({ eventId: 'n_neighbor_soup', choice: null, applied: null });
     expect(migrated?.run?.phase).toBe('night');
     expect(migrated?.run?.day).toBe(-3);
+  });
+
+  it('v6（阶段 C 生存期）→ v7：补硬撑天数与 outcome，既有的生存账目一件不动', () => {
+    const base = createStartingRun(5);
+    base.phase = 'survival_day';
+    base.day = 3;
+    base.survival = {
+      spoiled: 4,
+      shortageDays: 2,
+      last: { health: -6, mood: -4, stamina: -10, shelter: -6, shortage: 1, spoiled: 0 }
+    } as never;
+
+    // 抹掉 v7 才有的两个字段，模拟一个真的 v6 档
+    const raw = JSON.parse(JSON.stringify(base)) as Record<string, unknown>;
+    delete raw['outcome'];
+    delete (raw['survival'] as Record<string, unknown>)['hardPressDays'];
+
+    const back = deserialize(
+      serialize({ meta: { version: 6 } as never, run: raw as never, savedAt: 1, syncVersion: 6, deviceId: 'dev' })
+    );
+    expect(back?.meta.version).toBe(SAVE_VERSION);
+    expect(back?.run?.survival.hardPressDays).toBe(0);
+    expect(back?.run?.outcome).toBeNull();
+    // 老账目原样保留，没有被"顺手重算"
+    expect(back?.run?.survival.spoiled).toBe(4);
+    expect(back?.run?.survival.shortageDays).toBe(2);
+    expect(back?.run?.day).toBe(3);
+    expect(back?.run?.phase).toBe('survival_day');
+  });
+
+  it('v7（夜间结果还没落盘）→ v8：applied 补 null，且**不反推**成选项声明的数值', () => {
+    const base = createStartingRun(5);
+    const raw = JSON.parse(JSON.stringify(base)) as Record<string, unknown>;
+    raw['phase'] = 'night';
+    raw['day'] = -3;
+    // 老档的样子：选了"转他 80"，但当年实际扣了多少**没有记录**
+    raw['night'] = { eventId: 'n_old_classmate', choice: 0 };
+
+    const back = deserialize(
+      serialize({ meta: { version: 7 } as never, run: raw as never, savedAt: 1, syncVersion: 7, deviceId: 'dev' })
+    );
+    expect(back?.meta.version).toBe(SAVE_VERSION);
+    expect(back?.run?.night?.choice).toBe(0);
+    // 关键：**不**补成 { cash: -80 }。那可能是一笔从来没发生过的账
+    // —— 兜里只有 25 元的人，当年那次实际只扣了 25。
+    expect(back?.run?.night?.applied).toBeNull();
+  });
+
+  it('v9 → v10：缺口件数补 0，且**不反推**成用天数换算出来的数', () => {
+    const base = createStartingRun(5);
+    const raw = JSON.parse(JSON.stringify(base)) as Record<string, unknown>;
+    raw['phase'] = 'survival_day';
+    raw['day'] = 5;
+    // 抹掉 v10 才有的两个字段，模拟一个真的 v9 档（它只记了"有几天短了口粮"）
+    const survival = raw['survival'] as Record<string, unknown>;
+    survival['shortageDays'] = 3;
+    delete survival['shortagePieces'];
+    delete survival['unreachablePieces'];
+
+    const back = deserialize(
+      serialize({ meta: { version: 9 } as never, run: raw as never, savedAt: 1, syncVersion: 9, deviceId: 'dev' })
+    );
+    expect(back?.meta.version).toBe(SAVE_VERSION);
+    expect(back?.run?.survival.shortageDays).toBe(3); // 老账目原样保留
+    // 关键：**不**拿 3 天去估一个件数。编出来的假精确比 0 更糟
+    expect(back?.run?.survival.shortagePieces).toBe(0);
+    expect(back?.run?.survival.unreachablePieces).toBe(0);
   });
 
   it('survival 被手改坏 → 补成零值，不抛异常', () => {
@@ -213,7 +302,22 @@ describe('存档 schema 与迁移', () => {
     const back = deserialize(raw);
     expect(back?.run?.survival.spoiled).toBe(0);
     expect(back?.run?.survival.shortageDays).toBe(0);
-    expect(back?.run?.survival.last).toEqual({ health: 0, mood: 0, stamina: 0, shelter: 0, shortage: 0, spoiled: 0 });
+    expect(back?.run?.survival.last).toEqual({
+      health: 0,
+      mood: 0,
+      stamina: 0,
+      shelter: 0,
+      shortage: 0,
+      spoiled: 0,
+      fromShelves: 0,
+      fromBoxes: 0,
+      unreachable: 0,
+      workCost: 0,
+      hardPress: false,
+      hardPressLevel: 'none',
+      usedMedicine: 0,
+      usedWarmth: 0
+    });
   });
 
   it('停在生存期却把手改成第 9 天 → 夹回第 7 天（day 的上限就是生存期长度）', () => {
@@ -275,7 +379,7 @@ describe('存档 schema 与迁移', () => {
       phase: 'night' as const,
       day: -3,
       identityId: 'group_buyer',
-      night: { eventId: 'n_这个事件已经删掉了', choice: null }
+      night: { eventId: 'n_这个事件已经删掉了', choice: null, applied: null }
     };
     const raw = serialize({ meta: { version: SAVE_VERSION } as never, run, savedAt: 1, syncVersion: 1, deviceId: 'dev' });
     const back = deserialize(raw);
@@ -289,12 +393,12 @@ describe('存档 schema 与迁移', () => {
       phase: 'night' as const,
       day: -3,
       identityId: 'group_buyer',
-      night: { eventId: 'n_neighbor_soup', choice: 99 }
+      night: { eventId: 'n_neighbor_soup', choice: 99, applied: null }
     };
     const raw = serialize({ meta: { version: SAVE_VERSION } as never, run, savedAt: 1, syncVersion: 1, deviceId: 'dev' });
     const back = deserialize(raw);
     expect(back?.run?.phase).toBe('night');
-    expect(back?.run?.night).toEqual({ eventId: 'n_neighbor_soup', choice: null });
+    expect(back?.run?.night).toEqual({ eventId: 'n_neighbor_soup', choice: null, applied: null });
   });
 
   it('夜色自愈③：不在夜里却留着夜色 → 清掉（否则下次入夜会读到上一晚的残影）', () => {
@@ -303,7 +407,7 @@ describe('存档 schema 与迁移', () => {
       phase: 'organize' as const,
       day: -3,
       identityId: 'group_buyer',
-      night: { eventId: 'n_neighbor_soup', choice: 0 }
+      night: { eventId: 'n_neighbor_soup', choice: 0, applied: null }
     };
     const raw = serialize({ meta: { version: SAVE_VERSION } as never, run, savedAt: 1, syncVersion: 1, deviceId: 'dev' });
     expect(deserialize(raw)?.run?.night).toBeNull();
@@ -315,12 +419,13 @@ describe('存档 schema 与迁移', () => {
       phase: 'night' as const,
       day: -3,
       identityId: 'group_buyer',
-      night: { eventId: 'n_neighbor_soup', choice: 0 }
+      night: { eventId: 'n_neighbor_soup', choice: 0, applied: null }
     };
     const raw = serialize({ meta: { version: SAVE_VERSION } as never, run, savedAt: 1, syncVersion: 1, deviceId: 'dev' });
     const back = deserialize(raw);
     expect(back?.run?.phase).toBe('night');
-    expect(back?.run?.night).toEqual({ eventId: 'n_neighbor_soup', choice: 0 });
+    // v8 之前的老档没有 applied → 补 null（不反推，反推只会把当年那笔假账再算一遍）
+    expect(back?.run?.night).toEqual({ eventId: 'n_neighbor_soup', choice: 0, applied: null });
   });
 
   it('v2 存档原样读回，不做二次包装', () => {

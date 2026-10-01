@@ -10,8 +10,17 @@ import { FIRST_STOCKPILE_DAY, SURVIVAL_DAYS } from '../data/disaster';
 import { IDENTITY_DEFS, hasIdentityDef } from '../data/identities';
 import { NIGHT_SLEEP, findNightEvent } from '../data/nightEvents';
 import { ACTION_POINTS_PER_DAY } from '../data/shops';
-import { EMPTY_SURVIVAL_SNAPSHOT } from '../data/survival';
-import type { GamePhase, ItemStack, MetaProfile, RunState, SaveGame, UnpackBox, Zone } from '../model/types';
+import { EMPTY_SURVIVAL_SNAPSHOT, NEVER_TRADED } from '../data/survival';
+import type {
+  AppliedEffect,
+  GamePhase,
+  ItemStack,
+  MetaProfile,
+  RunState,
+  SaveGame,
+  UnpackBox,
+  Zone
+} from '../model/types';
 import { createMemoryStorage, resolveStorage, type StorageLike } from './storage';
 
 export const STORAGE_KEY = 'tunhuo.save';
@@ -24,9 +33,16 @@ export const STORAGE_KEY = 'tunhuo.save';
  *        并把 M0 的 `day: 0`（占位）迁成"囤货期最后一天" `-1`
  *  - v5：M1 夜间事件 —— 新增 `night`（§6.2），并让"卡在夜里"的坏档能自愈
  *  - v6：M1 生存期 —— 新增 `survival`（累计腐坏与缺货天数），结算页要用
- *  - v7（规划中）：M3 图鉴 MetaProfile 扩展
+ *  - v7：M1 平衡改造 —— `survival` 增加硬撑天数，结算快照增加"取用来源 / 劳作 / 补给"六项，
+ *        并新增 `outcome`（这一局是撑过去了，还是没撑住）
+ *  - v8：夜间事件的结果落盘 —— 新增 `NightState.applied`，记录这一晚**实际**发生了什么，
+ *        修掉"现金不够时界面报的却是选项声明的数"那个 bug
+ *  - v9：硬撑分档（§12.3 v0.6）—— `survival` 增加连续硬撑天数，结算快照增加档位
+ *  - v10：结算页的口径修正 —— `survival` 增加"累计缺口件数"与"有货拿不动件数"，
+ *        取代那个会被"缺 1 件"和"缺 5 件"糊成同一个数的缺货天数
+ *  - v11（规划中）：M3 图鉴 MetaProfile 扩展
  */
-export const SAVE_VERSION = 6;
+export const SAVE_VERSION = 10;
 /** 落盘节流上限（提示词 0：debounce ≤ 300ms） */
 export const SAVE_DEBOUNCE_MS = 250;
 
@@ -112,7 +128,84 @@ export function migrate(raw: unknown): SaveGame | null {
   if (declared < 4) save = migrateV3ToV4(save);
   if (declared < 5) save = migrateV4ToV5(save);
   if (declared < 6) save = migrateV5ToV6(save);
+  if (declared < 7) save = migrateV6ToV7(save);
+  if (declared < 8) save = migrateV7ToV8(save);
+  if (declared < 9) save = migrateV8ToV9(save);
+  if (declared < 10) save = migrateV9ToV10(save);
   return normalizeRun(save);
+}
+
+/**
+ * v9 → v10：结算页的口径修正。
+ *
+ * 两个新字段都补 0，而且**刻意不反推**：老档只记了"有几天短了口粮"，没记短了几件 ——
+ * 拿天数硬估一个件数，只会编出一份假的精确。0 的意思是"这一局没进过账"，
+ * 比一个编出来的数字诚实。
+ */
+export function migrateV9ToV10(save: SaveGame): SaveGame {
+  const run = save.run;
+  if (run) {
+    if (typeof run.survival.shortagePieces !== 'number') run.survival.shortagePieces = 0;
+    if (typeof run.survival.unreachablePieces !== 'number') run.survival.unreachablePieces = 0;
+  }
+  save.meta.version = SAVE_VERSION;
+  return save;
+}
+
+/**
+ * v8 → v9：硬撑分档（§12.3 v0.6）。
+ *
+ * 连续天数补 0，这个选择是**保守的**：一个正卡在硬撑里的老档，读档后当天算"第 1 天"
+ * （最轻的一档），而不是一个可能已经更重的档位。
+ * 宁可让老玩家少受一点罚，也不要凭空给他一个"快垮了"。
+ */
+export function migrateV8ToV9(save: SaveGame): SaveGame {
+  const run = save.run;
+  if (run) {
+    if (typeof run.survival.hardPressStreak !== 'number') run.survival.hardPressStreak = 0;
+    if (typeof run.survival.lastTradeDay !== 'number') run.survival.lastTradeDay = NEVER_TRADED;
+  }
+  save.meta.version = SAVE_VERSION;
+  return save;
+}
+
+/**
+ * v7 → v8：夜间事件的结果落盘（`NightState.applied`）。
+ *
+ * 老档补 `null`，而且**刻意不反推** —— 反推的素材只有"选项声明的数值"，
+ * 而那恰恰是它要修的那个东西：一个兜里只有 25 元的人，当年那次"转他 80"实际只扣了 25，
+ * 反推只会把假账再算一遍。
+ *
+ * `null` 的意思是"这一晚发生过什么已经不可考"，界面据此退化成不显示数值摘要。
+ * 这只影响那些正好卡在夜里存下来的老档，代价可以接受。
+ */
+export function migrateV7ToV8(save: SaveGame): SaveGame {
+  const run = save.run;
+  if (run && run.night) run.night.applied = null;
+  save.meta.version = SAVE_VERSION;
+  return save;
+}
+
+/**
+ * v6 → v7：M1 平衡改造。
+ *
+ * 只补默认值，**不动任何既有数据**：
+ *  ① `survival.hardPressDays` 补 0 —— 老档走过的天数里没有"硬撑"这个概念；
+ *  ② `outcome` 补 null。**刻意不反推已经结束的老档**：那些 `ending` 全部来自阶段 A
+ *     （囤货期走完就结束），当时生存期还不存在，给它标 'survived' 等于凭空送一个纪录。
+ *     结算页对 `outcome === null && phase === 'ending'` 有专门的说法（见 ui/EndingScreen.ts）。
+ *
+ * 结算快照的新字段（取用来源 / 劳作 / 补给 / 硬撑）不在这一层补 ——
+ * 它们由 `normalizeRun` 统一兜底，因为手改过的档同样需要这层保护。
+ */
+export function migrateV6ToV7(save: SaveGame): SaveGame {
+  const run = save.run;
+  if (run) {
+    if (typeof run.survival.hardPressDays !== 'number') run.survival.hardPressDays = 0;
+    run.outcome = null;
+  }
+  save.meta.version = SAVE_VERSION;
+  return save;
 }
 
 /**
@@ -124,7 +217,16 @@ export function migrate(raw: unknown): SaveGame | null {
 export function migrateV5ToV6(save: SaveGame): SaveGame {
   const run = save.run;
   if (run) {
-    run.survival = { spoiled: 0, shortageDays: 0, last: { ...EMPTY_SURVIVAL_SNAPSHOT } };
+    run.survival = {
+      spoiled: 0,
+      shortageDays: 0,
+      shortagePieces: 0,
+      unreachablePieces: 0,
+      hardPressDays: 0,
+      hardPressStreak: 0,
+      lastTradeDay: NEVER_TRADED,
+      last: { ...EMPTY_SURVIVAL_SNAPSHOT }
+    };
   }
   save.meta.version = SAVE_VERSION;
   return save;
@@ -266,15 +368,43 @@ function normalizeRun(save: SaveGame): SaveGame | null {
     spoiled: typeof survival.spoiled === 'number' && survival.spoiled >= 0 ? Math.round(survival.spoiled) : 0,
     shortageDays:
       typeof survival.shortageDays === 'number' && survival.shortageDays >= 0 ? Math.round(survival.shortageDays) : 0,
+    shortagePieces: Math.max(0, num(survival.shortagePieces)),
+    unreachablePieces: Math.max(0, num(survival.unreachablePieces)),
+    hardPressDays:
+      typeof survival.hardPressDays === 'number' && survival.hardPressDays >= 0
+        ? Math.round(survival.hardPressDays)
+        : 0,
+    hardPressStreak:
+      typeof survival.hardPressStreak === 'number' && survival.hardPressStreak >= 0
+        ? Math.round(survival.hardPressStreak)
+        : 0,
+    // 它可以是负数（没换过时是 -99），所以不夹 ≥ 0
+    lastTradeDay: typeof survival.lastTradeDay === 'number' ? Math.round(survival.lastTradeDay) : NEVER_TRADED,
     last: {
       health: num(last.health),
       mood: num(last.mood),
       stamina: num(last.stamina),
       shelter: num(last.shelter),
       shortage: Math.max(0, num(last.shortage)),
-      spoiled: Math.max(0, num(last.spoiled))
+      spoiled: Math.max(0, num(last.spoiled)),
+      fromShelves: Math.max(0, num(last.fromShelves)),
+      fromBoxes: Math.max(0, num(last.fromBoxes)),
+      unreachable: Math.max(0, num(last.unreachable)),
+      workCost: Math.max(0, num(last.workCost)),
+      hardPress: last.hardPress === true,
+      hardPressLevel:
+        last.hardPressLevel === 'straining' ||
+        last.hardPressLevel === 'failing' ||
+        last.hardPressLevel === 'collapsing'
+          ? last.hardPressLevel
+          : 'none',
+      usedMedicine: Math.max(0, num(last.usedMedicine)),
+      usedWarmth: Math.max(0, num(last.usedWarmth))
     }
   };
+
+  // ———————— 结局 ————————
+  run.outcome = run.outcome === 'survived' || run.outcome === 'collapsed' ? run.outcome : null;
 
   // 状态一致性：day 已经走到灾难日（>= 0），就不该还停在囤货期的三个界面上，
   // 否则玩家点"过一天"会原地打转，而且永远见不到 D-Day。
@@ -283,6 +413,12 @@ function normalizeRun(save: SaveGame): SaveGame | null {
   if (run.day >= 0 && (run.phase === 'stockpile_shop' || run.phase === 'organize' || run.phase === 'night')) {
     run.phase = run.day > SURVIVAL_DAYS ? 'ending' : 'survival_day';
     run.night = null;
+  }
+  // 自愈：健康已经归零却还停在生存期界面上（结算后被杀进程、或手改过的档）→ 补上结局。
+  // 不补的话玩家会看到一个"还能继续点、但怎么点都活不回来"的死局。
+  if (run.phase === 'survival_day' && run.stats.health <= 0) {
+    run.phase = 'ending';
+    if (run.outcome !== 'survived') run.outcome = 'collapsed';
   }
   // 不需要额外处理"撑过头"的档：上面那行已经把 day 夹在 ≤ SURVIVAL_DAYS，
   // 所以 `survival_day` 这个 phase 下不可能出现 day > 7。
@@ -318,7 +454,31 @@ function normalizeNight(run: RunState): void {
     const legal = rawChoice === NIGHT_SLEEP || (rawChoice >= 0 && rawChoice < def.options.length);
     choice = legal ? rawChoice : null;
   }
-  run.night = { eventId: def.id, choice };
+  // applied 只在"已经决定过"的时候才有意义；还没选的时候留着上一晚的残影会显示错摘要
+  run.night = {
+    eventId: def.id,
+    choice,
+    applied: choice === null ? null : normalizeApplied((raw as { applied?: unknown }).applied)
+  };
+}
+
+/**
+ * 把存档里的 `applied` 收成合法形状。
+ *
+ * 它只是"昨晚实际发生了什么"的一份缓存，坏掉时退化成 `null` 就够了。
+ * **不要**在它为空的时侯拿选项声明的数值去补 —— 那正是这个字段存在的理由（见 v7 → v8 的注释）。
+ */
+function normalizeApplied(raw: unknown): AppliedEffect | null {
+  if (!isObject(raw)) return null;
+  const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : 0);
+  return {
+    cash: num(raw.cash),
+    health: num(raw.health),
+    mood: num(raw.mood),
+    stamina: num(raw.stamina),
+    shelter: num(raw.shelter),
+    gotBox: raw.gotBox === true
+  };
 }
 
 /** v0（无 version 字段的裸档）→ v1：补齐 seed / stats / 订单计数等 */

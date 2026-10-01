@@ -13,6 +13,7 @@ import { openDeferred } from './meta/deferred';
 import type { GamePhase } from './model/types';
 import { bootstrapStore } from './state/store';
 import { createOrganizeSession, resetSession } from './systems/organize';
+import { tradeForBox } from './systems/trade';
 import {
   advanceSurvivalDay,
   chooseIdentity,
@@ -104,6 +105,8 @@ function consumePhase(result: PhaseResult): void {
         const short = report.drains.reduce((sum, d) => sum + d.shortage, 0);
         const bits: string[] = [];
         if (short > 0) bits.push(`缺 ${short} 件`);
+        // 刻意**不**往这里塞"硬撑"：日报里已经有一整行专门讲它，浮字只会压在正文上重复一遍。
+        // 浮字留给"坏了 N 件"这类界面正文里没有的、转瞬即逝的事。
         if (report.spoiledToday > 0) bits.push(`坏了 ${report.spoiledToday} 件`);
         if (bits.length > 0) showToast(fxRoot, bits.join(' · '), short > 0 ? 'warn' : 'ink');
         break;
@@ -111,6 +114,10 @@ function consumePhase(result: PhaseResult): void {
       case 'survivalCompleted':
         playSfx('tidy');
         showToast(fxRoot, `撑过 ${ev.days} 天`);
+        break;
+      case 'survivalEnded':
+        playSfx('crush');
+        showToast(fxRoot, '撑不住了', 'warn');
         break;
       case 'nightResolved':
       case 'dayStarted':
@@ -170,6 +177,20 @@ function makeScreen(key: ScreenKey): Screen {
         onNext: () => {
           consumePhase(advanceSurvivalDay(store));
           router.render();
+        },
+        onTrade: (picks) => {
+          const result = tradeForBox(store, picks);
+          for (const ev of result.events) {
+            if (ev.type === 'traded') {
+              playSfx('place');
+              showToast(fxRoot, `换回一${ev.boxName}`);
+            } else {
+              playSfx('reject');
+              showToast(fxRoot, ev.reason, 'warn');
+            }
+          }
+          router.render();
+          return result.ok;
         }
       });
     case 'ending':
