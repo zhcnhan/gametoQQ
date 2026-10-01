@@ -131,16 +131,17 @@ export const DEFERRED_ITEMS: readonly DeferredItem[] = [
     kind: 'code',
     title: '`Shelf` 没有位置概念（"门口" / "最顺手位"）',
     impact:
-      '已清偿（M1 阶段 F）。落地方式是 `Shelf.handyRank`：**由玩家自己指认门口那块是哪块货架**' +
-      '（`1`，`null` = 普通），而不是给货架写死一个 `accessRank: number` ——' +
-      '§5 写的就是"门口"，那是玩家心里的一个位置，不该由数值替他决定。' +
-      '**全屋唯一**（§12.3 v0.7.1 玩家拍板）：最初做成"前两顺位"，实测被否 ——' +
-      '"能标两块就会有人全标上"；标第二块时旧的那块自动让位（radio 语义）。' +
-      '**仍未做**：§5 的「突发事件不掉健康」—— M1 还没有突发事件系统，留给 M2。',
-    plan: 'M1 阶段 F',
+      '**已全部清偿**。两段：① M1 阶段 F 落地了 `Shelf.handyRank`（由玩家自己指认门口那块，' +
+      '全屋唯一，radio 语义）；② M2 补上了 §5 的另一半「突发事件不掉健康」—— ' +
+      '`data/emergencies.ts` + `systems/survival.ts` 的 `settleEmergency()`：' +
+      '顺手位上有该品类的急救品就自己化解（不消耗库存），没有才按缺货口径受创。' +
+      '实测（14 天口粮 30/30/30，跨 3 个 seed）：标了顺手位体力下限 88，没标 81 —— ' +
+      '代价看得见，但两种摆法都撑得过 14 天，§5 引擎①「不整理也能活」没有被推翻。',
+    plan: 'M1 阶段 F + M2',
     markedIn: [],
     status: 'done',
-    resolvedIn: 'M1 阶段 F —— Shelf.handyRank + 整理页的「顺手位」标记'
+    resolvedIn:
+      'M1 阶段 F —— Shelf.handyRank + 整理页的「顺手位」标记；M2 —— systems/survival.ts 的 settleEmergency + data/emergencies.ts'
   },
   {
     id: 'D-07',
@@ -186,12 +187,19 @@ export const DEFERRED_ITEMS: readonly DeferredItem[] = [
     kind: 'code',
     title: '白天的随机事件还没做（§6.2「物价波动 / 限购 / 插队大妈 / 黑市商人」）',
     impact:
-      '§6.2 给扫货写了"随机事件：文本 1~2 句，选项 2~3 个"，目前**一条都没有** ——' +
-      '白天采购是纯数值操作，没有任何变数。夜间事件（阶段 B）已经把"文本 + 选项"那套' +
-      '数据结构和界面跑通了，白天的事件可以直接复用同一套，成本不高。',
-    plan: 'M1 阶段 C 之后 / 或随 M3 的内容扩张一起做',
-    markedIn: ['systems/shop.ts'],
-    status: 'open'
+      '**已清偿（M2）**。落地分两处，因为「物价波动」和另外三条的形状不一样：' +
+      '① 有得选的三条（插队大妈 / 抢购 / 限购 / 黑市商人）在 `data/dayEvents.ts`，' +
+      '接入点是 `enterShop`——扣完行动点之后掷一次，掷中就挂 `RunState.dayEvent`，' +
+      '界面先讲那件事、货架等处理完再画（结构与夜间事件同源）；' +
+      '② 「物价波动」**没有选项**（玩家没法"决定"物价），所以它落在' +
+      '`dayPriceFactor(day)` 的逐日上行曲线上（灾前 0.95 → D+14 的 2.2），' +
+      '顺带修掉了 M1 的一个隐性空洞：D-03 让"早买 vs 晚买"失去意义（腐坏恒 0），' +
+      '而"晚买更贵"把这个博弈用另一条路救了回来。' +
+      '实测：`rollDayEvent` 约六成的店门有事；黑市商人只在五金店后巷（`onlyShops`）。',
+    plan: 'M2',
+    markedIn: [],
+    status: 'done',
+    resolvedIn: 'M2 —— data/dayEvents.ts + systems/shop.ts 的 rollDayEvent / resolveDayEvent / dayPriceFactor'
   },
   {
     id: 'D-11',
@@ -227,11 +235,12 @@ export const DEFERRED_ITEMS: readonly DeferredItem[] = [
     kind: 'code',
     title: '「街区平均余粮」是一条手写常数，不是模拟出来的',
     impact:
-      '§6.6 的反差数字要求"你的余粮天数 vs 街区平均余粮天数"。M1 只做了一个能让玩家读出' +
+      '§6.6 的反差数字要求"你的余粮天数 vs 街区平均余粮天数"。M1/M2 只做了一个能让玩家读出' +
       '自己位置的参照物 —— `DISTRICT_DAYS` 是一条手写的递减曲线（[0,3,2,2,1,1,0,0,0]），' +
-      '**没有**任何模拟。真正的"街区"要等 M2 的跨局世界状态。' +
+      '**没有**任何模拟。真正的"街区"要等 M3 的跨局世界状态 —— M2 落的是跨局存档的那一半' +
+      '（图鉴与最佳纪录，见 `systems/codex.ts`），"街区"这一半没动。' +
       '它现在的风险是：如果玩家只囤了 1 天粮，这句对比会变成讽刺而不是激励 —— 但那也算说真话。',
-    plan: 'M2（与跨局世界状态一起做）',
+    plan: 'M3（与跨局世界状态一起做）',
     markedIn: ['model/contrast.ts'],
     status: 'open'
   },
@@ -244,8 +253,9 @@ export const DEFERRED_ITEMS: readonly DeferredItem[] = [
       '人情（trust，已在结算页显示）与以物易物（thanks：现金或一箱货）。**情报没有做** ——' +
       '它需要一个能被追加的先知日历（"提前知道 D+5 会到 -30°C"这种），' +
       '而 M1 的 `DisasterProfile.calendar` 是静态表，没有"玩家得知之后往里补一条预告"的位置。' +
-      '硬做的话只能塞进 log，那它就成了一句没有作用的文本。',
-    plan: 'M2（与先知日历的动态化一起做）',
+      '硬做的话只能塞进 log，那它就成了一句没有作用的文本。' +
+      'M2 落的是**另一条**（跨局世界状态的图鉴与 meta 闭环），本条随之顺延 —— 见 D-18。',
+    plan: 'M3（与先知日历的动态化一起做，见 D-18）',
     markedIn: ['data/helpRequests.ts'],
     status: 'open'
   },
@@ -265,6 +275,68 @@ export const DEFERRED_ITEMS: readonly DeferredItem[] = [
     markedIn: [],
     status: 'done',
     resolvedIn: 'M1 平衡改造 —— 策划案 §12.3 的 v0.5 标注 + systems/phases.ts 的 settleAndMaybeEnd'
+  },
+
+  // ———————— M2 新登记的欠账（D-16 起） ————————
+
+  {
+    id: 'D-16',
+    kind: 'code',
+    title: '图鉴只有账本，没有界面；而且有一批物资在当前内容下永远点不亮',
+    impact:
+      'M2 把图鉴的**账**做实了（`MetaProfile.codex` 三页 + `systems/codex.ts` 的幂等结算 + ' +
+      '结算页的"本局新点亮 X 项"），但**没有独立的图鉴界面**（§9 界面清单第 7 条）。' +
+      '后果有两个：① 玩家看不到"还有多少没见过的"，收集目标只有结算页那一行数；' +
+      '② `ITEM_DEFS` 里已经有了图鉴点不亮的东西 —— `hot_water_bag_gift`（印花暖水袋）' +
+      '**不在任何箱子的池子里**，所以它现在是一个纯粹的占位：图鉴上永远空一格。' +
+      '这不是 bug，是"内容没跟上账本"，但不能就这么悬着。',
+    plan: 'M3（随内容扩张一起：图鉴界面 + 补齐哪些物资从哪儿来）',
+    markedIn: ['systems/codex.ts'],
+    status: 'open'
+  },
+  {
+    id: 'D-17',
+    kind: 'code',
+    title: '物价波动与限购不写进日报，「这店今天为什么贵」事后查不到',
+    impact:
+      'M2 的物价逐日上行（`dayPriceFactor`）与限购（`ShopLimit`）都只活在**当天**：' +
+      '换天时被清零（这是对的，它们本来就该只活一天），但它们**没有在 `run.log` 里留痕**。' +
+      '于是玩家在生存期回翻日报时，看不到"D+3 那天物价涨到 1.5 倍"这件事 ——' +
+      '而那一局的取舍（早买还是晚买）正是被它决定的。日志是给人看的账，缺了这一段，' +
+      '玩家只能凭记忆解释自己当时为什么那么买。',
+    plan: 'M3（与日报的复盘视图一起做：把逐日物价与当天生效的限购记进 log）',
+    markedIn: ['data/dayEvents.ts'],
+    status: 'open'
+  },
+  {
+    id: 'D-18',
+    kind: 'process',
+    title: 'M2 没有动「情报」与「街区」这两条（它们其实都卡在同一件事上）',
+    impact:
+      '**这是一条范围说明，不是一笔新欠账** —— 真正的代码欠账仍是 D-13（情报）与 D-14（街区）。' +
+      'M2 把手上的力气放在了跨局存档的那一半（图鉴 / 最佳纪录 / 最佳连击，见 systems/codex.ts），' +
+      '而"先知日历能追加预告"与"街区余粮是模拟出来的"是另一半，两条都要**动态世界状态**，' +
+      '在 M2 的范围里做不完。登记它是为了让接手者看清：M2 交付的是"跨局记住你做过什么"，' +
+      '不是"世界会随你变化" —— 后者一条都没动。',
+    plan: 'M3（与 D-13 / D-14 一起做）',
+    markedIn: [],
+    status: 'done',
+    resolvedIn: 'M2 范围说明 —— 实际欠账见 D-13（data/helpRequests.ts）与 D-14（model/contrast.ts）'
+  },
+  {
+    id: 'D-19',
+    kind: 'code',
+    title: '逐日物价曲线是手写的，而且只覆盖寒潮（与 D-15 同一类问题）',
+    impact:
+      'M2 为补 D-03 留下的空洞（腐坏恒 0 让"早买 vs 晚买"失去意义）加了' +
+      '`DAY_PRICE_FACTOR`：灾前 0.95 → D-Day 1.25 → D+14 2.2，单调不减。' +
+      '它和 D-15 的外界温度表是同一类手写表，代价也一样：**只覆盖寒潮**，' +
+      '而且当灾难不止一种时会需要按 `disasterId` 拆成几份' +
+      '（热浪的抢购曲线不该和寒潮长得一样）。现在只有一场灾难，所以它是对的；' +
+      '多灾难落地时必须重新想这张表 —— 那时再改类型才有必要。',
+    plan: 'M3（多灾难时处理，与 D-15 一起）',
+    markedIn: ['data/dayEvents.ts'],
+    status: 'open'
   }
 ];
 

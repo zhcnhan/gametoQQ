@@ -31,6 +31,10 @@
  *     一个从没应过门的人不该在"关系图鉴"里留一行空白。
  *
  * systems/ 层纪律：不碰任何浏览器 API。
+ *
+ * DEFERRED(D-16): 图鉴只有账、没有界面（§9 界面清单第 7 条），而且有一批物资
+ *   在当前内容下永远点不亮 —— `hot_water_bag_gift` 不在任何箱子的池子里，
+ *   所以那一格图鉴是空着的。这不是 bug，是"内容没跟上账本"，M3 随内容扩张一起补。
  */
 import { getDisasterDef } from '../data/disaster';
 import { ITEM_DEFS } from '../data/items';

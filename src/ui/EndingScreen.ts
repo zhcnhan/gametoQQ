@@ -149,7 +149,7 @@ export class EndingScreen implements Screen {
                 ? `<p class="block-note warm">本局新点亮 <b>${freshCount}</b> 项。</p>`
                 : '<p class="block-note">这一局没有新点亮的东西 —— 见过的都见过了。</p>'
             }
-            <div class="stat-grid">
+            <div class="stat-grid is-triple">
               ${CODEX_PAGES.map((page) => {
                 const have = meta.codex[page].length;
                 const total = totalsOf[page];

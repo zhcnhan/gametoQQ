@@ -12,10 +12,10 @@
  * 分趟刻意不扣行动点：行动点的语义是"进几家店门"（1 点 = 一个点位），
  * 若再拿它扣分趟，"1 点 = 一个点位"当场失效。
  *
- * DEFERRED(D-10): 已清偿（M2）。§6.2 的「随机事件：物价波动、限购、插队大妈、黑市商人」
+ * D-10 已清偿（M2）：§6.2 的「随机事件：物价波动、限购、插队大妈、黑市商人」
  * 现在落在 `enterShop` 之前：进店那一下用当前 seed 游标判定"这家店今天有没有事"，
  * 事件本体在 `data/dayEvents.ts`，判定与落账在本文件下半部分。
- * 「物价波动」走的是另一条路（它没得选，见下面的 `rollDaySetup`）。
+ * 「物价波动」走的是另一条路（它没得选，见 `data/dayEvents.ts` 的 `dayPriceFactor`）。
  */
 import { getBoxDef } from '../data/boxes';
 import { DAY_EVENT_DEFS, DAY_EVENT_NONE_WEIGHT, dayEventWeight, dayPriceFactor, findDayEvent } from '../data/dayEvents';

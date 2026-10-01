@@ -106,7 +106,24 @@ function reject(reason: string): HelpResult {
   return { ok: false, events: [{ type: 'rejected', reason }] };
 }
 
-/** 从货架与纸箱里凑单交付 */
+/**
+ * 从货架与纸箱里凑单交付。
+ *
+ * ## 关于返回值的口径（这里踩过一个坑，值得写清楚）
+ *
+ * `ok: true` 的意思是「**这一单我处理了，日历可以往下走了**」——
+ * 而**不是**"你成功给到了"。三种结果要靠 `events` 区分：
+ * `helpFulfilled`（交付成功）/ `helpFailed`（凑不齐或没力气）/ `rejected`（门口压根没人）。
+ *
+ * 为什么"凑不齐"也算 `ok: true`：命令已经把 `helpRequest` 清掉、`phase` 推回 `survival_day` 了 ——
+ * 状态是真的变了。这时若返回 `ok: false`，表现层会把它当"这次操作没生效"来处理：
+ * 弹一条"凑不齐"的错误提示，界面还停在原地等玩家再点一次（而那一单已经不在了）。
+ * 更糟的是任何"失败了就退而求其次"的调用方会接着去调 `declineRequest`，
+ * 于是玩家背上一次他从来没做过的"不讲情面"。
+ *
+ * 换句话说：**`ok` 回答"状态变了吗"，`events` 回答"变成了什么"**。
+ * 两者混用就会在两个地方同时出错（界面与账本），而且都不容易看出来。
+ */
 export function fulfillRequest(store: GameStore): HelpResult {
   const run = store.run;
   if (run.phase !== 'help_request') return reject('现在门口没有人');

@@ -237,7 +237,7 @@ export class SurvivalScreen implements Screen {
     return `
       <section class="block">
         <h2 class="block-title">今天屋里的样子</h2>
-        <div class="stat-grid">
+        <div class="stat-grid is-triple">
           <div class="stat"><i>归位率</i><b>${Math.round(score.placement * 100)}%</b></div>
           <div class="stat"><i>临期优先</i><b>${Math.round(score.fefo * 100)}%</b></div>
           <div class="stat"><i>顺手位</i><b>${Math.round(handy * 100)}%</b></div>

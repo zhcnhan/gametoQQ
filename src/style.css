@@ -1088,6 +1088,28 @@ button:disabled {
   font-size: 13px;
 }
 
+/*
+ * 暖黄的正反馈行（M2 §12 v0.9）。
+ *
+ * §5A 规定暖黄只用于"安全 / 窗内"语义 —— M2 新增的正反馈（安全感快照、
+ * 交付成功、图鉴点亮、破纪录）属于这一类，所以它们共用这一条。
+ * 这是暖黄继 M1 日报"屋里温度"之后第二次上岗，**不许扩散到别的语义**：
+ * 警告仍然是朱红，中性陈述仍然是墨色，两者都不要用这一条。
+ */
+.block-note.warm,
+.block-note.warm b {
+  color: var(--warm);
+}
+
+.block-note.warm b {
+  font-weight: 700;
+}
+
+/* 「本局新点亮 +N」那个角标。与暖黄同一语义，所以同一个色 */
+.stat em.is-fresh {
+  color: var(--warm);
+}
+
 .block-note b {
   color: var(--vermilion);
   font-weight: 700;
@@ -1516,6 +1538,18 @@ button:disabled {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   margin-top: 10px;
+}
+
+/*
+ * 三格的那一版（M2）。
+ *
+ * 刻意**不做成三列**：320px 那一档每格只剩 ~92px，而 M2 新增的三个数
+ * （归位率 / 临期优先 / 顺手位）要带中文标签 + 百分号，挤进去必然换行或溢出。
+ * 所以三格走 2 + 1：前两格并排，第三格独占一行 —— 两张卡片的宽度都没变，
+ * 320/375/390 三档的溢出账因此与已有的 .stat-grid 完全一致。
+ */
+.stat-grid.is-triple > .stat:nth-child(3) {
+  grid-column: 1 / -1;
 }
 
 .stat {
