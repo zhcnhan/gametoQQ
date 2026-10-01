@@ -31,6 +31,18 @@ export interface DisasterProfile {
   dailyDrain: Partial<Record<CategoryId, number>>; // 每日额外消耗权重
   priorityCategories: CategoryId[]; // 寒潮→['fuel','warmth']
   windowScene: string; // 窗外渲染主题 key
+  /**
+   * 灾难期腐坏倍率 —— 相对策划案 §7 的**新增字段**，理由见 src/meta/deferred.ts 的 D-03。
+   *
+   *   1   = 真实保质期，不动
+   *   > 1 = 加速腐坏（过一天算更多天，寿命变短）—— 热浪 / 洪水 / 疫情
+   *   < 1 = 延长（过一天算更少天，寿命变长）—— 寒潮：室外本身就是冷库
+   *
+   * 只在 `day >= 0`（灾难已登陆）时生效；囤货期永远是真实速度。
+   * 用**必填**而不是可选：将来加进第 2、第 3 个灾难时，忘记想"这场怎么处理腐坏"
+   * 会直接编译不过 —— 这条设计决定（"腐坏是灾难的属性"）需要被类型系统记住。
+   */
+  spoilRate: number;
 }
 
 export interface DayForecast {
@@ -127,6 +139,13 @@ export interface ShopDayStock {
 }
 
 export interface ItemBatch {
+  /**
+   * 到期日（绝对天）。null = 不易腐。
+   *
+   * DEFERRED(D-01): 这个字段现在**只有 FEFO 排序在读**，没有任何地方拿它做腐坏判定 ——
+   * 也就是说"到期"这件事目前在游戏里不会发生。§5 引擎④「同货架按保质期排好 = 零腐坏」
+   * 暂时没有抓手。腐坏结算要等阶段 C；而真正让腐坏产生压力要等 M3（见 D-03）。
+   */
   expiresAtDay: number | null;
   count: number;
 }
@@ -164,11 +183,24 @@ export interface Zone {
 export interface Shelf {
   id: string;
   roomId: string;
+  /**
+   * DEFERRED(D-02): `kind` 目前**只被文案读**（"冰箱 C"、"放回 冰箱 原位"），
+   * 没有任何玩法逻辑依赖它。§8 写的「冰箱 1 个（腐坏减速）」要等阶段 C 才有落点，
+   * 而它真正有意义还要等到 M3 出现热浪这种"会让食物烂掉"的灾难。
+   */
   kind: 'shelf' | 'fridge' | 'cabinet' | 'floor';
   w: number;
   h: number; // 格子矩阵
   slots: Slot[][]; // [row][col]
   zoneId: string | null;
+
+  /**
+   * DEFERRED(D-06): 这里**没有位置概念**（"门口"、"最顺手位"）。
+   * §5 写的「应急货架（门口/最顺手位）放急救品 → 突发事件不掉健康」和 §6.3 的
+   * 第三个维度「应急可达率」都落不了地，因为它们都需要"这块架子离门多近"这个信息。
+   * 加这个字段时要想清楚：是给 Shelf 加一个 `accessRank: number`，
+   * 还是把货架排进一条玩家可拖动的"顺手顺序"里（后者更有味道，也更贵）。
+   */
 }
 
 export type GamePhase =

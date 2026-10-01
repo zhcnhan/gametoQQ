@@ -9,6 +9,7 @@
 import './style.css';
 import { initAudio, playSfx } from './fx/audio';
 import { showToast } from './fx/popup';
+import { openDeferred } from './meta/deferred';
 import type { GamePhase } from './model/types';
 import { bootstrapStore } from './state/store';
 import { createOrganizeSession, resetSession } from './systems/organize';
@@ -140,7 +141,18 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') flush();
 });
 
-// 调试用：控制台可以直接看当前存档、整理会话与路由
+// 调试用：控制台可以直接看当前存档、整理会话、路由，以及欠账清单
 if (import.meta.env.DEV) {
-  (window as unknown as Record<string, unknown>)['__tunhuo'] = { store, session, router };
+  const debts = openDeferred();
+  (window as unknown as Record<string, unknown>)['__tunhuo'] = {
+    store,
+    session,
+    router,
+    deferred: debts
+  };
+  // 每开一次页面报一次账。目的很具体：让"寒潮是冷库 → M1 无腐坏""冰箱没效果"
+  // 这类**已被记录的空转**，在任何人准备动手"修好"它之前先自我解释一次。
+  console.info(
+    `[囤货末世] 已知欠账 ${debts.length} 笔：${debts.map((d) => d.id).join(' / ')} —— 详见 src/meta/deferred.ts`
+  );
 }

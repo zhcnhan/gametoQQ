@@ -43,7 +43,17 @@ export const DISASTER_DEFS: readonly DisasterProfile[] = [
     // §8：每日基础消耗 食物 2 / 水 2，「燃料 2」是寒潮独有的加成 —— 正是这里的 dailyDrain
     dailyDrain: { fuel: 2 },
     priorityCategories: ['fuel', 'warmth'],
-    windowScene: 'blizzard'
+    windowScene: 'blizzard',
+    /**
+     * 寒潮是**天然冷库**：室外 -18°C 到 -30°C，放东西出去只会冻得更久。
+     *
+     * DEFERRED(D-03): 这条设计有一个直接后果 —— **M1 全程不会发生任何腐坏**。
+     * 于是「临期优先」百分比、冰箱、以及日报里的损耗行，在当前里程碑里全是装饰。
+     * 这是玩家明确拍板的（"寒潮延长保质期，腐坏压力交给未来的灾难"），
+     * 不是漏做 —— 所以任何人都不许"顺手把它改成 1 让数字好看一点"。
+     * `spoilRate` 真正的用武之地是 M3 的热浪（>1，会让粮仓变成坟场）。
+     */
+    spoilRate: 0.5
   }
 ];
 

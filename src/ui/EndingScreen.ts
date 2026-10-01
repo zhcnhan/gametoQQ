@@ -75,6 +75,8 @@ export class EndingScreen implements Screen {
             <div class="score-rows">
               ${this.scoreRow('归位率', placement, '你自己给胶带写的清单，东西有没有照放')}
               ${this.scoreRow('临期优先', fefo, '同架按到期日排好没有 —— 越快到期的越靠前，也越先被用掉')}
+              <!-- DEFERRED(D-05): §6.3 的第三个维度「应急可达率」还没做。
+                   它卡在 D-06（Shelf 没有"离门多近"这个信息）上，不是卡在算分公式上。 -->
               <div class="score-row is-pending">
                 <span class="score-row-name">应急可达率</span>
                 <span class="score-row-value">随生存期实装</span>

@@ -17,6 +17,17 @@ export const STARTING_SHELF_COUNT = 3;
 export const STARTING_BOX_COUNT = 3;
 export const SHELF_IDS = ['shelf_a', 'shelf_b', 'shelf_c'] as const;
 
+/**
+ * 开局的三块家具。
+ *
+ * DEFERRED(D-08): §8 写的是「2 房间 × 3 货架（6×4 格）+ 冰箱 1 个」，这里只有
+ *   **1 个房间、3 块家具**（两块货架 + 一块冰箱）。空间压力因此比策划案小
+ *   （72 格 vs 策划案意图），7 天采购下来大约装到 8 成 —— 还没到"放不下"的紧张感。
+ *   要不要按 §8 扩到 2 房间，取决于生存期是否需要一个"货架不够用"的决策点。
+ *
+ * DEFERRED(D-02): 第三块的 kind='fridge' 目前**只影响它显示成"冰箱 C"**，
+ *   没有任何玩法效果（§8 说的"腐坏减速"要等阶段 C，且要等 M3 的灾难才真正吃紧）。
+ */
 export function createStartingShelves(roomId: string = ROOM_ID): Shelf[] {
   const kinds: Shelf['kind'][] = ['shelf', 'shelf', 'fridge'];
   return SHELF_IDS.slice(0, STARTING_SHELF_COUNT).map((id, i) =>
