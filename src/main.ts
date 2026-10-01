@@ -13,9 +13,19 @@ import { openDeferred } from './meta/deferred';
 import type { GamePhase } from './model/types';
 import { bootstrapStore } from './state/store';
 import { createOrganizeSession, resetSession } from './systems/organize';
-import { chooseIdentity, endDay, ensureDayStocks, goHome, goOut, type PhaseResult } from './systems/phases';
+import {
+  chooseIdentity,
+  chooseNightOption,
+  endDay,
+  ensureDayStocks,
+  goHome,
+  goOut,
+  sleep,
+  type PhaseResult
+} from './systems/phases';
 import { createStartingRun } from './systems/setup';
 import { EndingScreen } from './ui/EndingScreen';
+import { NightScreen } from './ui/NightScreen';
 import { OrganizeScreen } from './ui/OrganizeScreen';
 import { PendingScreen } from './ui/PendingScreen';
 import { PrologueScreen } from './ui/PrologueScreen';
@@ -49,10 +59,12 @@ function keyOfPhase(phase: GamePhase): ScreenKey {
       return 'shop';
     case 'organize':
       return 'organize';
+    case 'night':
+      return 'night';
     case 'ending':
       return 'ending';
     default:
-      // night / survival_day / help_request 属阶段 B/C/D
+      // survival_day / help_request 属阶段 C/D
       return 'pending';
   }
 }
@@ -77,6 +89,12 @@ function consumePhase(result: PhaseResult): void {
         playSfx('crush');
         showToast(fxRoot, '寒潮登陆');
         break;
+      case 'nightFell':
+        // 入夜的表现交给 NightScreen 自己（它要在同一个屏幕里把四维摊开给玩家看），
+        // 这里只补一个"事情来了"的听觉提示
+        playSfx('preview');
+        break;
+      case 'nightResolved':
       case 'dayStarted':
       case 'wentHome':
       case 'wentOut':
@@ -111,6 +129,17 @@ function makeScreen(key: ScreenKey): Screen {
         },
         onEndDay: () => {
           consumePhase(endDay(store));
+          router.render();
+        }
+      });
+    case 'night':
+      return new NightScreen(root as HTMLElement, store, {
+        onChoose: (choice) => {
+          consumePhase(chooseNightOption(store, choice));
+          router.render();
+        },
+        onSleep: () => {
+          consumePhase(sleep(store));
           router.render();
         }
       });

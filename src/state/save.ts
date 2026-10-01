@@ -8,6 +8,7 @@
 import { BOX_DEFS } from '../data/boxes';
 import { FIRST_STOCKPILE_DAY, SURVIVAL_DAYS } from '../data/disaster';
 import { IDENTITY_DEFS, hasIdentityDef } from '../data/identities';
+import { NIGHT_SLEEP, findNightEvent } from '../data/nightEvents';
 import { ACTION_POINTS_PER_DAY } from '../data/shops';
 import type { GamePhase, ItemStack, MetaProfile, RunState, SaveGame, UnpackBox, Zone } from '../model/types';
 import { createMemoryStorage, resolveStorage, type StorageLike } from './storage';
@@ -20,9 +21,10 @@ export const STORAGE_KEY = 'tunhuo.save';
  *  - v3：分区收敛为"胶带"（名字 + 颜色），剥掉存量存档里的 autoAccept 规则声明
  *  - v4：M1 囤货期（状态机 + 采购）—— 补行动点/车载/当日库存四个字段，
  *        并把 M0 的 `day: 0`（占位）迁成"囤货期最后一天" `-1`
- *  - v5（规划中）：M3 图鉴 MetaProfile 扩展
+ *  - v5：M1 夜间事件 —— 新增 `night`（§6.2），并让"卡在夜里"的坏档能自愈
+ *  - v6（规划中）：M3 图鉴 MetaProfile 扩展
  */
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 /** 落盘节流上限（提示词 0：debounce ≤ 300ms） */
 export const SAVE_DEBOUNCE_MS = 250;
 
@@ -106,7 +108,20 @@ export function migrate(raw: unknown): SaveGame | null {
   if (declared < 2) save = migrateV1ToV2(save);
   if (declared < 3) save = migrateV2ToV3(save);
   if (declared < 4) save = migrateV3ToV4(save);
+  if (declared < 5) save = migrateV4ToV5(save);
   return normalizeRun(save);
+}
+
+/**
+ * v4 → v5：新增 `night`（§6.2 夜间事件）。
+ * 老档里没有"夜色"这个概念，补 `null`（= 今晚没事）。
+ * **刻意不动 day 与 phase** —— 老玩家读档后仍站在原来的白天，只是今晚可能会遇上一次夜间事件。
+ */
+export function migrateV4ToV5(save: SaveGame): SaveGame {
+  const run = save.run;
+  if (run) run.night = null;
+  save.meta.version = SAVE_VERSION;
+  return save;
 }
 
 /**
@@ -222,13 +237,48 @@ function normalizeRun(save: SaveGame): SaveGame | null {
   run.visitedShopIds = asArray<string>(run.visitedShopIds).filter((v) => typeof v === 'string');
   run.currentShopId = typeof run.currentShopId === 'string' ? run.currentShopId : null;
 
+  // ———————— M1 夜间字段 ————————
+  normalizeNight(run);
+
   // 状态一致性：day 已经走到灾难日（>= 0），就不该还停在囤货期的三个界面上，
   // 否则玩家点"过一天"会原地打转，而且永远见不到 D-Day。
   if (run.day >= 0 && (run.phase === 'stockpile_shop' || run.phase === 'organize' || run.phase === 'night')) {
     run.phase = 'ending';
+    run.night = null;
   }
   save.meta.version = SAVE_VERSION;
   return save;
+}
+
+/**
+ * 夜色的自愈。这个函数存在的唯一理由是：**夜是没有出口的死胡同，坏档会把人永远关在里面**
+ * （UI 上没有"跳过夜晚"的按钮，玩家只能做选择才能跨天）。
+ * 所以三种坏法都必须被拦住：
+ *
+ *  ① `phase === 'night'` 但 `night` 空 → 清掉夜色，退回白天（可以继续采买）；
+ *  ② `night.eventId` 在当前事件表里找不到（事件被删/改名）→ 同上；
+ *  ③ `choice` 不是合法值（越界下标 / 事件选项数变了）→ 退成 `null`（重新选），而不是清掉整个夜晚。
+ * 反过来，**不在夜里却留着 night** → 也清掉，否则下次入夜会读到上一晚的残影。
+ */
+function normalizeNight(run: RunState): void {
+  const raw = run.night;
+  const eventId = isObject(raw) && typeof raw.eventId === 'string' ? raw.eventId : '';
+  const def = findNightEvent(eventId);
+
+  if (run.phase !== 'night' || !def) {
+    run.night = null;
+    // 在夜里却没事件可放 → 绝不能留在 night 这个 phase 上
+    if (run.phase === 'night') run.phase = 'stockpile_shop';
+    return;
+  }
+
+  const rawChoice = (raw as { choice?: unknown }).choice;
+  let choice: number | null = null;
+  if (typeof rawChoice === 'number' && Number.isInteger(rawChoice)) {
+    const legal = rawChoice === NIGHT_SLEEP || (rawChoice >= 0 && rawChoice < def.options.length);
+    choice = legal ? rawChoice : null;
+  }
+  run.night = { eventId: def.id, choice };
 }
 
 /** v0（无 version 字段的裸档）→ v1：补齐 seed / stats / 订单计数等 */

@@ -1693,3 +1693,79 @@ button:disabled {
   border: 1.5px solid var(--ink-40);
   border-radius: 50%;
 }
+
+/* ================================================================
+ * 夜间（§6.2 夜间小事件）
+ * 这一屏只有一件事：让玩家读一句话，然后做一个取舍。
+ * 所以正文用衬线（手账感）、字比别处大一号、行距放宽 —— 它是"读"的界面，不是"操作"的界面。
+ * ================================================================ */
+
+.night-text {
+  margin: 0;
+  font-family: 'Songti SC', 'STSong', Georgia, serif;
+  font-size: 17px;
+  line-height: 1.8;
+  letter-spacing: 0.02em;
+}
+
+.night-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+/* 64px：这一屏只有 2~3 个按钮，没有任何理由做小 */
+.night-option {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 64px;
+  padding: 8px 16px;
+  border: 2.5px solid var(--ink);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  box-shadow: 3px 3px 0 var(--ink-08);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: transform var(--fast) var(--ease-out);
+}
+
+.night-option:active {
+  transform: translateY(1px);
+}
+
+.night-option b {
+  font-family: 'Songti SC', 'STSong', Georgia, serif;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+/* 结论句：左侧一条朱红竖线。朱红在本案里 = 重要，而"你刚才的选择换来了什么"就是这一刻最重要的事 */
+.night-outcome {
+  margin: 18px 0 0;
+  padding-left: 12px;
+  border-left: 5px solid var(--vermilion);
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+.night-deltas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.delta {
+  padding: 4px 12px;
+  border: 1.5px solid var(--ink);
+  border-radius: 999px;
+  background: var(--card);
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}

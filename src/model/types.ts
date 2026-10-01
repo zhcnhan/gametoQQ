@@ -212,6 +212,46 @@ export type GamePhase =
   | 'help_request' // 求援订单弹窗
   | 'ending'; // 结算
 
+// ============ 夜间事件（§6.2「夜间小事件」） ============
+
+/**
+ * 一个选项的数值后果。全部字段可选 —— 因为**"什么都不做"必须是一条合法路径**
+ * （§4A：玩家随时可能被领导叫走，不允许有任何强制选择）。
+ */
+export interface NightEffect {
+  cash?: number;
+  health?: number;
+  mood?: number;
+  stamina?: number;
+  shelter?: number;
+  /** 顺手带回家的一箱货（箱型 id，见 data/boxes.ts）。会用当前天算批次到期日 */
+  boxDefId?: string;
+}
+
+export interface NightOption {
+  /** 按钮上的字。手机竖屏，一行放得下为准（≤ 8 字） */
+  label: string;
+  /** 选完那一刻看到的一句话，说清发生了什么。不许有台词腔（§11） */
+  outcome: string;
+  effect: NightEffect;
+}
+
+export interface NightEventDef {
+  id: string;
+  /** 睡前读到的处境，1~2 句 */
+  text: string;
+  options: NightOption[];
+}
+
+/**
+ * 今晚的状态。
+ * `choice === null` = 还在选；`NIGHT_SLEEP`（见 data/nightEvents.ts）= 直接睡；其余为 options 下标。
+ */
+export interface NightState {
+  eventId: string;
+  choice: number | null;
+}
+
 export interface RunState {
   // 当局存档
   phase: GamePhase;
@@ -252,6 +292,15 @@ export interface RunState {
    * 落盘的理由是 §4A「恢复即续玩」：刷新后必须回到同一个货架前，而不是退回点位列表让玩家再点一次。
    */
   currentShopId: string | null;
+
+  // ———————— M1 夜间（阶段 B） ————————
+
+  /**
+   * 今晚的夜间事件（§6.2）。
+   * `null` = 今晚没事 —— 包括"还没入夜"与"今晚抽空了"两种情况，因为
+   * "此刻是否在夜里"由 `phase === 'night'` 负责，这个字段只回答"今晚是哪件事、选到哪一步了"。
+   */
+  night: NightState | null;
 }
 
 export interface MetaProfile {

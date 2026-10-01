@@ -167,6 +167,100 @@ describe('存档 schema 与迁移', () => {
     expect(deserialize(raw)?.run?.day).toBe(-7);
   });
 
+  it('v4（阶段 A 囤货期）→ v5：只补 night，玩家站的位置与日历一动不动', () => {
+    const v4 = {
+      meta: {
+        version: 4,
+        identityLevels: {},
+        codex: { items: [], disasters: [], npcs: [] },
+        bestSurvivalDays: {}
+      },
+      run: {
+        phase: 'organize',
+        day: -3,
+        identityId: 'group_buyer',
+        disasterId: 'cold_snap',
+        cash: 300,
+        shelves: [],
+        zones: [],
+        boxesToUnpack: [],
+        stats: { health: 100, mood: 70, stamina: 100, shelter: 100 },
+        trust: {},
+        deliveredOrders: 0,
+        log: [],
+        seed: 99,
+        actionPoints: 2,
+        carLoad: 3,
+        shopStocks: [],
+        visitedShopIds: [],
+        currentShopId: 'pharmacy'
+      },
+      savedAt: 1,
+      syncVersion: 1,
+      deviceId: 'dev'
+    };
+    const migrated = migrate(v4);
+    expect(migrated?.meta.version).toBe(SAVE_VERSION);
+    expect(migrated?.run?.night).toBeNull();
+    expect(migrated?.run?.day).toBe(-3);
+    expect(migrated?.run?.phase).toBe('organize');
+    expect(migrated?.run?.currentShopId).toBe('pharmacy');
+  });
+
+  it('夜色自愈①：事件 id 不认识 → 清掉夜色并把玩家放回白天（否则永远关在夜里）', () => {
+    const run = {
+      ...createStartingRun(5),
+      phase: 'night' as const,
+      day: -3,
+      identityId: 'group_buyer',
+      night: { eventId: 'n_这个事件已经删掉了', choice: null }
+    };
+    const raw = serialize({ meta: { version: SAVE_VERSION } as never, run, savedAt: 1, syncVersion: 1, deviceId: 'dev' });
+    const back = deserialize(raw);
+    expect(back?.run?.night).toBeNull();
+    expect(back?.run?.phase).toBe('stockpile_shop');
+  });
+
+  it('夜色自愈②：choice 越界（事件被改短了）→ 退成"还没选"，但夜还在', () => {
+    const run = {
+      ...createStartingRun(5),
+      phase: 'night' as const,
+      day: -3,
+      identityId: 'group_buyer',
+      night: { eventId: 'n_neighbor_soup', choice: 99 }
+    };
+    const raw = serialize({ meta: { version: SAVE_VERSION } as never, run, savedAt: 1, syncVersion: 1, deviceId: 'dev' });
+    const back = deserialize(raw);
+    expect(back?.run?.phase).toBe('night');
+    expect(back?.run?.night).toEqual({ eventId: 'n_neighbor_soup', choice: null });
+  });
+
+  it('夜色自愈③：不在夜里却留着夜色 → 清掉（否则下次入夜会读到上一晚的残影）', () => {
+    const run = {
+      ...createStartingRun(5),
+      phase: 'organize' as const,
+      day: -3,
+      identityId: 'group_buyer',
+      night: { eventId: 'n_neighbor_soup', choice: 0 }
+    };
+    const raw = serialize({ meta: { version: SAVE_VERSION } as never, run, savedAt: 1, syncVersion: 1, deviceId: 'dev' });
+    expect(deserialize(raw)?.run?.night).toBeNull();
+  });
+
+  it('合法的夜色原样读回（刷新后要看见"我已经决定过、只是还没关灯"）', () => {
+    const run = {
+      ...createStartingRun(5),
+      phase: 'night' as const,
+      day: -3,
+      identityId: 'group_buyer',
+      night: { eventId: 'n_neighbor_soup', choice: 0 }
+    };
+    const raw = serialize({ meta: { version: SAVE_VERSION } as never, run, savedAt: 1, syncVersion: 1, deviceId: 'dev' });
+    const back = deserialize(raw);
+    expect(back?.run?.phase).toBe('night');
+    expect(back?.run?.night).toEqual({ eventId: 'n_neighbor_soup', choice: 0 });
+  });
+
   it('v2 存档原样读回，不做二次包装', () => {
     const run = createStartingRun(2026);
     const raw = serialize({ meta: { version: SAVE_VERSION } as never, run, savedAt: 1, syncVersion: 1, deviceId: 'dev' });

@@ -22,7 +22,7 @@ export interface Screen {
   dispose?(): void;
 }
 
-export type ScreenKey = 'prologue' | 'shop' | 'organize' | 'ending' | 'pending';
+export type ScreenKey = 'prologue' | 'shop' | 'organize' | 'night' | 'ending' | 'pending';
 
 export class Router {
   private readonly root: HTMLElement;

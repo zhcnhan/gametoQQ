@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FIRST_STOCKPILE_DAY } from '../data/disaster';
+import { NIGHT_SLEEP } from '../data/nightEvents';
 import { ACTION_POINTS_PER_DAY, SHOP_DEFS } from '../data/shops';
 import { createSaveGame } from '../state/save';
 import { GameStore } from '../state/store';
@@ -7,11 +8,13 @@ import {
   NEXT_PHASES,
   canAdvance,
   chooseIdentity,
+  chooseNightOption,
   endDay,
   ensureDayStocks,
   goHome,
   goOut,
-  isStockpilePhase
+  isStockpilePhase,
+  sleep
 } from './phases';
 import { createStartingRun } from './setup';
 import { enterShop } from './shop';
@@ -33,6 +36,21 @@ function startedStore(seed = 20261001, identityId = 'group_buyer') {
   const store = newStore(seed);
   chooseIdentity(store, identityId);
   return store;
+}
+
+/**
+ * 完整走完一天。
+ *
+ * 阶段 B 之后 `endDay` 有了岔路：约 60% 的夜晚会先入夜，需要决定 + 关灯才跨天。
+ * 这个 helper 把两条路并成一条 —— 测试关心的是"过了一天"这件事本身，
+ * 不该被"今晚有没有事"的随机性缠住（那一层由 night.test.ts 专门覆盖）。
+ */
+function passDay(store: GameStore): void {
+  endDay(store);
+  if (store.run.phase === 'night') {
+    chooseNightOption(store, NIGHT_SLEEP);
+    sleep(store);
+  }
 }
 
 describe('开局：prologue → stockpile_shop', () => {
@@ -130,8 +148,7 @@ describe('过一天：日历推进', () => {
     store.run.actionPoints = 0;
     goHome(store);
 
-    const r = endDay(store);
-    expect(r.ok).toBe(true);
+    passDay(store);
     expect(store.run.day).toBe(FIRST_STOCKPILE_DAY + 1);
     expect(store.run.phase).toBe('stockpile_shop');
     expect(store.run.actionPoints).toBe(ACTION_POINTS_PER_DAY);
@@ -147,8 +164,7 @@ describe('过一天：日历推进', () => {
     expect(store.run.day).toBe(-7);
     for (let i = 0; i < 7; i++) {
       goHome(store);
-      const r = endDay(store);
-      expect(r.ok).toBe(true);
+      passDay(store);
     }
     expect(store.run.day).toBe(0);
     expect(store.run.phase).toBe('ending');
@@ -160,7 +176,7 @@ describe('过一天：日历推进', () => {
     const store = startedStore();
     for (let i = 0; i < 7; i++) {
       goHome(store);
-      endDay(store);
+      passDay(store);
     }
     expect(endDay(store).ok).toBe(false);
     expect(store.run.phase).toBe('ending');
@@ -170,7 +186,7 @@ describe('过一天：日历推进', () => {
     const store = startedStore();
     for (let i = 0; i < 6; i++) {
       goHome(store);
-      endDay(store);
+      passDay(store);
     }
     expect(store.run.day).toBe(-1);
     expect(store.run.phase).toBe('stockpile_shop');

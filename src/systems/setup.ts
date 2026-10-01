@@ -119,7 +119,8 @@ export function createStartingRun(seed: number = randomSeed()): RunState {
     carLoad: 0,
     shopStocks: [],
     visitedShopIds: [],
-    currentShopId: null
+    currentShopId: null,
+    night: null
   };
   return run;
 }

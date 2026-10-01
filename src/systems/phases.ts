@@ -17,11 +17,13 @@
  */
 import { FIRST_STOCKPILE_DAY } from '../data/disaster';
 import { getIdentityDef, hasIdentityDef } from '../data/identities';
+import { NIGHT_SLEEP, findNightEvent } from '../data/nightEvents';
 import { ACTION_POINTS_PER_DAY } from '../data/shops';
 import { dayLabel } from '../model/calendar';
 import { createCursor, type RngCursor } from '../model/rng';
 import type { GamePhase, RunState } from '../model/types';
 import type { GameStore } from '../state/store';
+import { applyNightEffect, describeEffect, optionAt, rollNight } from './night';
 import { rollShopStocks } from './shop';
 
 /**
@@ -54,6 +56,10 @@ export type PhaseEvent =
   | { type: 'identityChosen'; identityId: string; identityName: string; cash: number }
   | { type: 'wentHome' }
   | { type: 'wentOut' }
+  /** 今晚有事，日历停在原地等玩家决定（§4.1：整理 → 夜间 → 第二天） */
+  | { type: 'nightFell'; eventId: string }
+  /** 玩家决定了今晚怎么办；summary 是给人看的一行数值摘要（"直接睡"时为空） */
+  | { type: 'nightResolved'; eventId: string; choice: number; summary: string[] }
   | { type: 'dayStarted'; day: number }
   | { type: 'disasterLanded'; day: number }
   | { type: 'rejected'; reason: string };
@@ -137,6 +143,10 @@ export function goOut(store: GameStore): PhaseResult {
 /**
  * 过一天（囤货期的唯一时间出口，§4A：时间只在玩家主动点它时流动）。
  * 刻意**不要求**拆完所有箱子 —— §5 引擎①「游戏不评判对错」，没拆完就出门也是玩家的自由。
+ *
+ * §4.1 的节拍是「扫货 → 回家拆箱 → 整理 → **夜间小事件** → 第二天」，所以这里有两条岔路：
+ *   · 今晚有事 → phase 推到 'night'，**日历先不动**，等玩家决定完再跨天；
+ *   · 今晚没事 → 直接跨天（约 40% 的夜间就这么跳过去了，节奏因此松弛）。
  */
 export function endDay(store: GameStore): PhaseResult {
   const run = store.run;
@@ -144,9 +154,68 @@ export function endDay(store: GameStore): PhaseResult {
   const events: PhaseEvent[] = [];
 
   store.commit((draft) => {
-    // PLACEHOLDER: 夜间事件池属阶段 B。接入点就是这里 ——
-    //   届时用 cursor 种子化判定"今晚有没有事"（约 60% 的天），有则 draft.phase = 'night' 并抽一条事件。
     const cursor = createCursor(draft.seed);
+    const eventId = rollNight(cursor);
+    if (eventId) {
+      draft.night = { eventId, choice: null };
+      draft.phase = 'night';
+      events.push({ type: 'nightFell', eventId });
+    } else {
+      events.push(startNextDay(draft, cursor));
+    }
+    draft.seed = cursor.state;
+  });
+
+  return ok(events);
+}
+
+// ———————— 夜间（§6.2） ————————
+
+/**
+ * 决定今晚怎么办。`choice` 为选项下标，或 `NIGHT_SLEEP`（直接睡，无后果）。
+ *
+ * 这一步与"跨天"**分成两个命令**，是为了让玩家先看到后果再睡 ——
+ * 而且它顺带给了存档一个天然的中间态：`choice !== null` 时刷新，
+ * 回来看到的是"你已经决定过、只是还没关灯"，而不是把选择重放一遍。
+ */
+export function chooseNightOption(store: GameStore, choice: number): PhaseResult {
+  const run = store.run;
+  if (run.phase !== 'night') return reject('现在不是夜里');
+  const night = run.night;
+  if (!night) return reject('今晚没什么事');
+  if (night.choice !== null) return reject('已经决定了');
+  const def = findNightEvent(night.eventId);
+  if (!def) return reject('没有这件事');
+  const option = optionAt(def, choice);
+  if (choice !== NIGHT_SLEEP && !option) return reject('没有这个选项');
+
+  const events: PhaseEvent[] = [];
+  store.commit((draft) => {
+    const cursor = createCursor(draft.seed);
+    if (option) applyNightEffect(draft, option.effect, cursor);
+    const target = draft.night;
+    if (target) target.choice = choice;
+    const summary = option ? describeEffect(option.effect) : [];
+    draft.log.push(
+      `夜间 · ${option ? option.label : '直接睡'}${summary.length > 0 ? `（${summary.join('，')}）` : ''}`
+    );
+    draft.seed = cursor.state;
+    events.push({ type: 'nightResolved', eventId: def.id, choice, summary });
+  });
+
+  return ok(events);
+}
+
+/** 关灯，跨到第二天。必须先对今晚有决定（包括"直接睡"）—— 这是唯一一处不允许跳过的确认 */
+export function sleep(store: GameStore): PhaseResult {
+  const run = store.run;
+  if (run.phase !== 'night') return reject('现在不是夜里');
+  if (run.night && run.night.choice === null) return reject('先决定今晚怎么办');
+
+  const events: PhaseEvent[] = [];
+  store.commit((draft) => {
+    const cursor = createCursor(draft.seed);
+    draft.night = null;
     events.push(startNextDay(draft, cursor));
     draft.seed = cursor.state;
   });
@@ -167,6 +236,7 @@ function startNextDay(run: RunState, cursor: RngCursor): PhaseEvent {
     run.actionPoints = 0;
     run.carLoad = 0;
     run.currentShopId = null;
+    run.night = null; // 夜里的事留在昨天
     run.log.push('D-Day · 寒潮登陆。');
     return { type: 'disasterLanded', day: 0 };
   }
@@ -178,6 +248,7 @@ function startNextDay(run: RunState, cursor: RngCursor): PhaseEvent {
   run.carLoad = 0; // 车上的货都卸在家里了
   run.visitedShopIds = [];
   run.currentShopId = null;
+  run.night = null; // 新的一天从白天开始，昨晚的事不跟着走
   run.shopStocks = rollShopStocks(identity, cursor, next);
   run.log.push(`${dayLabel(next)} · 新的一天，${ACTION_POINTS_PER_DAY} 个行动点。`);
   return { type: 'dayStarted', day: next };
