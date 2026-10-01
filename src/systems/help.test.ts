@@ -110,19 +110,30 @@ describe('求援订单：交付与婉拒', () => {
     expect(medicineOf(store)).toBe(5); // 东西还在
   });
 
-  it('箱子里 100 件药的档，和分门别类的档，交付速度不一样', () => {
+  it('★ 同一单三种摆放：4.5 / 9.9 / 13.5 点体力 —— 这就是"整理得好，几下凑齐"', () => {
+    const def = getHelpRequestDef('q_wang_medicine'); // 要 3 件药
+
+    // ① 上了架，而且这张胶带就收药（归位率 1、临期优先 1）
     const tidy = storeAtDoor();
-    give(tidy.run, 'bandage', 5);
+    give(tidy.run, 'bandage', 3);
     tidy.run.zones = [{ id: 'z_med', name: '药', color: '#000000' }];
-    tidy.run.shelves = tidy.run.shelves.map((s) => (s.id === tidy.run.shelves[0]?.id ? { ...s, zoneId: 'z_med' } : s));
+    tidy.run.shelves = tidy.run.shelves.map((s) =>
+      s.id === tidy.run.shelves[0]?.id ? { ...s, zoneId: 'z_med' } : s
+    );
 
-    const messy = storeAtDoor();
-    messy.run.boxesToUnpack = [
-      { id: 'box_x', defId: 'box_medical', items: [makeStack('bandage', 5, null)] }
-    ];
+    // ② 上了架，但没贴胶带（归位率 0、临期优先 1）
+    const plain = storeAtDoor();
+    give(plain.run, 'bandage', 3);
 
-    const def = getHelpRequestDef('q_wang_medicine');
-    expect(searchCost(messy.run, def)).toBeGreaterThan(searchCost(tidy.run, def));
+    // ③ 原封不动堆在纸箱里（归位率 0、临期优先 0）
+    const boxed = storeAtDoor();
+    boxed.run.boxesToUnpack = [{ id: 'box_x', defId: 'box_medical', items: [makeStack('bandage', 3, null)] }];
+
+    // 每件 1.5 / 3.3 / 4.5 —— 整整三倍。中间那一档尤其说明问题：
+    // **光把东西摆上架还不够，胶带才是让归位率起作用的东西**
+    expect(searchCost(tidy.run, def)).toBe(4.5);
+    expect(searchCost(plain.run, def)).toBe(9.9);
+    expect(searchCost(boxed.run, def)).toBe(13.5);
   });
 });
 
