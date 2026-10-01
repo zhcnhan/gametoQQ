@@ -15,7 +15,6 @@ import {
   applyZone,
   assignZone,
   buildView,
-  deleteZone,
   inventoryTotals,
   placeHeld,
   pickupFromShelf,
@@ -100,13 +99,24 @@ export class OrganizeScreen {
 
     const sheetEl = document.createElement('div');
     this.root.appendChild(sheetEl);
-    this.sheet = new ZoneSheet(sheetEl, {
-      getShelves: () => this.store.run.shelves,
-      getZones: () => this.store.run.zones,
-      apply: (shelfId: string, input: ZoneInput) => this.consume(applyZone(this.store, shelfId, input)),
-      assign: (shelfId: string, zoneId: string | null) => this.consume(assignZone(this.store, shelfId, zoneId)),
-      removeZone: (zoneId: string) => this.consume(deleteZone(this.store, zoneId))
-    });
+    this.sheet = new ZoneSheet(
+      sheetEl,
+      {
+        getShelves: () => this.store.run.shelves,
+        getZones: () => this.store.run.zones,
+        apply: (shelfId: string, input: ZoneInput) => {
+          const result = applyZone(this.store, shelfId, input);
+          this.consume(result);
+          return result.ok;
+        },
+        assign: (shelfId: string, zoneId: string | null) => {
+          const result = assignZone(this.store, shelfId, zoneId);
+          this.consume(result);
+          return result.ok;
+        }
+      },
+      () => this.clearEditHighlight()
+    );
 
     // 只挂一个委托监听（顶栏指标卡 / 货架按钮 / 底部工具都从这里走），少一层心智负担
     this.root.addEventListener('click', (e) => this.onDelegatedClick(e));
@@ -173,12 +183,14 @@ export class OrganizeScreen {
       <section class="shelf-card" data-shelf-card="${shelf.id}" style="--zone:${zone?.color ?? 'transparent'}">
         <div class="shelf-head">
           <span class="zone-tape"></span>
-          <h2 class="shelf-title" data-shelf-title data-shelf="${shelf.id}">
+          <h2 class="shelf-title" data-shelf-title data-shelf="${shelf.id}" data-action="edit-zone" title="点一下给这架贴胶带">
             ${shelfLabel(shelf, index)}
-            <em class="zone-name${zone ? '' : ' is-none'}">${zone ? escapeHtml(zone.name) : '未分区'}</em>
+            <em class="zone-name${zone ? '' : ' is-none'}">${zone ? escapeHtml(zone.name) : '还没贴'}</em>
           </h2>
           ${tidy ? '<span class="tidy-badge">整整齐齐</span>' : ''}
-          <button class="mini" data-action="edit-zone" data-shelf="${shelf.id}">分区</button>
+          <button class="tape-btn" data-action="edit-zone" data-shelf="${shelf.id}" aria-label="给这架贴胶带">
+            ${iconSvg('tag')}<span>贴标签</span>
+          </button>
         </div>
         <div class="shelf-grid" style="--cols:${shelf.w}">${cells.join('')}</div>
       </section>
@@ -289,7 +301,7 @@ export class OrganizeScreen {
         showToast(this.fxLayer, hit.dataset['explain'] ?? '', 'ink');
         return;
       case 'edit-zone':
-        if (shelfId) this.sheet.open(shelfId);
+        if (shelfId) this.openZoneDrawer(shelfId);
         return;
       case 'sort':
         this.consume(sortAllByFEFO(this.store, this.session));
@@ -428,6 +440,25 @@ export class OrganizeScreen {
     return best;
   }
 
+  /**
+   * 打开胶带抽屉。刻意做两件事：把目标货架滚到房间区顶部（抽屉只占下半屏，
+   * 货架必须露在上面）、给它加虚线高亮 —— 分区是空间概念，编辑时必须看得见那块区域。
+   */
+  private openZoneDrawer(shelfId: string): void {
+    if (this.sheet.isOpen && this.sheet.currentShelfId === shelfId) return;
+    this.clearEditHighlight();
+    this.sheet.open(shelfId);
+    const card = this.roomEl.querySelector<HTMLElement>(`[data-shelf-card="${shelfId}"]`);
+    if (card) {
+      card.scrollIntoView({ block: 'start' });
+      card.classList.add('is-editing');
+    }
+  }
+
+  private clearEditHighlight(): void {
+    this.roomEl.querySelectorAll('.shelf-card.is-editing').forEach((el) => el.classList.remove('is-editing'));
+  }
+
   private shelfById(shelfId: string): Shelf {
     const shelf = this.store.run.shelves.find((s) => s.id === shelfId);
     if (!shelf) throw new Error(`找不到货架 ${shelfId}`);
@@ -484,6 +515,9 @@ export class OrganizeScreen {
           after.push(() => this.tidyOn(ev.shelfId));
           break;
         case 'zoneUpdated':
+          break;
+        case 'zoneRemoved':
+          showToast(this.fxLayer, `已撕下「${ev.name}」`);
           break;
       }
     }

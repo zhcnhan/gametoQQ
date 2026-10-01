@@ -85,6 +85,36 @@ describe('存档 schema 与迁移', () => {
     expect(boxes[1]?.items[0]?.itemId).toBe('bandage');
   });
 
+  it('v2 → v3：剥掉存量存档里的 autoAccept（否则玩家会看到归位率莫名掉到 0）', () => {
+    const v2 = {
+      meta: { version: 2, identityLevels: {}, codex: { items: [], disasters: [], npcs: [] }, bestSurvivalDays: {} },
+      run: {
+        phase: 'organize',
+        day: 0,
+        identityId: 'default',
+        disasterId: 'cold_snap',
+        cash: 0,
+        shelves: [
+          { id: 'shelf_a', roomId: 'room_living', kind: 'shelf', w: 6, h: 4, zoneId: 'zone_1', slots: [] }
+        ],
+        zones: [{ id: 'zone_1', name: '主食区', color: '#c8372d', autoAccept: { categories: ['food'] } }],
+        boxesToUnpack: [],
+        stats: { health: 100, mood: 70, stamina: 100, shelter: 100 },
+        trust: {},
+        deliveredOrders: 0,
+        log: [],
+        seed: 4242
+      },
+      savedAt: 1,
+      syncVersion: 3,
+      deviceId: 'dev'
+    };
+    const migrated = migrate(v2);
+    expect(migrated?.meta.version).toBe(SAVE_VERSION);
+    expect(migrated?.run?.zones[0]).toEqual({ id: 'zone_1', name: '主食区', color: '#c8372d' });
+    expect(migrated?.run?.shelves[0]?.zoneId).toBe('zone_1'); // 胶带还在货架上，只是不带规则了
+  });
+
   it('v2 存档原样读回，不做二次包装', () => {
     const run = createStartingRun(2026);
     const raw = serialize({ meta: { version: SAVE_VERSION } as never, run, savedAt: 1, syncVersion: 1, deviceId: 'dev' });

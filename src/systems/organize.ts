@@ -24,7 +24,7 @@ import {
   stackCount
 } from '../model/shelf';
 import { computeOrganizeScore, type OrganizeScore } from '../model/score';
-import type { CategoryId, ItemStack, RunState, Shelf, SlotPos, Zone } from '../model/types';
+import type { ItemStack, RunState, Shelf, SlotPos, Zone } from '../model/types';
 import type { GameStore } from '../state/store';
 import { boxLabel, nextBoxSeq } from './setup';
 
@@ -41,6 +41,8 @@ export type OrganizeEvent =
   | { type: 'sorted'; changedShelves: number }
   | { type: 'tidy'; shelfId: string }
   | { type: 'zoneUpdated'; shelfId: string }
+  /** 撕下一张胶带（affected = 一起被取下的货架数，供提示文案用） */
+  | { type: 'zoneRemoved'; shelfId: string; name: string; affected?: number }
   | { type: 'rejected'; reason: string };
 
 export interface CommandResult {
@@ -392,11 +394,23 @@ function orderSignature(shelf: Shelf): string {
 }
 
 // ———————— 命令：分区（引擎① 自建秩序） ————————
+//
+// 心智模型 = 纸胶带：**一张胶带 = 一个分区 = 名字 + 颜色**，可以贴到任意多块货架上。
+//  - 同名 = 同一张胶带（不会出现两个"主食区"），颜色以先贴的那张为准；
+//  - 撕下 = 从这架取下来，胶带还在（除非没有别的货架用它了，它会自己消失）；
+//  - 游戏不评判你贴得对不对：M0 界面不提供"本区接收哪些品类"这类规则声明，
+//    归位率只看"物资是否放在有名字的货架上"。§7 的 Zone.autoAccept 字段与
+//    model 层的 zoneAccepts() 都保留着，留给 M1 生存期（自动取用）需要时再启用。
 
 export interface ZoneInput {
   name: string;
   color: string;
-  categories: CategoryId[];
+  /**
+   * 显式指定"我在改这张已有的胶带"（改名 + 改色，其他贴着它的货架一起变）。
+   * 不传则是"给这架写一段胶带"：同名复用，没有同名才新建。
+   * 两种语义必须由 ui 明确区分，命令层不猜 —— 否则"改这张的名字"和"换一张新的"分不开。
+   */
+  zoneId?: string;
 }
 
 export function applyZone(store: GameStore, shelfId: string, input: ZoneInput): CommandResult {
@@ -404,27 +418,39 @@ export function applyZone(store: GameStore, shelfId: string, input: ZoneInput): 
   const shelfIndex = run.shelves.findIndex((s) => s.id === shelfId);
   if (shelfIndex < 0) return reject('货架不存在');
   const name = input.name.trim();
-  if (!name) return reject('分区得起个名字');
-  const categories = [...new Set(input.categories)];
-  const autoAccept = categories.length > 0 ? { categories } : undefined;
+  if (!name) return reject('胶带上得写个字');
+  const color = input.color || DEFAULT_ZONE_COLOR;
+  const editId = input.zoneId;
+  if (editId && !findZone(run.zones, editId)) return reject('没有这张胶带');
 
   store.commit((draft) => {
     const shelf = draft.shelves[shelfIndex];
     if (!shelf) return;
-    const existing = findZone(draft.zones, shelf.zoneId);
-    if (existing) {
-      existing.name = name;
-      existing.color = input.color || DEFAULT_ZONE_COLOR;
-      if (autoAccept) existing.autoAccept = autoAccept;
-      else delete existing.autoAccept;
+
+    // ① 明确在编辑某张胶带 → 改名 + 改色，id 不变，其他贴着它的货架一起跟着变
+    if (editId) {
+      const target = draft.zones.find((z) => z.id === editId);
+      if (target) {
+        target.name = name;
+        target.color = color;
+      }
       return;
     }
-    const zone: Zone = {
-      id: nextZoneId(draft.zones),
-      name,
-      color: input.color || DEFAULT_ZONE_COLOR,
-      ...(autoAccept ? { autoAccept } : {})
-    };
+
+    // ② 同名胶带已存在 → 复用同一张（绝不造重名分区），颜色以已有那张为准
+    const sameName = draft.zones.find((z) => z.name === name);
+    if (sameName) {
+      const previous = shelf.zoneId;
+      shelf.zoneId = sameName.id;
+      if (previous && previous !== sameName.id) recycleIfOrphan(draft, previous);
+      return;
+    }
+
+    // ③ 写一段新的：先把这架腾空（旧胶带若成孤儿就回收），再贴新的
+    const previous = shelf.zoneId;
+    shelf.zoneId = null;
+    if (previous) recycleIfOrphan(draft, previous);
+    const zone: Zone = { id: nextZoneId(draft.zones), name, color };
     draft.zones.push(zone);
     shelf.zoneId = zone.id;
   });
@@ -432,29 +458,48 @@ export function applyZone(store: GameStore, shelfId: string, input: ZoneInput): 
   return ok([{ type: 'zoneUpdated', shelfId }]);
 }
 
-/** 把某个已存在的分区指派给货架（分区列表里点一下就行） */
+/** 把胶带贴到货架上；zoneId = null 表示"撕下"（这张胶带没人用了就自己消失） */
 export function assignZone(store: GameStore, shelfId: string, zoneId: string | null): CommandResult {
   const run = store.run;
   const shelfIndex = run.shelves.findIndex((s) => s.id === shelfId);
   if (shelfIndex < 0) return reject('货架不存在');
-  if (zoneId !== null && !findZone(run.zones, zoneId)) return reject('分区不存在');
+  const shelfNow = run.shelves[shelfIndex];
+  const previousZone = shelfNow ? findZone(run.zones, shelfNow.zoneId) : null;
+  if (zoneId !== null && !findZone(run.zones, zoneId)) return reject('没有这张胶带');
+
   store.commit((draft) => {
     const shelf = draft.shelves[shelfIndex];
-    if (shelf) shelf.zoneId = zoneId;
+    if (!shelf) return;
+    const previous = shelf.zoneId;
+    shelf.zoneId = zoneId;
+    // 取下/换贴之后，如果旧胶带没有任何货架在用，就把它收走
+    if (previous && previous !== zoneId) recycleIfOrphan(draft, previous);
   });
-  return ok([{ type: 'zoneUpdated', shelfId }]);
+
+  const events: OrganizeEvent[] = [{ type: 'zoneUpdated', shelfId }];
+  if (!zoneId && previousZone) events.push({ type: 'zoneRemoved', shelfId, name: previousZone.name });
+  return ok(events);
 }
 
+/** 显式剪掉一张胶带（UI 的"撕下最后一块"已能自动回收，这个留给脚本/M1 用） */
 export function deleteZone(store: GameStore, zoneId: string): CommandResult {
   const run = store.run;
-  if (!findZone(run.zones, zoneId)) return reject('分区不存在');
+  const zone = findZone(run.zones, zoneId);
+  if (!zone) return reject('没有这张胶带');
+  const affected = run.shelves.filter((s) => s.zoneId === zoneId).length;
   store.commit((draft) => {
     draft.zones = draft.zones.filter((z) => z.id !== zoneId);
     for (const shelf of draft.shelves) {
       if (shelf.zoneId === zoneId) shelf.zoneId = null;
     }
   });
-  return ok([]);
+  return ok([{ type: 'zoneRemoved', shelfId: '', name: zone.name, affected }]);
+}
+
+/** 这张胶带还有货架在用吗？没有就收走（撕下最后一块货架 = 胶带消失） */
+function recycleIfOrphan(run: RunState, zoneId: string): void {
+  if (run.shelves.some((s) => s.zoneId === zoneId)) return;
+  run.zones = run.zones.filter((z) => z.id !== zoneId);
 }
 
 function nextZoneId(zones: readonly Zone[]): string {

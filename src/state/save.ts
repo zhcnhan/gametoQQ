@@ -6,7 +6,7 @@
  *  - 不直接摸 window，介质由 state/storage.ts 注入。
  */
 import { BOX_DEFS } from '../data/boxes';
-import type { ItemStack, MetaProfile, RunState, SaveGame, UnpackBox } from '../model/types';
+import type { ItemStack, MetaProfile, RunState, SaveGame, UnpackBox, Zone } from '../model/types';
 import { createMemoryStorage, resolveStorage, type StorageLike } from './storage';
 
 export const STORAGE_KEY = 'tunhuo.save';
@@ -14,9 +14,10 @@ export const STORAGE_KEY = 'tunhuo.save';
  * 当前 schema 版本。
  *  - v1：M0 首版（待拆箱是 `ItemStack[][]`）
  *  - v2：待拆箱升级为 `UnpackBox[]`（稳定 id + 箱型），"放回原箱"才可能是对的
- *  - v3（规划中）：M3 图鉴 MetaProfile 扩展
+ *  - v3：分区收敛为"胶带"（名字 + 颜色），剥掉存量存档里的 autoAccept 规则声明
+ *  - v4（规划中）：M3 图鉴 MetaProfile 扩展
  */
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 /** 落盘节流上限（提示词 0：debounce ≤ 300ms） */
 export const SAVE_DEBOUNCE_MS = 250;
 
@@ -98,7 +99,24 @@ export function migrate(raw: unknown): SaveGame | null {
 
   if (declared < 1) save = migrateV0ToV1(save);
   if (declared < 2) save = migrateV1ToV2(save);
+  if (declared < 3) save = migrateV2ToV3(save);
   return normalizeV2(save);
+}
+
+/**
+ * v2 → v3：M0 界面撤掉了"本区接收"这类规则声明。若保留存量规则，它仍会参与归位率计算，
+ * 玩家会看到归位率莫名掉到 0%（而他明明没做过什么）。所以迁移时统一剥掉 autoAccept。
+ * 字段本身留在 §7 的类型里，M1 生存期的自动取用要用时再启用。
+ */
+export function migrateV2ToV3(save: SaveGame): SaveGame {
+  const run = save.run;
+  if (run) {
+    for (const zone of asArray<Zone>(run.zones)) {
+      if (isObject(zone) && 'autoAccept' in zone) delete (zone as { autoAccept?: unknown }).autoAccept;
+    }
+  }
+  save.meta.version = SAVE_VERSION;
+  return save;
 }
 
 /**
