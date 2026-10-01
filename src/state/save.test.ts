@@ -155,10 +155,72 @@ describe('存档 schema 与迁移', () => {
     expect(migrated?.run?.currentShopId).toBeNull();
   });
 
-  it('day 已经到 0 却还停在囤货期界面 → 修正为 ending（否则永远见不到 D-Day）', () => {
+  it('day 已经到 0 却还停在囤货期界面 → 带进生存期（不是凭空结束掉）', () => {
     const run = { ...createStartingRun(5), phase: 'organize' as const, day: 0, identityId: 'group_buyer' };
     const raw = serialize({ meta: { version: SAVE_VERSION } as never, run, savedAt: 1, syncVersion: 1, deviceId: 'dev' });
-    expect(deserialize(raw)?.run?.phase).toBe('ending');
+    // 货架上的成果全都还在，把玩家直接推去结算页是对他最差的处理
+    expect(deserialize(raw)?.run?.phase).toBe('survival_day');
+  });
+
+  it('v5（阶段 B 夜间事件）→ v6：只补 survival，夜色与日历一动不动', () => {
+    const v5 = {
+      meta: {
+        version: 5,
+        identityLevels: {},
+        codex: { items: [], disasters: [], npcs: [] },
+        bestSurvivalDays: {}
+      },
+      run: {
+        phase: 'night',
+        day: -3,
+        identityId: 'group_buyer',
+        disasterId: 'cold_snap',
+        cash: 200,
+        shelves: [],
+        zones: [],
+        boxesToUnpack: [],
+        stats: { health: 100, mood: 70, stamina: 100, shelter: 100 },
+        trust: {},
+        deliveredOrders: 0,
+        log: [],
+        seed: 12,
+        actionPoints: 1,
+        carLoad: 0,
+        shopStocks: [],
+        visitedShopIds: [],
+        currentShopId: null,
+        night: { eventId: 'n_neighbor_soup', choice: null }
+      },
+      savedAt: 1,
+      syncVersion: 1,
+      deviceId: 'dev'
+    };
+    const migrated = migrate(v5);
+    expect(migrated?.meta.version).toBe(SAVE_VERSION);
+    expect(migrated?.run?.survival).toEqual({
+      spoiled: 0,
+      shortageDays: 0,
+      last: { health: 0, mood: 0, stamina: 0, shelter: 0, shortage: 0, spoiled: 0 }
+    });
+    expect(migrated?.run?.night).toEqual({ eventId: 'n_neighbor_soup', choice: null });
+    expect(migrated?.run?.phase).toBe('night');
+    expect(migrated?.run?.day).toBe(-3);
+  });
+
+  it('survival 被手改坏 → 补成零值，不抛异常', () => {
+    const run = { ...createStartingRun(5), survival: { spoiled: -5, shortageDays: 'x' } as never };
+    const raw = serialize({ meta: { version: SAVE_VERSION } as never, run, savedAt: 1, syncVersion: 1, deviceId: 'dev' });
+    const back = deserialize(raw);
+    expect(back?.run?.survival.spoiled).toBe(0);
+    expect(back?.run?.survival.shortageDays).toBe(0);
+    expect(back?.run?.survival.last).toEqual({ health: 0, mood: 0, stamina: 0, shelter: 0, shortage: 0, spoiled: 0 });
+  });
+
+  it('停在生存期却把手改成第 9 天 → 夹回第 7 天（day 的上限就是生存期长度）', () => {
+    const run = { ...createStartingRun(5), phase: 'survival_day' as const, day: 9, identityId: 'group_buyer' };
+    const raw = serialize({ meta: { version: SAVE_VERSION } as never, run, savedAt: 1, syncVersion: 1, deviceId: 'dev' });
+    expect(deserialize(raw)?.run?.day).toBe(7);
+    expect(deserialize(raw)?.run?.phase).toBe('survival_day');
   });
 
   it('day 越界（例如手改成 -30）会被夹回 M1 的 7 天区间', () => {

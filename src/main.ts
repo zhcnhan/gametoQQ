@@ -14,6 +14,7 @@ import type { GamePhase } from './model/types';
 import { bootstrapStore } from './state/store';
 import { createOrganizeSession, resetSession } from './systems/organize';
 import {
+  advanceSurvivalDay,
   chooseIdentity,
   chooseNightOption,
   endDay,
@@ -21,6 +22,7 @@ import {
   goHome,
   goOut,
   sleep,
+  startSurvival,
   type PhaseResult
 } from './systems/phases';
 import { createStartingRun } from './systems/setup';
@@ -31,6 +33,7 @@ import { PendingScreen } from './ui/PendingScreen';
 import { PrologueScreen } from './ui/PrologueScreen';
 import { Router, type Screen, type ScreenKey } from './ui/Router';
 import { ShopScreen } from './ui/ShopScreen';
+import { SurvivalScreen } from './ui/SurvivalScreen';
 
 const root = document.getElementById('app');
 if (!root) throw new Error('找不到 #app 挂载点');
@@ -61,10 +64,12 @@ function keyOfPhase(phase: GamePhase): ScreenKey {
       return 'organize';
     case 'night':
       return 'night';
+    case 'survival_day':
+      return 'survival';
     case 'ending':
       return 'ending';
     default:
-      // survival_day / help_request 属阶段 C/D
+      // help_request 属阶段 D
       return 'pending';
   }
 }
@@ -93,6 +98,19 @@ function consumePhase(result: PhaseResult): void {
         // 入夜的表现交给 NightScreen 自己（它要在同一个屏幕里把四维摊开给玩家看），
         // 这里只补一个"事情来了"的听觉提示
         playSfx('preview');
+        break;
+      case 'survivalSettled': {
+        const report = ev.report;
+        const short = report.drains.reduce((sum, d) => sum + d.shortage, 0);
+        const bits: string[] = [];
+        if (short > 0) bits.push(`缺 ${short} 件`);
+        if (report.spoiledToday > 0) bits.push(`坏了 ${report.spoiledToday} 件`);
+        if (bits.length > 0) showToast(fxRoot, bits.join(' · '), short > 0 ? 'warn' : 'ink');
+        break;
+      }
+      case 'survivalCompleted':
+        playSfx('tidy');
+        showToast(fxRoot, `撑过 ${ev.days} 天`);
         break;
       case 'nightResolved':
       case 'dayStarted':
@@ -140,6 +158,17 @@ function makeScreen(key: ScreenKey): Screen {
         },
         onSleep: () => {
           consumePhase(sleep(store));
+          router.render();
+        }
+      });
+    case 'survival':
+      return new SurvivalScreen(root as HTMLElement, store, {
+        onStart: () => {
+          consumePhase(startSurvival(store));
+          router.render();
+        },
+        onNext: () => {
+          consumePhase(advanceSurvivalDay(store));
           router.render();
         }
       });

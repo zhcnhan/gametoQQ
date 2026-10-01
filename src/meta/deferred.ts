@@ -61,13 +61,15 @@ export const DEFERRED_ITEMS: readonly DeferredItem[] = [
   {
     id: 'D-01',
     kind: 'code',
-    title: '腐坏机制整体未实现：`ItemBatch.expiresAtDay` 没有消费者',
+    title: '腐坏机制未实现：`ItemBatch.expiresAtDay` 没有消费者',
     impact:
-      '没有任何地方拿到期日判断"这东西坏了"。§5 引擎④「同货架按保质期排好 = 零腐坏」因此没有抓手，' +
-      '生存期日报里的「腐坏损耗」也永远是 0。FEFO 排序按钮目前只在"需要搬家"时有意义。',
-    plan: '阶段 C（生存期每日结算）',
-    markedIn: ['model/types.ts'],
-    status: 'open'
+      '已清偿。阶段 C 补上了消费者：`model/spoil.ts` 按 `DisasterProfile.spoilRate` 把日历天' +
+      '换算成虚拟天，每日结算里真的会清掉过期批次（货架与未拆纸箱一起算）。' +
+      '注意机制通了 ≠ M1 会坏东西，见 D-03。',
+    plan: '阶段 C',
+    markedIn: [],
+    status: 'done',
+    resolvedIn: 'M1 阶段 C —— 新增 model/spoil.ts，按 DisasterProfile.spoilRate 换算虚拟天做腐坏结算'
   },
   {
     id: 'D-02',
@@ -86,7 +88,9 @@ export const DEFERRED_ITEMS: readonly DeferredItem[] = [
     kind: 'code',
     title: '寒潮 spoilRate = 0.5 → M1 全程不会发生腐坏',
     impact:
-      '「临期优先」百分比、冰箱、日报损耗行在当前里程碑里**全是装饰**。' +
+      '腐坏机制**已经实现**（model/spoil.ts + 每日结算里真的会清掉过期批次），' +
+      '但寒潮是天然冷库，M1 全程没有任何东西会坏 —— 于是「临期优先」百分比、' +
+      '冰箱、日报里的腐坏行在本里程碑里**全是装饰**（实测 7 天 `survival.spoiled` 恒为 0）。' +
       '这是玩家拍板的设计（"其他灾难保持真实，个别灾难可以延长"），不是 bug ——' +
       '任何人都不许为了让数字好看而把 0.5 改成 1。',
     plan: 'M3（热浪 spoilRate > 1 时，这套机制才真正吃紧）',
@@ -98,9 +102,10 @@ export const DEFERRED_ITEMS: readonly DeferredItem[] = [
     kind: 'process',
     title: 'M1 验收清单第 3 条作废：「乱档 vs 好档，腐坏损耗有可感知差异」',
     impact:
-      '受 D-03 影响，M1 里腐坏恒为 0，这条验收项**在当前范围内不可能通过**。' +
-      '不是没做，是范围变了。需要在验收时换成别的口径，否则会被误读成"没做完"。',
-    plan: 'M1 验收改用「归位率 + 临期优先率」的存档差异；腐坏那条挪到 M3',
+      '受 D-03 影响，阶段 C 实测 7 天腐坏恒为 0，这条验收项**在当前范围内不可能通过**。' +
+      '不是没做，是范围变了。阶段 C 提供的替代口径：整理得好的存档 vs 乱的存档，' +
+      '**心情净收益**有可感知差异（归位率 → 心情加成，已被单测覆盖）。',
+    plan: 'M1 验收改用「归位率 + 心情」的存档差异；腐坏那条挪到 M3',
     markedIn: [],
     status: 'open'
   },
@@ -130,11 +135,13 @@ export const DEFERRED_ITEMS: readonly DeferredItem[] = [
   {
     id: 'D-07',
     kind: 'code',
-    title: '`ItemDef.slotSize` 没有参与任何计算',
+    title: '`ItemDef.slotSize` 与 `nutrition` 都没有参与任何计算',
     impact:
-      '大米（slotSize 4）和电池（slotSize 1）占同样一格，槽位矩阵实际是"一格一栈"。' +
-      '§7 定义了这个字段却没人读它 —— 要么让它真的吃格子，要么从 §7 里删掉，现在这样悬着最差。',
-    plan: '未定（需要先决定"整理的空间压力"要到什么程度）',
+      'slotSize：槽位矩阵实际是"一格一栈"，大米（slotSize 4）和电池占同样一格。' +
+      'nutrition：阶段 C 的每日消耗按**件数**（已拍板，见 §6.4 的标注），所以' +
+      'food / water / health / comfort 四个键全都没人读 —— 吃罐头和吃大米在数值上完全等价。' +
+      '要么让它们真的生效，要么从 §7 里删掉；悬着最差。',
+    plan: '未定（nutrition 的复活点在阶段 D 的"用药"上，health 键已经在等 D-09）',
     markedIn: ['data/items.ts'],
     status: 'open'
   },
@@ -152,15 +159,14 @@ export const DEFERRED_ITEMS: readonly DeferredItem[] = [
   {
     id: 'D-09',
     kind: 'code',
-    title: '四维状态（健康/心情/体力/庇护所）在 M1 只减不增',
+    title: '健康没有恢复途径（四维里唯一只减不增的那个）',
     impact:
-      '阶段 B 的夜间事件会扣体力与心情，但整个 M1 **没有任何恢复途径**（每日结算属阶段 C）。' +
-      '实测跑完 7 天：体力从 100 掉到 35，现金从 900 掉到 13 —— 而这些数字在 M1 里' +
-      '**不影响任何事**，结算页也不显示它们。和腐坏（D-03）一样，它们属于' +
-      '"等阶段 C 才有意义"的装饰。看到"只降不升"不要急着加一个恢复按钮 —— 那会在' +
-      '阶段 C 的每日结算加进来之后变成双重恢复。',
-    plan: '阶段 C（生存期每日结算里一并做消耗与恢复的平衡）',
-    markedIn: ['systems/night.ts'],
+      '阶段 C 给了体力（睡觉 +15）与心情（归位率加成）完整的增减，庇护所也能被夜间事件修回来，' +
+      '但**健康只会减**（缺货惩罚），没有任何恢复手段 —— 而 §7 的 `ItemDef.nutrition.health`' +
+      '（绷带 2 / 感冒药 3）至今没人读。它的另一半是阶段 D 的应急取用' +
+      '（§5：急救品放顺手位 → 突发事件不掉健康）以及"用药"这个动作。',
+    plan: '阶段 D（与突发事件、求援订单一起做）',
+    markedIn: ['systems/night.ts', 'systems/survival.ts'],
     status: 'open'
   },
   {
@@ -173,6 +179,19 @@ export const DEFERRED_ITEMS: readonly DeferredItem[] = [
       '数据结构和界面跑通了，白天的事件可以直接复用同一套，成本不高。',
     plan: 'M1 阶段 C 之后 / 或随 M3 的内容扩张一起做',
     markedIn: ['systems/shop.ts'],
+    status: 'open'
+  },
+  {
+    id: 'D-11',
+    kind: 'code',
+    title: '§6.4 的「翻乱相邻货架（滚雪球）」刻意没做',
+    impact:
+      '§6.4 写「乱 → 翻找耗时、翻乱相邻货架（滚雪球）、可能误食过期品（健康-）」。' +
+      '阶段 C 只实现了其中两条：翻找耗时 → 心情惩罚；误食过期品 → 腐坏机制本身。' +
+      '滚雪球那一条**刻意跳过** —— 它会自我放大（越乱越乱），玩家掉进去就爬不出来，' +
+      '与 §12.3「永远留逆转口」相冲。要不要补，得先有一轮真实手感验证来判断"乱"该有多疼。',
+    plan: '未定（先验证手感，再决定是否引入不可逆的惩罚）',
+    markedIn: ['model/consume.ts'],
     status: 'open'
   }
 ];

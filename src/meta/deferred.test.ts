@@ -22,8 +22,15 @@ const SOURCES = import.meta.glob('../**/*.ts', {
   eager: true
 }) as Record<string, string>;
 
-/** key 形如 `'../model/types.ts'` → 归一成登记册里使用的 `'model/types.ts'` */
-function relPath(key: string): string {
+/**
+ * key 形如 `'../model/types.ts'` → 归一成登记册里使用的 `'model/types.ts'`。
+ *
+ * `'./xxx.ts'` 是本目录（`meta/`）的文件 —— 返回 null 表示**不参与扫描**。
+ * 这一条不能省：登记册与它自己的测试里都写着 `D-01` 这样的字样，
+ * 把本目录扫进来会立刻造出一堆"来历不明的标记"（这个坑真踩过）。
+ */
+function relPath(key: string): string | null {
+  if (key.startsWith('./')) return null;
   return key.replace(/^\.\.[/\\]/, '').replace(/\\/g, '/');
 }
 
@@ -37,7 +44,7 @@ function scanMarkers(): Map<string, string[]> {
   const found = new Map<string, string[]>();
   for (const [key, text] of Object.entries(SOURCES)) {
     const rel = relPath(key);
-    if (rel.startsWith('meta/')) continue;
+    if (rel === null) continue;
     const ids: string[] = [];
     for (const match of text.matchAll(new RegExp(DEFERRED_MARKER.source, 'g'))) {
       if (match[1]) ids.push(match[1]);
@@ -59,17 +66,17 @@ describe('欠账登记册：结构自检', () => {
     expect(ids.every((id) => /^D-\d{2}$/.test(id))).toBe(true);
   });
 
-  it('每条都写清了"现在的影响"和"什么时候还"', () => {
-    const vague = DEFERRED_ITEMS.filter(
+  it('未清偿的条目都写清了"现在的影响"和"什么时候还"', () => {
+    const vague = openDeferred().filter(
       (item) => item.impact.trim().length < 20 || item.plan.trim().length < 2 || item.title.trim().length < 5
     );
     expect(vague.map((item) => item.id)).toEqual([]);
   });
 
-  it('kind=code 的条目必须声明至少一个落点文件，且文件真实存在', () => {
+  it('未清偿的代码欠账必须声明至少一个落点文件，且文件真实存在', () => {
     const broken: string[] = [];
     for (const item of DEFERRED_ITEMS) {
-      if (item.kind !== 'code') continue;
+      if (item.kind !== 'code' || item.status !== 'open') continue;
       if (item.markedIn.length === 0) {
         broken.push(`${item.id} 是代码欠账却没写 markedIn`);
         continue;
@@ -81,9 +88,16 @@ describe('欠账登记册：结构自检', () => {
     expect(broken).toEqual([]);
   });
 
-  it('kind=process 的条目不该声明落点文件（它没有标记可埋）', () => {
-    const wrong = DEFERRED_ITEMS.filter((item) => item.kind === 'process' && item.markedIn.length > 0);
+  it('未清偿的 process 欠账不该声明落点文件（它没有标记可埋）', () => {
+    const wrong = openDeferred().filter((item) => item.kind === 'process' && item.markedIn.length > 0);
     expect(wrong.map((item) => item.id)).toEqual([]);
+  });
+
+  it('已清偿的条目必须写明清偿于哪里（否则后人不知道该不该信）', () => {
+    const vague = DEFERRED_ITEMS.filter(
+      (item) => item.status === 'done' && (item.resolvedIn ?? '').trim().length < 8
+    );
+    expect(vague.map((item) => item.id)).toEqual([]);
   });
 
   it('登记册不许被清空 —— 它记的是设计决定，不是"待办清单"', () => {

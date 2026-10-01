@@ -5,7 +5,7 @@
  * 所有函数返回**新的** Shelf，不改入参 —— 配合原子存档，任何中间状态都能整份写盘。
  */
 import { getItemDef } from '../data/items';
-import type { ItemDef, ItemStack, Shelf, Slot, SlotPos, Zone } from './types';
+import type { ItemDef, ItemStack, Shelf, Slot, SlotPos, UnpackBox, Zone } from './types';
 
 export const SHELF_W = 6;
 export const SHELF_H = 4;
@@ -367,8 +367,22 @@ export function findZone(zones: readonly Zone[], zoneId: string | null): Zone | 
   return zones.find((z) => z.id === zoneId) ?? null;
 }
 
-/** 归位率 = 有分区且分区接受它的堆数 ÷ 全部堆数（空房间视为 1，不惩罚玩家） */
-export function placementRate(shelves: readonly Shelf[], zones: readonly Zone[]): number {
+/**
+ * 归位率 = 放在"接受它"的胶带上的堆数 ÷ **你拥有的全部堆数**。
+ *
+ * 分母必须包含**还没拆的纸箱**（第三个参数），否则会出现一个荒谬的结果：
+ * 玩家一件都没上架、23 件主食全堆在纸箱里，归位率却显示 100% ——
+ * 因为货架是空的，"空房间"按 M0 的宽容规则返回了 1。
+ * 那把这个指标变成了谎话，也让"拆箱上架"失去了数值上的必要。
+ *
+ * 仍然保留"M0 的宽容"：真的什么都没有时（手上无货、架上无货）返回 1，
+ * 而不是 0 —— 开局第一秒不该给玩家一个 0%。
+ */
+export function placementRate(
+  shelves: readonly Shelf[],
+  zones: readonly Zone[],
+  boxes: readonly UnpackBox[] = []
+): number {
   let total = 0;
   let ok = 0;
   for (const shelf of shelves) {
@@ -380,6 +394,8 @@ export function placementRate(shelves: readonly Shelf[], zones: readonly Zone[])
       if (zoneAccepts(zone, getItemDef(stack.itemId))) ok += 1;
     }
   }
+  // 纸箱里的每一堆都是"还没被安置"的，它们算分母、不算分子
+  for (const box of boxes) total += box.items.length;
   return total === 0 ? 1 : ok / total;
 }
 

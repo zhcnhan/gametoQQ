@@ -130,7 +130,8 @@ export function buildView(store: GameStore, session: OrganizeSession): OrganizeV
     zones: run.zones,
     boxes: buildBoxViews(run),
     held: session.held,
-    score: computeOrganizeScore(run.shelves, run.zones),
+    // 归位率把还没拆的纸箱算进分母：它们同样是"还没被安置的货"
+    score: computeOrganizeScore(run.shelves, run.zones, run.boxesToUnpack),
     tidyShelfIds: [...session.tidyShelfIds]
   };
 }

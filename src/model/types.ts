@@ -142,9 +142,9 @@ export interface ItemBatch {
   /**
    * 到期日（绝对天）。null = 不易腐。
    *
-   * DEFERRED(D-01): 这个字段现在**只有 FEFO 排序在读**，没有任何地方拿它做腐坏判定 ——
-   * 也就是说"到期"这件事目前在游戏里不会发生。§5 引擎④「同货架按保质期排好 = 零腐坏」
-   * 暂时没有抓手。腐坏结算要等阶段 C；而真正让腐坏产生压力要等 M3（见 D-03）。
+   * 它在阶段 C 有了真正的消费者：`model/spoil.ts` 把日历天换算成"腐坏意义上的虚拟天"
+   * 再和这里比。换算倍率来自 `DisasterProfile.spoilRate` —— 所以"什么时候会坏"
+   * 是**灾难**说了算，不是物资本身（这条立场的完整说明见 src/meta/deferred.ts 的 D-03）。
    */
   expiresAtDay: number | null;
   count: number;
@@ -252,6 +252,32 @@ export interface NightState {
   choice: number | null;
 }
 
+/** 最近一次生存期结算的快照（"今天发生了什么"）。下一次结算覆盖它 */
+export interface SurvivalSnapshot {
+  health: number;
+  mood: number;
+  stamina: number;
+  shelter: number;
+  /** 今天的缺口件数（0 = 全都吃上了） */
+  shortage: number;
+  /** 今天坏掉的件数 */
+  spoiled: number;
+}
+
+/** 生存期累计账（阶段 C）。结算页（阶段 E）要用，所以必须落盘，不能只活在内存里 */
+export interface SurvivalState {
+  /** 累计腐坏损耗（件） */
+  spoiled: number;
+  /** 累计"没能凑齐当天消耗"的天数 */
+  shortageDays: number;
+  /**
+   * 最近一次结算的增量。
+   * 落盘的理由是 §4A「恢复即续玩」：刷新回来必须还能看见"今天掉了哪些点"，
+   * 否则玩家只能靠记忆对比昨天和今天的四维，而那个对比正是生存期的全部张力。
+   */
+  last: SurvivalSnapshot;
+}
+
 export interface RunState {
   // 当局存档
   phase: GamePhase;
@@ -301,6 +327,16 @@ export interface RunState {
    * "此刻是否在夜里"由 `phase === 'night'` 负责，这个字段只回答"今晚是哪件事、选到哪一步了"。
    */
   night: NightState | null;
+
+  // ———————— M1 生存期（阶段 C） ————————
+
+  /**
+   * 生存期累计账。
+   * 刻意**不**存"今天是否已结算"—— 结算只发生在 `startSurvival` / `advanceSurvivalDay`
+   * 这两个命令内部（day 一变就结算一次），所以重复点、刷新、读档都不会重算。
+   * 用状态而不是标志位来保证幂等，比多存一个布尔量可靠。
+   */
+  survival: SurvivalState;
 }
 
 export interface MetaProfile {

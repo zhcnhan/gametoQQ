@@ -42,7 +42,7 @@ export class EndingScreen implements Screen {
   render(): void {
     const run = this.store.run;
     const disaster = getDisasterDef(run.disasterId);
-    const score = computeOrganizeScore(run.shelves, run.zones);
+    const score = computeOrganizeScore(run.shelves, run.zones, run.boxesToUnpack);
     const totals = householdTotals(run);
     const placement = toPercent(score.placement);
     const fefo = toPercent(score.fefo);

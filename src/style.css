@@ -1769,3 +1769,75 @@ button:disabled {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
+
+/* ================================================================
+ * 生存期（§6.4）
+ * ================================================================ */
+
+.stock-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* 三列：品类 / 现有件数 / "还能撑几天"。第三列右对齐，扫一眼就能比出谁先见底 */
+.stock-row {
+  display: grid;
+  grid-template-columns: 4.4em 4.6em minmax(0, 1fr);
+  align-items: baseline;
+  gap: 6px;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1.5px solid var(--ink-16);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+}
+
+.stock-row b {
+  font-size: 14px;
+}
+
+.stock-row span {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.stock-row em {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--ink-70);
+  text-align: right;
+}
+
+/*
+ * "今天就不够"。这一屏唯一该用朱红的地方 —— §5A 规定朱红 = 警告/重要，
+ * 而"今天没得吃"确实是警告。别的地方（比如"还能撑 2 天"）只是紧张，不是警告，所以不上朱红。
+ */
+.stock-row.is-tight {
+  border-color: var(--vermilion);
+}
+
+.stock-row.is-tight em {
+  color: var(--vermilion);
+  font-weight: 600;
+}
+
+/* 四维上的当日增量 */
+.stat em {
+  margin-left: 5px;
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat em.is-up {
+  color: var(--ink-70);
+}
+
+.stat em.is-down {
+  color: var(--vermilion);
+}

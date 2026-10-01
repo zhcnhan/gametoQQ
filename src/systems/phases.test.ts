@@ -159,7 +159,7 @@ describe('过一天：日历推进', () => {
     expect(store.run.shopStocks.map((s) => s.lines.map((l) => l.stock).join(','))).not.toEqual(before);
   });
 
-  it('连点 7 次过一天：D-7 一路走到 D-Day，phase 变 ending', () => {
+  it('连点 7 次过一天：D-7 一路走到 D-Day，phase 交给生存期', () => {
     const store = startedStore();
     expect(store.run.day).toBe(-7);
     for (let i = 0; i < 7; i++) {
@@ -167,19 +167,20 @@ describe('过一天：日历推进', () => {
       passDay(store);
     }
     expect(store.run.day).toBe(0);
-    expect(store.run.phase).toBe('ending');
+    // 阶段 C 起 D-Day 不再直接进结算页，而是交给生存期（货架上的成果全都还在）
+    expect(store.run.phase).toBe('survival_day');
     expect(store.run.actionPoints).toBe(0);
     expect(store.run.log.some((line) => line.startsWith('D-Day'))).toBe(true);
   });
 
-  it('走到 D-Day 之后再过一天被拒（结束页不会再往下走）', () => {
+  it('走到 D-Day 之后囤货期的"过一天"被拒（日历交给生存期了）', () => {
     const store = startedStore();
     for (let i = 0; i < 7; i++) {
       goHome(store);
       passDay(store);
     }
     expect(endDay(store).ok).toBe(false);
-    expect(store.run.phase).toBe('ending');
+    expect(store.run.phase).toBe('survival_day');
   });
 
   it('囤货期最后一天是 -1，不是 0', () => {

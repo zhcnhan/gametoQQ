@@ -10,6 +10,7 @@ import { FIRST_STOCKPILE_DAY, SURVIVAL_DAYS } from '../data/disaster';
 import { IDENTITY_DEFS, hasIdentityDef } from '../data/identities';
 import { NIGHT_SLEEP, findNightEvent } from '../data/nightEvents';
 import { ACTION_POINTS_PER_DAY } from '../data/shops';
+import { EMPTY_SURVIVAL_SNAPSHOT } from '../data/survival';
 import type { GamePhase, ItemStack, MetaProfile, RunState, SaveGame, UnpackBox, Zone } from '../model/types';
 import { createMemoryStorage, resolveStorage, type StorageLike } from './storage';
 
@@ -22,9 +23,10 @@ export const STORAGE_KEY = 'tunhuo.save';
  *  - v4：M1 囤货期（状态机 + 采购）—— 补行动点/车载/当日库存四个字段，
  *        并把 M0 的 `day: 0`（占位）迁成"囤货期最后一天" `-1`
  *  - v5：M1 夜间事件 —— 新增 `night`（§6.2），并让"卡在夜里"的坏档能自愈
- *  - v6（规划中）：M3 图鉴 MetaProfile 扩展
+ *  - v6：M1 生存期 —— 新增 `survival`（累计腐坏与缺货天数），结算页要用
+ *  - v7（规划中）：M3 图鉴 MetaProfile 扩展
  */
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 6;
 /** 落盘节流上限（提示词 0：debounce ≤ 300ms） */
 export const SAVE_DEBOUNCE_MS = 250;
 
@@ -109,7 +111,23 @@ export function migrate(raw: unknown): SaveGame | null {
   if (declared < 3) save = migrateV2ToV3(save);
   if (declared < 4) save = migrateV3ToV4(save);
   if (declared < 5) save = migrateV4ToV5(save);
+  if (declared < 6) save = migrateV5ToV6(save);
   return normalizeRun(save);
+}
+
+/**
+ * v5 → v6：新增 `survival`（生存期累计账）。
+ * 老档补 0 —— 但要注意：如果老档的 `day` 已经落在生存期（阶段 A/B 时期 `ending` 的档
+ * 不会是这样，手改过的档可能），补 0 意味着"过去几天的损耗没进账"。
+ * 这是可接受的：那几天的消耗本来就没发生过（阶段 A/B 没有生存期结算）。
+ */
+export function migrateV5ToV6(save: SaveGame): SaveGame {
+  const run = save.run;
+  if (run) {
+    run.survival = { spoiled: 0, shortageDays: 0, last: { ...EMPTY_SURVIVAL_SNAPSHOT } };
+  }
+  save.meta.version = SAVE_VERSION;
+  return save;
 }
 
 /**
@@ -240,12 +258,34 @@ function normalizeRun(save: SaveGame): SaveGame | null {
   // ———————— M1 夜间字段 ————————
   normalizeNight(run);
 
+  // ———————— M1 生存期字段 ————————
+  const survival = isObject(run.survival) ? (run.survival as Record<string, unknown>) : {};
+  const last = isObject(survival.last) ? (survival.last as Record<string, unknown>) : {};
+  const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : 0);
+  run.survival = {
+    spoiled: typeof survival.spoiled === 'number' && survival.spoiled >= 0 ? Math.round(survival.spoiled) : 0,
+    shortageDays:
+      typeof survival.shortageDays === 'number' && survival.shortageDays >= 0 ? Math.round(survival.shortageDays) : 0,
+    last: {
+      health: num(last.health),
+      mood: num(last.mood),
+      stamina: num(last.stamina),
+      shelter: num(last.shelter),
+      shortage: Math.max(0, num(last.shortage)),
+      spoiled: Math.max(0, num(last.spoiled))
+    }
+  };
+
   // 状态一致性：day 已经走到灾难日（>= 0），就不该还停在囤货期的三个界面上，
   // 否则玩家点"过一天"会原地打转，而且永远见不到 D-Day。
+  // 修正方向是**把玩家带进生存期**而不是直接结束 —— 囤货期的成果货架全都还在，
+  // 凭空结束掉是对玩家最差的处理。
   if (run.day >= 0 && (run.phase === 'stockpile_shop' || run.phase === 'organize' || run.phase === 'night')) {
-    run.phase = 'ending';
+    run.phase = run.day > SURVIVAL_DAYS ? 'ending' : 'survival_day';
     run.night = null;
   }
+  // 不需要额外处理"撑过头"的档：上面那行已经把 day 夹在 ≤ SURVIVAL_DAYS，
+  // 所以 `survival_day` 这个 phase 下不可能出现 day > 7。
   save.meta.version = SAVE_VERSION;
   return save;
 }

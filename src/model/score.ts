@@ -4,7 +4,7 @@
  */
 import { getItemDef } from '../data/items';
 import { countStacks, fefoRate, findZone, isShelfFEFO, placementRate, readingOrder, getStack, zoneAccepts } from './shelf';
-import type { Shelf, Zone } from './types';
+import type { Shelf, UnpackBox, Zone } from './types';
 
 export interface OrganizeScore {
   /** 归位率 0..1 */
@@ -30,9 +30,14 @@ export function isShelfTidy(shelf: Shelf, zones: readonly Zone[]): boolean {
   return true;
 }
 
-export function computeOrganizeScore(shelves: readonly Shelf[], zones: readonly Zone[]): OrganizeScore {
+export function computeOrganizeScore(
+  shelves: readonly Shelf[],
+  zones: readonly Zone[],
+  boxes: readonly UnpackBox[] = []
+): OrganizeScore {
   return {
-    placement: placementRate(shelves, zones),
+    // 归位率的分母包含还没拆的纸箱 —— 见 model/shelf.ts 的 placementRate
+    placement: placementRate(shelves, zones, boxes),
     fefo: fefoRate(shelves),
     stacks: shelves.reduce((sum, s) => sum + countStacks(s), 0),
     tidyShelfIds: shelves.filter((s) => isShelfTidy(s, zones)).map((s) => s.id)

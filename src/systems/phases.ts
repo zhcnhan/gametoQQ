@@ -15,7 +15,7 @@
  *
  * 关于 `survival_day` / `help_request`：属阶段 C/D，阶段 A 不会产生这两个 phase。
  */
-import { FIRST_STOCKPILE_DAY } from '../data/disaster';
+import { FIRST_STOCKPILE_DAY, SURVIVAL_DAYS } from '../data/disaster';
 import { getIdentityDef, hasIdentityDef } from '../data/identities';
 import { NIGHT_SLEEP, findNightEvent } from '../data/nightEvents';
 import { ACTION_POINTS_PER_DAY } from '../data/shops';
@@ -25,6 +25,7 @@ import type { GamePhase, RunState } from '../model/types';
 import type { GameStore } from '../state/store';
 import { applyNightEffect, describeEffect, optionAt, rollNight } from './night';
 import { rollShopStocks } from './shop';
+import { settleSurvivalDay, type SurvivalReport } from './survival';
 
 /**
  * 合法流转表。写在这里而不是散在 ui 里，好处有两个：
@@ -34,8 +35,9 @@ import { rollShopStocks } from './shop';
 export const NEXT_PHASES: Record<GamePhase, readonly GamePhase[]> = {
   prologue: ['stockpile_shop'],
   stockpile_shop: ['organize'],
-  organize: ['stockpile_shop', 'night', 'ending'],
-  night: ['stockpile_shop', 'ending'],
+  // 囤货期最后一天过完 → D-Day（survival_day）
+  organize: ['stockpile_shop', 'night', 'survival_day', 'ending'],
+  night: ['stockpile_shop', 'survival_day', 'ending'],
   survival_day: ['survival_day', 'help_request', 'ending'],
   help_request: ['survival_day'],
   ending: []
@@ -61,7 +63,12 @@ export type PhaseEvent =
   /** 玩家决定了今晚怎么办；summary 是给人看的一行数值摘要（"直接睡"时为空） */
   | { type: 'nightResolved'; eventId: string; choice: number; summary: string[] }
   | { type: 'dayStarted'; day: number }
+  /** D-Day：灾难登陆，日历从此只往正数走（生存期开始） */
   | { type: 'disasterLanded'; day: number }
+  /** 生存期每一天的结算报告 —— 报告是纯数据，界面对规则一无所知，只负责显示它 */
+  | { type: 'survivalSettled'; report: SurvivalReport }
+  /** 撑满 7 天 */
+  | { type: 'survivalCompleted'; days: number }
   | { type: 'rejected'; reason: string };
 
 export interface PhaseResult {
@@ -223,21 +230,72 @@ export function sleep(store: GameStore): PhaseResult {
   return ok(events);
 }
 
+// ———————— 生存期（§6.4 / 阶段 C） ————————
+//
+// 生存期的推进与囤货期刻意分开写，因为两件事的形状不一样：
+//   · 囤货期的"过一天"是玩家来安排（买货、拆箱、整理），系统只负责翻日历；
+//   · 生存期的"过一天"是系统来收账（消耗、腐坏、四维），玩家只负责看和承受。
+// 所以后者每一步都必须带一份**结算报告**回去，否则界面没有东西可显示。
+
+/**
+ * 从 D-Day 迈出第一步：`day 0 → 1`，并**立刻结算 D+1**。
+ *
+ * 为什么结算是"进入某一天"而不是"离开某一天"的代价：这样界面永远在显示
+ * "今天已经发生的事"，而不是"明天将会怎样"—— 玩家看完就能对着自己的货架做判断。
+ * 附带的好处是幂等：结算是 `day` 变化的一部分，重复点 / 刷新 / 读档都不会重算
+ * （因此不需要额外存一个"今天算过了没"的标志位）。
+ */
+export function startSurvival(store: GameStore): PhaseResult {
+  const run = store.run;
+  if (run.phase !== 'survival_day') return reject('现在不是生存期');
+  if (run.day !== 0) return reject('已经开始了');
+
+  const events: PhaseEvent[] = [];
+  store.commit((draft) => {
+    draft.day = 1;
+    events.push({ type: 'survivalSettled', report: settleSurvivalDay(draft) });
+  });
+  return ok(events);
+}
+
+/** 撑过一天。第 7 天之后再推进 → 结算页（§12.3：撑过 7 天就是撑过去了） */
+export function advanceSurvivalDay(store: GameStore): PhaseResult {
+  const run = store.run;
+  if (run.phase !== 'survival_day') return reject('现在不是生存期');
+  if (run.day < 1) return reject('还没开始撑');
+
+  const events: PhaseEvent[] = [];
+  store.commit((draft) => {
+    const next = draft.day + 1;
+    if (next > SURVIVAL_DAYS) {
+      draft.phase = 'ending';
+      draft.log.push(`撑过 ${SURVIVAL_DAYS} 天。`);
+      events.push({ type: 'survivalCompleted', days: SURVIVAL_DAYS });
+      return;
+    }
+    draft.day = next;
+    events.push({ type: 'survivalSettled', report: settleSurvivalDay(draft) });
+  });
+  return ok(events);
+}
+
 /**
  * 跨到"下一天"。返回值是给表现层的事件，方便 ui 分辨"新的一天"与"D-Day"。
- * 注意：这里**只**在囤货期内部推进，并且 day 一旦走到 0 就直接进 ending（D-Day 揭晓）。
+ * 注意：这里**只**在囤货期内部推进。day 走到 0 时把 phase 交给 `survival_day`
+ * （D-Day 揭晓，不结算），再往后由 `startSurvival` / `advanceSurvivalDay` 接手。
  */
 function startNextDay(run: RunState, cursor: RngCursor): PhaseEvent {
   const next = run.day + 1;
 
   if (next >= 0) {
     run.day = 0;
-    run.phase = 'ending';
+    run.phase = 'survival_day';
     run.actionPoints = 0;
     run.carLoad = 0;
     run.currentShopId = null;
     run.night = null; // 夜里的事留在昨天
     run.log.push('D-Day · 寒潮登陆。');
+    // D-Day 本身**不结算**：灾难刚落地，第一顿还没吃。结算从 D+1 开始（见 startSurvival）
     return { type: 'disasterLanded', day: 0 };
   }
 

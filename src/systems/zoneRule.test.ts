@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { ZONE_COLORS } from '../data/palette';
-import { isOffZone, makeStack, placementRate, setSlotStack } from '../model/shelf';
+import { isOffZone, makeStack, placementRate, setSlotStack, shelfIsEmpty } from '../model/shelf';
 import type { SlotPos, Zone } from '../model/types';
 import { createSaveGame } from '../state/save';
 import { GameStore } from '../state/store';
@@ -98,6 +98,51 @@ describe('归位率 = 你有没有按自己写的清单放', () => {
 
     expect(store.run.shelves.filter((s) => s.zoneId !== null)).toHaveLength(3);
     expect(rate(store)).toBeCloseTo(2 / 3, 5);
+  });
+});
+
+describe('归位率的分母：还没拆的纸箱也算', () => {
+  it('★ 一件没上架时归位率是 0，不是 100（否则这个指标在说谎）', () => {
+    const { store } = setup();
+    const empty = store.run.shelves.every((s) => shelfIsEmpty(s));
+    expect(empty).toBe(true);
+    expect(store.run.boxesToUnpack.length).toBeGreaterThan(0);
+    // 老实现只数货架 → 空房间返回 1 → 玩家囤了一屋子没拆的货却显示"归位率 100%"
+    expect(placementRate(store.run.shelves, store.run.zones, store.run.boxesToUnpack)).toBe(0);
+    expect(placementRate(store.run.shelves, store.run.zones)).toBe(1); // 不传纸箱时保留 M0 行为
+  });
+
+  it('真的什么都没有时才返回 1（开局第一秒不该给玩家一个 0%）', () => {
+    expect(placementRate([], [], [])).toBe(1);
+  });
+
+  it('上架一部分后归位率是渐进的百分比', () => {
+    const { store } = setup();
+    const box = store.run.boxesToUnpack[0];
+    expect(box).toBeDefined();
+    // 手动把这箱的每一堆都搬到贴了"什么都收"的货架上
+    applyZone(store, 'shelf_a', { name: '都放这儿', color: RED });
+    const total = store.run.boxesToUnpack.reduce((n, b) => n + b.items.length, 0);
+    store.commit((draft) => {
+      const first = draft.boxesToUnpack[0];
+      if (!first) return;
+      const shelfIndex = draft.shelves.findIndex((s) => s.id === 'shelf_a');
+      let shelf = draft.shelves[shelfIndex];
+      if (!shelf) return;
+      let cursor = 0;
+      for (const stack of first.items) {
+        const row = Math.floor(cursor / shelf.w);
+        const col = cursor % shelf.w;
+        shelf = setSlotStack(shelf, { row, col }, stack);
+        cursor += 1;
+      }
+      draft.shelves[shelfIndex] = shelf;
+      first.items = [];
+      draft.boxesToUnpack = draft.boxesToUnpack.filter((b) => b.items.length > 0);
+    });
+    const moved = total - store.run.boxesToUnpack.reduce((n, b) => n + b.items.length, 0);
+    expect(moved).toBeGreaterThan(0);
+    expect(placementRate(store.run.shelves, store.run.zones, store.run.boxesToUnpack)).toBeCloseTo(moved / total, 5);
   });
 });
 
