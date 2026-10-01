@@ -67,3 +67,41 @@ export function getDisasterDef(disasterId: string): DisasterProfile {
 
 /** M1 只用寒潮，开局固定给它（§8） */
 export const M1_DISASTER_ID = 'cold_snap';
+
+/**
+ * 每天的**外界温度**（°C）。服务于 §6.6 的反差层：「外界温度 vs 屋内温度，数字自己说话」。
+ *
+ * 为什么不从 `severity` 换算：寒潮的温度曲线**不是** severity 的线性函数 ——
+ * 中间（D+1）回过一次暖（-19°C 对 0.65，而 -23°C 对 0.80），最后三天再压下去。
+ * 硬换算出来的数会和日历里那句「-19°C。窗户上结了整片冰花」对不上，
+ * 而玩家是会把两句话对照着读的。
+ *
+ * 囤货期那七天给的是正常冬天的气温，这样"回落"才有参照 ——
+ * 反差层要的不只是"今天很冷"，而是"和上周比冷了多少"。
+ *
+ * DEFERRED(D-15): 这张表是**手写的**，而且只覆盖寒潮。多灾难（M3）时要按
+ * `disasterId` 拆成几份，或者干脆把它并进 `DayForecast` —— 那时再改类型才有必要。
+ */
+const COLD_SNAP_TEMPS: ReadonlyMap<number, number> = new Map([
+  [-7, 6],
+  [-6, 4],
+  [-5, 2],
+  [-4, 1],
+  [-3, 0],
+  [-2, -2],
+  [-1, -5],
+  [0, -18],
+  [1, -20],
+  [2, -19],
+  [3, -23],
+  [4, -26],
+  [5, -25],
+  [6, -28],
+  [7, -30]
+]);
+
+/** 这一天外面多少度。日历覆盖不到的日子夹到最后一档 —— 寒潮不会自己停 */
+export function outdoorTemp(day: number): number {
+  const clamped = Math.max(FIRST_STOCKPILE_DAY, Math.min(7, Math.round(day)));
+  return COLD_SNAP_TEMPS.get(clamped) ?? -30;
+}

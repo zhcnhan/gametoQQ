@@ -10,15 +10,16 @@
  *
  * D-Day 是特例：`day === 0` 时灾难刚落地，还没有结算过任何一天，所以那一屏只负责"揭晓 + 盘点"。
  */
-import { getDisasterDef } from '../data/disaster';
+import { SURVIVAL_DAYS, getDisasterDef, outdoorTemp } from '../data/disaster';
 import { CATEGORY_LABELS, getItemDef } from '../data/items';
 import { STAMINA_RECOVER, dailyDrainOf, moodFromPlacement, organizeQuality } from '../data/survival';
 import { playSfx } from '../fx/audio';
 import { itemIconSvg } from '../fx/icons';
 import { hintAt, dayLabel, severityAt } from '../model/calendar';
 import { countByItem, countCategory } from '../model/consume';
+import { districtDays, indoorTemp, supplyDays } from '../model/contrast';
 import { computeOrganizeScore } from '../model/score';
-import type { HardPressLevel, RunState, SurvivalSnapshot } from '../model/types';
+import type { DisasterProfile, HardPressLevel, RunState, SurvivalSnapshot } from '../model/types';
 import type { GameStore } from '../state/store';
 import { isShutOut } from '../systems/help';
 import { householdTotals } from '../systems/organize';
@@ -81,7 +82,7 @@ export class SurvivalScreen implements Screen {
     this.query('[data-head]').innerHTML = `
       <div class="topbar-row">
         <div class="title">
-          <h1>${dayLabel(day)}</h1>
+          <h1 class="is-stamp">${dayLabel(day)}</h1>
           <p class="sub">${sub}</p>
         </div>
       </div>
@@ -167,6 +168,8 @@ export class SurvivalScreen implements Screen {
 
       ${this.tradeHtml(run)}
 
+      ${this.contrastHtml(disaster, run)}
+
       <section class="block">
         <h2 class="block-title">这一切跟你的整理有关</h2>
         <p class="block-note">
@@ -192,6 +195,34 @@ export class SurvivalScreen implements Screen {
             : ''
         }
         <p class="block-note">${escapeHtml(qualityNote(quality))}</p>
+      </section>
+
+      <section class="block">
+        <h2 class="block-title">明天</h2>
+        <p class="block-note">${escapeHtml(tomorrowHint(disaster, run.day))}</p>
+      </section>
+    `;
+  }
+
+  /**
+   * 反差层（§6.6「数字自己说话」，零台词）。
+   *
+   * 两对数字并排：外面的温度对屋里的温度，你的余粮对街区的余粮。
+   * **不配任何形容词** —— 这一层的全部力量来自让玩家自己把两个数摆在一起看；
+   * 一旦写下"你比邻居强多了"，它就变成炫耀，而炫耀是这个游戏一直躲开的东西。
+   */
+  private contrastHtml(disaster: DisasterProfile, run: RunState): string {
+    return `
+      <section class="block">
+        <h2 class="block-title">外面 / 里面</h2>
+        <div class="contrast-pair">
+          <div class="contrast-cell"><i>外面</i><b>${outdoorTemp(run.day)}°C</b></div>
+          <div class="contrast-cell is-warm"><i>屋里</i><b>${indoorTemp(run.stats.shelter)}°C</b></div>
+        </div>
+        <div class="contrast-pair">
+          <div class="contrast-cell"><i>你的余粮</i><b>${supplyDays(run, disaster)} 天</b></div>
+          <div class="contrast-cell"><i>街区平均</i><b>${districtDays(run.day)} 天</b></div>
+        </div>
       </section>
     `;
   }
@@ -381,6 +412,12 @@ function hardPressLine(level: HardPressLevel): string {
     default:
       return '';
   }
+}
+
+/** 明日预告（§9 界面清单第 5 条的最后一项）。它让"今天要不要省着过"变成一个可以想的问题 */
+function tomorrowHint(disaster: DisasterProfile, day: number): string {
+  if (day >= SURVIVAL_DAYS) return '最后一天了。撑过去，寒潮就过去了。';
+  return hintAt(disaster, day + 1);
 }
 
 /** 自动补给的一行说明。写"都是自动的"是因为玩家会问"我什么时候用的药" */

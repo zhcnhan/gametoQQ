@@ -2019,6 +2019,64 @@ button:disabled {
   border-color: var(--vermilion);
 }
 
+/* ================================================================
+ * 数字日报与反差层（§6.6「数字自己说话」）
+ * ================================================================ */
+
+/*
+ * 日报抬头那枚朱红印章。
+ * 它是这一屏唯一一处"日期"，所以由它当抬头，而不是让标题再写一遍。
+ * 微微倾斜是刻意的：手账上的印章不会盖得端端正正。
+ */
+.topbar .title h1.is-stamp {
+  display: inline-block;
+  padding: 1px 10px 2px;
+  border: 2.5px solid var(--vermilion);
+  border-radius: 4px;
+  color: var(--vermilion);
+  font-size: 17px;
+  letter-spacing: 0.08em;
+  transform: rotate(-3deg);
+}
+
+.contrast-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.contrast-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--ink-16);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+}
+
+.contrast-cell i {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--ink-70);
+}
+
+.contrast-cell b {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * "屋里"这一格用暖黄 —— §5A 规定暖黄**只**用于"安全 / 窗内"语义。
+ * 这是它在 M1 里第一次真正派上用场：反差层要的就是"外面 vs 里面"这个对比，
+ * 而颜色本身就是那个隐喻，不必再写一个字去解释。
+ */
+.contrast-cell.is-warm {
+  border-color: var(--warm);
+  background: rgba(242, 201, 76, 0.14);
+}
+
 .need-row.is-short em {
   color: var(--vermilion);
   font-weight: 600;

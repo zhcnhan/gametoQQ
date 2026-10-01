@@ -203,6 +203,32 @@ export const DEFERRED_ITEMS: readonly DeferredItem[] = [
     status: 'open'
   },
   {
+    id: 'D-15',
+    kind: 'code',
+    title: '外界温度表（`COLD_SNAP_TEMPS`）是手写的，而且只覆盖寒潮',
+    impact:
+      '§6.6 的反差层要"外界温度 vs 屋内温度"，但 §7 的 `DayForecast` 里只有 `severity` 与一句文本。' +
+      '温度没有从 `severity` 换算 —— 寒潮的曲线不是它的线性函数（D+1 回过暖），' +
+      '硬换算出来的数会和日历里那句「-19°C。窗户上结了整片冰花」对不上。' +
+      '代价是：多灾难（M3）时这张表要按 `disasterId` 拆成几份，或者干脆并进 `DayForecast`。',
+    plan: 'M3 多灾难时处理（那时才值得动 §7 的类型）',
+    markedIn: ['data/disaster.ts'],
+    status: 'open'
+  },
+  {
+    id: 'D-14',
+    kind: 'code',
+    title: '「街区平均余粮」是一条手写常数，不是模拟出来的',
+    impact:
+      '§6.6 的反差数字要求"你的余粮天数 vs 街区平均余粮天数"。M1 只做了一个能让玩家读出' +
+      '自己位置的参照物 —— `DISTRICT_DAYS` 是一条手写的递减曲线（[0,3,2,2,1,1,0,0,0]），' +
+      '**没有**任何模拟。真正的"街区"要等 M2 的跨局世界状态。' +
+      '它现在的风险是：如果玩家只囤了 1 天粮，这句对比会变成讽刺而不是激励 —— 但那也算说真话。',
+    plan: 'M2（与跨局世界状态一起做）',
+    markedIn: ['model/contrast.ts'],
+    status: 'open'
+  },
+  {
     id: 'D-13',
     kind: 'code',
     title: '§6.5 的「情报」回报还没做',

@@ -14,8 +14,9 @@
 import { SURVIVAL_DAYS, getDisasterDef } from '../data/disaster';
 import { NPC_DEFS } from '../data/npcs';
 import { dayLabel, hintAt } from '../model/calendar';
+import { districtDays, supplyDays } from '../model/contrast';
 import { computeOrganizeScore, gradeLabel, toPercent } from '../model/score';
-import type { RunState } from '../model/types';
+import type { DisasterProfile, RunState } from '../model/types';
 import type { GameStore } from '../state/store';
 import { householdTotals } from '../systems/organize';
 import type { Screen } from './Router';
@@ -102,6 +103,7 @@ export class EndingScreen implements Screen {
               })
             )}</p>
             ${trustNote(run) ? `<p class="block-note">${escapeHtml(trustNote(run))}</p>` : ''}
+            <p class="block-note">${escapeHtml(contrastNote(run, disaster))}</p>
           </section>
 
           <section class="block">
@@ -200,6 +202,17 @@ function runStory(input: {
   const head = parts.join('，');
   if (hardPressDays > 0) return `${head}。撑是撑过来了，但后半程不轻松。`;
   return `${head}。没到伤筋动骨的地步。`;
+}
+
+/**
+ * 结算页的那句反差（§9.6「数字日报对比」）。
+ *
+ * 它必须在这儿，因为这一局的**意义**要靠它才读得出来：
+ * "你撑过 7 天"是一个数，而"那几天里街区平均只剩 1 天，你手上还有 6 天"是另一个数。
+ * 后者才是让玩家明白自己那几十次弯腰究竟换来了什么的东西。
+ */
+function contrastNote(run: RunState, disaster: DisasterProfile): string {
+  return `走到最后，你手上的余粮还够 ${supplyDays(run, disaster)} 天 —— 同期街区平均是 ${districtDays(run.day)} 天。`;
 }
 
 /**
