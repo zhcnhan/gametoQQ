@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!--
+    囤货末世的标签页图标：一只贴着朱红封箱胶带的纸箱（§5A 引擎③ 拆箱惊喜的符号）。
+    只用本案的三个颜色：纸底 #F7F3EA / 墨色 #2C2C2A / 朱红 #C8372D。
+    刻意做得很"憨"（粗描边、大圆角）—— 16px 下也要能一眼认出是个箱子。
+  -->
+  <rect width="32" height="32" rx="7" fill="#F7F3EA" />
+  <path
+    d="M5 12.4 16 7l11 5.4v11.2L16 29 5 23.6Z"
+    fill="#F3E9D2"
+    stroke="#2C2C2A"
+    stroke-width="1.8"
+    stroke-linejoin="round"
+  />
+  <rect x="9" y="10.8" width="14" height="3.2" fill="#C8372D" />
+  <path
+    d="M5 12.4 16 17.8l11-5.4M16 17.8V29"
+    fill="none"
+    stroke="#2C2C2A"
+    stroke-width="1.8"
+    stroke-linejoin="round"
+    stroke-linecap="round"
+  />
+</svg>
