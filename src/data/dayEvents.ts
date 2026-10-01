@@ -88,7 +88,7 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
     weight: 1.6,
     def: {
       id: 'd_panic_buying',
-      text: '有人在群里说高速封了。前面几辆购物车都在往米面那边挤。',
+      text: '群里说高速封了。前面几个人的车都在往米面那边靠。',
       // 这条要的就是"今天该不该早买"的那个决定，所以它不限点位
       options: [
         {

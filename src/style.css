@@ -1081,6 +1081,13 @@ button:disabled {
   font-size: 12px;
   line-height: 1.6;
   color: var(--ink-70);
+  /*
+   * 320px 那一档的兜底：M2 新增的文案里有"物资：可可粉铁罐 · 一条烟 · 半袋咖啡豆"
+   * 这种长串（用中文顿号连着，浏览器不一定找得到断点），以及"限购，还能买 12"这类数字串。
+   * `anywhere` 让它们在**任何**位置都能断行，代价只是偶尔断得不好看 ——
+   * 而横向溢出在 320px 上是整屏不能用的那种坏，两害相权取轻。
+   */
+  overflow-wrap: anywhere;
 }
 
 .block-note.strong {
