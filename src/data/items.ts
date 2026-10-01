@@ -197,3 +197,20 @@ export const CATEGORY_LABELS: Record<CategoryId, string> = {
   tool: '工具',
   luxury: '享受'
 };
+
+/**
+ * 品类的**稳定顺序**（胶带胶囊按它排、存档里的清单也按它归一化）。
+ *
+ * 必须显式写出来，不能靠 `Object.keys(CATEGORY_LABELS)`：
+ * 那样顺序会随 label 表的编辑而变，玩家看到的胶囊会莫名换位子，
+ * 而且同一个存档在不同版本里序列化出的字符串会不一样（diff 噪音）。
+ */
+export const CATEGORY_ORDER: readonly CategoryId[] = [
+  'food',
+  'water',
+  'medicine',
+  'fuel',
+  'warmth',
+  'tool',
+  'luxury'
+];

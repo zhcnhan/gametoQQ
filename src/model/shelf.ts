@@ -343,6 +343,25 @@ export function zoneAccepts(zone: Zone | null, item: ItemDef): boolean {
   return item.tags.some((t) => tags.includes(t));
 }
 
+/**
+ * 这一堆是不是"不在这张胶带的清单里" —— **只给格子上的小色点用**。
+ *
+ * 与 zoneAccepts 是同一套判定，但刻意分成两个名字，因为两件事语义不同：
+ *  - `zoneAccepts` = 这张胶带收不收它（客观事实，参与算分）；
+ *  - `isOffZone`  = 要不要在界面上点一个小色点（表现决策）。
+ *
+ * 两条刻意的规则：
+ *  1. **没贴胶带的货架永不提示**。§5 引擎①：「不整理也能活」——
+ *     没有分区是一种正经活法，不是错误，不该被点名。
+ *  2. 提示必须是**中性**的：界面上用墨色空心小点，不用朱红（§5A 规定朱红 = 警告/重要）。
+ *     §5 明说"游戏不评判对错"，这个点表达的是"它不在这张胶带的清单里"，
+ *     而不是"你放错了"。文案与颜色都不许说教。
+ */
+export function isOffZone(zone: Zone | null, stack: ItemStack): boolean {
+  if (!zone) return false;
+  return !zoneAccepts(zone, getItemDef(stack.itemId));
+}
+
 export function findZone(zones: readonly Zone[], zoneId: string | null): Zone | null {
   if (!zoneId) return null;
   return zones.find((z) => z.id === zoneId) ?? null;

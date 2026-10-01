@@ -9,8 +9,8 @@ import { initAudio, isMuted, playSfx, setMuted } from '../fx/audio';
 import { iconSvg, itemIconSvg } from '../fx/icons';
 import { showToast, spawnCrushGhost, spawnSfxWord, spawnTidyTag } from '../fx/popup';
 import { dayLabel } from '../model/calendar';
-import { getStack, stackCount } from '../model/shelf';
-import type { ItemStack, Shelf, SlotPos } from '../model/types';
+import { getStack, isOffZone, stackCount } from '../model/shelf';
+import type { ItemStack, Shelf, SlotPos, Zone } from '../model/types';
 import type { GameStore } from '../state/store';
 import {
   applyZone,
@@ -166,7 +166,7 @@ export class OrganizeScreen {
     const capacity = this.store.run.shelves.reduce((n, s) => n + s.w * s.h, 0);
     // 全中文台账。术语解释放 title（鼠标）＋点一下弹提示（手机没 hover，只能点）
     this.scoreEl.innerHTML = `
-      <button class="score-item" data-action="explain" data-explain="归位率：物资有没有放在它自己那块分区里" title="物资有没有放在它自己那块分区里">
+      <button class="score-item" data-action="explain" data-explain="归位率：你自己给胶带写的清单，东西有没有照放。没写清单的胶带什么都收 —— 规矩你定，只帮你数。" title="你自己给胶带写的清单，东西有没有照放。没写清单的胶带什么都收。">
         <i>归位率</i><b>${p}%</b>
       </button>
       <button class="score-item" data-action="explain" data-explain="临期优先：同架按到期日排好没有 —— 越快到期的越靠前，也越先被用掉" title="同架按到期日排好没有：越快到期的越靠前，也越先被用掉">
@@ -194,7 +194,7 @@ export class OrganizeScreen {
     for (let row = 0; row < shelf.h; row++) {
       for (let col = 0; col < shelf.w; col++) {
         const stack = getStack(shelf, { row, col });
-        cells.push(this.slotHtml(shelf.id, { row, col }, stack));
+        cells.push(this.slotHtml(shelf.id, { row, col }, stack, zone));
       }
     }
     return `
@@ -215,18 +215,22 @@ export class OrganizeScreen {
     `;
   }
 
-  private slotHtml(shelfId: string, pos: SlotPos, stack: ItemStack | null): string {
+  private slotHtml(shelfId: string, pos: SlotPos, stack: ItemStack | null, zone: Zone | null): string {
     const attrs = `data-slot data-shelf="${shelfId}" data-row="${pos.row}" data-col="${pos.col}"`;
     if (!stack) return `<button class="slot is-empty" ${attrs} aria-label="空格"></button>`;
     const def = getItemDef(stack.itemId);
     const count = stackCount(stack);
     const day = this.store.run.day;
     const soon = isExpiringSoon(stack, day);
-    const label = `${stackLabel(stack)}，${expiryText(stack, day)}`;
+    // 中性信息点：白描一个墨色小圈，不用朱红（§5A：朱红 = 警告/重要）。
+    // 没贴胶带的货架 isOffZone 恒为 false —— "我不分类"不点名。
+    const off = isOffZone(zone, stack);
+    const label = `${stackLabel(stack)}，${expiryText(stack, day)}${off ? '，不在这张胶带的清单里' : ''}`;
     return `<button class="slot${soon ? ' is-soon' : ''}" ${attrs} aria-label="${label}" title="${label}">
       <span class="slot-icon">${itemIconSvg(def.icon)}</span>
       ${count > 1 ? `<span class="slot-count">×${count}</span>` : ''}
       ${soon ? `<span class="slot-soon" aria-hidden="true"></span>` : ''}
+      ${off ? '<span class="slot-off" aria-hidden="true"></span>' : ''}
     </button>`;
   }
 

@@ -9,9 +9,10 @@
  *     分区是空间概念，编辑时把空间藏起来玩家就失去参照（这是上一版的病根）。
  *  2. **贴完就收起**：动作完成即关闭，让玩家立刻看到货架上多出来的那条胶带。
  */
+import { CATEGORY_LABELS, CATEGORY_ORDER } from '../data/items';
 import { DEFAULT_ZONE_COLOR, ZONE_COLORS, ZONE_COLOR_NAMES } from '../data/palette';
 import { findZone } from '../model/shelf';
-import type { Shelf, Zone } from '../model/types';
+import type { CategoryId, Shelf, Zone } from '../model/types';
 import type { ZoneInput } from '../systems/organize';
 import { shelfLabel } from './labels';
 
@@ -30,6 +31,8 @@ export class ZoneSheet {
   private shelfId: string | null = null;
   private name = '';
   private color: string = DEFAULT_ZONE_COLOR;
+  /** 这张胶带收哪些品类；空数组 = 什么都收（归位率恒满，"我不分类"是正经营法） */
+  private categories: CategoryId[] = [];
 
   constructor(root: HTMLElement, host: ZoneSheetHost, onClose?: () => void) {
     this.root = root;
@@ -56,9 +59,10 @@ export class ZoneSheet {
     this.shelfId = shelfId;
     const shelf = this.host.getShelves().find((s) => s.id === shelfId) ?? null;
     const zone = shelf ? findZone(this.host.getZones(), shelf.zoneId) : null;
-    // 这架已经贴着胶带 → 输入框就是"这张胶带的编辑器"（预填它现在的名字与颜色）
+    // 这架已经贴着胶带 → 输入框就是"这张胶带的编辑器"（预填它现在的名字、颜色与清单）
     this.name = zone?.name ?? '';
     this.color = zone?.color ?? this.pickFreeColor();
+    this.categories = [...(zone?.autoAccept?.categories ?? [])];
     this.root.hidden = false;
     this.render();
     const input = this.root.querySelector<HTMLInputElement>('input[data-zone-name]');
@@ -117,11 +121,21 @@ export class ZoneSheet {
       }
       case 'save': {
         const editing = this.currentZone();
-        // 已贴胶带 → 改这张（改名/改色，其他贴着它的货架一起变）；没贴 → 写一段新的
+        // 已贴胶带 → 改这张（改名/改色/改清单，其他贴着它的货架一起变）；没贴 → 写一段新的
         const input: ZoneInput = editing
-          ? { name: this.name, color: this.color, zoneId: editing.id }
-          : { name: this.name, color: this.color };
+          ? { name: this.name, color: this.color, categories: this.categories, zoneId: editing.id }
+          : { name: this.name, color: this.color, categories: this.categories };
         if (this.host.apply(shelfId, input)) this.close();
+        return;
+      }
+      case 'cat': {
+        const cat = hit.dataset['cat'] as CategoryId | undefined;
+        if (!cat) return;
+        this.categories = this.categories.includes(cat)
+          ? this.categories.filter((c) => c !== cat)
+          : [...this.categories, cat];
+        // 只切选中态，不重建 DOM —— 否则输入框焦点和键盘会被顶掉（和改色同一个坑）
+        this.syncCategoryChips();
         return;
       }
       case 'assign': {
@@ -153,6 +167,34 @@ export class ZoneSheet {
     return shelf ? findZone(this.host.getZones(), shelf.zoneId) : null;
   }
 
+  /** 一张胶带的清单，说人话 */
+  private ruleText(zone: Zone): string {
+    const cats = zone.autoAccept?.categories ?? [];
+    if (cats.length === 0) return '什么都收';
+    return cats.map((c) => CATEGORY_LABELS[c]).join('/');
+  }
+
+  /**
+   * 胶囊下方的说明。刻意只说"规则是什么"，不说"你该怎么做" ——
+   * §5 引擎①：游戏不评判对错，所以这里连"建议"都不给。
+   */
+  private categoryNote(): string {
+    if (this.categories.length === 0) return '什么都没选 = 什么都收，归位率恒满。';
+    return `只收 ${this.categories.map((c) => CATEGORY_LABELS[c]).join(' / ')}。别的东西放上来会点一个小墨点。`;
+  }
+
+  /** 只切胶囊的选中态与说明文字，不重建 DOM（重建会把输入框焦点顶掉） */
+  private syncCategoryChips(): void {
+    this.root.querySelectorAll<HTMLElement>('.cat-chip').forEach((el) => {
+      const cat = el.dataset['cat'];
+      const on = cat !== undefined && this.categories.includes(cat as CategoryId);
+      el.classList.toggle('is-on', on);
+      el.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    const note = this.root.querySelector<HTMLElement>('[data-cat-note]');
+    if (note) note.textContent = this.categoryNote();
+  }
+
   private render(): void {
     if (!this.shelfId) return;
     const shelves = this.host.getShelves();
@@ -170,6 +212,13 @@ export class ZoneSheet {
       return `<button class="swatch${active}" data-zone-act="color" data-color="${color}" style="--swatch:${color}" aria-label="${ZONE_COLOR_NAMES[ZONE_COLORS.indexOf(color)] ?? ''}"></button>`;
     }).join('');
 
+    // 7 个品类胶囊。这是全游戏唯一一处"玩家给自己的整理立规矩"的地方，
+    // 所以它必须一眼看懂、一次点完 —— 不做成需要展开的下拉或需要滚动的列表。
+    const chips = CATEGORY_ORDER.map((cat) => {
+      const on = this.categories.includes(cat);
+      return `<button class="cat-chip${on ? ' is-on' : ''}" data-zone-act="cat" data-cat="${cat}" aria-pressed="${on ? 'true' : 'false'}">${CATEGORY_LABELS[cat]}</button>`;
+    }).join('');
+
     const tapeList = zones.length
       ? zones
           .map((zone) => {
@@ -177,9 +226,10 @@ export class ZoneSheet {
             const isCurrent = current?.id === zone.id;
             const here = shelves.some((s) => s.id === this.shelfId && s.zoneId === zone.id);
             const word = here ? (used > 1 ? `这架已贴 · 共 ${used} 架` : '这架已贴') : used > 1 ? `${used} 架在用` : '贴着 1 架';
+            // 清单必须展示出来：玩家点"贴到这架"之前，得先看得见这张胶带收什么
             return `<button class="tape-slot${isCurrent ? ' is-current' : ''}" data-zone-act="assign" data-zone-id="${zone.id}" style="--zone:${zone.color}">
               <span class="tape-slot-name">${escapeHtml(zone.name)}</span>
-              <span class="tape-slot-meta">${word}</span>
+              <span class="tape-slot-meta">${word} · ${escapeHtml(this.ruleText(zone))}</span>
             </button>`;
           })
           .join('')
@@ -188,10 +238,10 @@ export class ZoneSheet {
     const currentBlock = current
       ? `<div class="tape-current" style="--zone:${current.color}">
            <span class="tape-chip">${escapeHtml(current.name)}</span>
-           <span class="tape-current-meta">这架贴着它 · ${this.usageCount(current.id)} 架在用</span>
+           <span class="tape-current-meta">这架贴着它 · ${this.usageCount(current.id)} 架在用 · ${escapeHtml(this.ruleText(current))}</span>
            <button class="mini mini-danger" data-zone-act="detach">撕下来</button>
          </div>`
-      : `<p class="zone-empty">这架还没贴胶带 —— 贴了才按分区算「归位率」。</p>`;
+      : `<p class="zone-empty">这架还没贴胶带 —— 没清单就没法量这架的归位率。</p>`;
 
     this.root.innerHTML = `
       <div class="drawer-blocker" data-zone-act="close"></div>
@@ -206,10 +256,15 @@ export class ZoneSheet {
           <div class="tape-list">${tapeList}</div>
         </div>
         <div class="field">
-          <span>${current ? '改这段胶带（改名 / 换色，贴着它的架子一起变）' : '撕一段新胶带'}</span>
+          <span>${current ? '改这段胶带（改名 / 换色 / 改清单，贴着它的架子一起变）' : '撕一段新胶带'}</span>
           <div class="tape-new">
             <input type="text" maxlength="8" placeholder="写上名字，比如 救命层" data-zone-name value="${escapeHtml(this.name)}" />
             <div class="swatches">${swatches}</div>
+            <div class="cat-field">
+              <span class="cat-label">这张胶带收什么？</span>
+              <div class="cat-row">${chips}</div>
+              <p class="cat-note" data-cat-note>${escapeHtml(this.categoryNote())}</p>
+            </div>
             <button class="btn btn-primary" data-zone-act="save">${current ? '改这段胶带' : '贴到这架'}</button>
           </div>
         </div>

@@ -881,18 +881,22 @@ body::before {
   gap: 8px;
 }
 
+/* 纵向排：名字一行、"几架在用 · 收什么"一行。清单必须看得见，
+   否则玩家点"贴到这架"之前不知道这张胶带管不管他的东西 */
 .tape-slot {
   position: relative;
   display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 44px;
-  padding: 0 12px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-height: 50px;
+  padding: 7px 12px;
   border: 1px solid var(--ink-16);
   border-radius: 4px;
   background: var(--card);
   color: inherit;
   font: inherit;
+  text-align: left;
   cursor: pointer;
   transform: rotate(-1deg);
   overflow: hidden;
@@ -1605,4 +1609,87 @@ button:disabled {
   font-size: 12px;
   font-weight: 400;
   color: var(--ink-40);
+}
+
+/* ================================================================
+ * 胶带的「清单」（§5 引擎①：归位率的全部依据）
+ * ================================================================ */
+
+.cat-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.cat-label {
+  font-size: 12px;
+  color: var(--ink-70);
+}
+
+/* 7 个品类排成 4 + 3：一行 4 个，每个约 78px 宽、56px 高，单手点着不费劲 */
+.cat-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.cat-chip {
+  min-height: 56px;
+  min-width: 0;
+  padding: 0 4px;
+  border: 2px solid var(--ink-16);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--ink-70);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: transform var(--fast) var(--ease-out);
+}
+
+.cat-chip:active {
+  transform: scale(0.96);
+}
+
+/* 选中 = 这张胶带收这一类。填墨块，和"贴上去一段黑胶带"的直觉一致 */
+.cat-chip.is-on {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+  font-weight: 600;
+}
+
+.cat-note {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-70);
+}
+
+/*
+ * 抽屉里的主按钮吸底。
+ * 加了清单之后，抽屉内容比 M0 高了一截（7 个 56px 胶囊占两行），
+ * 在 390 竖屏上按钮会被挤到可视区外 —— 玩家点完胶囊还得滚一下才找得到"贴到这架"。
+ * 这违背"动作完成即收起"的初衷，所以让它钉在底部。
+ */
+.tape-new > .btn-primary {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+}
+
+/*
+ * "它不在这张胶带的清单里" —— 刻意是一个**墨色空心小圈**：
+ * 不用朱红（这个游戏里朱红专指警告/重要）、不做填色、不闪不动。
+ * §5 引擎①说"游戏不评判对错"，所以它只陈述一个事实，不指责。
+ * 位置在左上角，避开右上角的保质期朱红点（两个点各说各的事，不许打架）。
+ */
+.slot-off {
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid var(--ink-40);
+  border-radius: 50%;
 }

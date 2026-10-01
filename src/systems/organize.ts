@@ -6,7 +6,7 @@
  * 由本文件返回的 OrganizeEvent 描述，交给 fx/ 与 ui/ 去演。
  */
 import { getBoxDef, STRAY_BOX_ID } from '../data/boxes';
-import { getItemDef } from '../data/items';
+import { CATEGORY_ORDER, getItemDef } from '../data/items';
 import { DEFAULT_ZONE_COLOR } from '../data/palette';
 import {
   autoPlace,
@@ -24,7 +24,7 @@ import {
   stackCount
 } from '../model/shelf';
 import { computeOrganizeScore, type OrganizeScore } from '../model/score';
-import type { ItemStack, RunState, Shelf, SlotPos, Zone } from '../model/types';
+import type { CategoryId, ItemStack, RunState, Shelf, SlotPos, Zone } from '../model/types';
 import type { GameStore } from '../state/store';
 import { boxLabel, nextBoxSeq } from './setup';
 
@@ -419,18 +419,33 @@ function orderSignature(shelf: Shelf): string {
 
 // ———————— 命令：分区（引擎① 自建秩序） ————————
 //
-// 心智模型 = 纸胶带：**一张胶带 = 一个分区 = 名字 + 颜色**，可以贴到任意多块货架上。
+// 心智模型 = 纸胶带：**一张胶带 = 一个分区 = 名字 + 颜色 + 清单**，可以贴到任意多块货架上。
 //  - 同名 = 同一张胶带（不会出现两个"主食区"），颜色以先贴的那张为准；
-//  - 撕下 = 从这架取下来，胶带还在（除非没有别的货架用它了，它会自己消失）；
-//  - 游戏不评判你贴得对不对：M0 界面不提供"本区接收哪些品类"这类规则声明，
-//    归位率只看"物资是否放在有名字的货架上"。§7 的 Zone.autoAccept 字段与
-//    model 层的 zoneAccepts() 都保留着，留给 M1 生存期（自动取用）需要时再启用。
+//  - **清单**（`Zone.autoAccept.categories`）= 这张胶带收哪些品类。这是"归位率"的全部依据：
+//    东西放在"接受它"的胶带上才算归位。清单由玩家自己点，游戏不预设任何答案；
+//  - **不填清单 = 什么都收**（归位率恒满）。"我不分类"是一种正经营法，不是错误；
+//  - 撕下 = 从这架取下来，胶带还在（除非没有别的货架用它了，它会自己消失）。
+//
+// ★ 与 §5 引擎①「游戏不评判对错」的关系（这一层最容易做歪，写清楚）：
+//   规则是**玩家写的**，所以"没按自己写的清单放"是"你没守住自己的秩序"，
+//   不是"游戏说你错了"。据此，命令层做到三件事：
+//     1. 永不因"放错"拒绝任何操作（placeHeld 完全不看分区）；
+//     2. 永不返回"放错了"这类事件（§7 的事件表里就没有这一条）；
+//     3. 界面上只允许一个**中性**信息点（model 层 isOffZone），
+//        且**没贴胶带的货架永不提示**。压力测试留给生存期的日报去做。
 
 export interface ZoneInput {
   name: string;
   color: string;
   /**
-   * 显式指定"我在改这张已有的胶带"（改名 + 改色，其他贴着它的货架一起变）。
+   * 这张胶带收哪些品类。**空 / 不传 = 什么都收**。
+   *
+   * 归一化规则：按 `CATEGORY_ORDER` 排序去重后再落盘 ——
+   * 否则同一套选择会因为点击顺序不同而序列化出不同字符串（存档 diff 噪音）。
+   */
+  categories?: CategoryId[];
+  /**
+   * 显式指定"我在改这张已有的胶带"（改名 + 改色 + 改清单，其他贴着它的货架一起变）。
    * 不传则是"给这架写一段胶带"：同名复用，没有同名才新建。
    * 两种语义必须由 ui 明确区分，命令层不猜 —— 否则"改这张的名字"和"换一张新的"分不开。
    */
@@ -444,6 +459,7 @@ export function applyZone(store: GameStore, shelfId: string, input: ZoneInput): 
   const name = input.name.trim();
   if (!name) return reject('胶带上得写个字');
   const color = input.color || DEFAULT_ZONE_COLOR;
+  const categories = normalizeCategories(input.categories);
   const editId = input.zoneId;
   if (editId && !findZone(run.zones, editId)) return reject('没有这张胶带');
 
@@ -451,17 +467,21 @@ export function applyZone(store: GameStore, shelfId: string, input: ZoneInput): 
     const shelf = draft.shelves[shelfIndex];
     if (!shelf) return;
 
-    // ① 明确在编辑某张胶带 → 改名 + 改色，id 不变，其他贴着它的货架一起跟着变
+    // ① 明确在编辑某张胶带 → 改名 + 改色 + 改清单，id 不变，其他贴着它的货架一起跟着变
     if (editId) {
       const target = draft.zones.find((z) => z.id === editId);
       if (target) {
         target.name = name;
         target.color = color;
+        writeZoneRule(target, categories);
       }
       return;
     }
 
-    // ② 同名胶带已存在 → 复用同一张（绝不造重名分区），颜色以已有那张为准
+    // ② 同名胶带已存在 → 复用同一张（绝不造重名分区）。
+    //    注意：**这里绝不改写它的清单** —— 清单属于胶带本身，
+    //    否则"把另一块架子也贴成主食区"会把主食区的清单按当前输入框的状态清掉。
+    //    改清单只有一条路：上面的 ①（抽屉里点"改这段胶带"）。
     const sameName = draft.zones.find((z) => z.name === name);
     if (sameName) {
       const previous = shelf.zoneId;
@@ -475,11 +495,26 @@ export function applyZone(store: GameStore, shelfId: string, input: ZoneInput): 
     shelf.zoneId = null;
     if (previous) recycleIfOrphan(draft, previous);
     const zone: Zone = { id: nextZoneId(draft.zones), name, color };
+    writeZoneRule(zone, categories);
     draft.zones.push(zone);
     shelf.zoneId = zone.id;
   });
 
   return ok([{ type: 'zoneUpdated', shelfId }]);
+}
+
+/** 按稳定顺序归一化玩家的选择；空 = 什么都收（落盘时不带 autoAccept 字段，比存一个空对象干净） */
+function normalizeCategories(input: readonly CategoryId[] | undefined): CategoryId[] {
+  if (!input || input.length === 0) return [];
+  return CATEGORY_ORDER.filter((c) => input.includes(c));
+}
+
+function writeZoneRule(zone: Zone, categories: CategoryId[]): void {
+  if (categories.length === 0) {
+    delete zone.autoAccept;
+    return;
+  }
+  zone.autoAccept = { categories: [...categories] };
 }
 
 /** 把胶带贴到货架上；zoneId = null 表示"撕下"（这张胶带没人用了就自己消失） */

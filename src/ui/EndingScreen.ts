@@ -73,7 +73,7 @@ export class EndingScreen implements Screen {
           <section class="block">
             <h2 class="block-title">整理体检</h2>
             <div class="score-rows">
-              ${this.scoreRow('归位率', placement, '物资有没有放在你自己划的那片区域里')}
+              ${this.scoreRow('归位率', placement, '你自己给胶带写的清单，东西有没有照放')}
               ${this.scoreRow('临期优先', fefo, '同架按到期日排好没有 —— 越快到期的越靠前，也越先被用掉')}
               <div class="score-row is-pending">
                 <span class="score-row-name">应急可达率</span>
