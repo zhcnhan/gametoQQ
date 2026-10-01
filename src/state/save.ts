@@ -6,7 +6,10 @@
  *  - 不直接摸 window，介质由 state/storage.ts 注入。
  */
 import { BOX_DEFS } from '../data/boxes';
-import type { ItemStack, MetaProfile, RunState, SaveGame, UnpackBox, Zone } from '../model/types';
+import { FIRST_STOCKPILE_DAY, SURVIVAL_DAYS } from '../data/disaster';
+import { IDENTITY_DEFS, hasIdentityDef } from '../data/identities';
+import { ACTION_POINTS_PER_DAY } from '../data/shops';
+import type { GamePhase, ItemStack, MetaProfile, RunState, SaveGame, UnpackBox, Zone } from '../model/types';
 import { createMemoryStorage, resolveStorage, type StorageLike } from './storage';
 
 export const STORAGE_KEY = 'tunhuo.save';
@@ -15,9 +18,11 @@ export const STORAGE_KEY = 'tunhuo.save';
  *  - v1：M0 首版（待拆箱是 `ItemStack[][]`）
  *  - v2：待拆箱升级为 `UnpackBox[]`（稳定 id + 箱型），"放回原箱"才可能是对的
  *  - v3：分区收敛为"胶带"（名字 + 颜色），剥掉存量存档里的 autoAccept 规则声明
- *  - v4（规划中）：M3 图鉴 MetaProfile 扩展
+ *  - v4：M1 囤货期（状态机 + 采购）—— 补行动点/车载/当日库存四个字段，
+ *        并把 M0 的 `day: 0`（占位）迁成"囤货期最后一天" `-1`
+ *  - v5（规划中）：M3 图鉴 MetaProfile 扩展
  */
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 /** 落盘节流上限（提示词 0：debounce ≤ 300ms） */
 export const SAVE_DEBOUNCE_MS = 250;
 
@@ -100,7 +105,39 @@ export function migrate(raw: unknown): SaveGame | null {
   if (declared < 1) save = migrateV0ToV1(save);
   if (declared < 2) save = migrateV1ToV2(save);
   if (declared < 3) save = migrateV2ToV3(save);
-  return normalizeV2(save);
+  if (declared < 4) save = migrateV3ToV4(save);
+  return normalizeRun(save);
+}
+
+/**
+ * v3 → v4：M0 单页整理 → M1 囤货期。迁移做三件事，每一件都有明确理由：
+ *
+ * 1) 补 4 个囤货期字段（行动点 / 车载 / 当日库存 / 当日已访点位）。
+ * 2) `day` 归一化。M0 把 `day` 恒写成 0 表示"整理中"，而 M1 的 0 是 **D-Day（灾难降临日）** ——
+ *    若照搬，老玩家一读档就直接被判定"灾难已经降临"，会当场跳结算。
+ *    故按"囤货期最后一天"(`-1`) 迁：整理的成果一件不丢，还能再采买一天，然后正常迎接 D-Day。
+ * 3) 身份与现金落地。M0 的 `identityId: 'default'` / `cash: 0` 都是占位，
+ *    `getIdentityDef('default')` 会抛异常；补成第一个真身份并按它的 startCash 发钱。
+ */
+export function migrateV3ToV4(save: SaveGame): SaveGame {
+  const run = save.run;
+  if (run) {
+    if (!hasIdentityDef(run.identityId)) {
+      const fallback = IDENTITY_DEFS[0];
+      if (fallback) {
+        run.identityId = fallback.id;
+        if (!run.cash) run.cash = fallback.startCash;
+      }
+    }
+    if (run.phase === 'organize' && run.day >= 0) run.day = -1;
+    if (typeof run.actionPoints !== 'number') run.actionPoints = ACTION_POINTS_PER_DAY;
+    if (typeof run.carLoad !== 'number') run.carLoad = 0;
+    run.shopStocks = asArray(run.shopStocks);
+    run.visitedShopIds = asArray(run.visitedShopIds);
+    if (typeof run.currentShopId !== 'string') run.currentShopId = null;
+  }
+  save.meta.version = SAVE_VERSION;
+  return save;
 }
 
 /**
@@ -142,7 +179,21 @@ export function migrateV1ToV2(save: SaveGame): SaveGame {
   return save;
 }
 
-function normalizeV2(save: SaveGame): SaveGame | null {
+const PHASES: readonly GamePhase[] = [
+  'prologue',
+  'stockpile_shop',
+  'organize',
+  'night',
+  'survival_day',
+  'help_request',
+  'ending'
+];
+
+/**
+ * 收尾净化：把任何来源（迁移产物 / 被人手改过的档 / 版本号撒谎的档）整成"界面一定接得住"的形态。
+ * 原则同 v2 时代：宁可退回新局，也不让 UI 崩在一个 undefined 上。
+ */
+function normalizeRun(save: SaveGame): SaveGame | null {
   if (!save.run) return save;
   const run = save.run;
   if (!Array.isArray(run.shelves) || !Array.isArray(run.zones) || !Array.isArray(run.boxesToUnpack)) {
@@ -156,6 +207,26 @@ function normalizeV2(save: SaveGame): SaveGame | null {
   run.boxesToUnpack = asArray<unknown>(run.boxesToUnpack).filter(
     (box): box is UnpackBox => isObject(box) && typeof box.id === 'string' && Array.isArray(box.items)
   );
+
+  // ———————— M1 囤货期字段 ————————
+  if (!PHASES.includes(run.phase)) run.phase = 'stockpile_shop';
+  if (typeof run.day !== 'number' || !Number.isFinite(run.day)) run.day = FIRST_STOCKPILE_DAY;
+  run.day = Math.min(SURVIVAL_DAYS, Math.max(FIRST_STOCKPILE_DAY, Math.round(run.day)));
+  if (typeof run.actionPoints !== 'number') run.actionPoints = ACTION_POINTS_PER_DAY;
+  run.actionPoints = Math.max(0, Math.round(run.actionPoints));
+  if (typeof run.carLoad !== 'number') run.carLoad = 0;
+  run.carLoad = Math.max(0, run.carLoad);
+  run.shopStocks = asArray<RunState['shopStocks'][number]>(run.shopStocks).filter(
+    (s) => isObject(s) && typeof s.shopId === 'string' && Array.isArray(s.lines)
+  );
+  run.visitedShopIds = asArray<string>(run.visitedShopIds).filter((v) => typeof v === 'string');
+  run.currentShopId = typeof run.currentShopId === 'string' ? run.currentShopId : null;
+
+  // 状态一致性：day 已经走到灾难日（>= 0），就不该还停在囤货期的三个界面上，
+  // 否则玩家点"过一天"会原地打转，而且永远见不到 D-Day。
+  if (run.day >= 0 && (run.phase === 'stockpile_shop' || run.phase === 'organize' || run.phase === 'night')) {
+    run.phase = 'ending';
+  }
   save.meta.version = SAVE_VERSION;
   return save;
 }

@@ -115,6 +115,58 @@ describe('存档 schema 与迁移', () => {
     expect(migrated?.run?.shelves[0]?.zoneId).toBe('zone_1'); // 胶带还在货架上，只是不带规则了
   });
 
+  it('v3（M0 单页整理）→ v4：day 归位到最后一天、身份与现金落地、囤货期字段补齐', () => {
+    const v3 = {
+      meta: {
+        version: 3,
+        identityLevels: {},
+        codex: { items: [], disasters: [], npcs: [] },
+        bestSurvivalDays: {}
+      },
+      run: {
+        phase: 'organize',
+        day: 0, // M0 的占位值 —— 在 M1 语义里它却是"D-Day"，照搬会让老玩家一读档就跳结算
+        identityId: 'default', // M0 的占位身份，查表会抛
+        disasterId: 'cold_snap',
+        cash: 0,
+        shelves: [],
+        zones: [],
+        boxesToUnpack: [],
+        stats: { health: 100, mood: 70, stamina: 100, shelter: 100 },
+        trust: {},
+        deliveredOrders: 0,
+        log: [],
+        seed: 4242
+      },
+      savedAt: 1,
+      syncVersion: 3,
+      deviceId: 'dev'
+    };
+    const migrated = migrate(v3);
+    expect(migrated?.meta.version).toBe(SAVE_VERSION);
+    expect(migrated?.run?.day).toBe(-1); // 囤货期最后一天，整理的成果不倒退
+    expect(migrated?.run?.identityId).toBe('group_buyer');
+    expect(migrated?.run?.cash).toBe(900); // 身份自带的开局现金
+    expect(migrated?.run?.phase).toBe('organize');
+    expect(migrated?.run?.actionPoints).toBe(3);
+    expect(migrated?.run?.carLoad).toBe(0);
+    expect(migrated?.run?.shopStocks).toEqual([]);
+    expect(migrated?.run?.visitedShopIds).toEqual([]);
+    expect(migrated?.run?.currentShopId).toBeNull();
+  });
+
+  it('day 已经到 0 却还停在囤货期界面 → 修正为 ending（否则永远见不到 D-Day）', () => {
+    const run = { ...createStartingRun(5), phase: 'organize' as const, day: 0, identityId: 'group_buyer' };
+    const raw = serialize({ meta: { version: SAVE_VERSION } as never, run, savedAt: 1, syncVersion: 1, deviceId: 'dev' });
+    expect(deserialize(raw)?.run?.phase).toBe('ending');
+  });
+
+  it('day 越界（例如手改成 -30）会被夹回 M1 的 7 天区间', () => {
+    const run = { ...createStartingRun(5), phase: 'stockpile_shop' as const, day: -30, identityId: 'group_buyer' };
+    const raw = serialize({ meta: { version: SAVE_VERSION } as never, run, savedAt: 1, syncVersion: 1, deviceId: 'dev' });
+    expect(deserialize(raw)?.run?.day).toBe(-7);
+  });
+
   it('v2 存档原样读回，不做二次包装', () => {
     const run = createStartingRun(2026);
     const raw = serialize({ meta: { version: SAVE_VERSION } as never, run, savedAt: 1, syncVersion: 1, deviceId: 'dev' });

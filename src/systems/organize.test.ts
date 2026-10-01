@@ -6,6 +6,8 @@ import { GameStore } from '../state/store';
 import {
   buildView,
   createOrganizeSession,
+  householdTotals,
+  inventoryTotals,
   pickupFromShelf,
   placeHeld,
   returnHeld,
@@ -293,5 +295,31 @@ describe('真实开局数据上不炸', () => {
     expect(a.seed).toBe(b.seed);
     const counts = (run: typeof a) => run.boxesToUnpack.map((box) => box.items.reduce((n, s) => n + stackCount(s), 0));
     expect(counts(a)).toEqual(counts(b));
+  });
+});
+
+describe('全副家当：货架 + 没拆的箱子', () => {
+  it('还没拆的箱子也要算进"囤到多少"，否则结算页会显示 0', () => {
+    const { store } = setup();
+    const onlyShelf = inventoryTotals(store.run);
+    const whole = householdTotals(store.run);
+
+    // 开局三箱全在箱子里，货架是空的
+    expect(onlyShelf.pieces).toBe(0);
+    expect(whole.pieces).toBeGreaterThan(0);
+    expect(whole.pieces).toBe(
+      store.run.boxesToUnpack.reduce((n, box) => n + box.items.reduce((m, s) => m + stackCount(s), 0), 0)
+    );
+  });
+
+  it('上了架之后，两个数会从两端逼近同一个值', () => {
+    const { store, session } = setup();
+    const boxId = firstBoxId(store);
+    takeFromBox(store, session, boxId);
+    const moved = session.held ? stackCount(session.held) : 0;
+    placeHeld(store, session, 'shelf_a', P0);
+
+    expect(inventoryTotals(store.run).pieces).toBe(moved);
+    expect(householdTotals(store.run).pieces).toBeGreaterThanOrEqual(moved);
   });
 });

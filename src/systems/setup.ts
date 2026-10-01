@@ -1,8 +1,13 @@
 /**
  * 开局装配（纯逻辑，禁止 DOM）。
- * M0 只做"一间房 + 3 货架 + 3 箱待拆物资"，采购 / 身份 / 灾难全部留到 M1。
+ *
+ * M1 起本文件只负责两件事：
+ *  1. "一局开始时长什么样"—— 一间房 + 3 货架 + 3 箱刚送到的货（`createStartingRun` 停在 prologue）；
+ *  2. 物资的随机生成原语 —— 箱内内容与批次到期日，供采购系统复用（同一个 seed 开出同一箱）。
+ * 身份 / 灾难 / 日历 / 每日库存都不在这里，它们在 data/ 与 systems/phases.ts。
  */
 import { BOX_DEFS, type BoxDef } from '../data/boxes';
+import { FIRST_STOCKPILE_DAY, M1_DISASTER_ID } from '../data/disaster';
 import { getItemDef } from '../data/items';
 import { createCursor, nextInt, randomSeed, shuffle, type RngCursor } from '../model/rng';
 import { createShelf, makeStack, ROOM_ID, SHELF_H, SHELF_W } from '../model/shelf';
@@ -38,7 +43,7 @@ export function rollExpiry(cursor: RngCursor, itemId: string, dayRef = 0): numbe
  * 同一种物资超过 2 件时有概率拆成两个批次 —— 拆箱时能亲眼看到保质期不一样，
  * 后面的 FEFO 排序才有得排（否则玩家没有理由用排序按钮）。
  */
-export function generateBoxStacks(cursor: RngCursor, def: BoxDef): ItemStack[] {
+export function generateBoxStacks(cursor: RngCursor, def: BoxDef, dayRef = 0): ItemStack[] {
   const itemCount = nextInt(cursor, def.minItems, def.maxItems);
   const pool = shuffle(cursor, def.pool);
   const out: ItemStack[] = [];
@@ -50,43 +55,60 @@ export function generateBoxStacks(cursor: RngCursor, def: BoxDef): ItemStack[] {
     const count = nextInt(cursor, 1, maxPer);
     const canSplit = item.perishable && count > 2;
     const splitAt = canSplit && nextInt(cursor, 0, 1) === 1 ? Math.floor(count / 2) : count;
-    out.push(makeStack(itemId, splitAt, rollExpiry(cursor, itemId)));
-    if (splitAt < count) out.push(makeStack(itemId, count - splitAt, rollExpiry(cursor, itemId)));
+    out.push(makeStack(itemId, splitAt, rollExpiry(cursor, itemId, dayRef)));
+    if (splitAt < count) out.push(makeStack(itemId, count - splitAt, rollExpiry(cursor, itemId, dayRef)));
   }
   return out;
 }
 
-export function createStartingBoxes(cursor: RngCursor, count: number = STARTING_BOX_COUNT): UnpackBox[] {
+/**
+ * @param dayRef 批次到期日的起算天。M1 传当前天（囤货期为负），
+ *   这样 D-7 买的罐头和 D-1 买的会差出好几天 —— 否则 FEFO 根本没有可排的东西（§5 引擎④）。
+ */
+export function createStartingBoxes(
+  cursor: RngCursor,
+  count: number = STARTING_BOX_COUNT,
+  dayRef = 0
+): UnpackBox[] {
   const boxes: UnpackBox[] = [];
   for (let i = 0; i < count; i++) {
     const def = boxDefAt(i);
-    boxes.push({ id: `box_${i + 1}`, defId: def.id, items: generateBoxStacks(cursor, def) });
+    boxes.push({ id: `box_${i + 1}`, defId: def.id, items: generateBoxStacks(cursor, def, dayRef) });
   }
   return boxes;
 }
 
 /**
- * 开新局。
- * seed 落盘策略：存的是"已经用掉的游标值"，后续任何随机（M1 的商店库存、事件抽取）
+ * 开新局：**停在 prologue**（§9.1 开局界面）。
+ *
+ * 身份与现金都还是空的，等玩家在开局页点完身份卡，由 `systems/phases.ts` 的
+ * `chooseIdentity()` 一次性填上并推进到囤货期第一天。这样"选身份"也是一个原子存档点。
+ *
+ * seed 落盘策略：存的是"已经用掉的游标值"，后续任何随机（点位库存、事件抽取）
  * 都从这个游标继续走，于是同档同序。
  */
 export function createStartingRun(seed: number = randomSeed()): RunState {
   const cursor = createCursor(seed);
   const run: RunState = {
-    // PLACEHOLDER: M0 没有状态机，直接落在整理页；M1 换成 prologue → stockpile_shop ⇄ organize
-    phase: 'organize',
-    day: 0,
-    identityId: 'default',
-    disasterId: 'cold_snap',
+    phase: 'prologue',
+    day: FIRST_STOCKPILE_DAY,
+    identityId: '',
+    disasterId: M1_DISASTER_ID,
     cash: 0,
     shelves: createStartingShelves(),
     zones: [],
-    boxesToUnpack: createStartingBoxes(cursor),
+    // 重生前家里就有的三箱货（§4.1 第0段"重生开局"）—— 不让玩家对着空货架开场
+    boxesToUnpack: createStartingBoxes(cursor, STARTING_BOX_COUNT, FIRST_STOCKPILE_DAY),
     stats: { health: 100, mood: 70, stamina: 100, shelter: 100 },
     trust: {},
     deliveredOrders: 0,
     log: [],
-    seed: cursor.state
+    seed: cursor.state,
+    actionPoints: 0,
+    carLoad: 0,
+    shopStocks: [],
+    visitedShopIds: [],
+    currentShopId: null
   };
   return run;
 }

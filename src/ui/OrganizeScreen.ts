@@ -8,6 +8,7 @@ import { getItemDef } from '../data/items';
 import { initAudio, isMuted, playSfx, setMuted } from '../fx/audio';
 import { iconSvg, itemIconSvg } from '../fx/icons';
 import { showToast, spawnCrushGhost, spawnSfxWord, spawnTidyTag } from '../fx/popup';
+import { dayLabel } from '../model/calendar';
 import { getStack, stackCount } from '../model/shelf';
 import type { ItemStack, Shelf, SlotPos } from '../model/types';
 import type { GameStore } from '../state/store';
@@ -34,6 +35,10 @@ import { ZoneSheet } from './zoneSheet';
 export interface OrganizeScreenProps {
   /** 重开一局（由 main 负责换一份 RunState） */
   onRestart: () => void;
+  /** 还有行动点时再出门一次（M1 新增；由 systems/phases 的 goOut 命令完成） */
+  onGoOut: () => void;
+  /** 过一天（M1 新增；由 systems/phases 的 endDay 命令完成） */
+  onEndDay: () => void;
 }
 
 interface DragState {
@@ -71,9 +76,15 @@ export class OrganizeScreen {
     this.root.innerHTML = `
       <div class="screen">
         <header class="topbar">
-          <div class="title">
-            <h1>囤货台账</h1>
-            <p class="sub" data-sub></p>
+          <div class="topbar-row">
+            <div class="title">
+              <h1>囤货台账</h1>
+              <p class="sub" data-sub></p>
+            </div>
+            <div class="topbar-tools">
+              <button class="mini" data-action="mute" data-mute-label>静音</button>
+              <button class="mini" data-action="restart">重开</button>
+            </div>
           </div>
           <div class="score" data-score></div>
         </header>
@@ -83,8 +94,8 @@ export class OrganizeScreen {
           <div class="dock-boxes" data-boxes></div>
           <div class="dock-tools">
             <button class="btn" data-action="sort">${iconSvg('sort')}<span>按保质期排</span></button>
-            <button class="btn" data-action="mute"><span data-mute-label>静音</span></button>
-            <button class="btn btn-quiet" data-action="restart">重开一局</button>
+            <button class="btn" data-action="go-out"><span>再去采购</span></button>
+            <button class="btn btn-primary" data-action="end-day"><span>过一天</span></button>
           </div>
         </footer>
       </div>
@@ -119,9 +130,14 @@ export class OrganizeScreen {
     );
 
     // 只挂一个委托监听（顶栏指标卡 / 货架按钮 / 底部工具都从这里走），少一层心智负担
-    this.root.addEventListener('click', (e) => this.onDelegatedClick(e));
+    this.root.addEventListener('click', this.onClickBound);
 
     this.render();
+  }
+
+  dispose(): void {
+    this.root.removeEventListener('click', this.onClickBound);
+    this.clearLongPressBindings();
   }
 
   render(): void {
@@ -137,9 +153,11 @@ export class OrganizeScreen {
   // ———————— 渲染 ————————
 
   private renderSub(view: OrganizeView): void {
-    const totals = inventoryTotals(this.store.run);
+    const run = this.store.run;
+    const totals = inventoryTotals(run);
     const boxes = view.boxes.length;
-    this.subEl.textContent = `第 ${this.store.run.day} 天 · 整理中 · 待拆 ${boxes} 箱 · 在库 ${totals.pieces} 件`;
+    // 天数用 D-7 / D-Day / D+3 这套统一写法（model/calendar.dayLabel），不各写各的
+    this.subEl.textContent = `${dayLabel(run.day)} · 在家整理 · 待拆 ${boxes} 箱 · 在库 ${totals.pieces} 件`;
   }
 
   private renderScore(view: OrganizeView): void {
@@ -202,8 +220,9 @@ export class OrganizeScreen {
     if (!stack) return `<button class="slot is-empty" ${attrs} aria-label="空格"></button>`;
     const def = getItemDef(stack.itemId);
     const count = stackCount(stack);
-    const soon = isExpiringSoon(stack);
-    const label = `${stackLabel(stack)}，${expiryText(stack)}`;
+    const day = this.store.run.day;
+    const soon = isExpiringSoon(stack, day);
+    const label = `${stackLabel(stack)}，${expiryText(stack, day)}`;
     return `<button class="slot${soon ? ' is-soon' : ''}" ${attrs} aria-label="${label}" title="${label}">
       <span class="slot-icon">${itemIconSvg(def.icon)}</span>
       ${count > 1 ? `<span class="slot-count">×${count}</span>` : ''}
@@ -216,7 +235,7 @@ export class OrganizeScreen {
     const handHtml = hand
       ? `<div class="hand-item">
            <span class="hand-icon">${itemIconSvg(getItemDef(hand.itemId).icon)}</span>
-           <span class="hand-text">${escapeHtml(stackLabel(hand))}<em>${escapeHtml(expiryText(hand))}</em></span>
+           <span class="hand-text">${escapeHtml(stackLabel(hand))}<em>${escapeHtml(expiryText(hand, this.store.run.day))}</em></span>
          </div>
          <button class="mini" data-action="return">放回</button>`
       : `<div class="hand-item"><span class="hand-icon is-empty">${iconSvg('hand')}</span><span class="hand-text">空手<em>点纸箱拆箱，点格子放置</em></span></div>`;
@@ -242,11 +261,20 @@ export class OrganizeScreen {
       boxHost.innerHTML = boxes || '<p class="box-empty-hint">箱子都拆完了。货架归你管。</p>';
       this.bindBoxGestures();
     }
+
+    // 行动点用完了就不该再给一个"点了没反应"的按钮（§4A 无死按钮）
+    const goOut = this.dockEl.querySelector<HTMLButtonElement>('[data-action="go-out"]');
+    if (goOut) {
+      const canGoOut = this.store.run.actionPoints > 0;
+      goOut.disabled = !canGoOut;
+      goOut.title = canGoOut ? `今天还能出门 ${this.store.run.actionPoints} 次` : '今天的行动点用完了';
+    }
   }
 
   // ———————— 手势绑定 ————————
 
   private bindRoomGestures(): void {
+    this.clearLongPressBindings();
     this.roomEl.querySelectorAll<HTMLElement>('[data-slot]').forEach((el) => {
       const shelfId = el.dataset['shelf'];
       const row = Number(el.dataset['row']);
@@ -268,7 +296,7 @@ export class OrganizeScreen {
       const shelfId = el.dataset['shelf'];
       if (!shelfId) return;
       // §6.3：长按货架标题进入分区编辑（也保留了右上角的"分区"按钮，鼠标党不用长按）
-      attachLongPress(el, () => this.sheet.open(shelfId));
+      this.longPressDetachers.push(attachLongPress(el, () => this.sheet.open(shelfId)));
     });
   }
 
@@ -286,6 +314,19 @@ export class OrganizeScreen {
         onDragEnd: (point) => this.endDrag(point)
       });
     });
+  }
+
+  private readonly onClickBound = (e: MouseEvent): void => this.onDelegatedClick(e);
+
+  /**
+   * 长按监听器挂在 window 上，不会随货架重绘自动消失 —— 每次重绘都要先把上一批摘掉。
+   * （M0 时期货架只重绘几次，泄漏看不出来；M1 每次放好一件都会重绘，必须收干净。）
+   */
+  private longPressDetachers: (() => void)[] = [];
+
+  private clearLongPressBindings(): void {
+    for (const detach of this.longPressDetachers) detach();
+    this.longPressDetachers = [];
   }
 
   private onDelegatedClick(e: MouseEvent): void {
@@ -311,12 +352,18 @@ export class OrganizeScreen {
         return;
       case 'mute': {
         setMuted(!isMuted());
-        const label = this.dockEl.querySelector('[data-mute-label]');
+        const label = this.root.querySelector('[data-mute-label]');
         if (label) label.textContent = isMuted() ? '已静音' : '静音';
         return;
       }
+      case 'go-out':
+        this.props.onGoOut();
+        return;
+      case 'end-day':
+        this.props.onEndDay();
+        return;
       case 'restart':
-        if (window.confirm('重开一局会清空当前这一间仓库，确定吗？')) this.props.onRestart();
+        if (window.confirm('重开一局会清空这一局的所有进度（物资、分区、现金），确定吗？')) this.props.onRestart();
         return;
       default:
         return;

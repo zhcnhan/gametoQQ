@@ -135,7 +135,31 @@ export function buildView(store: GameStore, session: OrganizeSession): OrganizeV
   };
 }
 
-/** 全房间物资合计（顶部台账条用） */
+/**
+ * 全副家当：货架上的 **+ 还没拆的箱子里的**。
+ *
+ * 与 inventoryTotals 的分工（两个数都要，不能合并成一个）：
+ *  - inventoryTotals = "我已经摆好了多少"，整理界面的台账条看它，所以只数货架；
+ *  - householdTotals = "这一局我总共囤到了多少"，结算界面看它 —— 没拆的箱子当然也是我的货，
+ *    否则一个囤了 20 箱却懒得拆的玩家会在结算页看到"在库 0 件"。
+ */
+export function householdTotals(run: RunState): { stacks: number; pieces: number; weight: number } {
+  const onShelf = inventoryTotals(run);
+  let stacks = onShelf.stacks;
+  let pieces = onShelf.pieces;
+  let weight = onShelf.weight;
+  for (const box of run.boxesToUnpack) {
+    for (const stack of box.items) {
+      stacks += 1;
+      const n = stackCount(stack);
+      pieces += n;
+      weight += getItemDef(stack.itemId).unitWeight * n;
+    }
+  }
+  return { stacks, pieces, weight: Math.round(weight * 100) / 100 };
+}
+
+/** 全房间物资合计（顶部台账条用：只算已上架的） */
 export function inventoryTotals(run: RunState): { stacks: number; pieces: number; weight: number } {
   let stacks = 0;
   let pieces = 0;

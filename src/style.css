@@ -415,6 +415,16 @@ body::before {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
   gap: 8px;
+  /*
+   * 限高 + 内部滚动。M0 固定 3 箱时看不出问题，M1 一天就能带回 3 箱、
+   * 一路攒到 20 箱 —— 不限高的话底部操作台会顶穿屏幕，把货架整个挤出视野，
+   * 而"拆箱"正是这个界面最该被看见的事。留两行的高度。
+   */
+  max-height: 170px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding-right: 2px;
 }
 
 .box {
@@ -1005,4 +1015,594 @@ body::before {
     animation-duration: 60ms !important;
     transition: none !important;
   }
+}
+
+/* ================================================================
+ * M1 囤货期
+ * 复用 M0 的纸/墨/朱红三色与圆角刻度；新增的只是版式容器。
+ * 每一条都按 320px 竖屏反推过宽度，不给任何元素留"只能靠 overflow 藏起来"的余地。
+ * ================================================================ */
+
+button:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+.btn-primary:disabled {
+  background: var(--ink-40);
+}
+
+/* ———————— 通用：可滚动正文 / 段落块 ———————— */
+
+.scroll {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  padding: 12px 12px 16px;
+  position: relative;
+  z-index: 2;
+}
+
+.block {
+  padding: 0 0 4px;
+}
+
+.block + .block {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1.5px dashed var(--ink-16);
+}
+
+.block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.block-title {
+  margin: 0 0 8px;
+  font-family: 'Songti SC', 'STSong', Georgia, serif;
+  font-size: 16px;
+  letter-spacing: 0.05em;
+}
+
+.block-head .block-title {
+  margin-bottom: 0;
+}
+
+.block-note {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-70);
+}
+
+.block-note.strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.block-note b {
+  color: var(--vermilion);
+  font-weight: 700;
+}
+
+/* 顶栏右侧的小工具与小标签 */
+.topbar-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.topbar-row .title {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.topbar-tools {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.topbar-tools .mini {
+  min-height: 34px;
+  padding: 0 10px;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  padding: 4px 10px;
+  border: 1.5px solid var(--ink);
+  border-radius: 999px;
+  background: var(--card);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.pill b {
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ———————— 开局：身份卡 ———————— */
+
+.identity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.identity-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  min-height: 112px;
+  padding: 12px;
+  border: 2.5px solid var(--ink);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  box-shadow: 3px 3px 0 var(--ink-08);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform var(--fast) var(--ease-out);
+}
+
+.identity-card:active {
+  transform: translateY(1px);
+}
+
+.identity-card.is-active {
+  border-color: var(--vermilion);
+  box-shadow: 3px 3px 0 rgba(200, 55, 45, 0.2);
+}
+
+.identity-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.identity-name {
+  font-family: 'Songti SC', 'STSong', Georgia, serif;
+  font-size: 17px;
+  letter-spacing: 0.04em;
+}
+
+.identity-picked {
+  color: var(--vermilion);
+}
+
+.identity-picked .ico {
+  width: 18px;
+  height: 18px;
+}
+
+.identity-tagline {
+  font-size: 12px;
+  color: var(--ink-70);
+}
+
+.identity-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.identity-stats > span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--ink-16);
+  border-radius: var(--radius-sm);
+  background: var(--paper-2);
+}
+
+.identity-stats i {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--ink-70);
+}
+
+.identity-stats b {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.identity-perk {
+  padding-left: 8px;
+  border-left: 6px solid var(--vermilion);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* ———————— 先知日历 ———————— */
+
+.calendar-strip {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 66px;
+  margin-top: 10px;
+  padding: 0 2px 2px;
+  border-bottom: 2px solid var(--ink);
+}
+
+.cal-bar {
+  flex: 1 1 0;
+  min-width: 0;
+  height: calc(4px + var(--sev, 0) * 52px);
+  border-radius: 2px 2px 0 0;
+  background: var(--ink-40);
+}
+
+.cal-bar.is-before {
+  background: var(--ink-16);
+}
+
+.cal-bar.is-dday {
+  background: var(--vermilion);
+}
+
+.cal-axis {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 5px;
+  font-size: 11px;
+  color: var(--ink-70);
+  font-variant-numeric: tabular-nums;
+}
+
+.cal-axis-mid {
+  color: var(--vermilion);
+  font-weight: 700;
+}
+
+/* ———————— 扫货：车载计量条 ———————— */
+
+.loadbar {
+  position: relative;
+  height: 22px;
+  margin-top: 9px;
+  border: 1.5px solid var(--ink);
+  border-radius: 999px;
+  background: var(--card);
+  overflow: hidden;
+}
+
+.loadbar-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: calc(var(--fill, 0) * 100%);
+  background: var(--ink);
+  opacity: 0.16;
+}
+
+.loadbar-text {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ———————— 扫货：点位列表 ———————— */
+
+.shop-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.shop-card {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  min-height: 84px;
+  padding: 12px;
+  border: 2.5px solid var(--ink);
+  border-radius: var(--radius-lg);
+  background: var(--paper-3);
+  box-shadow: 3px 3px 0 var(--ink-08);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform var(--fast) var(--ease-out);
+}
+
+.shop-card:active {
+  transform: translateY(1px);
+}
+
+.shop-card.is-visited {
+  background: var(--paper-2);
+}
+
+.shop-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.shop-name {
+  font-family: 'Songti SC', 'STSong', Georgia, serif;
+  font-size: 17px;
+  letter-spacing: 0.05em;
+}
+
+.shop-flag {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  border: 1.5px solid var(--ink-40);
+  border-radius: 999px;
+  font-size: 10px;
+  color: var(--ink-70);
+  transform: rotate(-2deg);
+}
+
+.shop-blurb {
+  font-size: 12px;
+  color: var(--ink-70);
+}
+
+.shop-meta {
+  font-size: 11px;
+  color: var(--ink-40);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ———————— 扫货：货架 ———————— */
+
+.goods {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.good {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 60px;
+  padding: 4px 6px 4px 10px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
+.good.is-out {
+  opacity: 0.42;
+}
+
+.good-icon {
+  flex: 0 0 auto;
+  color: var(--ink);
+}
+
+.good-icon .ico {
+  width: 24px;
+  height: 24px;
+}
+
+/* min-width:0 是关键：没有它，长名字会把右边的加减器挤出屏幕 */
+.good-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.good-text b {
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.good-text em {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--ink-70);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stepper {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* 56px 是硬约束（提示词 0 第 7 条），加减各一个，数字留给中间 */
+.step {
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  background: #fff;
+  color: inherit;
+  font: inherit;
+  font-size: 20px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform var(--fast) var(--ease-out);
+}
+
+.step:active {
+  transform: scale(0.94);
+}
+
+.step-count {
+  width: 34px;
+  text-align: center;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ———————— 扫货：底部购物车 ———————— */
+
+.cart-bar {
+  padding: 7px 10px;
+  border: 2px solid var(--ink);
+  border-radius: 14px;
+  background: var(--card);
+}
+
+.cart-sum {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.cart-sum b {
+  font-size: 13px;
+}
+
+.cart-sum em {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--ink-70);
+  font-variant-numeric: tabular-nums;
+}
+
+.cart-line {
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--ink-70);
+}
+
+.cart-line.is-problem {
+  color: var(--vermilion);
+}
+
+/* ———————— 结算 ———————— */
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px 10px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+}
+
+.stat i {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--ink-70);
+}
+
+.stat b {
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+}
+
+.score-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.score-row {
+  display: grid;
+  grid-template-columns: 5.4em minmax(0, 1fr) 5.6em;
+  grid-template-areas:
+    'name bar value'
+    'explain explain explain';
+  align-items: center;
+  gap: 4px 8px;
+  padding: 10px 0;
+  border-bottom: 1px dashed var(--ink-16);
+}
+
+.score-row-name {
+  grid-area: name;
+  font-size: 12px;
+  color: var(--ink-70);
+}
+
+.score-row-bar {
+  grid-area: bar;
+  position: relative;
+  height: 10px;
+  border: 1.5px solid var(--ink);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.score-row-bar > i {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: calc(var(--fill, 0) * 100%);
+  background: var(--vermilion);
+}
+
+.score-row-value {
+  grid-area: value;
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 4px;
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.score-row-value em {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--ink-70);
+}
+
+.score-row-explain {
+  grid-area: explain;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-70);
+}
+
+.score-row.is-pending .score-row-value {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink-40);
 }

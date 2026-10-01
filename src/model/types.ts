@@ -39,13 +39,34 @@ export interface DayForecast {
   hint: string;
 }
 
+/**
+ * 身份天赋规则（相对 §7 的一处新增，理由）：
+ * §7 的 `perk` 是 string，例如 '加油站夜班：燃料价格 -20%' —— 那是写给策划案读者看的注释，
+ * 不是可执行的规则，systems/ 没法据此算折扣。要让天平真的倾斜就必须结构化。
+ * 处理：`perk` 原样保留（继续当 UI 展示文案），另加 `perkRule` 给 systems 执行。
+ */
+export type PerkRule =
+  | { kind: 'none' }
+  /** 指定品类打折：rate = 0.15 表示便宜 15% */
+  | { kind: 'categoryDiscount'; categories: CategoryId[]; rate: number };
+
 export interface IdentityDef {
   // 随机身份
   id: string;
   name: string;
+  /** 一句话人设，开局卡上显示 */
+  tagline: string;
   startCash: number;
   vehicleCapacity: number;
+  /**
+   * 单趟手提上限（kg）—— 相对 §7 的新增，理由：
+   * §6.2 的"三约束"点名了「背负重」，但 §7 的 IdentityDef 只给了 vehicleCapacity，落不了地。
+   * 按已拍板的分工：carryLimit 决定"一次能从货架搬多少上车"（0 行动点，纯物理闸门），
+   * vehicleCapacity 决定"这一整天总共能带回家多少"。
+   */
+  carryLimit: number;
   perk: string; // '加油站夜班：燃料价格 -20%'
+  perkRule: PerkRule;
 }
 
 export interface NpcDef {
@@ -64,7 +85,46 @@ export interface HelpRequestDef {
   declineTrust: number; // 婉拒的关系变化（负值）
 }
 
+/** 囤货期点位（§6.2：MVP 取 3 个 —— 超市 / 药店 / 五金店） */
+export type ShopId = 'supermarket' | 'pharmacy' | 'hardware';
+
+export interface ShopOfferDef {
+  itemId: string;
+  /** 库存基数：当天实际库存会在 base±1 之间种子化抖动 */
+  stock: number;
+}
+
+export interface ShopDef {
+  id: ShopId;
+  name: string;
+  /** 一句话点位描述（点位列表上显示） */
+  blurb: string;
+  /** 价格系数：同一件物资在五金店比超市贵 */
+  priceFactor: number;
+  offers: ShopOfferDef[];
+}
+
 // ============ 运行时状态（model/） ============
+
+/**
+ * 某点位"今天"的一行货（种子化生成后落盘）。
+ * 为什么必须落盘而不是每次现算：库存要在玩家回家整理、刷新页面之后仍然是同一批 ——
+ * 现算会让 RNG 游标被渲染/刷新次数影响，"同 seed 同结果"当场失效。
+ */
+export interface ShopStockLine {
+  itemId: string;
+  /** 当天单价（已含点位系数与身份折扣） */
+  price: number;
+  /** 今天还剩几件 */
+  stock: number;
+}
+
+export interface ShopDayStock {
+  shopId: string;
+  /** 这份库存属于哪一天（囤货期为负），用于读档后校验是否该换天 */
+  day: number;
+  lines: ShopStockLine[];
+}
 
 export interface ItemBatch {
   expiresAtDay: number | null;
@@ -123,7 +183,11 @@ export type GamePhase =
 export interface RunState {
   // 当局存档
   phase: GamePhase;
-  day: number; // 囤货期为负（-30..-1），生存期为正
+  /**
+   * 囤货期为负（-7..-1，M1 的 7 天），0 = D-Day（灾难降临日，只演出不操作），生存期为 1..7。
+   * M0 的旧档把 day 恒写成 0 表示"整理中"，迁移时按"囤货期最后一天"处理（v3 → v4）。
+   */
+  day: number;
   identityId: string;
   disasterId: string;
   cash: number;
@@ -133,10 +197,29 @@ export interface RunState {
   stats: { health: number; mood: number; stamina: number; shelter: number };
   trust: Record<string, number>; // npcId → 关系值
   deliveredOrders: number;
-  log: string[]; // 日报流水
+  log: string[]; // 日报流水（每条自带 'D-7 · ' 前缀，阶段 E 的日报按前缀分组）
 
   /** 种子游标：一切随机都从这里续着往下走（提示词 0 硬性要求 seed 落盘） */
   seed: number;
+
+  // ———————— M1 囤货期（阶段 A） ————————
+
+  /** 当天剩余行动点（每天重置为 ACTION_POINTS_PER_DAY） */
+  actionPoints: number;
+  /**
+   * 当天已经"搬上车"的总重量（kg）—— 受车载容量约束，回家时清零。
+   * 注意它与 boxesToUnpack 不冗余：箱子是"已经买到的货"，carLoad 只回答"今天还能再装几公斤"。
+   */
+  carLoad: number;
+  /** 当天各点位的库存快照（种子化生成，随存档落盘） */
+  shopStocks: ShopDayStock[];
+  /** 今天已经进过哪几个店门（只用于界面标记"今天去过了"，不禁止再去） */
+  visitedShopIds: string[];
+  /**
+   * 正站在哪个点位的货架前（null = 在外面的点位列表上）。
+   * 落盘的理由是 §4A「恢复即续玩」：刷新后必须回到同一个货架前，而不是退回点位列表让玩家再点一次。
+   */
+  currentShopId: string | null;
 }
 
 export interface MetaProfile {
