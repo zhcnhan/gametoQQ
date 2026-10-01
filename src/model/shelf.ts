@@ -5,7 +5,7 @@
  * 所有函数返回**新的** Shelf，不改入参 —— 配合原子存档，任何中间状态都能整份写盘。
  */
 import { getItemDef } from '../data/items';
-import type { ItemDef, ItemStack, Shelf, Slot, SlotPos, UnpackBox, Zone } from './types';
+import type { CategoryId, ItemDef, ItemStack, Shelf, Slot, SlotPos, UnpackBox, Zone } from './types';
 
 export const SHELF_W = 6;
 export const SHELF_H = 4;
@@ -33,7 +33,8 @@ export function createShelf(
     for (let c = 0; c < w; c++) row.push({ stack: null });
     slots.push(row);
   }
-  return { id, roomId, kind, w, h, slots, zoneId };
+  // handyRank 开局一律 null：门口是哪块，由玩家在整理页自己指认（§5）
+  return { id, roomId, kind, w, h, slots, zoneId, handyRank: null };
 }
 
 export function cloneShelf(shelf: Shelf): Shelf {
@@ -397,6 +398,44 @@ export function placementRate(
   // 纸箱里的每一堆都是"还没被安置"的，它们算分母、不算分子
   for (const box of boxes) total += box.items.length;
   return total === 0 ? 1 : ok / total;
+}
+
+/**
+ * 顺手位有几块：**全屋唯一**（§12.3 v0.7.1，玩家拍板）。
+ *
+ * 最初按"门口那两块"做成了上限 2，玩家实测后指出：能标两块就会有人全标上 ——
+ * 而且门口那块本该只有一个答案。唯一化之后它才是一个真的取舍：
+ * 24 格要同时装下燃料（15 格）和药，就必然有东西挤不进顺手位。
+ */
+export const HANDY_SLOTS = 1;
+
+/** 顺手位货架，按顺位从先到后（`1` = 门口那块） */
+export function handyShelves(shelves: readonly Shelf[]): Shelf[] {
+  return shelves
+    .filter((s) => s.handyRank !== null)
+    .sort((a, b) => (a.handyRank ?? 0) - (b.handyRank ?? 0));
+}
+
+/**
+ * 某品类在**顺手位**货架上一共有多少件（只数货架，纸箱里的显然不在顺手位）。
+ *
+ * 它是两处的共同输入，所以必须只有一个实现：
+ *  · §6.3 的第三维「应急可达率」—— 急用品有多大比例放在顺手位；
+ *  · 生存期结算里"体力见底的时候，哪些还够得到"。
+ *
+ * 两处各写一份的话，玩家会看到"应急率 100% 但翻不动时还是拿不到药"这种自相矛盾。
+ */
+export function countOnHandy(shelves: readonly Shelf[], category: CategoryId): number {
+  let total = 0;
+  for (const shelf of handyShelves(shelves)) {
+    for (const pos of readingOrder(shelf)) {
+      const stack = getStack(shelf, pos);
+      if (!stack) continue;
+      if (getItemDef(stack.itemId).category !== category) continue;
+      total += stackCount(stack);
+    }
+  }
+  return total;
 }
 
 /**

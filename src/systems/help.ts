@@ -21,6 +21,7 @@
  * systems/ 层纪律：不碰任何浏览器 API。
  */
 import { getBoxDef } from '../data/boxes';
+import { getDisasterDef } from '../data/disaster';
 import { HELP_REQUEST_CHANCE, HELP_REQUEST_DEFS, findHelpRequestDef, type HelpRequestDef } from '../data/helpRequests';
 import { CATEGORY_LABELS } from '../data/items';
 import { getNpcDef } from '../data/npcs';
@@ -86,7 +87,7 @@ export function inspectRequest(run: RunState, def: HelpRequestDef): HelpShortfal
  * 体力见底的人会在这里被拦住，而那正是"没整理 + 没力气"该有的后果。
  */
 export function searchCost(run: RunState, def: HelpRequestDef): number {
-  const score = computeOrganizeScore(run.shelves, run.zones, run.boxesToUnpack);
+  const score = computeOrganizeScore(run.shelves, run.zones, run.boxesToUnpack, getDisasterDef(run.disasterId));
   return workCostOf(score.placement, score.fefo, inspectRequest(run, def).pieces);
 }
 

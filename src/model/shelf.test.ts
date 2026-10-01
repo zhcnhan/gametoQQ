@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { getDisasterDef } from '../data/disaster';
 import {
   autoPlace,
   canAccept,
@@ -196,7 +197,7 @@ describe('归位率与整理评分', () => {
   });
 
   it('空房间：归位率宽容为 1（不出生就给人 0%），但 FEFO 率是 0（一块货架都没用上 = 还没开始排）', () => {
-    const score = computeOrganizeScore([shelf()], zones);
+    const score = computeOrganizeScore([shelf()], zones, [], getDisasterDef('cold_snap'));
     expect(score.placement).toBe(1);
     // ★ M1 手测修正：这里原来是 1，导致"囤了 17 箱一口没拆、货架全空"的人
     // 依然拿着 100% 的临期优先 —— 而它还是生存期体力劳作质量的输入之一。
@@ -208,7 +209,7 @@ describe('归位率与整理评分', () => {
   it('整整齐齐 = FEFO 达标 + 分区全接收', () => {
     const shelfA = createShelf('tidy', 'room_living', 'shelf', 2, 1, 'z_food');
     const withItems = dropStack(shelfA, { row: 0, col: 0 }, makeStack('canned_beans', 2, 400)) as Shelf;
-    const score = computeOrganizeScore([withItems], zones);
+    const score = computeOrganizeScore([withItems], zones, [], getDisasterDef('cold_snap'));
     expect(score.tidyShelfIds).toEqual(['tidy']);
   });
 });

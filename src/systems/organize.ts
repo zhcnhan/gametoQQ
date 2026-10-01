@@ -6,6 +6,7 @@
  * 由本文件返回的 OrganizeEvent 描述，交给 fx/ 与 ui/ 去演。
  */
 import { getBoxDef, STRAY_BOX_ID } from '../data/boxes';
+import { getDisasterDef } from '../data/disaster';
 import { CATEGORY_ORDER, getItemDef } from '../data/items';
 import { DEFAULT_ZONE_COLOR } from '../data/palette';
 import {
@@ -43,6 +44,8 @@ export type OrganizeEvent =
   | { type: 'zoneUpdated'; shelfId: string }
   /** 撕下一张胶带（affected = 一起被取下的货架数，供提示文案用） */
   | { type: 'zoneRemoved'; shelfId: string; name: string; affected?: number }
+  /** 顺手位被标记 / 取消（§5 的"门口那一块"，全屋唯一） */
+  | { type: 'handyChanged'; shelfId: string; rank: number | null }
   | { type: 'rejected'; reason: string };
 
 export interface CommandResult {
@@ -131,7 +134,7 @@ export function buildView(store: GameStore, session: OrganizeSession): OrganizeV
     boxes: buildBoxViews(run),
     held: session.held,
     // 归位率把还没拆的纸箱算进分母：它们同样是"还没被安置的货"
-    score: computeOrganizeScore(run.shelves, run.zones, run.boxesToUnpack),
+    score: computeOrganizeScore(run.shelves, run.zones, run.boxesToUnpack, getDisasterDef(run.disasterId)),
     tidyShelfIds: [...session.tidyShelfIds]
   };
 }
@@ -516,6 +519,40 @@ function writeZoneRule(zone: Zone, categories: CategoryId[]): void {
     return;
   }
   zone.autoAccept = { categories: [...categories] };
+}
+
+// ———————— 命令：顺手位（"门口那一块"，全屋唯一） ————————
+
+/**
+ * 把一块货架标成顺手位 / 取消（§5「应急货架（门口/最顺手位）」+ §6.3 的应急可达率）。
+ *
+ * **全屋唯一**（§12.3 v0.7.1 玩家拍板）：标第二块时旧的那块自动让位 ——
+ * radio 语义，不是"最多 N 块"的配额。做成自动让位而不是弹拒绝，是因为
+ * "先撤旧的、再标新的"是两步无意义的操作；换标记的意图本来就一目了然。
+ * （存档层 `normalizeShelves` 仍按 `HANDY_SLOTS` 钳制，手改出来的多标记会被清掉。）
+ *
+ * 为什么是"标记"而不是"拖动排序"：整理页的货架是网格，长按拖动会和滚动打架，
+ * 而 §4A 要求每个动作都能被中途打断。点一下表达的是同一件事，却不需要一个新手势。
+ */
+export function toggleHandy(store: GameStore, shelfId: string): CommandResult {
+  const run = store.run;
+  const idx = run.shelves.findIndex((s) => s.id === shelfId);
+  const shelf = idx >= 0 ? run.shelves[idx] : undefined;
+  if (!shelf) return reject('货架不存在');
+
+  const current = shelf.handyRank;
+  store.commit((draft) => {
+    const target = draft.shelves[idx];
+    if (!target) return;
+    if (current !== null) {
+      target.handyRank = null;
+    } else {
+      for (const s of draft.shelves) s.handyRank = null;
+      target.handyRank = 1;
+    }
+  });
+
+  return ok([{ type: 'handyChanged', shelfId, rank: store.run.shelves[idx]?.handyRank ?? null }]);
 }
 
 /** 把胶带贴到货架上；zoneId = null 表示"撕下"（这张胶带没人用了就自己消失） */

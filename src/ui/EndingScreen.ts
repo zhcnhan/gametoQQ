@@ -50,10 +50,11 @@ export class EndingScreen implements Screen {
   render(): void {
     const run = this.store.run;
     const disaster = getDisasterDef(run.disasterId);
-    const score = computeOrganizeScore(run.shelves, run.zones, run.boxesToUnpack);
+    const score = computeOrganizeScore(run.shelves, run.zones, run.boxesToUnpack, getDisasterDef(run.disasterId));
     const totals = householdTotals(run);
     const placement = toPercent(score.placement);
     const fefo = toPercent(score.fefo);
+    const emergency = toPercent(score.emergency);
     const collapsed = run.outcome === 'collapsed';
     const survived = run.outcome === 'survived';
     // 倒下的那天就是"走到哪儿"；撑满时 run.day 正好等于 SURVIVAL_DAYS
@@ -102,6 +103,7 @@ export class EndingScreen implements Screen {
                 unreachablePieces: run.survival.unreachablePieces
               })
             )}</p>
+            ${collapsed ? lastDayStrip(run) : ''}
             ${trustNote(run) ? `<p class="block-note">${escapeHtml(trustNote(run))}</p>` : ''}
             <p class="block-note">${escapeHtml(contrastNote(run, disaster))}</p>
           </section>
@@ -111,12 +113,7 @@ export class EndingScreen implements Screen {
             <div class="score-rows">
               ${this.scoreRow('归位率', placement, '你自己给胶带写的清单，东西有没有照放 —— 它决定每天找东西要花多少体力')}
               ${this.scoreRow('临期优先', fefo, '同架按到期日排好没有 —— 越快到期的越靠前，也越先被用掉')}
-              <!-- DEFERRED(D-05): §6.3 的第三个维度「应急可达率」还没做。
-                   它卡在 D-06（Shelf 没有"离门多近"这个信息）上，不是卡在算分公式上。 -->
-              <div class="score-row is-pending">
-                <span class="score-row-name">应急可达率</span>
-                <span class="score-row-value">随 M2 实装</span>
-              </div>
+              ${this.scoreRow('应急可达率', emergency, '急用的东西有没有放在顺手位 —— 体力见底的那天，只有它们还够得到')}
             </div>
             ${
               score.tidyShelfIds.length > 0
@@ -170,6 +167,26 @@ export class EndingScreen implements Screen {
  * 数据其实没错（每天确实都短了点东西，但没短到垮掉），错的是没人把它们串起来。
  * 玩家看到四个互不相干的数，只能自己猜；而结算页只该回答一个问题：**这一局栽在哪。**
  */
+/**
+ * 「没撑住」的死亡记录（§12.3 v0.7）：把**最后一天**的样子原样摆出来。
+ *
+ * 全案不许说教（§5 引擎①），但事实本身够重了 —— "缺 3 件 · 有 2 件就在屋里没翻出来 ·
+ * 硬撑连续第 6 天"这三行数字摆在「撑过 N 天」旁边，比任何判词都疼。
+ * 它同时是可行动的：下一局该补哪一样，玩家自己读得出来。
+ */
+function lastDayStrip(run: RunState): string {
+  const last = run.survival.last;
+  const bits: string[] = [];
+  if (last.shortage > 0) bits.push(`缺 ${last.shortage} 件`);
+  if (last.unreachable > 0) bits.push(`有 ${last.unreachable} 件就在屋里，没翻出来`);
+  bits.push(`翻找花掉 ${last.workCost} 点体力（整整齐齐的屋子只要 4.5）`);
+  if (run.survival.hardPressStreak > 0) {
+    bits.push(`硬撑连续第 ${run.survival.hardPressStreak} 天`);
+  }
+  if (last.usedMedicine > 0) bits.push(`最后那晚还吃上了 ${last.usedMedicine} 件药`);
+  return `<p class="block-note strong is-collapsed">最后一天：${escapeHtml(bits.join(' · '))}。</p>`;
+}
+
 function runStory(input: {
   survived: boolean;
   lasted: number;

@@ -54,6 +54,26 @@ export const BASE_DRAIN: Readonly<Partial<Record<CategoryId, number>>> = { food:
 /** 睡一觉恢复的体力 */
 export const STAMINA_RECOVER = 12;
 
+// ———————— 庇护所的下游（§12.3 v0.7） ————————
+
+/**
+ * 庇护所跌破这条线 = **睡不踏实**，睡觉只回一半体力。
+ *
+ * 这之前庇护所是个**没有下游的数字**：每天被磨损、被棉被修回来，不参与任何判定 ——
+ * 棉被（warmth）在 §8 里挂着"寒潮刚需"的名头，实际囤了毫无用途。
+ * 接上睡眠之后，因果才闭合：屋子冷 → 睡不好 → 体力回不满 → 第二天更翻不动。
+ *
+ * 刻意用**阈值**而不是线性衰减：阈值是玩家能记住的一句话（"庇护所别让它掉下 40"），
+ * 线性公式 nobody 能在脑子里算。也刻意不碰健康 —— 屋子冷不该直接伤人，
+ * 它伤的是你明天还有没有力气。
+ */
+export const SHELTER_SLEEP_LINE = 40;
+
+/** 今晚能睡回多少体力。判定用的是**入夜前**的庇护所值（见 systems/survival.ts 的调用位置） */
+export function sleepRecoverAt(shelter: number): number {
+  return shelter < SHELTER_SLEEP_LINE ? STAMINA_RECOVER / 2 : STAMINA_RECOVER;
+}
+
 /**
  * 体力跌破这条线 = **翻不动了**。
  *

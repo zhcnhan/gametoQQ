@@ -56,18 +56,26 @@ function bareRun(seed = 20261001): RunState {
  * 一堆塞满就换下一格 —— 取 `stackLimit` 而不是硬编码，改物资表时这里不会失效。
  */
 function stockFor(run: RunState, days: number): void {
-  const shelf = run.shelves[0];
-  if (!shelf) throw new Error('开局没有货架');
-  let at = 0;
+  // §12.3 v0.7 之后要备 15 天的口粮：燃料一格只能叠 2 罐，光 shelf_a（24 格）放不下，
+  // 所以按"货架列表游标"铺，塞满一块换下一块 —— 对用例来说仍然是"备足 N 天"一句话
+  const cursors = run.shelves.map((shelf) => ({ shelf, at: 0 }));
+  const nextSlot = () => {
+    for (const c of cursors) {
+      if (c.at < c.shelf.w * c.shelf.h) {
+        const pos = { row: Math.floor(c.at / c.shelf.w), col: c.at % c.shelf.w };
+        c.at += 1;
+        return { shelfId: c.shelf.id, pos };
+      }
+    }
+    throw new Error('所有货架都放不下测试用的口粮');
+  };
   for (const itemId of ['canned_beans', 'mineral_water', 'fuel_can']) {
     let left = days * 2;
     while (left > 0) {
-      if (at >= shelf.w * shelf.h) throw new Error('这块货架放不下测试用的口粮');
-      const pos = { row: Math.floor(at / shelf.w), col: at % shelf.w };
+      const slot = nextSlot();
       const take = Math.min(left, getItemDef(itemId).stackLimit);
-      put(run, shelf.id, pos, itemId, take, null);
+      put(run, slot.shelfId, slot.pos, itemId, take, null);
       left -= take;
-      at += 1;
     }
   }
 }
@@ -86,27 +94,40 @@ function resolveHelpIfAny(store: GameStore): void {
   declineRequest(store);
 }
 
-/** 找这块货架上第一个空格（测试用；找不到就抛，免得用例静默地什么都没测到） */
-function freePos(run: RunState, shelfId: string): SlotPos {
-  const shelf = run.shelves.find((s) => s.id === shelfId);
-  if (!shelf) throw new Error(`没有货架 ${shelfId}`);
-  for (let row = 0; row < shelf.h; row++) {
-    for (let col = 0; col < shelf.w; col++) {
-      if (shelf.slots[row]?.[col]?.stack === null) return { row, col };
+/**
+ * 找第一个空格（测试用；找不到就抛，免得用例静默地什么都没测到）。
+ * 不传 `shelfId` = 全屋按货架顺序找 —— §12.3 v0.7 之后 stockFor 会把 shelf_a 铺满，
+ * 单测里补放的那件药/被经常落在后面的货架上。
+ */
+function freePos(run: RunState, shelfId?: string): { shelfId: string; pos: SlotPos } {
+  const shelves = shelfId ? run.shelves.filter((s) => s.id === shelfId) : run.shelves;
+  for (const shelf of shelves) {
+    for (let row = 0; row < shelf.h; row++) {
+      for (let col = 0; col < shelf.w; col++) {
+        if (shelf.slots[row]?.[col]?.stack === null) return { shelfId: shelf.id, pos: { row, col } };
+      }
     }
   }
-  throw new Error(`货架 ${shelfId} 满了`);
+  throw new Error(`没有空格（${shelfId ?? '全屋'}）`);
 }
 
 /**
  * 直接落在 D-Day 上。
  *
- * 默认**备足 8 天的口粮** —— 这一组用例关心的是"日历怎么走、命令收不收账"，
+ * 默认**备足 15 天的口粮** —— 这一组用例关心的是"日历怎么走、命令收不收账"，
  * 不是"人会不会饿死"。断粮与倒下是另外的用例，它们自己造空货架。
+ *
+ * `tidy = true` 时再给每块货架贴一张"什么都收"的胶带 —— 要一路点满 14 天的用例
+ * 必须用它：不贴胶带的屋子每天净掉 7.8 体力，走到 D+13 就累死了（这正是 v0.7 的本意，
+ * 但那些用例要测的是日历，不是这个）。数值断言（19.8 那组）仍然用默认的乱档。
  */
-function storeAtDDay(seed = 20261001, days = SURVIVAL_DAYS + 1): GameStore {
+function storeAtDDay(seed = 20261001, days = SURVIVAL_DAYS + 1, tidy = false): GameStore {
   const run = bareRun(seed);
   stockFor(run, days);
+  if (tidy) {
+    run.zones = [{ id: 'zone_all', name: '全收', color: '#000000' }];
+    run.shelves = run.shelves.map((s) => ({ ...s, zoneId: 'zone_all' }));
+  }
   run.phase = 'survival_day';
   run.day = 0;
   return new GameStore(createSaveGame(run), createSaveSchedulerStub());
@@ -399,8 +420,8 @@ describe('生存期命令与状态机', () => {
     expect(store.run.day).toBe(1);
   });
 
-  it('过一天：day +1 并结算；第 7 天之后再推进 → ending', () => {
-    const store = storeAtDDay();
+  it('过一天：day +1 并结算；第 14 天之后再推进 → ending', () => {
+    const store = storeAtDDay(20261001, SURVIVAL_DAYS + 1, true);
     startSurvival(store);
     resolveHelpIfAny(store);
     for (let day = 1; day < SURVIVAL_DAYS; day++) {
@@ -461,7 +482,8 @@ describe('M1 平衡改造：整理质量真的会变成体力，撑不住真的�
   it('健康跌破触发线会自动开药箱，补到线上就停（不吃冤枉药）', () => {
     const run = bareRun();
     stockFor(run, SURVIVAL_DAYS + 1);
-    put(run, 'shelf_a', freePos(run, 'shelf_a'), 'bandage', 1, null);
+    const slot = freePos(run);
+    put(run, slot.shelfId, slot.pos, 'bandage', 1, null);
     run.day = 3;
     run.stats = { health: 65, mood: 60, stamina: 50, shelter: 80 };
 
@@ -476,7 +498,8 @@ describe('M1 平衡改造：整理质量真的会变成体力，撑不住真的�
   it('屋子冷了会自动添被 —— 保暖品终于有用途（§8 寒潮刚需里的 warmth）', () => {
     const run = bareRun();
     stockFor(run, SURVIVAL_DAYS + 1);
-    put(run, 'shelf_a', freePos(run, 'shelf_a'), 'quilt', 1, null);
+    const slot = freePos(run);
+    put(run, slot.shelfId, slot.pos, 'quilt', 1, null);
     run.day = 3; // 强度 0.8 → 庇护所磨损 −6
     run.stats = { health: 90, mood: 60, stamina: 50, shelter: 55 };
 
@@ -575,6 +598,76 @@ describe('硬撑分档：把"下沉"变成看得见的位置（§12.3 v0.6）', 
     expect(report.drains.find((d) => d.category === 'food')?.need).toBe(4); // 2 + 2
     expect(report.drains.find((d) => d.category === 'fuel')?.need).toBe(3); // 2 + 1
     expect(report.hardPressLevel).toBe('collapsing');
+  });
+
+  it('★ 体力见底时，顺手位上的东西是你唯一还够得到的（§5 的应急货架）', () => {
+    const build = (handy: boolean): RunState => {
+      const run = bareRun();
+      // 只备一天的量，全放在同一块货架上
+      put(run, 'shelf_a', { row: 0, col: 0 }, 'canned_beans', 2, null);
+      put(run, 'shelf_a', { row: 0, col: 1 }, 'mineral_water', 2, null);
+      put(run, 'shelf_a', { row: 0, col: 2 }, 'fuel_can', 2, null);
+      run.day = 3;
+      run.stats = { health: 90, mood: 60, stamina: 10, shelter: 80 }; // 10 < EXHAUSTED_STAMINA
+      if (handy) run.shelves = run.shelves.map((s) => (s.id === 'shelf_a' ? { ...s, handyRank: 1 } : s));
+      return run;
+    };
+
+    // 不在顺手位：翻不动，每样只能拿到一半（2 → 1）
+    const plain = settleSurvivalDay(build(false));
+    expect(plain.drains.every((d) => d.taken === 1)).toBe(true);
+
+    // 在顺手位：那块货架上的东西不用翻，照旧全拿得到。
+    // 这就是 §5「应急货架（门口/最顺手位）」在数值上的落点。
+    const handy = settleSurvivalDay(build(true));
+    expect(handy.drains.every((d) => d.taken === 2)).toBe(true);
+  });
+
+  it('★ §12.3 v0.7：同一批货，摆上架活满 14 天，堆在纸箱里活不过 14 天', () => {
+    // 玩家原话："不能任何时候一直点下一天就能完事"。这条用例就是那条诉求的回归测试。
+    const messy = bareRun();
+    messy.boxesToUnpack = [
+      { id: 'b1', defId: 'box_staple', items: [makeStack('instant_noodles', 8, null), makeStack('instant_noodles', 8, null), makeStack('instant_noodles', 8, null), makeStack('instant_noodles', 6, null)] },
+      { id: 'b2', defId: 'box_staple', items: [makeStack('mineral_water', 6, null), makeStack('mineral_water', 6, null), makeStack('mineral_water', 6, null), makeStack('mineral_water', 6, null), makeStack('mineral_water', 6, null)] },
+      { id: 'b3', defId: 'box_mixed', items: Array.from({ length: 15 }, () => makeStack('fuel_can', 2, null)) },
+      { id: 'b4', defId: 'box_medical', items: [makeStack('bandage', 4, null)] },
+      { id: 'b5', defId: 'box_mixed', items: [makeStack('quilt', 1, null), makeStack('quilt', 1, null)] }
+    ];
+    const store = new GameStore(createSaveGame(messy), createSaveSchedulerStub());
+    store.run.day = 0;
+    store.run.phase = 'survival_day';
+    startSurvival(store);
+    resolveHelpIfAny(store);
+
+    let guard = 0;
+    while (store.run.phase === 'survival_day' && guard < 40) {
+      advanceSurvivalDay(store);
+      resolveHelpIfAny(store);
+      guard += 1;
+    }
+    // 物资管够（30/30/30 + 药 + 被）也没用 —— 体力穿底 → 翻不动 → 硬撑爬档 → 健康归零
+    expect(store.run.outcome).toBe('collapsed');
+    expect(store.run.day).toBeLessThan(SURVIVAL_DAYS);
+    expect(store.run.survival.hardPressDays).toBeGreaterThan(0);
+  });
+
+  it('§12.3 v0.7：庇护所跌破 40 → 睡觉只回一半（warmth 终于有了下游）', () => {
+    const build = (shelter: number): RunState => {
+      const run = bareRun();
+      stockFor(run, SURVIVAL_DAYS + 1);
+      run.day = 3;
+      // 体力 60：结算后仍高于硬撑线 40，避开硬撑档对这个对照的干扰
+      run.stats = { health: 90, mood: 60, stamina: 60, shelter };
+      return run;
+    };
+    // 两份只差庇护所：35 的那晚睡不踏实。劳作同为 19.8（quality 0.4 的乱档 6 件）
+    const coldRun = build(35);
+    const warmRun = build(80);
+    const cold = settleSurvivalDay(coldRun);
+    const warm = settleSurvivalDay(warmRun);
+    expect(cold.deltas.stamina).toBeCloseTo(6 - 19.8, 1); // 回一半
+    expect(warm.deltas.stamina).toBeCloseTo(12 - 19.8, 1); // 睡满
+    expect(warmRun.stats.stamina - coldRun.stats.stamina).toBeCloseTo(6, 1);
   });
 
   it('缓过来了连续天数立刻归零（档位算的是连续，不是累计）', () => {

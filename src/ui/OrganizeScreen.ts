@@ -23,6 +23,7 @@ import {
   sortAllByFEFO,
   takeFromBox,
   tapSlot,
+  toggleHandy,
   type CommandResult,
   type OrganizeSession,
   type OrganizeView,
@@ -163,7 +164,9 @@ export class OrganizeScreen {
   private renderScore(view: OrganizeView): void {
     const p = Math.round(view.score.placement * 100);
     const f = Math.round(view.score.fefo * 100);
+    const e = Math.round(view.score.emergency * 100);
     const capacity = this.store.run.shelves.reduce((n, s) => n + s.w * s.h, 0);
+    const handyCount = this.store.run.shelves.filter((s) => s.handyRank !== null).length;
     // 全中文台账。术语解释放 title（鼠标）＋点一下弹提示（手机没 hover，只能点）
     this.scoreEl.innerHTML = `
       <button class="score-item" data-action="explain" data-explain="归位率：你自己给胶带写的清单，东西有没有照放。没写清单的胶带什么都收 —— 规矩你定，只帮你数。" title="你自己给胶带写的清单，东西有没有照放。没写清单的胶带什么都收。">
@@ -171,6 +174,9 @@ export class OrganizeScreen {
       </button>
       <button class="score-item" data-action="explain" data-explain="临期优先：同架按到期日排好没有 —— 越快到期的越靠前，也越先被用掉" title="同架按到期日排好没有：越快到期的越靠前，也越先被用掉">
         <i>临期优先</i><b>${f}%</b>
+      </button>
+      <button class="score-item" data-action="explain" data-explain="应急可达率：急用的东西（这场寒潮里的燃料和药品）放在「顺手位」货架上的比例${handyCount === 0 ? ' —— 你还没标过顺手位，点货架右上角的「顺手位」，全屋只有这一块' : ''}。体力见底那天，只有顺手位上的东西还够得到。" title="急用的东西有没有放在顺手位 —— 体力见底那天，只有顺手位上的还够得到">
+        <i>应急可达</i><b>${e}%</b>
       </button>
       <button class="score-item" data-action="explain" data-explain="已上架：占了 ${view.score.stacks} 个格子，全房间一共 ${capacity} 格" title="已占用 ${view.score.stacks} 个格子，全房间共 ${capacity} 格">
         <i>已上架</i><b>${view.score.stacks}</b>
@@ -206,6 +212,11 @@ export class OrganizeScreen {
             <em class="zone-name${zone ? '' : ' is-none'}">${zone ? escapeHtml(zone.name) : '还没贴'}</em>
           </h2>
           ${tidy ? '<span class="tidy-badge">整整齐齐</span>' : ''}
+          <button class="tape-btn${shelf.handyRank !== null ? ' is-handy' : ''}"
+                  data-action="toggle-handy" data-shelf="${shelf.id}"
+                  title="${shelf.handyRank !== null ? '门口就是这块 —— 再点一下撤下，换别的架' : '把这块标成门口的顺手位（全屋只有这一块）'}">
+            ${shelf.handyRank !== null ? '门口这块' : '顺手位'}
+          </button>
           <button class="tape-btn" data-action="edit-zone" data-shelf="${shelf.id}" aria-label="给这架贴胶带">
             ${iconSvg('tag')}<span>贴标签</span>
           </button>
@@ -347,6 +358,9 @@ export class OrganizeScreen {
         return;
       case 'edit-zone':
         if (shelfId) this.openZoneDrawer(shelfId);
+        return;
+      case 'toggle-handy':
+        if (shelfId) this.consume(toggleHandy(this.store, shelfId));
         return;
       case 'sort':
         this.consume(sortAllByFEFO(this.store, this.session));
@@ -564,6 +578,14 @@ export class OrganizeScreen {
         case 'tidy':
           playSfx('tidy');
           after.push(() => this.tidyOn(ev.shelfId));
+          break;
+        case 'handyChanged':
+          playSfx('pick');
+          // 说清它在哪个顺位 —— "顺手位"是个位置概念，不报顺位等于没说完
+          showToast(
+            this.fxLayer,
+            ev.rank === null ? '从顺手位撤下' : '门口这块 —— 急用的东西放这儿'
+          );
           break;
         case 'zoneUpdated':
           break;

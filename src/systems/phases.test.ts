@@ -66,7 +66,7 @@ describe('开局：prologue → stockpile_shop', () => {
     const store = startedStore(20261001, 'night_shift');
     expect(store.run.phase).toBe('stockpile_shop');
     expect(store.run.identityId).toBe('night_shift');
-    expect(store.run.cash).toBe(680);
+    expect(store.run.cash).toBe(780); // §12.3 v0.7：14 天窗口下的开局现金
     expect(store.run.day).toBe(FIRST_STOCKPILE_DAY);
     expect(store.run.actionPoints).toBe(ACTION_POINTS_PER_DAY);
     expect(store.run.shopStocks.map((s) => s.shopId)).toEqual(SHOP_DEFS.map((s) => s.id));

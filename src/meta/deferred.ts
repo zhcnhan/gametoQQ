@@ -117,23 +117,30 @@ export const DEFERRED_ITEMS: readonly DeferredItem[] = [
     kind: 'code',
     title: '§6.3 第三个维度「应急可达率」未实现',
     impact:
-      '结算页那一行现在写着"随生存期实装"。整理品质目前只有两维（归位率 / 临期优先率），' +
-      '§9.6 承诺的三项百分制少了一项。',
-    plan: '阶段 C/D',
-    markedIn: ['ui/EndingScreen.ts'],
-    status: 'open'
+      '已清偿（M1 阶段 F）。口径：**该灾难的应急物资里，有多大比例放在顺手位上**' +
+      '（应急品类 = 灾难的 `priorityCategories` ∪ 医疗 —— 寒潮那天，一罐燃料比一卷绷带更救命）。' +
+      '分母算全屋、含还没拆的纸箱：躺在箱底的那卷绷带当然不在顺手位，它要翻。' +
+      '它也不只是被印在结算页上：体力见底的那天，顺手位上的东西是你唯一还够得到的。',
+    plan: 'M1 阶段 F',
+    markedIn: [],
+    status: 'done',
+    resolvedIn: 'M1 阶段 F —— model/score.ts 的 emergencyRate + Shelf.handyRank'
   },
   {
     id: 'D-06',
     kind: 'code',
     title: '`Shelf` 没有位置概念（"门口" / "最顺手位"）',
     impact:
-      '§5 写的「应急货架（门口/最顺手位）放急救品 → 突发事件不掉健康」和 D-05 的应急可达率' +
-      '都落不了地 —— 它们缺的是"这块架子离门多近"这个数据，不是算分公式。' +
-      '加字段时要想清楚：是给 Shelf 加一个 accessRank，还是做成玩家可拖动的"顺手顺序"（更有味道，也更贵）。',
-    plan: '阶段 C/D 定方案',
-    markedIn: ['model/types.ts'],
-    status: 'open'
+      '已清偿（M1 阶段 F）。落地方式是 `Shelf.handyRank`：**由玩家自己指认门口那块是哪块货架**' +
+      '（`1`，`null` = 普通），而不是给货架写死一个 `accessRank: number` ——' +
+      '§5 写的就是"门口"，那是玩家心里的一个位置，不该由数值替他决定。' +
+      '**全屋唯一**（§12.3 v0.7.1 玩家拍板）：最初做成"前两顺位"，实测被否 ——' +
+      '"能标两块就会有人全标上"；标第二块时旧的那块自动让位（radio 语义）。' +
+      '**仍未做**：§5 的「突发事件不掉健康」—— M1 还没有突发事件系统，留给 M2。',
+    plan: 'M1 阶段 F',
+    markedIn: [],
+    status: 'done',
+    resolvedIn: 'M1 阶段 F —— Shelf.handyRank + 整理页的「顺手位」标记'
   },
   {
     id: 'D-07',

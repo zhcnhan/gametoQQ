@@ -14,6 +14,9 @@ export const IDENTITY_DEFS: readonly IdentityDef[] = [
     id: 'group_buyer',
     name: '社区团购团长',
     tagline: '手里攥着一整栋楼的需求清单',
+    // §12.3 v0.7.1：v0.7 曾提到 1000，实测"钱太多"回调回 900 —— 燃料调价（30→18）之后
+    // 约束该由价格来做，不该由钱包做。14 天刚需（燃料 616 + 主食 112 + 水 84）≈ 812，
+    // 占现金九成；第二床棉被（54）就得靠人情回款或顶夜班去换。
     startCash: 900,
     vehicleCapacity: 58,
     carryLimit: 16,
@@ -24,7 +27,9 @@ export const IDENTITY_DEFS: readonly IdentityDef[] = [
     id: 'night_shift',
     name: '加油站夜班员',
     tagline: '油枪、卷帘门，和一台随时能开走的面包车',
-    startCash: 680,
+    // §12.3 v0.7.1：夜班员燃料内部价 17/罐，28 罐 = 476，加上主食饮水 ≈ 700，
+    // 占现金九成 —— 和团购团长的 812/900 同一个松紧度，身份折扣省下的就是他的余裕。
+    startCash: 780,
     vehicleCapacity: 52,
     carryLimit: 22,
     perk: '内部价：燃料与工具便宜 20%',

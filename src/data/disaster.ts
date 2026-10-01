@@ -1,7 +1,7 @@
 /**
  * 灾难静态表（§8：MVP 灾难 1 个 —— 寒潮；§6.1 先知日历的载体）。
  *
- * 日历覆盖 D-7 .. D+7 共 15 天，与 model/types.ts 里 RunState.day 的编号一致：
+ * 日历覆盖 D-7 .. D+14 共 22 天（§12.3 v0.7：生存期 7 → 14），与 model/types.ts 里 RunState.day 的编号一致：
  *   负数 = 囤货期（灾难还没来，hint 是"先知预告"的口气，克制、1~2 句）
  *   0    = D-Day（寒潮登陆）
  *   正数 = 生存期（hint 转成"今天的处境 + 需求暗示"，阶段 C 直接读它）
@@ -12,7 +12,16 @@
 import type { DayForecast, DisasterProfile } from '../model/types';
 
 export const STOCKPILE_DAYS = 7; // 囤货期天数（§8：7 天）
-export const SURVIVAL_DAYS = 7; // 生存期目标天数（§8：撑过 7 天）
+/**
+ * 生存期目标天数（§12.3 v0.7：7 → **14**）。
+ *
+ * 7 天的窗口在数学上杀不死人：崩溃曲线（体力 −15/天 → 第 5 天才见底 → 缺口 + 硬撑
+ * − 医药兜底 ≈ −13 健康/天）从 100 走到 0 需要 **约 13 天**跑道，而窗口只剩 2 天 ——
+ * 玩家实测"任何时候一直点过一天就能通关"，正是这条账。
+ * 14 天让整条 v0.6 的硬撑阶梯（1~2 / 3~4 / 5 天起）真正走完，也把采购从"现金管够"
+ * 变成"14 天刚需 ≈ 全部预算"（燃料 28 罐是最大的一笔，见 items.ts 的 v0.7 调价）。
+ */
+export const SURVIVAL_DAYS = 14; // 生存期目标天数（§12.3 v0.7）
 
 /** 囤货期第一天（也是先知日历的起点） */
 export const FIRST_STOCKPILE_DAY = -STOCKPILE_DAYS;
@@ -32,7 +41,14 @@ const COLD_SNAP_CALENDAR: readonly DayForecast[] = [
   { day: 4, severity: 0.9, hint: '-26°C。外面没人了。' },
   { day: 5, severity: 0.88, hint: '-25°C。雪压在窗台上，像一层棉。' },
   { day: 6, severity: 0.95, hint: '-28°C。水管修不好了，只能靠化雪。' },
-  { day: 7, severity: 1, hint: '-30°C。撑到今天，就是撑过去了。' }
+  { day: 7, severity: 1, hint: '-30°C。广播说，寒潮主力还没过境。' },
+  { day: 8, severity: 0.98, hint: '-30°C。原来说撑七天就过去了，现在没人再提这个数。' },
+  { day: 9, severity: 0.95, hint: '-31°C。窗缝里的冰又厚了一指。' },
+  { day: 10, severity: 0.9, hint: '-29°C。雪停了半天，又下起来了。' },
+  { day: 11, severity: 0.96, hint: '-32°C。楼下的雪没过了膝盖。' },
+  { day: 12, severity: 0.98, hint: '-33°C。风声像是要把楼掀了。' },
+  { day: 13, severity: 1, hint: '-35°C。手机上的气温停在一个没见过的数。' },
+  { day: 14, severity: 1, hint: '-36°C。撑到今天，就是撑过去了。' }
 ];
 
 export const DISASTER_DEFS: readonly DisasterProfile[] = [
@@ -97,11 +113,18 @@ const COLD_SNAP_TEMPS: ReadonlyMap<number, number> = new Map([
   [4, -26],
   [5, -25],
   [6, -28],
-  [7, -30]
+  [7, -30],
+  [8, -30],
+  [9, -31],
+  [10, -29],
+  [11, -32],
+  [12, -33],
+  [13, -35],
+  [14, -36]
 ]);
 
 /** 这一天外面多少度。日历覆盖不到的日子夹到最后一档 —— 寒潮不会自己停 */
 export function outdoorTemp(day: number): number {
-  const clamped = Math.max(FIRST_STOCKPILE_DAY, Math.min(7, Math.round(day)));
+  const clamped = Math.max(FIRST_STOCKPILE_DAY, Math.min(SURVIVAL_DAYS, Math.round(day)));
   return COLD_SNAP_TEMPS.get(clamped) ?? -30;
 }

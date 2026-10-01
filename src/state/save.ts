@@ -14,6 +14,7 @@ import { ACTION_POINTS_PER_DAY } from '../data/shops';
 import { EMPTY_SURVIVAL_SNAPSHOT, NEVER_TRADED } from '../data/survival';
 import type {
   AppliedEffect,
+  Shelf,
   GamePhase,
   ItemStack,
   MetaProfile,
@@ -22,6 +23,7 @@ import type {
   UnpackBox,
   Zone
 } from '../model/types';
+import { HANDY_SLOTS } from '../model/shelf';
 import { createMemoryStorage, resolveStorage, type StorageLike } from './storage';
 
 export const STORAGE_KEY = 'tunhuo.save';
@@ -42,9 +44,11 @@ export const STORAGE_KEY = 'tunhuo.save';
  *  - v10：结算页的口径修正 —— `survival` 增加"累计缺口件数"与"有货拿不动件数"，
  *        取代那个会被"缺 1 件"和"缺 5 件"糊成同一个数的缺货天数
  *  - v11：求援订单（§6.5）—— 新增 `helpRequest`，并让"卡在门口"的坏档能自愈
- *  - v12（规划中）：M3 图鉴 MetaProfile 扩展
+ *  - v12：顺手位（§5「应急货架（门口/最顺手位）」）—— `Shelf` 新增 `handyRank`，
+ *        同时补齐 §6.3 的第三维「应急可达率」
+ *  - v13（规划中）：M3 图鉴 MetaProfile 扩展
  */
-export const SAVE_VERSION = 11;
+export const SAVE_VERSION = 12;
 /** 落盘节流上限（提示词 0：debounce ≤ 300ms） */
 export const SAVE_DEBOUNCE_MS = 250;
 
@@ -135,7 +139,25 @@ export function migrate(raw: unknown): SaveGame | null {
   if (declared < 9) save = migrateV8ToV9(save);
   if (declared < 10) save = migrateV9ToV10(save);
   if (declared < 11) save = migrateV10ToV11(save);
+  if (declared < 12) save = migrateV11ToV12(save);
   return normalizeRun(save);
+}
+
+/**
+ * v11 → v12：顺手位（§5「应急货架（门口/最顺手位）」+ §6.3 的应急可达率）。
+ *
+ * 老档补 `null`，而且**刻意不替玩家指认**门口是哪块 —— 他还没做过那个选择。
+ * 替他选就等于白送一份"应急可达率 100%"，而补完是 0% 才是诚实的：
+ * 他确实没把药放在顺手位，因为他压根还没指认过顺手位。
+ * （代价很小：进整理页点两下就补回来了。）
+ */
+export function migrateV11ToV12(save: SaveGame): SaveGame {
+  const run = save.run;
+  if (run) {
+    for (const shelf of run.shelves) shelf.handyRank = null;
+  }
+  save.meta.version = SAVE_VERSION;
+  return save;
 }
 
 /**
@@ -352,6 +374,7 @@ function normalizeRun(save: SaveGame): SaveGame | null {
     return { ...save, run: null };
   }
   run.zones = asArray(run.zones);
+  normalizeShelves(run);
   run.log = asArray(run.log);
   run.trust = isObject(run.trust) ? (run.trust as Record<string, number>) : {};
   if (typeof run.seed !== 'number') run.seed = Date.now() >>> 0;
@@ -480,6 +503,30 @@ function normalizeNight(run: RunState): void {
     choice,
     applied: choice === null ? null : normalizeApplied((raw as { applied?: unknown }).applied)
   };
+}
+
+/**
+ * 货架的字段级兜底（目前只有 `handyRank`）。
+ *
+ * 顺手位**全屋唯一**（§12.3 v0.7.1）：手改过的档可能出现两块都标 1、或标出超出
+ * `HANDY_SLOTS` 的顺位 —— 这里按原顺位重排一次 1..n，把多余的降回普通货架。
+ */
+function normalizeShelves(run: RunState): void {
+  const ranked: Shelf[] = [];
+  for (const shelf of run.shelves) {
+    const raw = (shelf as { handyRank?: unknown }).handyRank;
+    if (typeof raw === 'number' && Number.isInteger(raw) && raw >= 1 && raw <= HANDY_SLOTS) {
+      shelf.handyRank = raw;
+      ranked.push(shelf);
+    } else {
+      shelf.handyRank = null;
+    }
+  }
+  ranked
+    .sort((a, b) => (a.handyRank ?? 0) - (b.handyRank ?? 0))
+    .forEach((shelf, i) => {
+      shelf.handyRank = i < HANDY_SLOTS ? i + 1 : null;
+    });
 }
 
 /**

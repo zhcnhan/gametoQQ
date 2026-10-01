@@ -11,6 +11,7 @@ import {
   writeSave
 } from './save';
 import { createStartingRun } from '../systems/setup';
+import { SURVIVAL_DAYS } from '../data/disaster';
 import { bootstrapStore } from './store';
 
 describe('存档 schema 与迁移', () => {
@@ -146,7 +147,7 @@ describe('存档 schema 与迁移', () => {
     expect(migrated?.meta.version).toBe(SAVE_VERSION);
     expect(migrated?.run?.day).toBe(-1); // 囤货期最后一天，整理的成果不倒退
     expect(migrated?.run?.identityId).toBe('group_buyer');
-    expect(migrated?.run?.cash).toBe(900); // 身份自带的开局现金
+    expect(migrated?.run?.cash).toBe(900); // 身份自带的开局现金（§12.3 v0.7.1 回调）
     expect(migrated?.run?.phase).toBe('organize');
     expect(migrated?.run?.actionPoints).toBe(3);
     expect(migrated?.run?.carLoad).toBe(0);
@@ -320,10 +321,10 @@ describe('存档 schema 与迁移', () => {
     });
   });
 
-  it('停在生存期却把手改成第 9 天 → 夹回第 7 天（day 的上限就是生存期长度）', () => {
-    const run = { ...createStartingRun(5), phase: 'survival_day' as const, day: 9, identityId: 'group_buyer' };
+  it('停在生存期却把手改成第 20 天 → 夹回第 14 天（day 的上限就是生存期长度）', () => {
+    const run = { ...createStartingRun(5), phase: 'survival_day' as const, day: 20, identityId: 'group_buyer' };
     const raw = serialize({ meta: { version: SAVE_VERSION } as never, run, savedAt: 1, syncVersion: 1, deviceId: 'dev' });
-    expect(deserialize(raw)?.run?.day).toBe(7);
+    expect(deserialize(raw)?.run?.day).toBe(SURVIVAL_DAYS);
     expect(deserialize(raw)?.run?.phase).toBe('survival_day');
   });
 

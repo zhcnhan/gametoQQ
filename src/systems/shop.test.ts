@@ -50,9 +50,9 @@ describe('价格：点位系数 × 身份折扣', () => {
 
   it('燃料/工具在夜班员手里便宜 20%，但五金店的点位系数更贵', () => {
     const shop = getShopDef('hardware');
-    const fuel = getItemDef('fuel_can'); // 基准 30
-    expect(priceOf(fuel, shop, getIdentityDef('night_shift'))).toBe(29); // 30 × 1.2 × 0.8 = 28.8 → 29
-    expect(priceOf(fuel, shop, getIdentityDef('group_buyer'))).toBe(36); // 30 × 1.2
+    const fuel = getItemDef('fuel_can'); // 基准 18（§12.3 v0.7：30 → 18，14 天刚需才买得起）
+    expect(priceOf(fuel, shop, getIdentityDef('night_shift'))).toBe(17); // 18 × 1.2 × 0.8 = 17.28 → 17
+    expect(priceOf(fuel, shop, getIdentityDef('group_buyer'))).toBe(22); // 18 × 1.2 = 21.6 → 22
   });
 
   it('同一件电池在五金店比超市贵（点位之间必须不重合，行动点才有取舍）', () => {
@@ -129,7 +129,7 @@ describe('购物车体检：三约束逐条把人话讲清楚', () => {
     expect(view?.cost).toBe(14); // 7 × 2
     expect(view?.weight).toBe(0.8);
     expect(view?.pieces).toBe(2);
-    expect(view?.cashLeft).toBe(900 - 14);
+    expect(view?.cashLeft).toBe(900 - 14); // §12.3 v0.7.1：开局现金 900
   });
 });
 

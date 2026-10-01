@@ -13,6 +13,7 @@ import {
   returnHeld,
   sortAllByFEFO,
   takeFromBox,
+  toggleHandy,
   type OrganizeSession
 } from './organize';
 import { createStartingRun } from './setup';
@@ -33,6 +34,39 @@ function setup(seed = 20261001) {
   const session: OrganizeSession = createOrganizeSession();
   return { store, session, run };
 }
+
+describe('顺手位（§5「门口那一块」，全屋唯一 · §12.3 v0.7.1）', () => {
+  it('标记与取消：点一下成为顺手位，再点一下撤下', () => {
+    const { store } = setup();
+    const first = store.run.shelves[0];
+    if (!first) throw new Error('开局货架不足');
+
+    expect(toggleHandy(store, first.id).ok).toBe(true);
+    expect(store.run.shelves.find((s) => s.id === first.id)?.handyRank).toBe(1);
+
+    expect(toggleHandy(store, first.id).ok).toBe(true);
+    expect(store.run.shelves.find((s) => s.id === first.id)?.handyRank).toBeNull();
+    expect(store.run.shelves.every((s) => s.handyRank === null)).toBe(true);
+  });
+
+  it('★ 全屋唯一：标第二块时旧的那块自动让位（radio，不是拒绝）', () => {
+    const { store } = setup();
+    const ids = store.run.shelves.slice(0, 3).map((s) => s.id);
+    expect(toggleHandy(store, ids[0] as string).ok).toBe(true);
+    expect(toggleHandy(store, ids[1] as string).ok).toBe(true);
+
+    // 玩家拍板的理由："全设置上顺手位我不就无敌了" —— 所以只能有一个答案，
+    // 换标记不该被"先撤旧的再标新的"两步挡住
+    expect(store.run.shelves.find((s) => s.id === ids[1])?.handyRank).toBe(1);
+    expect(store.run.shelves.find((s) => s.id === ids[0])?.handyRank).toBeNull();
+    expect(store.run.shelves.filter((s) => s.handyRank !== null)).toHaveLength(1);
+  });
+
+  it('不存在的货架被拒（不能悄悄什么都不做）', () => {
+    const { store } = setup();
+    expect(toggleHandy(store, 'shelf_nope').ok).toBe(false);
+  });
+});
 
 function firstBoxId(store: GameStore, index = 0): string {
   const box = store.run.boxesToUnpack[index];

@@ -32,6 +32,7 @@
  */
 import { dayLabel, severityAt } from '../model/calendar';
 import { consumeCategory } from '../model/consume';
+import { countOnHandy } from '../model/shelf';
 import { computeOrganizeScore } from '../model/score';
 import { spoilEverything, virtualDay } from '../model/spoil';
 import { getDisasterDef } from '../data/disaster';
@@ -48,6 +49,7 @@ import {
   SHORTAGE_STAMINA,
   STAMINA_RECOVER,
   WARMTH_TRIGGER,
+  sleepRecoverAt,
   dailyDrainOf,
   hardPressTier,
   healOf,
@@ -141,7 +143,7 @@ export function settleSurvivalDay(run: RunState): SurvivalReport {
   //    硬撑的人烧得更多（§12.3 v0.6）。判档看的是**天亮时**的四维：
   //    昨天已经垮在线上的人，今天一睁眼就该知道自己还没缓过来。
   const dawnTier = isHardPress(run.stats) ? hardPressTier(run.survival.hardPressStreak) : null;
-  const score = computeOrganizeScore(run.shelves, run.zones, run.boxesToUnpack);
+  const score = computeOrganizeScore(run.shelves, run.zones, run.boxesToUnpack, disaster);
   const drains: DrainLine[] = [];
   let shortageUnits = 0;
   /** 真的没有的那些（不含"有货但拿不动"）。它与 shortageUnits 分开累计，结算页要用它说清栽在哪 */
@@ -153,7 +155,12 @@ export function settleSurvivalDay(run: RunState): SurvivalReport {
     // 硬撑的额外消耗算进"今天需要多少"，而不是事后算成"少吃了一顿" ——
     // 账要记在需求侧，玩家才会在库存表上看到那一天多掉了一件
     const need = baseNeed + (dawnTier?.extraDrain[category] ?? 0);
-    const reachable = exhausted ? Math.max(0, Math.ceil(need * EXHAUSTED_REACH)) : need;
+    // 顺手位上的那些**不用翻** —— 体力见底的时候，它们是你唯一还够得到的东西。
+    // 这就是 §5「应急货架（门口/最顺手位）」在数值上的落点，也是应急可达率的出口。
+    const handy = countOnHandy(run.shelves, category);
+    const reachable = exhausted
+      ? Math.min(need, Math.max(0, Math.ceil(need * EXHAUSTED_REACH)) + handy)
+      : need;
     const result = consumeCategory(run.shelves, run.zones, run.boxesToUnpack, category, reachable);
     run.shelves = result.shelves;
     run.boxesToUnpack = result.boxes;
@@ -180,8 +187,11 @@ export function settleSurvivalDay(run: RunState): SurvivalReport {
   const workCost = workCostOf(score.placement, score.fefo, takenPieces);
 
   const deltas = { health: 0, mood: 0, stamina: 0, shelter: 0 };
-  // 睡一觉 +12，今天的翻找再扣掉一笔 —— 整理差的人会把觉白睡掉
-  deltas.stamina += STAMINA_RECOVER - workCost;
+  // 睡一觉回多少体力，看**入夜前**的庇护所（§12.3 v0.7）：屋子跌破 40 → 冷得睡不踏实，
+  // 只回一半。判定必须在 wear 扣减之前 —— "昨晚睡在什么样的屋里"说的是结算前那个数。
+  const sleptRecover = sleepRecoverAt(run.stats.shelter);
+  const sleptBadly = sleptRecover < STAMINA_RECOVER;
+  deltas.stamina += sleptRecover - workCost;
   deltas.shelter -= Math.round(severity * SHELTER_WEAR_PER_SEVERITY);
   deltas.mood += moodFromPlacement(score.placement);
 
@@ -274,6 +284,11 @@ export function settleSurvivalDay(run: RunState): SurvivalReport {
   }
   if (unreachableUnits > 0) {
     run.log.push(`${stamp} · 实在翻不动，少拿了 ${unreachableUnits} 件`);
+  }
+  // 没睡踏实要写进日志：它是三条体力流失路径（劳作 / 缺货 / 受冻）里唯一不写在
+  // ④⑤ 里的，不记下来玩家只会看到"体力莫名少回了一半"
+  if (sleptBadly) {
+    run.log.push(`${stamp} · 屋里太冷，没睡踏实（体力只回了 ${sleptRecover}）`);
   }
   if (todayTier) {
     // 报的是**档位名**而不是"硬撑"两个字：玩家回头翻日志时，

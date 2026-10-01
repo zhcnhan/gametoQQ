@@ -69,7 +69,7 @@ export class PrologueScreen implements Screen {
             <p class="block-note">
               ${bars.length > 0 ? escapeHtml(bars[0]?.hint ?? '') : ''}
             </p>
-            <div class="calendar-strip" role="img" aria-label="未来十五天的强度曲线">
+            <div class="calendar-strip" role="img" aria-label="先知日历的强度曲线">
               ${bars
                 .map(
                   (f) =>
@@ -78,9 +78,9 @@ export class PrologueScreen implements Screen {
                 .join('')}
             </div>
             <div class="cal-axis">
-              <span>${dayLabel(-7)}</span>
+              <span>${dayLabel(bars[0]?.day ?? -7)}</span>
               <span class="cal-axis-mid">${dayLabel(0)}</span>
-              <span>${dayLabel(7)}</span>
+              <span>${dayLabel(bars[bars.length - 1]?.day ?? 7)}</span>
             </div>
             <p class="block-note strong">
               ${escapeHtml(dday?.hint ?? '灾难将至。')}

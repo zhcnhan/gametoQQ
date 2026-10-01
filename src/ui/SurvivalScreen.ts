@@ -12,7 +12,7 @@
  */
 import { SURVIVAL_DAYS, getDisasterDef, outdoorTemp } from '../data/disaster';
 import { CATEGORY_LABELS, getItemDef } from '../data/items';
-import { STAMINA_RECOVER, dailyDrainOf, moodFromPlacement, organizeQuality } from '../data/survival';
+import { SHELTER_SLEEP_LINE, STAMINA_RECOVER, dailyDrainOf, moodFromPlacement, organizeQuality } from '../data/survival';
 import { playSfx } from '../fx/audio';
 import { itemIconSvg } from '../fx/icons';
 import { hintAt, dayLabel, severityAt } from '../model/calendar';
@@ -134,7 +134,7 @@ export class SurvivalScreen implements Screen {
     const run = this.store.run;
     const disaster = getDisasterDef(run.disasterId);
     const last = run.survival.last;
-    const score = computeOrganizeScore(run.shelves, run.zones, run.boxesToUnpack);
+    const score = computeOrganizeScore(run.shelves, run.zones, run.boxesToUnpack, getDisasterDef(run.disasterId));
     const quality = organizeQuality(score.placement, score.fefo);
     const moodBonus = moodFromPlacement(score.placement);
 
@@ -151,7 +151,8 @@ export class SurvivalScreen implements Screen {
           }
           ${last.spoiled > 0 ? `坏掉 ${last.spoiled} 件。` : ''}
         </p>
-        ${last.hardPress ? `<p class="press-line">${escapeHtml(hardPressLine(last.hardPressLevel))}</p>` : ''}
+        ${last.hardPress ? `<p class="press-line is-${last.hardPressLevel}">${escapeHtml(hardPressLine(last.hardPressLevel))}</p>` : ''}
+        ${coldHouseNote(run)}
         ${last.usedMedicine > 0 || last.usedWarmth > 0 ? `<p class="block-note">${escapeHtml(supplyText(last))}</p>` : ''}
         ${this.stockHtml(disaster)}
       </section>
@@ -175,6 +176,7 @@ export class SurvivalScreen implements Screen {
         <p class="block-note">
           归位率 ${Math.round(score.placement * 100)}%（心情 ${moodBonus >= 0 ? '+' : ''}${moodBonus}）
           · 临期优先 ${Math.round(score.fefo * 100)}%
+          · 应急可达 ${Math.round(score.emergency * 100)}%
         </p>
         <p class="block-note">
           ${
@@ -412,6 +414,21 @@ function hardPressLine(level: HardPressLevel): string {
     default:
       return '';
   }
+}
+
+/**
+ * 受冻预警（§12.3 v0.7）。庇护所跌破 40 → 今晚睡觉只回一半体力。
+ *
+ * 必须在**结算之前**就出现在屏幕上，而不是等体力真的少回一半之后才在日志里补一句 ——
+ * 预警是可行动的（"该添被了"），事后解释不是。它只读当前庇护所值，不进快照。
+ */
+function coldHouseNote(run: RunState): string {
+  if (run.stats.shelter >= SHELTER_SLEEP_LINE) return '';
+  const hint =
+    countCategory(run.shelves, run.boxesToUnpack, 'warmth') > 0
+      ? '屋里还有保暖的东西，今晚就会自己添上。'
+      : '屋里没有保暖的东西了 —— 棉被在五金店，但现在下不了楼。';
+  return `<p class="press-line is-cold">屋子太冷（庇护所 ${Math.round(run.stats.shelter)}）—— 今晚睡觉只能回一半体力。${escapeHtml(hint)}</p>`;
 }
 
 /** 明日预告（§9 界面清单第 5 条的最后一项）。它让"今天要不要省着过"变成一个可以想的问题 */

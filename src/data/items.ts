@@ -133,7 +133,10 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     stackLimit: 2,
     perishable: false,
     nutrition: {},
-    basePrice: 30,
+    // §12.3 v0.7：30 → 18。旧价下 14 天刚需 28 罐 = 1008 元（五金店 ×1.2），比全部起始现金还贵，
+    // "拉长窗口"会直接变成"必死"。18 让它仍是最大的一笔（28 罐 ≈ 616 元，占预算六成），
+    // 但咬牙买得起 —— 于是"要不要少买两罐换几床棉被"第一次成为真问题。
+    basePrice: 18,
     tags: ['fuel', 'flammable']
   },
   {
@@ -146,7 +149,9 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     stackLimit: 1,
     perishable: false,
     nutrition: { comfort: 3 },
-    basePrice: 60,
+    // §12.3 v0.7：60 → 45。庇护所跌破 40 后睡觉只回一半体力（见 data/survival.ts），
+    // 棉被从"修一个没有下游的数字"变成"修你的睡眠"。45（五金店 54）让"买两床"挤得进预算。
+    basePrice: 45,
     tags: ['warmth', 'soft']
   },
   {

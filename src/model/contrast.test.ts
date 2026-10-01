@@ -81,9 +81,10 @@ describe('反差层：四个数字的口径', () => {
     expect(outdoorTemp(-1)).toBe(-5);
     expect(outdoorTemp(0)).toBe(-18); // D-Day 的断崖
     expect(outdoorTemp(7)).toBe(-30);
-    // 越界（手改过的档 / 更长的生存期）不崩
+    expect(outdoorTemp(14)).toBe(-36); // §12.3 v0.7：生存期 14 天，寒潮尾声最冷
+    // 越界（手改过的档）不崩
     expect(outdoorTemp(-99)).toBe(6);
-    expect(outdoorTemp(99)).toBe(-30);
+    expect(outdoorTemp(99)).toBe(-36);
   });
 
   it('日历里写的温度和 `outdoorTemp` 对得上 —— 玩家会把两句话对照着读', () => {

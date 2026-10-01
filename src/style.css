@@ -1876,6 +1876,20 @@ button:disabled {
   color: var(--ink);
 }
 
+/* 「快垮了」那一档：整块压成墨色 —— 下沉到最底一层时，屏幕自己也要沉下去 */
+.press-line.is-collapsing {
+  border-left-color: var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+  font-weight: 600;
+}
+
+/* 受冻预警：暖黄的底 —— 它说的是"屋子的事"，不是"人的事"，跟顺手位同一个语义色 */
+.press-line.is-cold {
+  border-left-color: var(--warm);
+  background: rgba(242, 201, 76, 0.18);
+}
+
 /* 结算页上"没撑住"的判词：同样不上朱红（那会读成宣判），用灰底与墨栏压一压就够了 */
 .block-note.strong.is-collapsed {
   display: inline-block;
@@ -2017,6 +2031,17 @@ button:disabled {
 /* 凑不出来的那一项上朱红：§5A 规定朱红 = 警告，而"这项给不出"确实是警告 */
 .need-row.is-short {
   border-color: var(--vermilion);
+}
+
+/*
+ * 「顺手位」标记（§5「应急货架（门口/最顺手位）」）。
+ * 标上之后用**暖黄** —— 那是本作"安全 / 窗内"的语义色，而顺手位正是屋里最靠门口、
+ * 最有人味的那两格。刻意不用朱红：朱红是警告，而"我把药放在门口了"是件踏实的事。
+ */
+.tape-btn.is-handy {
+  border-color: var(--warm);
+  background: rgba(242, 201, 76, 0.22);
+  font-weight: 600;
 }
 
 /* ================================================================
