@@ -46,14 +46,6 @@ export interface OrganizeScreenProps {
 interface DragState {
   active: boolean;
   source: 'shelf' | 'box' | 'hand';
-  /**
-   * 手里拿的是**一叠的一部分**（`placeHeld` 把放不下的留在手里）。
-   *
-   * 它只影响一件事：落点。这时玩家在"继续放同一件东西"的流程里，
-   * 所以指针底下若是**别的**物资，该就近找空格（合并会失败、交换更荒唐），
-   * 而不是像正常拖拽那样把它当成交换目标。见 `pickDropSlot`。
-   */
-  partial: boolean;
 }
 
 export class OrganizeScreen {
@@ -73,7 +65,7 @@ export class OrganizeScreen {
   private pendingFocus: { shelfId: string; pos: SlotPos } | null = null;
   private hoverEl: HTMLElement | null = null;
   private ghost: HTMLElement | null = null;
-  private drag: DragState = { active: false, source: 'shelf', partial: false };
+  private drag: DragState = { active: false, source: 'shelf' };
 
   constructor(root: HTMLElement, store: GameStore, session: OrganizeSession, props: OrganizeScreenProps) {
     this.root = root;
@@ -320,8 +312,28 @@ export class OrganizeScreen {
       attachPointerGesture(el, {
         onTap: () => this.consume(tapSlot(this.store, this.session, shelfId, pos)),
         onDragStart: () => {
+          /*
+           * ★ 来源必须**当场定**，不能从 `session.heldFrom` 读（M2 走测抓出来的 bug）。
+           *
+           * 原来的写法是：手里空则拾取这一格，然后 `beginDrag` 从 `session.heldFrom`
+           * 取来源。可"先点一下 A 把 A 拿到手上、再拖 B"时：
+           *   · 手里已经有 A → **不拾取 B**（手里还是 A）；
+           *   · 但 `heldFrom` 指的是 **A 那一格**，而 A 那格此时是**空的**；
+           *   · 松手时 `swapSlots(from = A 那格, to = B 那格)` → A 那格没东西 → 拒绝。
+           * 玩家看到的是"我明明拖了两件东西互换，它跟我说必须得有东西才谈得上互换"。
+           *
+           * 现在：**手里的东西就是这一趟拖的货，来源就是它来的那一格**；
+           * 手里空才当场拾取这一格，来源就是这一格。
+           */
+          if (this.session.held && this.session.heldFrom.kind === 'shelf') {
+            this.beginDrag('shelf', {
+              shelfId: this.session.heldFrom.shelfId,
+              pos: this.session.heldFrom.pos
+            });
+            return;
+          }
           if (!this.session.held) this.consume(pickupFromShelf(this.store, this.session, shelfId, pos));
-          this.beginDrag('shelf');
+          this.beginDrag('shelf', { shelfId, pos });
         },
         onDragMove: (point) => this.moveDrag(point),
         onDragEnd: (point) => this.endDrag(point)
@@ -343,6 +355,17 @@ export class OrganizeScreen {
       attachPointerGesture(el, {
         onTap: () => this.consume(takeFromBox(this.store, this.session, boxId)),
         onDragStart: () => {
+          /*
+           * 从纸箱拖起：手里空就当场拿一件；**来源一律是 `null`**。
+           *
+           * 没有货架来源，所以拖到占用格上只会走"放上去"（`placeHeld`），
+           * 绝不走互换 —— 这是对的：从箱子里掏出来的东西没有"原来那一格"可换。
+           *
+           * （原来这里还判断过"手里那件是不是上一步没放下的一半"来沿用来源，
+           * 那个 `holdingPartial` 标记连同 `DragState.partial` 一起删掉了：
+           * 它与"这一趟从哪格拖起"是同一件事的两种说法，而两套说法会打架 ——
+           * 玩家报的"拖两件互换却被拒绝"就是打架的结果。）
+           */
           if (!this.session.held) this.consume(takeFromBox(this.store, this.session, boxId));
           this.beginDrag('box');
         },
@@ -412,32 +435,19 @@ export class OrganizeScreen {
   // ———————— 拖拽 ————————
 
   /**
-   * 手里那件是不是"上一步没放下的一部分"。
-   *
-   * `placeHeld` 在一格塞不下时会把剩下的留在手里，而且**来处仍然是那块货架**
-   * （所以光看 `session.heldFrom` 分不出"刚拿起来"和"没放下"）。
-   * 这里记一个会话级的标记：`placed.partial` 置真，下一件被拿起来（`picked`）时清掉。
-   * 它唯一的读者是 `pickDropSlot`（决定"占用格算不算合法落点"）。
-   */
-  private holdingPartial = false;
-
-  /**
    * 这一趟拖拽**从哪儿起的**（`null` = 从纸箱里拖出来的，没有货架来源）。
    *
-   * 它只服务一件事：**拖拽落在一个被别的物资占着的格子上时，走"两格互换"
-   * （`swapSlots`，手保持空）而不是"放上去、被换的进手里"**。
-   * 后者是点选-点放的语义（手里本来就有东西要安置），玩家明确要求把这两条路拆开。
-   *
-   * 必须连**货架**一起记：跨货架互换时只知道行列会写到错的架子上。
+   * ★ 它由 `beginDrag` 的调用方**当场传进来**，绝不从 `session.heldFrom` 读 ——
+   * 那个字段反映的是"手里那件从哪来"，而在"先点 A 拿在手上、再拖 B"这种顺序下
+   * 它与"这一趟拖的是谁"是两回事。读错的后果是：把空的那一格当成来源，
+   * `swapSlots` 于是拒绝，并给玩家一句莫名其妙的"两个格子都得有东西才谈得上互换"。
    */
   private dragOrigin: { shelfId: string; pos: SlotPos } | null = null;
 
-  private beginDrag(source: DragState['source']): void {
+  private beginDrag(source: DragState['source'], origin: { shelfId: string; pos: SlotPos } | null = null): void {
     if (!this.session.held) return;
-    this.drag = { active: true, source, partial: this.holdingPartial };
-    // 从货架拖起时记下来源；从"没放下的一部分"继续时，来源就是手里那件的来处
-    const origin = this.session.heldFrom;
-    this.dragOrigin = origin.kind === 'shelf' ? { shelfId: origin.shelfId, pos: origin.pos } : null;
+    this.drag = { active: true, source };
+    this.dragOrigin = origin;
     const el = document.createElement('div');
     el.className = 'drag-ghost';
     const held = this.session.held;
@@ -474,10 +484,10 @@ export class OrganizeScreen {
     const slot = this.hoverEl ?? this.pickDropSlot(point);
     this.endGhost();
     if (!wasActive || !this.session.held) {
-      this.drag = { active: false, source: 'shelf', partial: false };
+      this.drag = { active: false, source: 'shelf' };
       return;
     }
-    this.drag = { active: false, source: 'shelf', partial: false };
+    this.drag = { active: false, source: 'shelf' };
 
     if (slot) {
       const shelfId = slot.dataset['shelf'];
@@ -490,9 +500,8 @@ export class OrganizeScreen {
          *  · **拖拽 A 落在 B 上** → 两格互换，手保持空（`swapSlots`）；
          *  · **手里拿着东西点格子** → 放上去，被换的那件进手里（`placeHeld`）。
          *
-         * 判据：这一趟是从**货架的某一格**拖起来的（`dragOrigin` 有值）、
-         * 手里拿的不是"没放下的一半"（那是在继续放同一件）、
-         * 而且落点那一格上压着**别的**物资。
+         * 判据只有三个：这一趟是**从货架的某一格**拖起的（`dragOrigin` 有值）、
+         * 落点那一格压着**别的**物资、而且不是原来那一格。
          */
         const target = getStack(this.shelfById(shelfId), { row, col });
         const held = this.session.held;
@@ -503,16 +512,28 @@ export class OrganizeScreen {
           origin.pos.row === row &&
           origin.pos.col === col;
         const canSwap =
-          origin !== null &&
-          !this.drag.partial &&
-          target !== null &&
-          held !== null &&
-          target.itemId !== held.itemId &&
-          !sameSlot;
+          origin !== null && target !== null && held !== null && target.itemId !== held.itemId && !sameSlot;
         if (canSwap && origin) {
-          this.consume(
-            swapSlots(this.store, { shelfId: origin.shelfId, pos: origin.pos }, { shelfId, pos: { row, col } })
+          const res = swapSlots(
+            this.store,
+            { shelfId: origin.shelfId, pos: origin.pos },
+            { shelfId, pos: { row, col } }
           );
+          /*
+           * ★ 互换成功后**必须把手清空**。
+           *
+           * 为了把 A 拖起来，`onDragStart` 里已经调过 `pickupFromShelf(A)`，
+           * 所以 `session.held` 是 A。而互换是"两格对调、谁都不进手里" ——
+           * 不清的话手会一直举着 A（它同时也已经在 B 那一格上了），
+           * 屏幕上同时出现"手里有 A"和"A 在格子里"，接下来的任何操作都基于错的状态。
+           *
+           * 只有在**成功**时清：被拒绝时手里那件得原样留着，玩家还能放回原处。
+           */
+          if (res.ok) {
+            this.session.held = null;
+            this.session.heldFrom = { kind: 'none' };
+          }
+          this.consume(res);
           return;
         }
         this.consume(placeHeld(this.store, this.session, shelfId, { row, col }));
@@ -565,11 +586,17 @@ export class OrganizeScreen {
    * ③ 这个边界同样重要：松在货架**外面**不该被吸进来 ——
    * 那是"我要放下"和"我要拿走/放回"的分界。
    *
-   * ## 什么情况下不吸附到"占用格"
+   * ## 什么情况下占用格**不是**合法落点
    *
-   * 只一种：**手里拿的是上一步没放下的一部分**（`DragState.partial`）。
-   * 那时玩家在"继续放同一件"的流程里，落点指向别的物资没有意义
-   * （合并会失败、交换更荒唐）—— 这时②的候选里只留空格。
+   * 判据只有一条，而且只看**这一趟拖拽**：`dragOrigin === null`
+   * （从纸箱里拖出来的、或手上那件是"没放下的一部分"）。
+   * 那时玩家在"把这一件放下去"的流程里，落点指向别的物资没有意义
+   * （合并会失败、互换更荒唐）—— 这时候选里只留空格与**同类可合并**的格。
+   *
+   * ★ 刻意**不用**"手里拿的是不是没放下的一半"这种会话级标记去判（原来有一个
+   * `DragState.partial`）：那等于用两套说法描述同一件事，而两套说法会不一致 ——
+   * 玩家报的"拖两件互换，它说必须得有东西才谈得上互换"根因就是两个标记打架。
+   * 现在只有 `dragOrigin` 一个来源。
    */
   private pickDropSlot(point: { x: number; y: number }): HTMLElement | null {
     const el = document.elementFromPoint(point.x, point.y);
@@ -587,10 +614,12 @@ export class OrganizeScreen {
             col: Number(exact.dataset['col'])
           })
         : null;
-      // 叠在自己那一堆上 → 合并，正常落点
+      // 空格、或同类（会合并）→ 正常落点
       if (!stack || stack.itemId === held.itemId) return exact;
-      // 手里是"没放下的一部分" → 占用格不是合法落点，交给下面去吸附空格
-      if (!this.drag.partial) return exact;
+      // 占用格上是**别的**物资：
+      //  · 这一趟是从某格拖起的 → 合法（会互换）；
+      //  · 否则（从纸箱拿的 / 手上是没放下的一半）→ 交给②去吸附空格
+      if (this.dragOrigin !== null) return exact;
     }
 
     // ② 指针在货架卡里但不是格子 → 吸附到同架最近的合法落点
@@ -603,21 +632,24 @@ export class OrganizeScreen {
   /**
    * 同架离指针最近的**合法落点**。
    *
-   * "合法"= 空格，或者（非 partial 时）装着**别的**物资的格子（那是交换目标）。
+   * "合法" = 空格，或者装着**别的**物资的格子且**这一趟是从某格拖起的**（那是互换目标）。
+   * 与 `pickDropSlot` 的①用同一套判据 —— 两处必须一致，否则"精确命中被拒、吸附却能落"
+   * 这种自相矛盾的行为就会出现。
    * 返回的元素带 `data-snap="1"`，供悬停预览区分"精确命中"与"吸附"。
    */
   private nearestLegalSlot(shelfId: string, point: { x: number; y: number }): HTMLElement | null {
     const shelf = this.shelfById(shelfId);
     const held = this.session.held;
+    const canSwap = this.dragOrigin !== null;
     const candidates: HTMLElement[] = [];
     this.roomEl.querySelectorAll<HTMLElement>(`[data-slot][data-shelf="${shelfId}"]`).forEach((el) => {
       const row = Number(el.dataset['row']);
       const col = Number(el.dataset['col']);
       const stack = getStack(shelf, { row, col });
       if (stack) {
-        // 占用格：只有"非 partial"且不是同一件物资时才是合法落点（会交换）
-        if (this.drag.partial) return;
-        if (held && stack.itemId === held.itemId) return;
+        // 同类（会合并）随时合法；别的物资只有在"会互换"时才算合法落点
+        const sameItem = held !== null && stack.itemId === held.itemId;
+        if (!sameItem && !canSwap) return;
       }
       candidates.push(el);
     });
@@ -686,14 +718,11 @@ export class OrganizeScreen {
         }
         case 'picked':
           playSfx('pick');
-          // 新拿起来的一件：它不可能是"上一步没放下的那件"
-          this.holdingPartial = false;
           break;
         case 'placed':
           playSfx('place');
           this.pendingFocus = { shelfId: ev.shelfId, pos: ev.pos };
           after.push(() => this.wordOn(slotSelector(ev.shelfId, ev.pos), 'place'));
-          this.holdingPartial = ev.partial;
           if (ev.partial) showToast(this.fxLayer, '这一格塞满了，剩下的还在手里');
           break;
         case 'swapped':

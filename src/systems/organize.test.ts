@@ -361,6 +361,72 @@ describe('交换不丢件', () => {
       // 而 a 那一格完全没被碰过
       expect(getStack(store.run.shelves[0]!, a)?.itemId).toBe('canned_beans');
     });
+
+    /**
+     * ★★ 回归：**先点一件拿在手上、再去拖另一件**时，来源不能读成"手里那件的来处"。
+     *
+     * 玩家原话："我明明是把两个东西拖动互换，他要提示我一句什么必须得有东西才
+     * 称得上互换，然后拒绝交换，这不是傻比吗"。
+     *
+     * 根因（UI 层）：`onDragStart` 只在"手里空"时才拾取这一格，
+     * 而来源原来是从 `session.heldFrom` 读的 —— 那个字段指的是**手里那件的来处**。
+     * 于是"点 A 拿在手上（A 那格空了）、再拖 B 到 C 上"时：
+     *   · 手里还是 A → 不拾取 B；
+     *   · 来源被读成 **A 那一格（空的）**；
+     *   · `swapSlots(from = 空的 A 格, to = C)` → `!a` → 拒绝，并给出那句鬼话。
+     *
+     * 这一组把**正确来源**的含义钉在命令层：`swapSlots` 的 `from` 必须是
+     * **这一趟拖拽起手的那一格**（B），而不是手里那件的来处（A）。
+     */
+    it('★★ 交换的来源必须是"这一趟起手的那一格"，不是"手里那件的来处"', () => {
+      const { store, session } = setup();
+      const a: SlotPos = { row: 0, col: 0 };
+      const b: SlotPos = { row: 0, col: 1 };
+      const c: SlotPos = { row: 0, col: 2 };
+      store.commit((draft) => {
+        let s = draft.shelves[0];
+        if (!s) return;
+        s = setSlotStack(s, a, makeStack('canned_beans', 3, null));
+        s = setSlotStack(s, b, makeStack('bandage', 2, null));
+        s = setSlotStack(s, c, makeStack('battery', 4, null));
+        draft.shelves[0] = s;
+      });
+
+      // 玩家先点了 A（A 进手里，A 那格空了）
+      expect(pickupFromShelf(store, session, 'shelf_a', a).ok).toBe(true);
+      expect(session.held?.itemId).toBe('canned_beans');
+      expect(session.heldFrom).toEqual({ kind: 'shelf', shelfId: 'shelf_a', pos: a });
+      expect(getStack(store.run.shelves[0]!, a)).toBeNull();
+
+      // 然后他拖 B 到 C 上。UI 传进来的 `from` 必须是 **B**（这一趟起手的格子）。
+      const res = swapSlots(store, { shelfId: 'shelf_a', pos: b }, { shelfId: 'shelf_a', pos: c });
+      expect(res.ok, '这一趟从 B 起手，两格都有东西，必须换成功').toBe(true);
+      expect(getStack(store.run.shelves[0]!, b)?.itemId).toBe('battery');
+      expect(getStack(store.run.shelves[0]!, c)?.itemId).toBe('bandage');
+      // A 那一格仍然空着、A 仍在手里 —— 拖拽不该悄悄改变手里的东西
+      expect(getStack(store.run.shelves[0]!, a)).toBeNull();
+      expect(session.held?.itemId).toBe('canned_beans');
+    });
+
+    it('★ 而如果把"手里那件的来处"当成来源（旧 bug），就会被拒绝 —— 这条说明白它错在哪', () => {
+      const { store, session } = setup();
+      const a: SlotPos = { row: 0, col: 0 };
+      const c: SlotPos = { row: 0, col: 2 };
+      store.commit((draft) => {
+        let s = draft.shelves[0];
+        if (!s) return;
+        s = setSlotStack(s, a, makeStack('canned_beans', 3, null));
+        s = setSlotStack(s, c, makeStack('battery', 4, null));
+        draft.shelves[0] = s;
+      });
+      pickupFromShelf(store, session, 'shelf_a', a); // A 进手里，A 格空了
+      // 旧实现会把 `from` 传成 A 那格 —— 它是空的，于是拒绝，并给出那句莫名其妙的提示
+      const wrong = swapSlots(store, { shelfId: 'shelf_a', pos: a }, { shelfId: 'shelf_a', pos: c });
+      expect(wrong.ok).toBe(false);
+      // 拒绝的理由在 events 里（`CommandResult` 只有 ok/events 两个字段）
+      const rejected = wrong.events.find((e) => e.type === 'rejected');
+      expect(rejected && rejected.type === 'rejected' && rejected.reason).toContain('都得有东西');
+    });
   });
 
   it('不同物资落在同一格 → 格上那件进手里', () => {

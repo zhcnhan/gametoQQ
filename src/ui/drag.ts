@@ -34,12 +34,21 @@ export interface GestureOptions {
   moveTolerance?: number;
   /** 点了但停留过久不算 tap 的上限 */
   tapMaxMs?: number;
+  /**
+   * 长按成立**之前**，手指移动多少像素就判定为"玩家想滚动页面"（放弃手势）。
+   *
+   * 它比 `moveTolerance` 宽，而且**按方向**用（见 `onMove`）：
+   * 竖向移动才算滚动意图，横向移动不算 —— 格子里的东西只能横向拖，
+   * 而手指刚按下时抖十几像素实在太容易了。
+   */
+  scrollTolerance?: number;
 }
 
 const DEFAULTS: Required<GestureOptions> = {
   longPressMs: 220,
   moveTolerance: 12,
-  tapMaxMs: 500
+  tapMaxMs: 500,
+  scrollTolerance: 24
 };
 
 function distance(a: Point, b: Point): number {
@@ -161,8 +170,23 @@ export function attachPointerGesture(
         if (moved > 6) beginDrag(point);
         return;
       }
-      if (moved > opts.moveTolerance) {
-        // 手指在长按成立之前先动了 → 玩家想滚动页面，放行
+      /*
+       * ★ 长按还没成立时，怎么判断"玩家其实是想滚动页面"？
+       *
+       * 原来的写法是"位移超过 `moveTolerance`（12px）就放弃" —— 那条太苛刻了：
+       * 手指刚按下时抖十几像素极其常见，而长按要 220ms 才成立，
+       * 于是**大部分想拖拽的手势都在成立之前就被放弃掉了**。
+       * 玩家报的"手机上拖不动"就是这个。
+       *
+       * 现在按**方向**判断意图：
+       *  · 房间是竖向滚动的，而格子里的东西只能**横向**拖
+       *    （6 列密排，拖拽基本是左右移动）；
+       *  · 所以竖向滑得明显 = 想滚页面，放行；
+       *  · 横向滑动**不算**滚动意图，继续等长按成立。
+       */
+      const dy = Math.abs(point.y - start.y);
+      const dx = Math.abs(point.x - start.x);
+      if (dy > opts.scrollTolerance && dy > dx) {
         finish();
         handlers.onCancel?.();
       }
