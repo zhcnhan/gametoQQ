@@ -341,7 +341,7 @@ export class OrganizeScreen {
       this.gestureDetachers.push(
         attachPointerGesture(el, {
           onTap: () => this.consume(tapSlot(this.store, this.session, shelfId, pos)),
-        onDragStart: () => {
+        onDragStart: (point) => {
           /*
            * ★ 来源必须**当场定**，不能从 `session.heldFrom` 读（M2 走测抓出来的 bug）。
            *
@@ -356,14 +356,18 @@ export class OrganizeScreen {
            * 手里空才当场拾取这一格，来源就是这一格。
            */
           if (this.session.held && this.session.heldFrom.kind === 'shelf') {
-            this.beginDrag('shelf', {
-              shelfId: this.session.heldFrom.shelfId,
-              pos: this.session.heldFrom.pos
-            });
+            this.beginDrag(
+              'shelf',
+              {
+                shelfId: this.session.heldFrom.shelfId,
+                pos: this.session.heldFrom.pos
+              },
+              point
+            );
             return;
           }
           if (!this.session.held) this.consume(pickupFromShelf(this.store, this.session, shelfId, pos));
-          this.beginDrag('shelf', { shelfId, pos });
+          this.beginDrag('shelf', { shelfId, pos }, point);
         },
           onDragMove: (point) => this.moveDrag(point),
           onDragEnd: (point) => this.endDrag(point),
@@ -387,7 +391,7 @@ export class OrganizeScreen {
       this.gestureDetachers.push(
         attachPointerGesture(el, {
           onTap: () => this.consume(takeFromBox(this.store, this.session, boxId)),
-        onDragStart: () => {
+        onDragStart: (point) => {
           /*
            * 从纸箱拖起：手里空就当场拿一件；**来源一律是 `null`**。
            *
@@ -400,7 +404,7 @@ export class OrganizeScreen {
            * 玩家报的"拖两件互换却被拒绝"就是打架的结果。）
            */
           if (!this.session.held) this.consume(takeFromBox(this.store, this.session, boxId));
-          this.beginDrag('box');
+          this.beginDrag('box', null, point);
         },
           onDragMove: (point) => this.moveDrag(point),
           onDragEnd: (point) => this.endDrag(point),
@@ -479,7 +483,12 @@ export class OrganizeScreen {
    */
   private dragOrigin: { shelfId: string; pos: SlotPos } | null = null;
 
-  private beginDrag(source: DragState['source'], origin: { shelfId: string; pos: SlotPos } | null = null): void {
+  private beginDrag(
+    source: DragState['source'],
+    origin: { shelfId: string; pos: SlotPos } | null = null,
+    /** 拖拽起手的指针位置 —— **顺手就把幽灵摆到这儿**，别让它在 (0,0) 闪一下 */
+    at: { x: number; y: number } | null = null
+  ): void {
     if (!this.session.held) return;
     this.drag = { active: true, source };
     this.dragOrigin = origin;
@@ -487,16 +496,31 @@ export class OrganizeScreen {
     el.className = 'drag-ghost';
     const held = this.session.held;
     el.innerHTML = `${itemIconSvg(getItemDef(held.itemId).icon)}<span class="ghost-count">×${stackCount(held)}</span>`;
+    /*
+     * ★ **创建时就摆到指针的位置**。
+     *
+     * 幽灵是 `position: fixed`，靠 inline 的 `left`/`top` 定位；不设就落在
+     * **视口左上角 (0,0)**，要等第一次 `onDragMove` 才跳到指针处。
+     * 鼠标路径下这个空档极小（移动 6px 就进拖拽，紧接着就有 move），
+     * 但**触摸长按路径会"先窄后跳"**：长按成立时手指已经停着不动，
+     * 而 `onDragMove` 要等手指再动一下才来 —— 玩家看到的就是"幽灵卡在最左上角"。
+     */
+    el.style.left = `${at?.x ?? 0}px`;
+    el.style.top = `${at?.y ?? 0}px`;
     this.fxLayer.appendChild(el);
     this.ghost = el;
   }
 
+  /** 幽灵跟随指针（抽出来给 `moveDrag` 用，也让"初始摆位"和"移动"走同一段代码） */
+  private moveGhostTo(point: { x: number; y: number }): void {
+    if (!this.ghost) return;
+    this.ghost.style.left = `${point.x}px`;
+    this.ghost.style.top = `${point.y}px`;
+  }
+
   private moveDrag(point: { x: number; y: number }): void {
     if (!this.drag.active) return;
-    if (this.ghost) {
-      this.ghost.style.left = `${point.x}px`;
-      this.ghost.style.top = `${point.y}px`;
-    }
+    this.moveGhostTo(point);
     const slot = this.pickDropSlot(point);
     if (slot === this.hoverEl) return;
     this.clearHover();
