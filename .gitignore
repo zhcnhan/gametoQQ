@@ -6,3 +6,6 @@ dist/
 *.log
 # 压测工具的产物（`npx vite-node scripts/stress.mjs` 生成，每次跑都不一样）
 scripts/stress-results.json
+# 临时调试脚本：以 `_` 开头的都算草稿，不进仓库
+# （约定：临时排查用 `scripts/_xxx.mjs`，做完就删；要长期留就改成正式名字）
+scripts/_*.mjs
