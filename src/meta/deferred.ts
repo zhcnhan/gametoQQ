@@ -224,11 +224,18 @@ export const DEFERRED_ITEMS: readonly DeferredItem[] = [
     impact:
       '§6.6 的反差层要"外界温度 vs 屋内温度"，但 §7 的 `DayForecast` 里只有 `severity` 与一句文本。' +
       '温度没有从 `severity` 换算 —— 寒潮的曲线不是它的线性函数（D+1 回过暖），' +
-      '硬换算出来的数会和日历里那句「-19°C。窗户上结了整片冰花」对不上。' +
-      '代价是：多灾难（M3）时这张表要按 `disasterId` 拆成几份，或者干脆并进 `DayForecast`。',
+      '硬换算出来的数会和日历里那句「-19°C。窗户上结了整片冰花」对不上。',
     plan: 'M3 多灾难时处理（那时才值得动 §7 的类型）',
-    markedIn: ['data/disaster.ts'],
-    status: 'open'
+    markedIn: [],
+    status: 'done',
+    resolvedIn:
+      'M3 开工前清偿（用户要求"灾难一百多场"，而写死的温度表是第一道拦路石）。' +
+      '做法：新增**必填**的 `DisasterProfile.temperatures`（逐日 °C），' +
+      '原来那张 `COLD_SNAP_TEMPS` 常量搬进 `COLD_SNAP` 定义，' +
+      '`outdoorTemp(day, disasterId)` 改成读"当前那场灾难"的曲线，' +
+      '界面 `SurvivalScreen` 也改成传 `run.disasterId`（否则热浪局会显示寒潮的温度）。\n\n' +
+      '★ 同时把 `DisasterProfile.id` 从字面量联合类型改成 `string` —— ' +
+      '原来那个类型**顺便限制了"最多 4 场灾难"**，而 §10B 要 100+ 场。'
   },
   {
     id: 'D-14',

@@ -263,7 +263,7 @@ export class SurvivalScreen implements Screen {
       <section class="block">
         <h2 class="block-title">外面 / 里面</h2>
         <div class="contrast-pair">
-          <div class="contrast-cell"><i>外面</i><b>${outdoorTemp(run.day)}°C</b></div>
+          <div class="contrast-cell"><i>外面</i><b>${outdoorTemp(run.day, run.disasterId)}°C</b></div>
           <div class="contrast-cell is-warm"><i>屋里</i><b>${indoorTemp(run.stats.shelter)}°C</b></div>
         </div>
         <div class="contrast-pair">

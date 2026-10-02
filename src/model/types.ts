@@ -25,10 +25,36 @@ export interface ItemDef {
 }
 
 export interface DisasterProfile {
-  id: 'cold_snap' | 'heat_wave' | 'flood' | 'epidemic';
+  /**
+   * 灾难 id。
+   *
+   * ## ★ 为什么从字面量联合类型改成了 `string`（与 `ShopId` 同一条理由）
+   *
+   * 原来是 `'cold_snap' | 'heat_wave' | 'flood' | 'epidemic'` ——
+   * 它顺便限制了"最多 4 场灾难"，而 §10B 要把灾难扩到 **12~16 场**。
+   * 每加一场都要改这个类型 = 违背"加内容 = 加一行数据"。
+   *
+   * 约束改由两道守：`data/disaster.ts` 的 `hasDisasterDef()`（运行期，
+   * 存档自愈用它）+ `scripts/check-content.mjs`（构建期）。
+   */
+  id: string;
   name: string;
   calendar: DayForecast[]; // 先知日历：逐日强度曲线
   dailyDrain: Partial<Record<CategoryId, number>>; // 每日额外消耗权重
+  /**
+   * 逐日**外界温度**（°C）。**必填**，理由是 D-15：
+   *
+   * 它原来是一张写死在 `data/disaster.ts` 里的 `COLD_SNAP_TEMPS` 常量表，
+   * 只覆盖寒潮 —— 于是"再加一场灾难"就必须再写一张表，而"加内容 = 加一行数据"
+   * 这条规矩当场失效（D-15 记的就是这件事）。
+   *
+   * 挪进 `DisasterProfile` 之后，**每一场灾难自带自己的温度曲线**，
+   * 而这正是 §6.6 反差层要的东西：寒潮的 -30 与热浪的 +41 是同一套渲染的两个极端。
+   *
+   * 用**必填**而不是可选，与 `spoilRate` 同一个理由：
+   * 加第 2 场灾难时忘记想"这场外界是什么温度"会直接编译不过。
+   */
+  temperatures: Record<number, number>;
   priorityCategories: CategoryId[]; // 寒潮→['fuel','warmth']
   windowScene: string; // 窗外渲染主题 key
   /**

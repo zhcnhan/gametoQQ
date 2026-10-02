@@ -172,15 +172,39 @@ const SCHEMAS = {
     label: '灾难',
     idPattern: /^[a-z][a-z0-9_]*$/,
     required: {
-      id: 'string（**注意**：model/types.ts 里目前是字面量联合类型，加灾难要同时改它）',
+      id: 'string',
       name: 'string（2~4 字）',
-      calendar: 'DayForecast[]（必须覆盖 D-7..D+14 共 22 天，逐日 {day,severity,hint}）',
+      family: "'温度' | '水' | '结构' | '生物' | '社会' | '空气' | '组合'",
+      level: "'L2' | 'L3' | 'L4'（L2 至少 6 个维度 / L3 至少 10 / L4 至少 15）",
+      axis: 'string（一句话：这一场的压力轴是什么）',
+      temperatures: 'Record<day, °C>（至少给 -7 / -4 / -1 / 0 / 3 / 7 / 11 / 14 这 8 天）',
+      calendar: 'DayForecast[]（必须覆盖 D-7..D+14 共 22 天且 day 连续，逐日 {day,severity,hint}）',
       dailyDrain: 'Partial<Record<CategoryId, number>>（每日额外消耗权重）',
       priorityCategories: 'CategoryId[]（1~3 个）',
       windowScene: 'string（窗外渲染主题 key）',
-      spoilRate: 'number（腐坏倍率：<1 延长保质期 / >1 加速。**必填**，见 D-03）'
+      spoilRate: 'number（腐坏倍率：<1 延长 / >1 加速。**必填**，见 D-03）',
+      counterIntuitive: 'string（★ 这一场那条"反直觉的侧面"，见 §10B.3.1）',
+      decisions: 'string[]（2~4 条，互不重复的"它逼玩家做什么决定"）',
+      notes: 'string（写明本场用到了哪些维度编号，便于查同质化）'
     },
-    tier: 'number 1~4'
+    optional: {
+      shelterDecayPerDay: 'number（-0.5 ~ -4）',
+      restEfficiency: 'number（0.4 ~ 1.2）',
+      carryFactor: 'number（0.5 ~ 1.0）',
+      actionPointDelta: 'number（-1 ~ +1）',
+      shopSupplyFactor: 'number（0.4 ~ 1.0）',
+      closedShopIds: 'string[]',
+      priceSurcharge: 'number（0 ~ 0.8）',
+      eventPoolWeights: 'Record<标签, 倍数>',
+      npcVisitFactor: 'number（0 ~ 1.5）',
+      categoryEfficiency: 'Record<品类, 乘数>（0.5 ~ 1.5）',
+      capacityFactor: 'number（0.5 ~ 1.0）',
+      unusableShelfIds: 'string[]',
+      healthRiskPerDay: 'number（0 ~ 3）',
+      scoreWeights: 'Record<string, number>',
+      specialMechanics: "string[]（**需要引擎支持**，见提示词第 6 节）"
+    },
+    tier: 'number 1~4（1=开局可选 / 2=通关一次 / 3=图鉴进度 / 4=成就解锁）'
   },
   helpRequest: {
     label: '求援订单',
@@ -293,11 +317,67 @@ function checkEntry(file, kind, obj, index) {
   }
   if (kind === 'disaster') {
     const cal = Array.isArray(obj.calendar) ? obj.calendar : [];
-    if (cal.length > 0 && cal.length !== 22) {
-      fail(file, id, `calendar 应覆盖 D-7..D+14 共 22 天，实际 ${cal.length} 天`);
+    if (cal.length > 0) {
+      if (cal.length !== 22) {
+        fail(file, id, `calendar 应覆盖 D-7..D+14 共 22 天，实际 ${cal.length} 天`);
+      }
+      /**
+       * ★ **day 必须连续**（-7, -6, …, 14）。
+       * 只查长度不够：漏掉 D+7 再补一条 D+16 也是 22 条，而先知日历会缺一天 ——
+       * 那天界面会显示空白，玩家会以为自己的游戏坏了。
+       */
+      const days = cal.map((d) => d?.day).sort((a, b) => a - b);
+      for (let i = 0; i < days.length; i++) {
+        if (days[i] !== -7 + i) {
+          fail(file, id, `calendar 的 day 不连续：第 ${i + 1} 天应是 ${-7 + i}，实际 ${days[i]}`);
+          break;
+        }
+      }
+      for (const [ci, d] of cal.entries()) {
+        if (typeof d?.hint !== 'string' || d.hint.length === 0) {
+          fail(file, id, `calendar[${ci}] 缺少 hint`);
+        } else if (d.hint.length > 30) {
+          // ≤30 字是"先知日历一行"的排版约束（手机竖屏）
+          fail(file, id, `calendar[${ci}].hint 超过 30 字（${d.hint.length}）：先知日历一行放不下`);
+        }
+        if (typeof d?.severity !== 'number' || d.severity < 0 || d.severity > 1) {
+          fail(file, id, `calendar[${ci}].severity 必须是 0~1 的数字`);
+        }
+      }
     }
     if (typeof obj.spoilRate !== 'number') {
       fail(file, id, 'spoilRate 必须显式给出（D-03：腐坏是灾难的属性，不许默认）');
+    }
+    const temps = obj.temperatures;
+    if (typeof temps !== 'object' || temps === null) {
+      fail(file, id, 'temperatures 必须是逐日温度表');
+    } else {
+      const KEY_DAYS = [-7, -4, -1, 0, 3, 7, 11, 14];
+      const missing = KEY_DAYS.filter((d) => typeof temps[d] !== 'number');
+      if (missing.length > 0) {
+        fail(file, id, `temperatures 缺少关键日 ${missing.join('/')}（程序按最近一档插值，缺了会显示 0°C）`);
+      }
+    }
+    /**
+     * ★★ **反直觉侧面**与**取舍列表**是 §10B.3 的硬要求。
+     *
+     * 为什么把"反直觉"做成必填：一个和"这场灾难很糟"直接推导出来的效果只是数字；
+     * 一个没人会立刻想到、但想通后觉得"确实如此"的效果才是设计。
+     * 把它变成必填字段，是为了逼生成者**每一场都想一次** ——
+     * 不填的场次会退回，而不是变成一百场"更冷/更热"。
+     */
+    if (typeof obj.counterIntuitive !== 'string' || obj.counterIntuitive.length < 6) {
+      fail(file, id, 'counterIntuitive 必填：写清"这一场那条反直觉的侧面"（见提示词第 1.3 节）');
+    }
+    const decisions = Array.isArray(obj.decisions) ? obj.decisions : [];
+    if (decisions.length < 2 || decisions.length > 4) {
+      fail(file, id, `decisions 需要 2~4 条，实际 ${decisions.length}`);
+    }
+    if (new Set(decisions).size !== decisions.length) {
+      fail(file, id, 'decisions 里有重复条目（同一场里不许有两个一样的取舍）');
+    }
+    if (typeof obj.notes !== 'string' || obj.notes.length === 0) {
+      fail(file, id, 'notes 必填：写明本场用到了哪些维度编号（查同质化要用它）');
     }
   }
   if (kind === 'shop') {

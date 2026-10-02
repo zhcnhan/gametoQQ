@@ -56,6 +56,16 @@ export const DISASTER_DEFS: readonly DisasterProfile[] = [
     id: 'cold_snap',
     name: '寒潮',
     calendar: [...COLD_SNAP_CALENDAR], // §7 的类型是可变数组，这里展开一份给它
+    /**
+     * 逐日外界温度。**这是那次"手写常量表"的搬迁结果（D-15）** ——
+     * 原来它是文件上方的一张 `COLD_SNAP_TEMPS` 常量，只覆盖寒潮；
+     * 现在每一场灾难自带自己的曲线，`outdoorTemp(day, disasterId)` 按场次读。
+     */
+    temperatures: {
+      [-7]: 6, [-6]: 4, [-5]: 2, [-4]: 1, [-3]: 0, [-2]: -2, [-1]: -5,
+      [0]: -18, [1]: -20, [2]: -19, [3]: -23, [4]: -26, [5]: -25, [6]: -28,
+      [7]: -30, [8]: -30, [9]: -31, [10]: -29, [11]: -32, [12]: -33, [13]: -35, [14]: -36
+    },
     // §8：每日基础消耗 食物 2 / 水 2，「燃料 2」是寒潮独有的加成 —— 正是这里的 dailyDrain
     dailyDrain: { fuel: 2 },
     priorityCategories: ['fuel', 'warmth'],
@@ -103,39 +113,15 @@ export const M1_DISASTER_ID = 'cold_snap';
  * 硬换算出来的数会和日历里那句「-19°C。窗户上结了整片冰花」对不上，
  * 而玩家是会把两句话对照着读的。
  *
- * 囤货期那七天给的是正常冬天的气温，这样"回落"才有参照 ——
- * 反差层要的不只是"今天很冷"，而是"和上周比冷了多少"。
+ * ★ **它现在读的是"当前那场灾难"的 `temperatures`，不再是写死的寒潮常量**（D-15）。
+ * 这一点对 §10B 的上百场灾难是必需的：热浪的 +41°C 与寒潮的 -36°C
+ * 走的是同一个读者（界面的"外界"那一栏），只是各自带着自己的曲线。
  *
- * DEFERRED(D-15): 这张表是**手写的**，而且只覆盖寒潮。多灾难（M3）时要按
- * `disasterId` 拆成几份，或者干脆把它并进 `DayForecast` —— 那时再改类型才有必要。
+ * `disasterId` 省略时按寒潮算 —— 那是 M1 唯一的灾难，也是所有老测试的口径。
  */
-const COLD_SNAP_TEMPS: ReadonlyMap<number, number> = new Map([
-  [-7, 6],
-  [-6, 4],
-  [-5, 2],
-  [-4, 1],
-  [-3, 0],
-  [-2, -2],
-  [-1, -5],
-  [0, -18],
-  [1, -20],
-  [2, -19],
-  [3, -23],
-  [4, -26],
-  [5, -25],
-  [6, -28],
-  [7, -30],
-  [8, -30],
-  [9, -31],
-  [10, -29],
-  [11, -32],
-  [12, -33],
-  [13, -35],
-  [14, -36]
-]);
-
-/** 这一天外面多少度。日历覆盖不到的日子夹到最后一档 —— 寒潮不会自己停 */
-export function outdoorTemp(day: number): number {
+export function outdoorTemp(day: number, disasterId: string = M1_DISASTER_ID): number {
   const clamped = Math.max(FIRST_STOCKPILE_DAY, Math.min(SURVIVAL_DAYS, Math.round(day)));
-  return COLD_SNAP_TEMPS.get(clamped) ?? -30;
+  const temps = DISASTER_BY_ID.get(disasterId)?.temperatures;
+  if (!temps) return 0;
+  return temps[clamped] ?? temps[SURVIVAL_DAYS] ?? 0;
 }
