@@ -24,11 +24,13 @@ import { getItemDef } from '../data/items';
 import { SHOP_DEFS, getShopDef } from '../data/shops';
 import { dayLabel } from '../model/calendar';
 import { createCursor, nextFloat, nextInt, type RngCursor } from '../model/rng';
-import { makeStack } from '../model/shelf';
+import { makeStack, stackCount } from '../model/shelf';
 import type {
+  CategoryId,
   DayEffectApplied,
   DayEventDef,
   DayOption,
+  DayOptionEffect,
   IdentityDef,
   ItemDef,
   ItemStack,
@@ -39,7 +41,7 @@ import type {
   UnpackBox
 } from '../model/types';
 import type { GameStore } from '../state/store';
-import { generateBoxStacks, nextBoxSeq, rollExpiry } from './setup';
+import { generateBoxStacks, nextBoxSeq, recordEvent, rollExpiry } from './setup';
 
 // ———————— 事件（表现层的唯一输入） ————————
 
@@ -162,7 +164,7 @@ export function boughtTodayOf(run: RunState, shopId: string, itemId: string): nu
  * `dayEventWeight` 负责把 `onlyShops` 之外的店门权重压成 0：
  * 黑市商人只会出现在五金店后巷，别处抽不到他。
  */
-export function rollDayEvent(cursor: RngCursor, shopId: string): string | null {
+export function rollDayEvent(cursor: RngCursor, shopId: string, recent: readonly string[] = []): string | null {
   const pool = DAY_EVENT_DEFS.map((def) => ({ def, weight: dayEventWeight(def, shopId) })).filter(
     (e) => e.weight > 0
   );
@@ -170,8 +172,11 @@ export function rollDayEvent(cursor: RngCursor, shopId: string): string | null {
   if (total <= 0) return null;
   const roll = nextFloat(cursor) * total;
   if (roll < DAY_EVENT_NONE_WEIGHT) return null;
+  // 最近出过的那一条不会再出（同夜间 / 求援 / 突发的口径，见 model/rng.ts）
+  const last = recent[0];
   let acc = DAY_EVENT_NONE_WEIGHT;
   for (const entry of pool) {
+    if (entry.def.id === last && pool.length > 1) continue;
     acc += entry.weight;
     if (roll < acc) return entry.def.id;
   }
@@ -355,9 +360,10 @@ export function enterShop(store: GameStore, shopId: string): ShopResult {
     if (firstTime) {
       draft.log.push(`${dayLabel(draft.day)} · 进了${getShopDef(shopId).name}。`);
     }
-    const eventId = rollDayEvent(cursor, shopId);
+    const eventId = rollDayEvent(cursor, shopId, draft.eventHistory.day);
     if (eventId) {
       draft.dayEvent = { defId: eventId, shopId, choice: null, applied: null };
+      recordEvent(draft, 'day', eventId);
       events.push({ type: 'dayEventHit', defId: eventId, shopId });
     }
     draft.seed = cursor.state;
@@ -374,17 +380,37 @@ export function dayOptionAt(def: DayEventDef, choice: number): DayOption | null 
 }
 
 /**
+ * 一个白天事件选项**必须**至少命中一个的字段 —— 也就是"落到玩家身上"的那些。
+ *
+ * ★ 它是那条硬约束的可执行形式：`dayEvent.test.ts` 会遍历事件表里的每一个选项，
+ * 只要它的 effect 里一个都没命中，测试就红。加新事件时它会当场拦住
+ * "写一个没有后果的选项"。
+ *
+ * 刻意**不在这里**的三个字段：
+ *  · `stockCut` / `limit` —— 它们只改商店。玩家不会因为"别人把货抢走了"
+ *    或"店里限购了"得到任何东西，所以它们只能当事件的背景，不能单独成项；
+ *  · `priceUp` —— 它是**惩罚**。单独成项就等于"进去挨一刀"，那不是选择。
+ *    （它可以和其他效果一起出现，见"抢购"那条的紧急补货。）
+ */
+export const PLAYER_FACING_EFFECT_KEYS = ['cash', 'stamina', 'mood', 'boxDefId', 'grab', 'visitLost'] as const;
+
+/** 这个选项有没有"落到玩家身上"的效果。没有 = 玩家点完什么都不会变 */
+export function hasPlayerFacingEffect(effect: DayOptionEffect): boolean {
+  return PLAYER_FACING_EFFECT_KEYS.some((key) => effect[key] !== undefined);
+}
+
+/**
  * 把选项后果落到状态上，并返回**实际生效**的数值。
  *
  * 与 `systems/night.ts` 的 `applyNightEffect` 同一条纪律：现金给不起就按有多少给多少，
  * 摘要与结果文案一律读**实际值**，绝不读选项声明的数 ——
  * 屏幕报一件没发生的事，比数值本身更糟（见 `AppliedEffect` 的注释）。
  *
- * 事件对库存的削减走**品类**：`stockCut.category` 落到当天该店所有该品类的行上，
- * 按比例扣（每行至少 1 件）。按比例而不是按固定件数，是因为各行的基数差很多 ——
- * "主食少 4 件"落在只有 3 件库存的店和落在 12 件的店，不该是同一件事。
+ * 事件对商店库存的削减走**品类**：`stockCut.category` 落到当天该店所有该品类的行上。
+ * 注意它扣的是**商店**的货架，不是玩家家里的东西 —— 文案必须说清这一点
+ * （见 `DayOptionEffect` 的字段注释）。
  */
-export function applyDayEffect(run: RunState, effect: DayOption['effect'], shopId: string, cursor: RngCursor): DayEffectApplied {
+export function applyDayEffect(run: RunState, effect: DayOptionEffect, shopId: string, cursor: RngCursor): DayEffectApplied {
   const applied: DayEffectApplied = {
     cash: 0,
     priceUp: 0,
@@ -394,6 +420,7 @@ export function applyDayEffect(run: RunState, effect: DayOption['effect'], shopI
     mood: 0,
     gotBox: false,
     boxName: '',
+    grabbed: [],
     visitLost: false
   };
 
@@ -431,6 +458,19 @@ export function applyDayEffect(run: RunState, effect: DayOption['effect'], shopI
     run.shopLimits.push(limit);
     applied.limits.push(limit);
   }
+  if (effect.grab) {
+    // 当场拿到货：从这家店**当前**的货架上取，装成一箱进待拆队列。
+    // 取不满就按实际拿到的算 —— 货架本来就是有限的，"抢"也不该凭空变出东西
+    const taken = grabFromShop(run, shopId, effect.grab.category, effect.grab.count, cursor);
+    applied.grabbed = taken.grabbed;
+    if (taken.grabbed.length > 0) {
+      applied.gotBox = true;
+      applied.boxName = taken.boxName;
+      // ★ 重量必须照实记进当天的车载 —— 不记的话玩家会看到"家里多了东西、车上负重没变"，
+      // 那是 M2 第一版黑市那一箱的真 bug（玩家当场就看出来了）
+      run.carLoad = roundKg(run.carLoad + taken.weight);
+    }
+  }
   if (effect.stamina) {
     // 与夜间事件同一条纪律：摘要必须报**实际**变化，不能报选项声明的数
     const next = clampStat(run.stats.stamina + effect.stamina);
@@ -444,20 +484,77 @@ export function applyDayEffect(run: RunState, effect: DayOption['effect'], shopI
   }
   if (effect.boxDefId) {
     const def = getBoxDef(effect.boxDefId);
+    const items = generateBoxStacks(cursor, def, run.day);
     run.boxesToUnpack.push({
       id: `box_${nextBoxSeq(run.boxesToUnpack)}`,
       defId: def.id,
       // 批次到期日以**当前天**为基准，与白天采购、夜间事件共用同一套 FEFO 尺子
-      items: generateBoxStacks(cursor, def, run.day)
+      items
     });
     applied.gotBox = true;
     applied.boxName = def.name;
+    // 同一笔账：手里多了一箱，车上就多一份重量（它此刻确实在你车上）
+    const weight = items.reduce((n, s) => n + getItemDef(s.itemId).unitWeight * stackCount(s), 0);
+    run.carLoad = roundKg(run.carLoad + weight);
   }
   if (effect.visitLost) {
     applied.visitLost = true;
   }
 
   return applied;
+}
+
+/**
+ * 从这家店**当前**的货架上取走几件某品类的东西，装成一箱。
+ *
+ * 它是"抢购 / 趁乱拿"这类选项的落点：货是真的从店里少的，也是真的进你家的。
+ * 按到期日升序取（和 FEFO 一样，先拿快过期的）—— 这条不为了好玩，
+ * 只为了让"店里少了什么"和"你拿到了什么"是同一批货，对得上账。
+ */
+function grabFromShop(
+  run: RunState,
+  shopId: string,
+  category: CategoryId,
+  count: number,
+  cursor: RngCursor
+): { grabbed: { itemId: string; count: number }[]; weight: number; boxName: string } {
+  const stock = run.shopStocks.find((s) => s.shopId === shopId);
+  const items: ItemStack[] = [];
+  let left = count;
+  if (stock) {
+    const lines = stock.lines.filter((l) => getItemDef(l.itemId).category === category && l.stock > 0);
+    for (const line of lines) {
+      if (left <= 0) break;
+      const take = Math.min(left, line.stock);
+      if (take <= 0) continue;
+      line.stock -= take;
+      left -= take;
+      items.push(makeStack(line.itemId, take, rollExpiry(cursor, line.itemId, run.day)));
+    }
+  }
+  const weight = items.reduce((n, s) => n + getItemDef(s.itemId).unitWeight * stackCount(s), 0);
+  if (items.length === 0) return { grabbed: [], weight: 0, boxName: '' };
+
+  // 箱型按拿到的东西自动挑（与采购同一套），这样"抢回来的那箱"看起来也是正经一箱
+  const def = getBoxDef(
+    pickBoxDefId(
+      items.map((s) => ({
+        itemId: s.itemId,
+        count: stackCount(s),
+        unitPrice: 0,
+        lineCost: 0,
+        unitWeight: getItemDef(s.itemId).unitWeight,
+        lineWeight: 0,
+        stock: 0
+      }))
+    )
+  );
+  run.boxesToUnpack.push({ id: `box_${nextBoxSeq(run.boxesToUnpack)}`, defId: def.id, items });
+  return {
+    grabbed: items.map((s) => ({ itemId: s.itemId, count: stackCount(s) })),
+    weight,
+    boxName: def.name
+  };
 }
 
 function clampStat(value: number): number {
@@ -515,18 +612,40 @@ export function resolveDayEvent(store: GameStore, choice: number): ShopResult {
   return ok(events);
 }
 
-/** 把事件的实际后果写成一行数值摘要。空数组 = 什么都没变，界面据此不渲染数值行 */
+/**
+ * 把事件的实际后果写成一行数值摘要。空数组 = 什么都没变，界面据此不渲染数值行。
+ *
+ * ★ 两条口径，都是被玩家当场问出来的：
+ *
+ *  1. **先报"你拿到了什么"，再报代价** —— 玩家的原话是
+ *     "我抢了东西买了东西，光提示什么货架减少了……家里的东西并没有增长啊"。
+ *     顺序反映的是他关心的东西：这趟白来没有？拿到了什么？然后才是花掉多少。
+ *     所以 `grab` / `gotBox` 排在最前面；
+ *  2. **说清是"店里的"还是"家里的"**。原来那句"货架少了 N 件"读起来像自家货架，
+ *     而它改的是**商店**的货架。现在写成"店里少了 N 件"（说不清是哪儿的话，
+ *     玩家就会去找一个根本没发生的损失）。
+ */
 export function describeDayEffect(applied: DayEffectApplied): string[] {
   const parts: string[] = [];
   const signed = (n: number): string => (n > 0 ? `+${n}` : String(n));
+  // ① 先报收获
+  const grabbed = applied.grabbed.reduce((n, g) => n + g.count, 0);
+  if (grabbed > 0) {
+    const names = applied.grabbed
+      .map((g) => `${getItemDef(g.itemId).name}×${g.count}`)
+      .join('、');
+    parts.push(`拿到 ${names}`);
+  } else if (applied.gotBox) {
+    parts.push(`带回来一${applied.boxName}`);
+  }
+  // ② 再报代价
   if (applied.cash) parts.push(`现金 ${signed(applied.cash)}`);
   if (applied.stamina) parts.push(`体力 ${signed(applied.stamina)}`);
   if (applied.mood) parts.push(`心情 ${signed(applied.mood)}`);
   if (applied.priceUp) parts.push(`物价 +${Math.round(applied.priceUp * 100)}%`);
   const cut = applied.stockCut.reduce((n, c) => n + c.count, 0);
-  if (cut > 0) parts.push(`货架少了 ${cut} 件`);
-  for (const limit of applied.limits) parts.push(`限购 ${limit.max} 件`);
-  if (applied.gotBox) parts.push(`带回来一${applied.boxName}`);
+  if (cut > 0) parts.push(`店里少了 ${cut} 件`);
+  for (const limit of applied.limits) parts.push(`今天限购 ${limit.max} 件`);
   return parts;
 }
 

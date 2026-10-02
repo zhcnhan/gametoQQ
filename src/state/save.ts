@@ -6,12 +6,12 @@
  *  - 不直接摸 window，介质由 state/storage.ts 注入。
  */
 import { BOX_DEFS } from '../data/boxes';
-import { findDayEvent } from '../data/dayEvents';
+import { findDayEvent, hasDayEvent } from '../data/dayEvents';
 import { FIRST_STOCKPILE_DAY, SURVIVAL_DAYS } from '../data/disaster';
-import { findEmergency } from '../data/emergencies';
+import { findEmergency, hasEmergency } from '../data/emergencies';
 import { IDENTITY_DEFS, hasIdentityDef } from '../data/identities';
 import { findHelpRequestDef } from '../data/helpRequests';
-import { NIGHT_SLEEP, findNightEvent } from '../data/nightEvents';
+import { NIGHT_SLEEP, findNightEvent, hasNightEvent } from '../data/nightEvents';
 import { ACTION_POINTS_PER_DAY } from '../data/shops';
 import { EMPTY_SURVIVAL_SNAPSHOT, NEVER_TRADED } from '../data/survival';
 import type {
@@ -24,9 +24,12 @@ import type {
   RunState,
   SaveGame,
   UnpackBox,
-  Zone
+  Zone,
+  EventHistory
 } from '../model/types';
 import { HANDY_SLOTS } from '../model/shelf';
+import { EVENT_HISTORY_KEEP } from '../model/types';
+import { emptyEventHistory } from '../systems/setup';
 import { createMemoryStorage, resolveStorage, type StorageLike } from './storage';
 
 export const STORAGE_KEY = 'tunhuo.save';
@@ -56,8 +59,11 @@ export const STORAGE_KEY = 'tunhuo.save';
  *           `last` 快照增加突发事件三项；
  *        ③ 白天随机事件（§6.2 / D-10）：`shopPriceFactor` / `shopLimits` / `dayEvent`；
  *        ④ `metaSettled` —— 这一局的成果记没记进 meta（三个结局出口只许发一次奖励）
+ *  - v14：事件近期记录 —— `RunState.eventHistory`（夜间 / 求援 / 白天 / 突发事件各留最近 4 条）。
+ *        它解决的是 M2 走测反馈的"同一个 NPC 隔天又问同一件事"：求援池 6 单、每天 45%、
+ *        均匀随机 → 同一个 NPC 前后两次问同一件事的概率是 50%。
  */
-export const SAVE_VERSION = 13;
+export const SAVE_VERSION = 14;
 /** 落盘节流上限（提示词 0：debounce ≤ 300ms） */
 export const SAVE_DEBOUNCE_MS = 250;
 
@@ -151,7 +157,23 @@ export function migrate(raw: unknown): SaveGame | null {
   if (declared < 11) save = migrateV10ToV11(save);
   if (declared < 12) save = migrateV11ToV12(save);
   if (declared < 13) save = migrateV12ToV13(save);
+  if (declared < 14) save = migrateV13ToV14(save);
   return normalizeRun(save);
+}
+
+/**
+ * v13 → v14：事件近期记录（`RunState.eventHistory`）。
+ *
+ * 老档补成空的四类数组。**刻意不反推**：老档的 log 里确实留着"哪一晚出了哪件事"，
+ * 拿它去补一份"最近 4 条"看起来可行，但那是**另一种语义的账**——
+ * log 记的是发生过什么，这份记的是"抽签时要避开什么"，而老档的那几天早就过去了。
+ * 补空数组的效果是老档头几次抽取不避开任何东西，这没有代价。
+ */
+export function migrateV13ToV14(save: SaveGame): SaveGame {
+  const run = save.run;
+  if (run) run.eventHistory = emptyEventHistory();
+  save.meta.version = SAVE_VERSION;
+  return save;
 }
 
 /**
@@ -502,6 +524,23 @@ function normalizeRun(save: SaveGame): SaveGame | null {
   run.shopBoughtToday = bought;
   normalizeDayEvent(run);
 
+  // ———————— M2 事件近期记录（v14） ————————
+  // 只留**认得出的 id**：事件表改过名字之后，一条陈旧的 id 会让"避开它"永远不生效
+  // （那条事件现在叫别的名字了），而"记录里有一个不存在的 id"本身也没人会发现
+  const historyRaw = (isObject(run.eventHistory) ? run.eventHistory : {}) as Partial<
+    Record<keyof EventHistory, unknown>
+  >;
+  const strList = (v: unknown, known: (id: string) => boolean): string[] =>
+    asArray<unknown>(v)
+      .filter((x): x is string => typeof x === 'string' && known(x))
+      .slice(0, EVENT_HISTORY_KEEP);
+  run.eventHistory = {
+    night: strList(historyRaw.night, hasNightEvent),
+    help: strList(historyRaw.help, (id) => findHelpRequestDef(id) !== null),
+    day: strList(historyRaw.day, hasDayEvent),
+    emergency: strList(historyRaw.emergency, hasEmergency)
+  };
+
   // ———————— M1 夜间字段 ————————
   normalizeNight(run);
 
@@ -742,6 +781,10 @@ function normalizeDayApplied(raw: unknown): DayEffectApplied | null {
     mood: num(raw.mood),
     gotBox: raw.gotBox === true,
     boxName: typeof raw.boxName === 'string' ? raw.boxName : '',
+    grabbed: asArray<unknown>(raw.grabbed).filter(
+      (g): g is DayEffectApplied['grabbed'][number] =>
+        isObject(g) && typeof g.itemId === 'string' && typeof g.count === 'number'
+    ),
     visitLost: raw.visitLost === true
   };
 }

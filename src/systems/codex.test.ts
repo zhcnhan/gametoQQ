@@ -241,9 +241,35 @@ describe('跨局结算：只发一次奖', () => {
   });
 });
 
-describe('存档 v13：M2 四组新字段的迁移与自愈', () => {
-  it('当前版本就是 v13', () => {
-    expect(SAVE_VERSION).toBe(13);
+describe('存档 v13/v14：M2 新字段的迁移与自愈', () => {
+  it('当前版本是 v14（v13 加事件近期记录）', () => {
+    expect(SAVE_VERSION).toBe(14);
+  });
+
+  it('★ v13 老档：事件近期记录补空数组', () => {
+    const run = createStartingRun(5) as unknown as Record<string, unknown>;
+    delete run['eventHistory'];
+    const back = deserialize(
+      serialize({ meta: { version: 13 } as never, run: run as never, savedAt: 1, syncVersion: 1, deviceId: 'd' })
+    );
+    expect(back?.run?.eventHistory).toEqual({ night: [], help: [], day: [], emergency: [] });
+  });
+
+  it('★ 事件记录里认不出来的 id 会被清掉（改过名字的事件不该一直占着"避开"的名额）', () => {
+    const run = createStartingRun(5);
+    run.eventHistory = {
+      night: ['n_night_shift', 'n_已经删掉的事件'],
+      help: ['q_wang_medicine', 'q_不存在'],
+      day: ['d_queue_aunt'],
+      emergency: ['e_cut_hand', 'e_也没有了']
+    };
+    const back = deserialize(
+      serialize({ meta: { version: 14 } as never, run, savedAt: 1, syncVersion: 1, deviceId: 'd' })
+    );
+    expect(back?.run?.eventHistory.night).toEqual(['n_night_shift']);
+    expect(back?.run?.eventHistory.help).toEqual(['q_wang_medicine']);
+    expect(back?.run?.eventHistory.day).toEqual(['d_queue_aunt']);
+    expect(back?.run?.eventHistory.emergency).toEqual(['e_cut_hand']);
   });
 
   it('★ v12 老档：四组字段补空值，而且**不反推**已结束那一局的图鉴', () => {

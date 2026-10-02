@@ -12,9 +12,11 @@ import { getItemDef } from '../data/items';
 import { EMPTY_SURVIVAL_SNAPSHOT, NEVER_TRADED } from '../data/survival';
 import { createCursor, nextFloat, nextInt, pick, randomSeed, shuffle, type RngCursor } from '../model/rng';
 import { createShelf, makeStack, ROOM_ID, SHELF_H, SHELF_W } from '../model/shelf';
-import type { ItemStack, RunState, Shelf, UnpackBox } from '../model/types';
+import type { EventHistory, ItemStack, RunState, Shelf, UnpackBox } from '../model/types';
 
 export const STARTING_SHELF_COUNT = 3;
+/** 事件近期记录留几条（与 `EVENT_HISTORY_KEEP` 同值，这里再导一次方便 data 层引用） */
+const KEEP = 4;
 export const STARTING_BOX_COUNT = 3;
 export const SHELF_IDS = ['shelf_a', 'shelf_b', 'shelf_c'] as const;
 
@@ -149,6 +151,7 @@ export function createStartingRun(seed: number = randomSeed()): RunState {
     shopLimits: [],
     shopBoughtToday: {},
     dayEvent: null,
+    eventHistory: emptyEventHistory(),
     night: null,
     helpRequest: null,
     survival: {
@@ -185,6 +188,26 @@ export function nextBoxSeq(boxes: readonly UnpackBox[]): number {
     if (m) max = Math.max(max, Number(m[1]));
   }
   return max + 1;
+}
+
+/**
+ * 把一条刚抽中的事件记进"近期记录"（`RunState.eventHistory`），最新在前、只留几条。
+ *
+ * 它服务的是 M2 走测反馈里那条"重复"：求援订单池只有 6 单，
+ * 而每次都是均匀随机 —— 同一个 NPC 前后两次问同一件事的概率是 50%。
+ * 记下最近出过的，抽签时把它们的权重压低（见 `model/rng.ts` 的 `pickEventAvoidingRecent`）。
+ *
+ * 放在 setup.ts 是因为它是**纯记账**，不属于任何一个事件池；
+ * 三个抽签点（夜间 / 求援 / 白天）都要用它，各写一份必然漂。
+ */
+export function recordEvent(run: RunState, kind: keyof EventHistory, eventId: string): void {
+  const next = [eventId, ...run.eventHistory[kind].filter((id) => id !== eventId)];
+  run.eventHistory[kind] = next.slice(0, KEEP);
+}
+
+/** 空的事件记录（开新局与老档迁移都用它） */
+export function emptyEventHistory(): EventHistory {
+  return { night: [], help: [], day: [], emergency: [] };
 }
 
 export { createCursor };

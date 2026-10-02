@@ -11,8 +11,8 @@
  * systems/ 层纪律：不碰任何浏览器 API。
  */
 import { getBoxDef } from '../data/boxes';
-import { NIGHT_EVENT_DEFS, NIGHT_SLEEP } from '../data/nightEvents';
-import { nextFloat, pick, type RngCursor } from '../model/rng';
+import { NIGHT_EVENT_DEFS, NIGHT_SLEEP, nightEventWeight } from '../data/nightEvents';
+import { nextFloat, pickEventAvoidingRecent, type RngCursor } from '../model/rng';
 import type { AppliedEffect, NightEffect, NightEventDef, NightOption, RunState } from '../model/types';
 import { generateBoxStacks, nextBoxSeq } from './setup';
 
@@ -23,10 +23,17 @@ import { generateBoxStacks, nextBoxSeq } from './setup';
  */
 export const NIGHT_EVENT_CHANCE = 0.6;
 
-/** 今晚有事吗？有则返回事件 id，没有返回 null。消耗一次 RNG */
-export function rollNight(cursor: RngCursor): string | null {
+/**
+ * 今晚有事吗？有则返回事件 id，没有返回 null。消耗一次 RNG。
+ *
+ * @param recent 最近几晚出过的事件 id（**最新在前**，见 `RunState.eventHistory`）。
+ *   紧邻的上一条会被**排除** —— "连着两晚是同一件事"是重复感最强的一种，
+ *   而池子里还剩 5 条可选，随机性一点没少。理由写在 `model/rng.ts` 的
+ *   `pickEventAvoidingRecent` 上。
+ */
+export function rollNight(cursor: RngCursor, recent: readonly string[] = []): string | null {
   if (nextFloat(cursor) >= NIGHT_EVENT_CHANCE) return null;
-  return pick(cursor, NIGHT_EVENT_DEFS).id;
+  return pickEventAvoidingRecent(cursor, NIGHT_EVENT_DEFS, recent, nightEventWeight)?.id ?? null;
 }
 
 /**

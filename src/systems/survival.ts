@@ -70,6 +70,7 @@ import {
   workCostOf
 } from '../data/survival';
 import { nextFloat, type RngCursor } from '../model/rng';
+import { recordEvent } from './setup';
 import type { CategoryId, EmergencyDef, HardPressLevel, RunState } from '../model/types';
 
 /** 每天最多自动用掉几件补给（医疗 / 保暖各算一份）。它只防"一次吃光库存"，不限制正常情况下按需取用 */
@@ -90,12 +91,22 @@ const SUPPLY_MAX_PER_DAY = 2;
  * ★ 它是**纯函数**（只吃游标），所以调用方负责决定"这一天算不算"：
  * 只有真的结算了一天才会走到这里（见 `settleSurvivalDay`），
  * 于是"重复点过一天""刷新页面""读档"都不会多抽一次。
+ *
+ * @param recent 上一条刚出过的（最新在前，见 `RunState.eventHistory`）。
+ *   它会被排除 —— **连着两天同一件突发事件**是最刺眼的一种重复。
  */
-export function rollEmergency(cursor: RngCursor): EmergencyDef | null {
+export function rollEmergency(cursor: RngCursor, recent: readonly string[] = []): EmergencyDef | null {
   const total = EMERGENCY_NONE_WEIGHT + EMERGENCY_DEFS.length;
   const roll = nextFloat(cursor) * total;
   if (roll < EMERGENCY_NONE_WEIGHT) return null;
-  const index = Math.min(EMERGENCY_DEFS.length - 1, Math.floor(roll - EMERGENCY_NONE_WEIGHT));
+  let index = Math.min(EMERGENCY_DEFS.length - 1, Math.floor(roll - EMERGENCY_NONE_WEIGHT));
+  const last = recent[0];
+  for (let step = 0; step < EMERGENCY_DEFS.length; step++) {
+    const candidate = EMERGENCY_DEFS[index];
+    if (!candidate) break;
+    if (candidate.id !== last) return candidate;
+    index = (index + 1) % EMERGENCY_DEFS.length;
+  }
   return EMERGENCY_DEFS[index] ?? null;
 }
 
@@ -324,9 +335,10 @@ export function settleSurvivalDay(run: RunState, cursor?: RngCursor): SurvivalRe
 
   // ⑥ 突发事件（§5 的另一半）：顺手位上有急救品就自己化解，没有才按缺货口径受创。
   //    判定必须在 ⑦ 自动补给**之前** —— 药能把你救回来，但免不掉今天的伤（见文件头的顺序说明）
-  const emergency = cursor ? rollEmergency(cursor) : null;
+  const emergency = cursor ? rollEmergency(cursor, run.eventHistory.emergency) : null;
   let emergencyOutcome: EmergencyOutcome | null = null;
   if (emergency) {
+    recordEvent(run, 'emergency', emergency.id);
     emergencyOutcome = settleEmergency(run, emergency);
     if (!emergencyOutcome.resolved) {
       const pain = Math.min(SHORTAGE_MAX_STACK, emergencyOutcome.lost);

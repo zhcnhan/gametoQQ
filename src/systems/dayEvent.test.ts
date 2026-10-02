@@ -11,7 +11,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { DAY_EVENT_DEFS, dayPriceFactor } from '../data/dayEvents';
-import { SHOP_DEFS } from '../data/shops';
+import { countCategory } from '../model/consume';
 import { createCursor } from '../model/rng';
 import { createSaveGame } from '../state/save';
 import { GameStore } from '../state/store';
@@ -23,6 +23,7 @@ import {
   buyCart,
   enterShop,
   findShopStock,
+  hasPlayerFacingEffect,
   leaveShop,
   purchaseLimitOf,
   resolveDayEvent,
@@ -118,6 +119,82 @@ describe('白天事件的抽签', () => {
   });
 });
 
+/**
+ * ★ 这一组就是那条"不许出现毫无效果的事件"的**可执行形式**。
+ *
+ * 它存在的理由是一次真实的返工：M2 第一批白天事件里，四个选项里有三个什么都没发生 ——
+ * "先抢一轮"只把**商店**的货架削掉了（玩家一件货都没拿到），"照原计划买"更是纯亏，
+ * "按限购买"给玩家的只有一条限购。玩家的原话是
+ * "我抢了东西买了东西……家里的东西并没有增长啊""限购两件跟我有鸡毛关系，我两件东西也没买到啊"。
+ *
+ * 那不是数值 bug，是**数据结构没拦住"写一个没有后果的选项"**。
+ * 现在这几条测试拦得住：以后加新事件（不管是买东西、修水管还是邻居吵架），
+ * 只要写了一个什么都不给的选项，这里就红。
+ */
+describe('★ 结构约束：不许有"点了什么都不发生"的选项', () => {
+  it('每个选项都至少命中一个"落到玩家身上"的效果', () => {
+    const bad: string[] = [];
+    for (const def of DAY_EVENT_DEFS) {
+      for (const opt of def.options) {
+        if (!hasPlayerFacingEffect(opt.effect)) {
+          bad.push(
+            `${def.id} 的「${opt.label}」只改商店（${Object.keys(opt.effect).join('/')}），玩家点完什么都不会变`
+          );
+        }
+      }
+    }
+    expect(bad).toEqual([]);
+  });
+
+  it('只改商店与物价的选项不许存在（削库存 / 限购 / 涨价单独出现 = 白扣一个行动点）', () => {
+    const SHOP_ONLY = ['stockCut', 'limit', 'priceUp'];
+    const bad: string[] = [];
+    for (const def of DAY_EVENT_DEFS) {
+      for (const opt of def.options) {
+        const keys = Object.keys(opt.effect);
+        if (keys.length > 0 && keys.every((k) => SHOP_ONLY.includes(k))) {
+          bad.push(`${def.id} 的「${opt.label}」只动了商店与物价：${keys.join('/')}`);
+        }
+      }
+    }
+    expect(bad).toEqual([]);
+  });
+
+  it('限购只当处境，或与真给到手的收获一起出现', () => {
+    for (const def of DAY_EVENT_DEFS) {
+      for (const opt of def.options) {
+        if (opt.effect.limit === undefined) continue;
+        const givesGoods = opt.effect.grab !== undefined || opt.effect.boxDefId !== undefined;
+        const label = `${def.id} 的「${opt.label}」`;
+        expect(
+          givesGoods || def.text.includes('限购'),
+          `${label} 把"限购"当成收获发给玩家了（它是处境，不是奖励）`
+        ).toBe(true);
+      }
+    }
+  });
+
+  it('★ 文案说"拿到了"就必须真给货', () => {
+    const CLAIMS_GOODS = /抓了|拿了两|多给了你|带回来/;
+    const bad: string[] = [];
+    for (const def of DAY_EVENT_DEFS) {
+      for (const opt of def.options) {
+        if (!CLAIMS_GOODS.test(opt.outcome)) continue;
+        const gives = opt.effect.grab !== undefined || opt.effect.boxDefId !== undefined;
+        if (!gives) bad.push(`${def.id} 的「${opt.label}」文案说拿到了东西，效果里却没有：${opt.outcome}`);
+      }
+    }
+    expect(bad).toEqual([]);
+  });
+
+  it('每条事件都有一条"不参与"的路（§4A）', () => {
+    for (const def of DAY_EVENT_DEFS) {
+      const has = def.options.some((o) => o.effect.visitLost === true);
+      expect(has, `${def.id} 没有"不参与"的出路`).toBe(true);
+    }
+  });
+});
+
 describe('白天事件接进 enterShop：门口先讲那件事', () => {
   /** 反复开新局，直到这一家店门口真的出了指定的那件事（种子化地穷举） */
   function storeAtEvent(eventId: string, seed = 1, shopId = 'supermarket') {
@@ -190,19 +267,25 @@ describe('白天事件接进 enterShop：门口先讲那件事', () => {
     expect(again?.canLoad).toBe(false);
   });
 
-  it('★ 削库存：抢完了就是抢完了 —— 当天该品类的行真的少掉件数', () => {
+  it('★ 削库存 + 抢到货：选项 0（先抢一轮）两头都动 —— 店里少了，你家多了', () => {
     const { store } = storeAtEvent('d_panic_buying');
-    const before = SHOP_DEFS.find((s) => s.id === 'supermarket')
-      ?.offers.filter((o) => o.itemId.startsWith('canned') || o.itemId.includes('noodle'))
-      .length ?? 0;
     const stockBefore = findShopStock(store.run, 'supermarket')?.lines.reduce((n, l) => n + l.stock, 0) ?? 0;
-    const res = resolveDayEvent(store, 1); // "照原计划买" → 削 2 件主食
+    const boxesBefore = store.run.boxesToUnpack.length;
+    const hadFoodBefore = countCategory(store.run.shelves, store.run.boxesToUnpack, 'food');
+
+    const res = resolveDayEvent(store, 0); // 先抢一轮
     expect(res.ok).toBe(true);
     const applied = store.run.dayEvent?.applied;
+    // ① 商店那一头：货架真的少了
     expect(applied?.stockCut.length).toBeGreaterThan(0);
     const stockAfter = findShopStock(store.run, 'supermarket')?.lines.reduce((n, l) => n + l.stock, 0) ?? 0;
     expect(stockAfter).toBeLessThan(stockBefore);
-    void before;
+    // ② 玩家那一头：**真拿到了货**（这是原来缺的一半 —— 玩家当时一件都没拿到）
+    expect(applied?.grabbed.length).toBeGreaterThan(0);
+    expect(store.run.boxesToUnpack.length).toBeGreaterThan(boxesBefore);
+    expect(countCategory(store.run.shelves, store.run.boxesToUnpack, 'food')).toBeGreaterThan(hadFoodBefore);
+    // ③ 而且重量照实记进了车载（原来黑市那一箱漏了这一步）
+    expect(store.run.carLoad).toBeGreaterThan(0);
   });
 
   it('黑市商人：给得起钱才成立，钱不够时命令层也挡（界面置灰之外的第二道）', () => {

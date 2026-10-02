@@ -133,3 +133,8 @@ export function findNightEvent(eventId: string): NightEventDef | null {
 export function hasNightEvent(eventId: string): boolean {
   return NIGHT_BY_ID.has(eventId);
 }
+
+/** 夜间事件每条的抽签权重。现在全等，留一个函数是为了将来能按条调频率 */
+export function nightEventWeight(): number {
+  return 1;
+}

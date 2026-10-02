@@ -155,6 +155,7 @@ export class ShopScreen implements Screen {
                        .join('')}</div>`
                    : ''
                }
+               ${this.lootHtml(applied)}
                ${applied.visitLost ? '<p class="block-note">这一趟到此为止。</p>' : ''}`
             : decided
               ? '<p class="block-note">这件事已经过去了。</p>'
@@ -171,6 +172,28 @@ export class ShopScreen implements Screen {
         }
       </section>
     `;
+  }
+
+  /**
+   * 「这趟到底到没到手」—— 玩家当场问出来的那一行。
+   *
+   * 原来的反馈只有一个「货架少了 4 件」的标签，而那是**商店**的账；
+   * 玩家的原话是"我抢了东西买了东西……家里的东西并没有增长啊"。
+   * 抢回来的货现在真的进待拆队列了（`grab`），所以这里要把**具体到手的件数**
+   * 摊在屏幕上：没到手就明说"这趟什么也没拿到"，到手了就报件数 ——
+   * 一句"拿到了 2 件"比四个数值标签都管用。
+   */
+  private lootHtml(applied: DayEffectApplied): string {
+    const pieces = applied.grabbed.reduce((n, g) => n + g.count, 0);
+    const atHome = this.store.run.boxesToUnpack.length;
+    if (pieces > 0) {
+      return `<p class="block-note warm">这 ${pieces} 件已经在待拆箱里了（现在 ${atHome} 箱），回家就能拆。</p>`;
+    }
+    if (applied.gotBox) {
+      return `<p class="block-note warm">${escapeHtml(applied.boxName)}已经在待拆箱里了（现在 ${atHome} 箱）。</p>`;
+    }
+    if (applied.visitLost) return '';
+    return '<p class="block-note">这一趟没拿到货。</p>';
   }
 
   private shopListHtml(): string {

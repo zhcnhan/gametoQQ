@@ -26,6 +26,7 @@ import type { GameStore } from '../state/store';
 import { rollHelpRequest } from './help';
 import { NO_EFFECT, applyNightEffect, cashCost, describeEffect, optionAt, rollNight } from './night';
 import { rollShopStocks } from './shop';
+import { recordEvent } from './setup';
 import { settleSurvivalDay, type SurvivalReport } from './survival';
 
 /**
@@ -175,10 +176,11 @@ export function endDay(store: GameStore): PhaseResult {
 
   store.commit((draft) => {
     const cursor = createCursor(draft.seed);
-    const eventId = rollNight(cursor);
+    const eventId = rollNight(cursor, draft.eventHistory.night);
     if (eventId) {
       draft.night = { eventId, choice: null, applied: null };
       draft.phase = 'night';
+      recordEvent(draft, 'night', eventId);
       events.push({ type: 'nightFell', eventId });
     } else {
       events.push(startNextDay(draft, cursor));
@@ -274,10 +276,11 @@ function settleAndMaybeEnd(run: RunState, events: PhaseEvent[], cursor: RngCurso
     // §6.5：结算完之后、玩家离开日报之前，门口可能站着人。
     // 放在**结算之后**是刻意的 —— 求援要用的是"今天过完之后"的库存与体力，
     // 顺序反了会出现"用还没到手的物资去凑单"。
-    const defId = rollHelpRequest(cursor);
+    const defId = rollHelpRequest(cursor, run.eventHistory.help);
     if (defId) {
       run.helpRequest = { defId };
       run.phase = 'help_request';
+      recordEvent(run, 'help', defId);
       events.push({ type: 'helpKnocked', defId });
     }
     return;

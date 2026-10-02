@@ -121,3 +121,8 @@ export function getHelpRequestDef(defId: string): HelpRequestDef {
 export function findHelpRequestDef(defId: string): HelpRequestDef | null {
   return HELP_BY_ID.get(defId) ?? null;
 }
+
+/** 求援订单每单的抽签权重。现在全等，留一个函数是为了将来能按单调频率 */
+export function helpRequestWeight(): number {
+  return 1;
+}

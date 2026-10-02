@@ -22,22 +22,28 @@
  */
 import { getBoxDef } from '../data/boxes';
 import { getDisasterDef } from '../data/disaster';
-import { HELP_REQUEST_CHANCE, HELP_REQUEST_DEFS, findHelpRequestDef, type HelpRequestDef } from '../data/helpRequests';
+import {
+  HELP_REQUEST_CHANCE,
+  HELP_REQUEST_DEFS,
+  findHelpRequestDef,
+  helpRequestWeight,
+  type HelpRequestDef
+} from '../data/helpRequests';
 import { CATEGORY_LABELS } from '../data/items';
 import { getNpcDef } from '../data/npcs';
 import { workCostOf } from '../data/survival';
 import { dayLabel } from '../model/calendar';
 import { consumeCategory, countCategory } from '../model/consume';
-import { createCursor, nextFloat, pick, type RngCursor } from '../model/rng';
+import { createCursor, nextFloat, pickEventAvoidingRecent, type RngCursor } from '../model/rng';
 import { computeOrganizeScore } from '../model/score';
 import type { CategoryId, RunState } from '../model/types';
 import type { GameStore } from '../state/store';
 import { generateBoxStacks, nextBoxSeq } from './setup';
 
 /** 门口有人吗？有则返回订单 id。消耗一次 RNG */
-export function rollHelpRequest(cursor: RngCursor): string | null {
+export function rollHelpRequest(cursor: RngCursor, recent: readonly string[] = []): string | null {
   if (nextFloat(cursor) >= HELP_REQUEST_CHANCE) return null;
-  return pick(cursor, HELP_REQUEST_DEFS).id;
+  return pickEventAvoidingRecent(cursor, HELP_REQUEST_DEFS, recent, helpRequestWeight)?.id ?? null;
 }
 
 /**

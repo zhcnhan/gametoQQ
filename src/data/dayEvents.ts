@@ -57,6 +57,18 @@ interface WeightedDayEvent {
   weight: number;
 }
 
+/**
+ * ★ 写事件的硬约束（完整版在 `DayOptionEffect` 的字段注释里，由 `dayEvent.test.ts` 强制）：
+ *
+ *  1. **每个选项都必须至少有一个"落到玩家身上"的效果**（现金 / 四维 / 一箱货 /
+ *     当场拿到的货 / 明确的"不参与"）。只改商店（削库存、加限购）的选项**不许存在** ——
+ *     玩家点完什么都不会变，那不是选择，是白扣一次行动点；
+ *  2. **文案只许承诺效果给得出来的东西**。说"抢到了"就必须真给货（`grab`）；
+ *     说"货架空了"说的是**商店**的货架，不许让玩家以为自家少了东西；
+ *  3. **限购是处境，不是奖励**。"按限购买"这种选项给玩家的只有一条限制 ——
+ *     玩家的原话是"限购两件跟我有鸡毛关系，我两件东西也没买到啊"。
+ *     它只能写在 `text` 的处境里，或者在"通融"那条里配一笔钱一起给。
+ */
 const WEIGHTED: readonly WeightedDayEvent[] = [
   {
     weight: 1.0,
@@ -93,14 +105,17 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
       options: [
         {
           label: '先抢一轮',
-          outcome: '你把架子上的主食拿掉一半。旁边有人看你。',
-          // 削库存是**今天真实发生的**：抢完了就是抢完了，不是"你被禁止买"
-          effect: { stockCut: { category: 'food', count: 4 }, mood: 5 }
+          // ★ 文案说"抓了两袋"就必须真给货 —— 原来这条只削了商店库存，玩家一件没拿到，
+          // 读完文案却看着自家箱子没变，只会以为事件坏了
+          outcome: '你挤进去抓了两袋，后面的人也上手了。',
+          effect: { grab: { category: 'food', count: 2 }, stockCut: { category: 'food', count: 4 }, mood: 5 }
         },
         {
-          label: '照原计划买',
-          outcome: '你没去挤。货架空了小半，剩下的够你今天的量。',
-          effect: { stockCut: { category: 'food', count: 2 } }
+          label: '先买了再走',
+          outcome: '你照原计划结完账就出了门。后面的人还在往里挤。',
+          // 纯"不参与"是干瘪的，所以给它一条真的代价与好处：
+          // 货是真的买到了（正常采购那套），代价是这一趟之后城里开始涨价
+          effect: { priceUp: 0.1, stamina: -4 }
         },
         {
           label: '今天不买了',
@@ -114,12 +129,14 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
     weight: 1.4,
     def: {
       id: 'd_purchase_limit',
-      text: '门口贴了张手写的纸：米面油盐，每人限购。理货员在数人头。',
+      // ★ 限购写在**处境**里，而不是当成选项发给玩家
+      text: '门口贴了张手写的纸：米面油盐，每人限购两件。理货员在数人头。',
       options: [
         {
-          label: '按限购买',
-          outcome: '你买到了限额内的一份。后面还有人排着。',
-          effect: { limit: { category: 'food', max: 2 } }
+          label: '就买两件',
+          // 给玩家的东西是**那两件货本身**，限购只是它后面的处境
+          outcome: '你拿了两袋米。他伸手指了指那张纸。',
+          effect: { grab: { category: 'food', count: 2 }, limit: { category: 'food', max: 2 } }
         },
         {
           label: '换一家看看',
@@ -129,7 +146,7 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
         {
           label: '找熟人通融',
           outcome: '你给理货员递了包烟。他多给了你两件。',
-          effect: { cash: -20, limit: { category: 'food', max: 5 } }
+          effect: { cash: -20, grab: { category: 'food', count: 2 }, limit: { category: 'food', max: 5 } }
         }
       ]
     }
