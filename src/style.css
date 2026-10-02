@@ -769,6 +769,22 @@ body::before {
   transform: translate(-50%, -50%) rotate(-4deg);
   box-shadow: 3px 4px 0 var(--ink-16);
   animation: ghost-in 120ms var(--ease-out);
+  /*
+   * ★★ 幽灵**必须**不吃指针事件，而且必须写在这里（不能靠父层继承）。
+   *
+   * 玩家报过一个很反直觉的现象："把 A 正正好好放在 B 上反而判定不到，
+   * 边缘一圈就能交换"。机制是：幽灵跟着指针、**正好在指针底下**，
+   * 而 `elementFromPoint` 命中的是**最上层**元素 —— 幽灵当时是可命中的，
+   * 于是被命中的是幽灵而不是格子；只有指针偏到幽灵外面才轮到下面的格子。
+   *
+   * ★ 关键：`pointer-events` **不是继承属性**。
+   * 幽灵挂在 `pointer-events: none` 的 `.fx-layer` 里并**不能**让它免于命中 ——
+   * 它必须自己写这一条。第一版就是漏了它，而漏的原因正是以为会继承。
+   *
+   * 落点判定、悬停预览、`data-drop` 检测全都依赖 `elementFromPoint`，
+   * 所以这一条是整个拖拽能工作的前提，不是装饰。
+   */
+  pointer-events: none;
 }
 
 .drag-ghost .ico {

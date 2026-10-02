@@ -245,6 +245,34 @@ for (const cls of TOUCH_ACTION_REQUIRED) {
   }
 }
 
+// ———————— ⑥ 覆盖层必须"不吃指针事件" ————————
+/*
+ * `.drag-ghost` 上必须有 `pointer-events: none`。
+ *
+ * 玩家报过一个很反直觉的现象："把 A 正正好好放在 B 上反而判定不到，
+ * 边缘一圈就能交换"。机制是：幽灵跟着指针、**正好在指针底下**，
+ * 而 `elementFromPoint` 命中的是最上层元素 —— 幽灵当时**是可命中的**，
+ * 于是被命中的是幽灵而不是格子；只有指针偏到幽灵外面才轮到下面的格子。
+ *
+ * ★ 关键知识点：`pointer-events` **不是继承属性**。
+ * 幽灵挂在 `pointer-events: none` 的 `.fx-layer` 里并**不能**让它免于命中 ——
+ * 它必须**自己**写这一条。我第一版就是漏了它（漏的原因正是以为会继承）。
+ *
+ * 落点判定、悬停预览、`data-drop` 检测全都依赖 `elementFromPoint`，
+ * 所以这条一旦被删，整个拖拽都会退回"放不下去"，而且不会有任何报错。
+ */
+const POINTER_EVENTS_NONE_REQUIRED = ['drag-ghost'];
+for (const cls of POINTER_EVENTS_NONE_REQUIRED) {
+  const rule = new RegExp(`\\.${cls}\\s*\\{[^}]*pointer-events\\s*:\\s*none`, 's');
+  if (!rule.test(code)) {
+    note(
+      `.${cls} 缺少 pointer-events: none —— 它会挡住底下的格子，\n` +
+        `    表现为"正正好好放上去反而判定不到、边缘一圈才行"。\n` +
+        `    注意：pointer-events 不是继承属性，光靠父层 .fx-layer 的 none 不管用。`
+    );
+  }
+}
+
 // ———————— 报账 ————————
 if (failures.length > 0) {
   console.error('[check-style] 样式层次出问题了：\n');

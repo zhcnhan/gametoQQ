@@ -149,6 +149,43 @@ describe('屏幕级：拖拽交换', () => {
     expect(total, '一件都不许丢').toBeGreaterThanOrEqual(3);
   });
 
+  it('★★ 幽灵**不许**挡住落点（"正正好好放在 B 上反而判定不到"）', () => {
+    /*
+     * 玩家报得很准："把 A 正正好好放在 B 上反而判定不到、边缘一圈就能交换"。
+     * 机制：幽灵跟着指针、**正好在指针底下**，而 `elementFromPoint` 命中的是最上层
+     * 元素 —— 幽灵当时是**可命中的**（`.fx-layer` 虽然设了 `pointer-events: none`，
+     * 但一条针对 `.drag-ghost` 自身的规则会覆盖继承），于是被命中的是幽灵而不是格子。
+     * 只有指针偏到幽灵外面时，才轮到下面的格子。
+     *
+     * 这条用假体把这个局面**造出来**：把一个和幽灵同尺寸、同位置的层压在 B 上。
+     * 它必须**不影响**判定 —— 否则就是幽灵又在挡路。
+     */
+    put(ctx, 'shelf_a', 0, 0, 'canned_beans', 3);
+    put(ctx, 'shelf_a', 0, 1, 'bandage', 2);
+    const b = slotAt(ctx, 'shelf_a', 0, 1);
+
+    // 造一个"覆盖层"，正好压在 B 上（位置、尺寸都照着幽灵来）
+    const layer = ctx.root.ownerDocument.createElement('div');
+    layer.classList.add('fx-layer');
+    layer.pointerEvents = 'none'; // ← 幽灵所在的层本身不吃事件
+    ctx.root.ownerDocument.body.appendChild(layer);
+    const ghost = ctx.root.ownerDocument.createElement('div');
+    ghost.classList.add('drag-ghost');
+    ghost.pointerEvents = 'none'; // ← 幽灵自己也不吃（CSS 里已补上这一条）
+    const size = 56;
+    ghost.place(b.center.x - size / 2, b.center.y - size / 2, size, size);
+    layer.appendChild(ghost);
+
+    // 命中测试必须仍然指向 B 那个格子
+    expect(ctx.root.ownerDocument.elementFromPoint(b.center.x, b.center.y), '命中测试被覆盖层挡住了').toBe(b);
+
+    // 而且真正拖一遍要能交换成功
+    dragMouse(ctx, [0, 0], [0, 1]);
+    expect(itemAt(ctx, 0, 0)).toBe('bandage');
+    expect(itemAt(ctx, 0, 1)).toBe('canned_beans');
+    expect(ctx.session.held).toBeNull();
+  });
+
   it('★ 拖到空格上 → 就是搬过去，不进手里', () => {
     put(ctx, 'shelf_a', 0, 0, 'canned_beans', 3);
     dragMouse(ctx, [0, 0], [1, 3]);

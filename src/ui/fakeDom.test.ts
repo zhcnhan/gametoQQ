@@ -80,6 +80,48 @@ describe('假 DOM 自检', () => {
     expect(doc.elementFromPoint(500, 500)).toBeNull();
   });
 
+  it('★ 命中测试尊重 pointer-events：祖先设 none → 整棵子树都不吃事件', () => {
+    /*
+     * 这一条模拟的正是玩家报的"把 A 正正好好放在 B 上反而判定不到"：
+     * 拖拽幽灵跟着指针、正好在指针底下，而 `elementFromPoint` 命中的是最上层元素。
+     * `.fx-layer` 本来是 `pointer-events: none`，但**一条针对 `.drag-ghost` 自身的
+     * 规则会覆盖继承**，于是幽灵变成可命中、把底下的格子挡住了。
+     */
+    const doc = new FakeDocument();
+    installFakeWindow(doc);
+    const layer = doc.createElement('div');
+    layer.pointerEvents = 'none';
+    doc.body.appendChild(layer);
+    const ghost = doc.createElement('div');
+    ghost.pointerEvents = 'none'; // ← 幽灵自己也不吃（CSS 里已补上这一条）
+    layer.appendChild(ghost);
+    ghost.place(100, 100, 60, 60);
+
+    // 幽灵底下有个"格子"
+    const slot = doc.createElement('button');
+    slot.classList.add('slot');
+    doc.body.appendChild(slot);
+    slot.place(100, 100, 60, 60);
+
+    expect(doc.elementFromPoint(130, 130), '不可命中的幽灵不该挡住底下的格子').toBe(slot);
+
+    /*
+     * 反向：把幽灵改成可命中。
+     *
+     * 注意此时命中的**仍然是 slot** —— 因为假体的平局判定近似"深度优先、后者胜"，
+     * 而 slot 是 body 的子树、比 layer 深一层，所以它仍然胜出。
+     * 真实浏览器这里会由 z-index / 绘制顺序决定（幽灵在上层）。
+     *
+     * 所以这条反向断言**不验"谁盖住谁"**（假体在这一点上不可靠，我不装它能），
+     * 只验**可命中性本身**：幽灵变成 auto 之后，它自己**是**一个可命中元素 ——
+     * 这正是那个 bug 的开关。谁盖住谁留给真浏览器。
+     */
+    ghost.pointerEvents = 'auto';
+    expect(doc.pointerEventsOf(ghost), '改成 auto 之后幽灵自己就变成可命中的了').toBe('auto');
+    ghost.pointerEvents = 'none';
+    expect(doc.pointerEventsOf(ghost)).toBe('none');
+  });
+
   it('可控时钟：tick 同时推进定时器与 Date.now()', () => {
     const doc = new FakeDocument();
     const win = installFakeWindow(doc);

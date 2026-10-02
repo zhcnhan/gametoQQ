@@ -80,6 +80,13 @@ export class FakeElement {
   });
   ownerDocument!: FakeDocument;
   rect: FakeRect = { left: 0, top: 0, width: 0, height: 0 };
+  /**
+   * 这个元素自己的 `pointer-events`（默认 `auto`，也就是"接受"）。
+   *
+   * 假体不解析 CSS，所以这里由测试**显式设置** —— 需要在测试里构造
+   * "某个覆盖层挡住了底下元素"这种局面时，把它设成 `'none'` 即可。
+   */
+  pointerEvents: 'auto' | 'none' = 'auto';
   /** 记录所有被派发过来的事件类型，测试用它断言"幽灵被摘了"之类 */
   readonly log: string[] = [];
   textContent = '';
@@ -167,6 +174,24 @@ export class FakeElement {
 
   getBoundingClientRect(): FakeRect {
     return this.rect;
+  }
+
+  /**
+   * 属性名列表。有些渲染辅助会遍历它来决定要不要写某个属性，
+   * 缺了会以 `element.getAttributeNames is not a function` 的形式炸出来。
+   */
+  getAttributeNames(): string[] {
+    return Object.keys(this.attributes);
+  }
+
+  getAttribute(name: string): string | null {
+    return this.attributes[name] ?? null;
+  }
+
+  setAttribute(name: string, value: string): void {
+    this.attributes[name] = value;
+    const camel = name.replace(/^data-/, '').replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
+    this.dataset[camel] = value;
   }
 
   /** 手动摆位置（假体没有布局引擎） */
@@ -318,19 +343,32 @@ export class FakeDocument {
   }
 
   /**
-   * 命中测试：所有**可见**（有非零矩形）且含该点的元素里，取**最深**的那个。
+   * 命中测试：所有**可见**（有非零矩形）且含该点、且**接受指针事件**的元素里，
+   * 取**最深**的那个 —— 这就是真浏览器 `elementFromPoint` 的语义。
    *
-   * ★ 刻意从**文档树遍历**，而不是查那个扁平的手工索引 `all`。
-   * 第一版查的是 `all`，于是 `innerHTML = ...` 重建整间房之后
-   * **新元素从没被登记**，命中测试永远返回 `null` —— 所有"落点"断言都在验空气
-   * （诊断打印出来的 `elementFromPoint(b) = 空` 就是这个）。
-   * 树遍历不会过期，这才是对的依赖方向。
+   * ★ 两条都是被真实 bug 逼出来的：
+   *
+   *  1. **从文档树遍历**，而不是查那个扁平的手工索引 `all`。
+   *     第一版查 `all`，于是 `innerHTML = ...` 重建整间房之后新元素从没被登记，
+   *     命中测试永远返回 `null`，所有"落点"断言都在验空气；
+   *  2. **尊重 `pointer-events: none`**。玩家报过一个很反直觉的现象：
+   *     "把 A 正正好好放在 B 上反而判定不到、边缘一圈才能交换" ——
+   *     根因就是拖拽幽灵跟着指针、正好在指针底下，而它当时**是可命中的**，
+   *     于是命中测试拿到的是幽灵而不是格子。
+   *     假体不模拟这一条，就永远发现不了这类 bug。
    */
   elementFromPoint(x: number, y: number): FakeElement | null {
     let best: FakeElement | null = null;
     let bestDepth = -1;
     const consider = (el: FakeElement, depth: number): void => {
-      if (el.containsPoint(x, y) && el.rect.width > 0 && el.rect.height > 0 && depth > bestDepth) {
+      // 不接受指针事件 → 它和整棵子树都跳过
+      if (this.pointerEventsOf(el) === 'none') return;
+      /*
+       * 平局用 `>=`：先访问到的是**文档里靠前**的元素，靠后的应当盖住它。
+       * 这是"绘制顺序"的粗略近似 —— 真实浏览器按 z-index / 层叠上下文决定，
+       * 这里只做"深度优先 + 后者胜"，对"幽灵 vs 格子"这类场景够用。
+       */
+      if (el.containsPoint(x, y) && el.rect.width > 0 && el.rect.height > 0 && depth >= bestDepth) {
         best = el;
         bestDepth = depth;
       }
@@ -338,6 +376,25 @@ export class FakeDocument {
     };
     consider(this.documentElement, 0);
     return best;
+  }
+
+  /**
+   * 这个元素在接受指针事件吗？
+   *
+   * ★ `pointer-events` **不是继承属性**（初始值就是 `auto`）—— 这一点很容易搞错，
+   * 我第一版就写成了"沿祖先链找 `none`"，结果子元素永远被父元素的 `none` 吃掉，
+   * 反向对照那条断言因此失败。
+   *
+   * 正确语义（也是那个真实 bug 的机制）：
+   *  · 元素自己**显式**设了值 → 就用它；
+   *  · 元素自己**没设** → 它默认就是 `auto`，**父元素的 `none` 管不到它**。
+   *
+   * 所以 `.fx-layer { pointer-events: none }` 并不能让 `.drag-ghost` 免于命中 ——
+   * 幽灵必须**自己**写 `pointer-events: none`。玩家报的
+   * "正正好好放在 B 上反而判定不到"就是这个。
+   */
+  pointerEventsOf(el: FakeElement): 'none' | 'auto' {
+    return el.pointerEvents;
   }
 }
 
