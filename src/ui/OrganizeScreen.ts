@@ -21,7 +21,7 @@ import {
   pickupFromShelf,
   returnHeld,
   sortAllByFEFO,
-  swapSlots,
+  swapHeldWithSlot,
   takeFromBox,
   tapSlot,
   toggleHandy,
@@ -49,13 +49,23 @@ interface DragState {
 }
 
 /**
- * 拖拽诊断开关（**临时排查用，默认关**）。
+ * 拖拽诊断开关（默认关）。
  *
- * 在浏览器控制台执行 `__tunhuoTrace = true` 打开，然后重现一次拖拽，
- * 控制台会按顺序打出每一环走到哪个分支。它是给"现象说不清、我只能猜"这种情况用的 ——
- * 猜一轮要花一次构建与一次往返，而这一行开关能直接给出分支。
+ * 在控制台执行 `__tunhuoTrace = true` 打开，然后重现一次拖拽，
+ * 控制台会按顺序打出每一环走到哪个分支。它是给"现象说不清、只能猜"这种情况用的 ——
+ * 猜一轮要花一次构建与一次往返，而这个开关能直接给出分支。
  *
- * 打开时给 window 上挂一个同名全局，方便控制台直接赋值。
+ * ## 它在 2026-07 那轮排查里救过一次场
+ *
+ * 玩家报"手机上拖拽完全不跟手、拖出极小范围就断"，日志显示**每约 6px 就一次
+ * `cancelDrag`** —— 那直接指向 `.slot` 缺少 `touch-action: none`（浏览器把手势
+ * 抢去滚动了）。另一个是"拖两件交换却被拒"，追踪到起手那一格是**空的**
+ * （拾取已经把它拿走了），于是 `swapSlots` 必然拒绝。
+ * 两个根因都不是靠读代码能发现的。
+ *
+ * ★ 调用点已清理（见 `scripts/strip-trace.mjs`）。**保留这个函数与开关本身**：
+ * 下次遇到"只在运行期显形"的问题，直接在关心的分支插一行 `trace('…')` 即可，
+ * 不必再搭一遍。`void trace` 是告诉 TS "它被有意保留、不是漏删的死代码"。
  */
 let TRACE = false;
 if (typeof window !== 'undefined') {
@@ -70,11 +80,18 @@ if (typeof window !== 'undefined') {
   });
 }
 function trace(message: string): void {
+  const g = globalThis as unknown as Record<string, unknown>;
+  if (g['__tunhuoTrace']) TRACE = true;
   if (TRACE) {
     // eslint-disable-next-line no-console
     console.log(`[拖拽] ${message}`);
   }
 }
+/*
+ * 有意保留、暂时没有调用点（见上面 `trace` 的注释）。
+ * 这一行是写给 `noUnusedLocals` 与后来者看的：**它不是漏删的死代码**。
+ */
+void trace;
 
 export class OrganizeScreen {
   private readonly root: HTMLElement;
@@ -183,7 +200,6 @@ export class OrganizeScreen {
      * 玩家看到的也只是"它消失了"，而不是"它卡在那儿不动"。
      */
     if (this.ghost !== null) {
-      trace('render(): 收掉游离的幽灵');
       this.endGhost();
     }
     /*
@@ -528,7 +544,6 @@ export class OrganizeScreen {
     if (!this.session.held) return;
     this.drag = { active: true, source };
     this.dragOrigin = origin;
-    trace(`beginDrag source=${source} at=${at ? Math.round(at.x) + ',' + Math.round(at.y) : 'null'} origin=${origin ? origin.shelfId : 'null'}`);
     const el = document.createElement('div');
     el.className = 'drag-ghost';
     const held = this.session.held;
@@ -552,7 +567,6 @@ export class OrganizeScreen {
   private moveGhostTo(point: { x: number; y: number }): void {
     const ghost = this.ghost;
     if (!ghost) {
-      trace('moveGhostTo: 没有幽灵，跳过');
       return;
     }
     /*
@@ -561,13 +575,11 @@ export class OrganizeScreen {
      * 之后每一次移动都在给一个看不见的元素设 left/top。
      */
     if (ghost.isConnected === false) {
-      trace('moveGhostTo: 幽灵已脱离文档 → 丢弃引用');
       this.ghost = null;
       return;
     }
     ghost.style.left = `${point.x}px`;
     ghost.style.top = `${point.y}px`;
-    trace(`moveGhostTo → ${Math.round(point.x)},${Math.round(point.y)}`);
   }
 
   private moveDrag(point: { x: number; y: number }): void {
@@ -649,25 +661,23 @@ export class OrganizeScreen {
         const canSwap =
           origin !== null && target !== null && held !== null && target.itemId !== held.itemId && !sameSlot;
         if (canSwap && origin) {
-          const res = swapSlots(
+          /*
+           * ★★ 用 `swapHeldWithSlot`，不是 `swapSlots`。
+           *
+           * 拖拽的物理过程是"起手那一格**先被拿空**"（`onDragStart` 里
+           * `pickupFromShelf` 已经把东西移进手里），所以起手格此刻是空的 ——
+           * 而 `swapSlots` 要求两格都有东西，于是它**必然拒绝**并甩出那句
+           * "两个格子都得有东西才谈得上互换"。玩家看到的正是这句话。
+           *
+           * 正确的模型是"**手里这件**换到落点、落点那件回到起手格"：
+           * 对玩家而言与"两格对调"完全一样，但它符合拖拽的真实中间状态。
+           */
+          const res = swapHeldWithSlot(
             this.store,
+            this.session,
             { shelfId: origin.shelfId, pos: origin.pos },
             { shelfId, pos: { row, col } }
           );
-          /*
-           * ★ 互换成功后**必须把手清空**。
-           *
-           * 为了把 A 拖起来，`onDragStart` 里已经调过 `pickupFromShelf(A)`，
-           * 所以 `session.held` 是 A。而互换是"两格对调、谁都不进手里" ——
-           * 不清的话手会一直举着 A（它同时也已经在 B 那一格上了），
-           * 屏幕上同时出现"手里有 A"和"A 在格子里"，接下来的任何操作都基于错的状态。
-           *
-           * 只有在**成功**时清：被拒绝时手里那件得原样留着，玩家还能放回原处。
-           */
-          if (res.ok) {
-            this.session.held = null;
-            this.session.heldFrom = { kind: 'none' };
-          }
           this.consume(res);
           return;
         }
@@ -714,7 +724,6 @@ export class OrganizeScreen {
    * 留在手里才是可继续的状态（想放就再点一格）。
    */
   private cancelDrag(): void {
-    trace('cancelDrag（手势被打断）');
     this.drag = { active: false, source: 'shelf' };
     this.dragOrigin = null;
     this.endGhost();

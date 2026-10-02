@@ -312,21 +312,89 @@ export function placeHeld(store: GameStore, session: OrganizeSession, shelfId: s
 }
 
 /**
- * **两格互换**（拖拽专用）：`from` 与 `to` 上的东西对调，**手保持空**。
+ * **手里那件 ↔ 落点那件** 互换（拖拽交换走这条）。
  *
- * ## 为什么它必须是一个独立命令（玩家要求）
+ * ## 为什么不能复用 `swapSlots`（这是被玩家的复现逼出来的）
  *
- * 原来的实现只有"把手里那件放到占用格上"，副产物是"被换的那件进手里"。
- * 对**点选-点放**来说那是对的（玩家本来就在搬东西，手上那件得有个去处）；
- * 但对**拖拽**来说是错的 —— 玩家的原话是
- * "他现在的交换逻辑不是把两个物品交换，而是把被交换的那个东西换到手上，这不好"。
- * 想理一下两件的顺序，结果手上多了一件，还得再找地方放下。
+ * 拖拽的物理过程是：`onDragStart` 先把起手那一格的东西**拿进手里**
+ * （`pickupFromShelf`），于是**起手那一格是空的** —— 而 `swapSlots` 要求
+ * `from` 与 `to` 两格都有东西，所以它**必然拒绝**，并甩出那句
+ * "两个格子都得有东西才谈得上互换"。玩家看到的正是这句话。
+ *
+ * 正确的模型不是"两个格子对调"，而是"**手里这件**换到落点、落点那件回到起手格"：
+ *
+ *     from 格（空）  ←  target 那件
+ *     to   格        ←  held（手里那件）
+ *     手里           ← 空
+ *
+ * 玩家看到的效果与"两格对调"完全一样，但它符合拖拽的真实中间状态。
  *
  * ## 三条边界
  *
- *  · 两格必须都有东西（空格子的情况是"搬过去"，那只该走 `placeHeld`/`dropStack`）；
- *  · 同一件物资不互换（那是合并，交给 `placeHeld`）——否则会白耗一次操作、还弹个假音效；
- *  · 互不影响其它格子，也不碰 `session.held`（调用方负责确保手是空的）。
+ *  · `from` 与 `to` 不能是同一格（拖回原处 = 放回去，不是互换）；
+ *  · `to` 上必须真有东西（空格子是"搬过去"，走 `placeHeld`）；
+ *  · 同一件物资不互换（那是合并）。
+ *
+ * 成功时会把 `session.held` 清空 —— 互换的定义就是"谁都不留在手上"。
+ */
+export function swapHeldWithSlot(
+  store: GameStore,
+  session: OrganizeSession,
+  from: { shelfId: string; pos: SlotPos },
+  to: { shelfId: string; pos: SlotPos }
+): CommandResult {
+  const held = session.held;
+  if (!held) return reject('手里是空的');
+
+  const run = store.run;
+  const fromIdx = run.shelves.findIndex((s) => s.id === from.shelfId);
+  const toIdx = run.shelves.findIndex((s) => s.id === to.shelfId);
+  const fromShelf = fromIdx >= 0 ? run.shelves[fromIdx] : undefined;
+  const toShelf = toIdx >= 0 ? run.shelves[toIdx] : undefined;
+  if (!fromShelf || !toShelf) return reject('这里没有货架');
+  if (!isInside(fromShelf, from.pos) || !isInside(toShelf, to.pos)) return reject('格子不存在');
+  if (from.shelfId === to.shelfId && from.pos.row === to.pos.row && from.pos.col === to.pos.col) {
+    return reject('同一格');
+  }
+
+  const target = getStack(toShelf, to.pos);
+  if (!target) return reject('那一格是空的，直接放下去就行');
+  if (target.itemId === held.itemId) return reject('同一件物资，直接叠起来就行');
+
+  store.commit((draft) => {
+    const sTo = draft.shelves[toIdx];
+    if (sTo) draft.shelves[toIdx] = setSlotStack(sTo, to.pos, held);
+    const sFrom = draft.shelves[fromIdx];
+    if (sFrom) draft.shelves[fromIdx] = setSlotStack(sFrom, from.pos, target);
+  });
+
+  // 互换的定义就是"谁都不留在手上"
+  session.held = null;
+  session.heldFrom = { kind: 'none' };
+
+  return ok([
+    {
+      type: 'swapped',
+      itemId: held.itemId,
+      shelfId: to.shelfId,
+      pos: to.pos,
+      toItemId: target.itemId,
+      from: { shelfId: from.shelfId, pos: from.pos }
+    }
+  ]);
+}
+
+/**
+ * **两格互换**（`from` 与 `to` 上都有东西时用；例如将来的"框选两格对调"）。
+ *
+ * ## 与 `swapHeldWithSlot` 的分工
+ *
+ *  · 拖拽交换（玩家实际用的那条）走 `swapHeldWithSlot` —— 因为拖拽的中间状态是
+ *    "起手格已空、东西在手里"；
+ *  · 这里要求两格**都非空**，是一个纯粹的"两格对调"操作。
+ *
+ * 两者对玩家的可见效果相同，但**前置条件不同**，混用就会出现
+ * "我明明拖了两件东西，它说必须得有东西才谈得上互换" —— 那条 bug 就是这么来的。
  */
 export function swapSlots(
   store: GameStore,
