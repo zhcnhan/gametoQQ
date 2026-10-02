@@ -48,6 +48,34 @@ interface DragState {
   source: 'shelf' | 'box' | 'hand';
 }
 
+/**
+ * 拖拽诊断开关（**临时排查用，默认关**）。
+ *
+ * 在浏览器控制台执行 `__tunhuoTrace = true` 打开，然后重现一次拖拽，
+ * 控制台会按顺序打出每一环走到哪个分支。它是给"现象说不清、我只能猜"这种情况用的 ——
+ * 猜一轮要花一次构建与一次往返，而这一行开关能直接给出分支。
+ *
+ * 打开时给 window 上挂一个同名全局，方便控制台直接赋值。
+ */
+let TRACE = false;
+if (typeof window !== 'undefined') {
+  Object.defineProperty(window, '__tunhuoTrace', {
+    get: () => TRACE,
+    set: (v: boolean) => {
+      TRACE = Boolean(v);
+      // eslint-disable-next-line no-console
+      console.log(`[拖拽诊断] ${TRACE ? '已打开' : '已关闭'}`);
+    },
+    configurable: true
+  });
+}
+function trace(message: string): void {
+  if (TRACE) {
+    // eslint-disable-next-line no-console
+    console.log(`[拖拽] ${message}`);
+  }
+}
+
 export class OrganizeScreen {
   private readonly root: HTMLElement;
   private readonly store: GameStore;
@@ -154,7 +182,10 @@ export class OrganizeScreen {
      * 那幽灵就没有理由跨过一次重绘活下来。就算真有漏网的分支，
      * 玩家看到的也只是"它消失了"，而不是"它卡在那儿不动"。
      */
-    if (this.ghost !== null) this.endGhost();
+    if (this.ghost !== null) {
+      trace('render(): 收掉游离的幽灵');
+      this.endGhost();
+    }
     /*
      * ★ 同理，一次重绘 = 上一批手势全部作废。
      * 这里**先摘掉再重建**，而不是等 `bindRoomGestures` 自己清 ——
@@ -326,6 +357,7 @@ export class OrganizeScreen {
   private gestureDetachers: (() => void)[] = [];
 
   private clearGestureBindings(): void {
+    if (this.gestureDetachers.length > 0) trace(`clearGestureBindings: 摘掉 ${this.gestureDetachers.length} 个手势（其中若有正在拖的那个，会被打断）`);
     for (const detach of this.gestureDetachers) detach();
     this.gestureDetachers = [];
   }
@@ -492,6 +524,7 @@ export class OrganizeScreen {
     if (!this.session.held) return;
     this.drag = { active: true, source };
     this.dragOrigin = origin;
+    trace(`beginDrag source=${source} at=${at ? Math.round(at.x) + ',' + Math.round(at.y) : 'null'} origin=${origin ? origin.shelfId : 'null'}`);
     const el = document.createElement('div');
     el.className = 'drag-ghost';
     const held = this.session.held;
@@ -513,14 +546,38 @@ export class OrganizeScreen {
 
   /** 幽灵跟随指针（抽出来给 `moveDrag` 用，也让"初始摆位"和"移动"走同一段代码） */
   private moveGhostTo(point: { x: number; y: number }): void {
-    if (!this.ghost) return;
-    this.ghost.style.left = `${point.x}px`;
-    this.ghost.style.top = `${point.y}px`;
+    const ghost = this.ghost;
+    if (!ghost) {
+      trace('moveGhostTo: 没有幽灵，跳过');
+      return;
+    }
+    /*
+     * ★ 幽灵如果已经不在文档里（被某次重绘/替换丢掉），就当作"没有幽灵"、
+     * 顺手把引用清掉 —— 否则会出现"我们以为它在、其实它早没了"的状态，
+     * 之后每一次移动都在给一个看不见的元素设 left/top。
+     */
+    if (ghost.isConnected === false) {
+      trace('moveGhostTo: 幽灵已脱离文档 → 丢弃引用');
+      this.ghost = null;
+      return;
+    }
+    ghost.style.left = `${point.x}px`;
+    ghost.style.top = `${point.y}px`;
+    trace(`moveGhostTo → ${Math.round(point.x)},${Math.round(point.y)}`);
   }
 
   private moveDrag(point: { x: number; y: number }): void {
-    if (!this.drag.active) return;
+    /*
+     * ★ 只要**幽灵还在屏幕上**就让它跟手，不再先看 `this.drag.active`。
+     *
+     * 原来的顺序是"先判 active、再移动"，于是 `active` 只要因为任何原因
+     * （被取消、被旧手势覆盖、重绘时序）与"幽灵存在"这件事不同步，
+     * 幽灵就会**钉在最后一次成功移动的位置一动不动**，而后面的落点判定照旧跑 ——
+     * 玩家看到的是"留下一个影子、然后啥也干不了"。
+     * 幽灵存在 = 玩家正在拖，这是更可靠的那个信号。
+     */
     this.moveGhostTo(point);
+    if (!this.drag.active) return;
     const slot = this.pickDropSlot(point);
     if (slot === this.hoverEl) return;
     this.clearHover();
@@ -539,6 +596,7 @@ export class OrganizeScreen {
   }
 
   private endDrag(point: { x: number; y: number }): void {
+    trace(`endDrag active=${this.drag.active} held=${this.session.held ? this.session.held.itemId : 'null'}`);
     const wasActive = this.drag.active;
     const slot = this.hoverEl ?? this.pickDropSlot(point);
     this.endGhost();
@@ -626,6 +684,7 @@ export class OrganizeScreen {
    * 留在手里才是可继续的状态（想放就再点一格）。
    */
   private cancelDrag(): void {
+    trace('cancelDrag（手势被打断）');
     this.drag = { active: false, source: 'shelf' };
     this.dragOrigin = null;
     this.endGhost();
