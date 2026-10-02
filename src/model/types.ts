@@ -180,6 +180,17 @@ export interface Zone {
   autoAccept?: { categories?: CategoryId[]; tags?: string[] }; // 可选规则
 }
 
+/**
+ * 一块家具（货架 / 冰箱 / 柜子 / 地板堆）。
+ *
+ * `DEFERRED(D-22): 房间与货架是写死的「1 房间 3 家具」，「搬更大的家」要求它变成数据`
+ * —— 见 `docs/囤货末世-游戏策划案.md` §10B.4 / §10B.9 与 `src/meta/deferred.ts` 的 D-22。
+ *
+ * 注意 `roomId` 字段**已经存在**，但房间里只有一间、且没有任何东西按它分组 ——
+ * 也就是说"多房间"这件事在地基上留了位置，可惜**没留全**：
+ * `handyRank`（"门口那一块"，全屋唯一）依赖"只有一个门"这个前提，
+ * 多房间下它的语义必须重新定义。这是 D-22 里最容易被漏掉的一条。
+ */
 export interface Shelf {
   id: string;
   roomId: string;
