@@ -52,7 +52,22 @@ export function cloneStack(stack: ItemStack): ItemStack {
   return { itemId: stack.itemId, batches: stack.batches.map((b) => ({ ...b })) };
 }
 
+/**
+ * 坐标是否落在这块货架里。
+ *
+ * ★★ **必须是整数** —— 这条不能只用范围比较写。
+ *
+ * 压测（`scripts/stress.mjs`）抓到一个丢件的输入：坐标给小数（`row = 0.5`）时，
+ * `0.5 >= 0 && 0.5 < h` 成立 → 这里判为"在界内"，
+ * 但 `slots[0.5]` 是 `undefined`，于是 `setSlotStack` 走到 `if (!row) return shelf;`
+ * **静默返回原货架**（没放上去），而 `placeHeld` 那边已经把东西从手里清掉了 ——
+ * **放置报成功、物资却消失了**（实测全屋 21 → 19 件）。
+ *
+ * 界面造不出小数坐标（来自 `data-row` / `data-col`），但"静默失败"是最坏的失败方式：
+ * 调用方以为成功了。加上整数判定之后，越界坐标会被明确拒绝（`placeHeld` 会 reject）。
+ */
 export function isInside(shelf: Shelf, pos: SlotPos): boolean {
+  if (!Number.isInteger(pos.row) || !Number.isInteger(pos.col)) return false;
   return pos.row >= 0 && pos.row < shelf.h && pos.col >= 0 && pos.col < shelf.w;
 }
 
@@ -140,7 +155,16 @@ export function splitStack(
   const normalized = normalizeStack(stack);
   const taken: ItemStack = { itemId: normalized.itemId, batches: [] };
   const left: ItemStack = { itemId: normalized.itemId, batches: [] };
-  let remain = Math.max(0, count);
+  /*
+   * 想要拆出来的件数：**整数、且不超过这一叠的总数**。
+   *
+   * ★ `Math.floor` 是必须的：批次件数可能是小数（压测会造出 1.5 + 1.5 这种输入，
+   * 而 `normalizeStack` 不会把它取整）。不取整的话 `want = 3` 而 `Number.isInteger` 判 false
+   * → 直接归 0，**守恒就断了**（这是我第一版引入的回归，靠"整数输入下守恒"那条断言抓出来）。
+   */
+  const total = normalized.batches.reduce((n, b) => n + b.count, 0);
+  const want = Number.isInteger(count) && count > 0 ? Math.min(count, Math.floor(total)) : 0;
+  let remain = want;
   for (const batch of normalized.batches) {
     if (remain <= 0) {
       left.batches.push({ ...batch });

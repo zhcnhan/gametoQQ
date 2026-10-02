@@ -370,10 +370,27 @@ export const DEFERRED_ITEMS: readonly DeferredItem[] = [
       ' ② **让"自愈"名副其实**（`normalizeRun` 重建 `stats`、校验各种 id）——' +
       '这是更大的活，与云备份合并一起做更合适。\n\n' +
       '完整清单：跑 `npx vite-node scripts/stress.mjs` 生成 `scripts/stress-results.json`' +
-      '（不入库，每次内容不同）。本次快照：300 局 / 1000 破坏样本 / 300 fuzz，' +
-      '114 类发现（P0 92 类、P1 17 类、P2 4 类、P3 1 类）。',
+      '（不入库，每次内容不同）。',
     markedIn: [],
-    status: 'open'
+    status: 'done',
+    resolvedIn:
+      'M2 收尾 · 第一步已做（同一 seed、同一规模实测：**114 类 / 24688 次 → 34 类 / 114 次**）。' +
+      '实际改的比原计划多，因为"自愈"那一族（100+ 种"读档成功、玩两步就崩"）' +
+      '追下去发现根因只有四个 id 没校验，属于"几行能修"的范围：\n' +
+      ' · `systems/shop.ts` 的 `buildCartView`：件数要求 `Number.isInteger` 且 > 0（挡住 NaN 污染存档），' +
+      '并把**同一品类的多行合并**（挡住"重复行绕过库存 / 限购"）；\n' +
+      ' · `model/shelf.ts` 的 `isInside`：坐标要求整数（挡住"`row=0.5` 放置报成功但物资消失"）；\n' +
+      ' · `model/shelf.ts` 的 `splitStack` 与 `model/consume.ts` 的 `consumeCategory`：' +
+      '件数要求正整数（挡住"整堆被销毁"与"整个品类被清空"）；\n' +
+      ' · `systems/night.ts` 的 `optionAt`：下标要求非负整数（挡住"字符串下标 `"0"` 存档后同一晚能再选一次"）；\n' +
+      ' · `state/save.ts` 的 `normalizeRun`：补上 `disasterId` / `identityId` / 物资 id /' +
+      '`stats` / `cash` / `trust` / 货架结构的校验与重建（这一条关掉了 30 类坏档崩溃）。\n\n' +
+      '★ **残留（写在这里免得被忘掉）**：剩下的 34 类里有 **约 82/114 次是压测工具自己的问题**' +
+      '（它给命令层传 `"aaaa…"` / `"__proto__"` 这类垃圾 id、以及变异出空货架后 `rint(-1)`），' +
+      '产品**正确地拒绝了**那些输入。真正剩下的产品侧观察只有三条，且都不可由界面触发：' +
+      '`dropStack` 接受 0 件空堆（货架上留"幽灵堆"）、白天事件未处理时命令层不拦结账' +
+      '（纯靠界面遮挡）、以及 `splitStack` 的巨型数字输入仍在浮点精度边缘。' +
+      '压测工具自身那批误报值得单独清理一次（让它只报真问题）。'
   }
 ];
 

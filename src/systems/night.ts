@@ -39,9 +39,19 @@ export function rollNight(cursor: RngCursor, recent: readonly string[] = []): st
 /**
  * 取第 `choice` 个选择对应的选项。
  * `NIGHT_SLEEP` 与越界下标都返回 null —— 调用方据此走"什么都不做"的分支（后果为空）。
+ *
+ * ★ **必须是非负整数**：压测（`scripts/stress.mjs`）抓到一个字符串下标 `"0"` 的坏法 ——
+ * `def.options["0"]` 在 JS 里**能取到**是对的（数组下标本来就会转成字符串），
+ * 于是选项被执行、效果生效；可 `run.night.choice = "0"` 存进档之后，
+ * 读档那边的 `Number.isInteger("0")` 是 **false** → `choice` 被归成 `null` →
+ * **同一晚能再选一次、效果翻倍**（实测现金 900→850→800）。
+ *
+ * 界面传的永远是数字，所以这不是玩家能碰到的 bug；但"存进去的和读出来的判定不一致"
+ * 是存档类 bug 最常见的形状，所以在**入口**就要求整数。
  */
 export function optionAt(def: NightEventDef, choice: number): NightOption | null {
   if (choice === NIGHT_SLEEP) return null;
+  if (!Number.isInteger(choice) || choice < 0) return null;
   return def.options[choice] ?? null;
 }
 

@@ -249,8 +249,48 @@ export function buildCartView(run: RunState, shopId: string, lines: readonly Car
   let weight = 0;
   let pieces = 0;
 
+  /*
+   * ★★ 先把**同一个品类的多行并成一行**。
+   *
+   * 压测（`scripts/stress.mjs`）抓到两个由此而来的洞：
+   *  · "店里只剩 0 件，两行各买 0 → 实际到手 8 件"——
+   *    每行各自对着"还剩多少"算，逐行都不超，**合起来就超了**；
+   *  · "限购 2 件被重复行绕过：一次结账买到 4 件"——
+   *    `purchaseLimitOf` 是逐行算的，而限购的语义是**全程上限**，
+   *    在一次结账之内就漏了。
+   *
+   * 合并之后每个品类只剩一行，上面两条约束自然就成了"对总数成立"。
+   * 界面本来也不会给同一个品类发两行（篮子按 itemId 归并），
+   * 所以这一步在正常玩法下是恒等的 —— 它守的是"接线层被人改坏"。
+   */
+  const merged: CartLine[] = [];
+  const indexByItem = new Map<string, number>();
   for (const line of lines) {
-    if (line.count <= 0) continue;
+    const at = indexByItem.get(line.itemId);
+    if (at === undefined) {
+      indexByItem.set(line.itemId, merged.length);
+      merged.push({ itemId: line.itemId, count: line.count });
+    } else {
+      const cur = merged[at];
+      if (cur) merged[at] = { itemId: cur.itemId, count: cur.count + line.count };
+    }
+  }
+
+  for (const line of merged) {
+    /*
+     * ★★ 件数必须是**正整数** —— 这条守卫不能用"比较"来写。
+     *
+     * 压测（`scripts/stress.mjs`）抓到一个会**污染整份存档**的输入：
+     * 件数给 NaN 时，下面所有比较对它都是 false ——
+     * `line.count <= 0` 不成立（不跳过）、`count < line.count` 不成立（不报问题），
+     * 于是三大约束**全部放行**：现金被写成 NaN、箱内批次件数也是 NaN，
+     * 之后每一次读数都带着它（现金 / 库存 / 件数 / 四维全被污染）。
+     *
+     * 界面造不出 NaN（件数来自 `+` / `-` 按钮），所以这不是玩家能碰到的 bug；
+     * 但它是**接线层不设防**，而 NaN 一旦进来就收不回去。
+     * `Number.isInteger` 一次挡掉 NaN / 小数 / Infinity。
+     */
+    if (!Number.isInteger(line.count) || line.count <= 0) continue;
     const sku = stock.lines.find((l) => l.itemId === line.itemId);
     const item = getItemDef(line.itemId);
     if (!sku) {

@@ -81,6 +81,17 @@ export function getDisasterDef(disasterId: string): DisasterProfile {
   return def;
 }
 
+/**
+ * 这个灾难 id 认不认识。
+ *
+ * `getDisasterDef` 对未知 id **抛异常**，所以任何"从存档里读出来的 id"
+ * 都必须先用它问一句 —— 否则一个手改过的档会在开局或结算时炸在深处。
+ * 与 `hasItemDef` / `hasIdentityDef` / `hasDayEvent` 是同一套路。
+ */
+export function hasDisasterDef(disasterId: unknown): boolean {
+  return typeof disasterId === 'string' && DISASTER_BY_ID.has(disasterId);
+}
+
 /** M1 只用寒潮，开局固定给它（§8） */
 export const M1_DISASTER_ID = 'cold_snap';
 

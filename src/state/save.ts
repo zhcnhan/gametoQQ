@@ -6,8 +6,9 @@
  *  - 不直接摸 window，介质由 state/storage.ts 注入。
  */
 import { BOX_DEFS } from '../data/boxes';
+import { hasItemDef } from '../data/items';
 import { findDayEvent, hasDayEvent } from '../data/dayEvents';
-import { FIRST_STOCKPILE_DAY, SURVIVAL_DAYS } from '../data/disaster';
+import { FIRST_STOCKPILE_DAY, M1_DISASTER_ID, SURVIVAL_DAYS, hasDisasterDef } from '../data/disaster';
 import { findEmergency, hasEmergency } from '../data/emergencies';
 import { IDENTITY_DEFS, hasIdentityDef } from '../data/identities';
 import { findHelpRequestDef } from '../data/helpRequests';
@@ -520,6 +521,121 @@ function normalizeRun(save: SaveGame): SaveGame | null {
   run.boxesToUnpack = asArray<unknown>(run.boxesToUnpack).filter(
     (box): box is UnpackBox => isObject(box) && typeof box.id === 'string' && Array.isArray(box.items)
   );
+
+  /*
+   * ———————— ★★ 三个 id 与"箱内物资"的校验（压测逼出来的） ————————
+   *
+   * `scripts/stress.mjs` 的 S3（存档破坏）报了 100+ 种**"读档成功、玩两步就崩"**：
+   * 按报错文本归因，绝大多数只来自四处 ——
+   *
+   *     x32  未知物资 id    at getItemDef      ← 箱内 / 货架上有一个不认识的 itemId
+   *     x32  未知灾难 id    at getDisasterDef  ← run.disasterId 不认识
+   *     x16  未知身份 id    at getIdentityDef  ← run.identityId 不认识
+   *     x5   Cannot read … 'map'  at cloneShelf ← 货架结构坏了
+   *
+   * 这三个 `getXxxDef` 对未知 id **抛异常**（这是对的：程序内部的错要响），
+   * 所以**从存档读进来的 id 必须先问一句认不认识** ——
+   * 项目本来就有 `hasItemDef` / `hasIdentityDef` / `hasDayEvent` 这套，
+   * 夜里、白天事件、求援单都做了，只有这三处漏了。
+   *
+   * 处理口径与既有的 `normalizeHelpRequest` 一致：**认不出就退回一个安全值**
+   * （身份回退到第一个真身份、灾难回退到 M1 的寒潮），
+   * 而不是让玩家卡在一个一读就炸的档上。宁可开新局，也不给一个"读得进去、玩不了"的档。
+   */
+  if (!hasDisasterDef(run.disasterId)) run.disasterId = M1_DISASTER_ID;
+  if (!hasIdentityDef(run.identityId)) {
+    const fallback = IDENTITY_DEFS[0];
+    if (fallback) run.identityId = fallback.id;
+  }
+  /*
+   * 四维：**重建**成"四个 0..100 的有限数"。
+   *
+   * 压测抓到两种坏法，都是"读档成功、玩两步就崩"：
+   *  · 整个 `stats` 对象缺失 → 任何读它的地方直接 `Cannot read properties of undefined`；
+   *  · `stats` 里是字符串 / NaN / 999 → 结算一路带着它，四维被污染成 999。
+   *
+   * 运行期的写入本来就有 `clamp(…, 0, 100)`（见 `systems/survival.ts`），
+   * 所以这里只是把"从存档进来的那一份"也拉到同一个范围 —— 与运行期口径一致，
+   * 不是新增一套规则。缺失字段的回落取**开局的四维**（`createStartingRun` 的
+   * `{ health: 100, mood: 70, stamina: 100, shelter: 100 }`）——
+   * 用"别的数字"就等于凭空发明一套新规则。
+   */
+  const rawStats = isObject(run.stats) ? (run.stats as Record<string, unknown>) : {};
+  const stat = (key: string, fallback: number): number => {
+    const v = rawStats[key];
+    return typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.min(100, Math.round(v))) : fallback;
+  };
+  run.stats = {
+    health: stat('health', 100),
+    mood: stat('mood', 70),
+    stamina: stat('stamina', 100),
+    shelter: stat('shelter', 100)
+  };
+  /*
+   * 现金与信任值也要拉回合法范围。
+   *
+   * 压测报了两条同源发现：手改过的档能让 `run.cash` 变成 NaN 或负数、
+   * 让 `run.trust.npc_xxx` 变成 NaN —— 之后**每一次结算都带着它**（现金为负 -50 出现了 172 次）。
+   * 运行期的写入本来就有下限（"不给人欠债，M1 不做负债玩法"），
+   * 这里只是把从存档进来的那一份也拉回同一口径；认不出的信任值直接丢掉。
+   */
+  if (typeof run.cash !== 'number' || !Number.isFinite(run.cash)) run.cash = 0;
+  run.cash = Math.max(0, Math.round(run.cash));
+  const rawTrust = isObject(run.trust) ? (run.trust as Record<string, unknown>) : {};
+  const trust: Record<string, number> = {};
+  for (const [npcId, value] of Object.entries(rawTrust)) {
+    if (typeof value === 'number' && Number.isFinite(value)) trust[npcId] = Math.max(0, Math.round(value));
+  }
+  run.trust = trust;
+  /** 认不出的物资：从箱内剔除（保留箱子本身，玩家还能拆剩下的） */
+  for (const box of run.boxesToUnpack) {
+    box.items = asArray<unknown>(box.items).filter(
+      (st): st is ItemStack => isObject(st) && typeof st.itemId === 'string' && hasItemDef(st.itemId)
+    );
+  }
+  /**
+   * 货架：认不出的物资摘掉、坏掉的尺寸与行结构补齐。
+   *
+   * 压测报了 `货架 a slots 行数 0 ≠ h=undefined` —— 手改过的档可以让 `w` / `h` 变成
+   * 非数字甚至丢失，而 `slots` 的形状与它们不匹配。所有读写都要遍历 `slots`，所以
+   * **形状不一致就会在深处炸**（`cloneShelf` 对它 `.map` 那一条就是这么来的）。
+   *
+   * 处理：从 `slots` 的**实际形状**反推 `w` / `h`（而不是相信那两个字段），
+   * 再按它重建出一块规整的货架 —— 物资该留的留下、认不出的摘掉。
+   * 不丢弃整块货架：丢掉它等于把玩家的东西一起扔掉。
+   */
+  run.shelves = run.shelves.filter((shelf): shelf is Shelf => isObject(shelf) && Array.isArray(shelf.slots));
+  for (const shelf of run.shelves) {
+    const srcRows = asArray<unknown>(shelf.slots);
+    const w = srcRows.reduce((n: number, row) => Math.max(n, asArray<unknown>(row).length), 0);
+    const h = srcRows.length;
+    if (w <= 0 || h <= 0) {
+      // 完全空的货架：给一个最小可用尺寸，至少不会在遍历时炸
+      shelf.w = Number.isInteger(shelf.w) && shelf.w > 0 ? shelf.w : 1;
+      shelf.h = Number.isInteger(shelf.h) && shelf.h > 0 ? shelf.h : 1;
+      shelf.slots = Array.from({ length: shelf.h }, () =>
+        Array.from({ length: shelf.w as number }, () => ({ stack: null }))
+      );
+      continue;
+    }
+    const fixed: Shelf['slots'] = [];
+    for (let r = 0; r < h; r++) {
+      const rawRow = asArray<unknown>(srcRows[r]);
+      const row: Shelf['slots'][number] = [];
+      for (let c = 0; c < w; c++) {
+        const raw = rawRow[c];
+        const slot = isObject(raw) ? raw : {};
+        const stack = (slot as { stack?: unknown }).stack;
+        const good =
+          isObject(stack) && typeof stack.itemId === 'string' && hasItemDef(stack.itemId) && Array.isArray(stack.batches);
+        row.push({ stack: good ? (stack as unknown as ItemStack) : null });
+      }
+      fixed.push(row);
+    }
+    shelf.w = w;
+    shelf.h = h;
+    shelf.slots = fixed;
+  }
 
   // ———————— M1 囤货期字段 ————————
   if (!PHASES.includes(run.phase)) run.phase = 'stockpile_shop';

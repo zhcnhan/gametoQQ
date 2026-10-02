@@ -104,7 +104,16 @@ export function consumeCategory(
   const nextShelves = shelves.map(cloneShelf);
   const nextBoxes = boxes.map((box) => ({ ...box, items: box.items.slice() }));
 
-  if (need <= 0) {
+  /*
+   * ★★ `need` 必须是**正整数** —— 压测（`scripts/stress.mjs`）抓到：
+   * 传 NaN 时下面 `need <= 0` 对 NaN 是 false（不早退），而所有 `remaining` 相关的比较
+   * 也全是 false → 循环把**整个品类全清空**，同时 `taken` / `shortage` 都成了 NaN。
+   *
+   * 一个坏参数会让一整个品类的存货消失。界面传的是每天的固定消耗（小整数），
+   * 所以这不是玩家能碰到的 bug；但"整个品类被清空"这种后果值得用一行挡住 ——
+   * 与 `model/shelf.ts` 的 `splitStack` 守卫同一套路。
+   */
+  if (!Number.isInteger(need) || need <= 0) {
     return { shelves: nextShelves, boxes: nextBoxes, taken: 0, shortage: 0, batches: [], fromBoxes: 0 };
   }
 
