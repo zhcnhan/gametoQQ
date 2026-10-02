@@ -4,3 +4,5 @@ dist/
 .DS_Store
 .vite/
 *.log
+# 压测工具的产物（`npx vite-node scripts/stress.mjs` 生成，每次跑都不一样）
+scripts/stress-results.json
