@@ -19,6 +19,7 @@ import { FIRST_STOCKPILE_DAY, SURVIVAL_DAYS } from '../data/disaster';
 import { getIdentityDef, hasIdentityDef } from '../data/identities';
 import { NIGHT_SLEEP, findNightEvent } from '../data/nightEvents';
 import { ACTION_POINTS_PER_DAY } from '../data/shops';
+import { disasterModifiersOf } from '../data/disaster';
 import { dayLabel } from '../model/calendar';
 import { createCursor, type RngCursor } from '../model/rng';
 import type { GamePhase, RunState } from '../model/types';
@@ -121,7 +122,7 @@ export function chooseIdentity(store: GameStore, identityId: string): PhaseResul
     draft.shopLimits = [];
     draft.shopBoughtToday = {};
     draft.dayEvent = null;
-    draft.shopStocks = rollShopStocks(identity, cursor, FIRST_STOCKPILE_DAY);
+    draft.shopStocks = rollShopStocks(identity, cursor, FIRST_STOCKPILE_DAY, draft.disasterId);
     draft.seed = cursor.state;
     draft.log.push(`${dayLabel(FIRST_STOCKPILE_DAY)} · ${identity.name}。${identity.perk}`);
     events.push({
@@ -276,7 +277,7 @@ function settleAndMaybeEnd(run: RunState, events: PhaseEvent[], cursor: RngCurso
     // §6.5：结算完之后、玩家离开日报之前，门口可能站着人。
     // 放在**结算之后**是刻意的 —— 求援要用的是"今天过完之后"的库存与体力，
     // 顺序反了会出现"用还没到手的物资去凑单"。
-    const defId = rollHelpRequest(cursor, run.eventHistory.help);
+    const defId = rollHelpRequest(cursor, run.eventHistory.help, run.disasterId);
     if (defId) {
       run.helpRequest = { defId };
       run.phase = 'help_request';
@@ -369,7 +370,18 @@ function startNextDay(run: RunState, cursor: RngCursor): PhaseEvent {
   const identity = getIdentityDef(run.identityId);
   run.day = next;
   run.phase = 'stockpile_shop';
-  run.actionPoints = ACTION_POINTS_PER_DAY;
+  /*
+   * §10B.3.1 的 L2 维度：**每天几个行动点**也受这一场灾难影响。
+   *
+   * `actionPointDelta = -1`（大停电：天黑得早、白天要排队找水）意味着
+   * 这一天只能做两件事 —— 那会把"去哪家店"从"顺路都去"变成"必须选"。
+   * 这是所有维度里**对玩家决策影响最直接**的一个。
+   *
+   * `Math.max(1, ...)`：至少留 1 点。给 0 会让这一天彻底没有动作可做，
+   * 而 §4A 承诺"任何界面都得有一条能走的路"—— 一个不能做任何事的白天不是难度，是卡住。
+   */
+  const mods = disasterModifiersOf(run.disasterId);
+  run.actionPoints = Math.max(1, ACTION_POINTS_PER_DAY + mods.actionPointDelta);
   run.carLoad = 0; // 车上的货都卸在家里了
   run.visitedShopIds = [];
   run.currentShopId = null;
@@ -381,8 +393,8 @@ function startNextDay(run: RunState, cursor: RngCursor): PhaseEvent {
   run.shopLimits = [];
   run.shopBoughtToday = {};
   run.dayEvent = null;
-  run.shopStocks = rollShopStocks(identity, cursor, next);
-  run.log.push(`${dayLabel(next)} · 新的一天，${ACTION_POINTS_PER_DAY} 个行动点。`);
+  run.shopStocks = rollShopStocks(identity, cursor, next, run.disasterId);
+  run.log.push(`${dayLabel(next)} · 新的一天，${run.actionPoints} 个行动点。`);
   return { type: 'dayStarted', day: next };
 }
 
@@ -405,7 +417,7 @@ export function ensureDayStocks(store: GameStore): boolean {
   const identity = getIdentityDef(run.identityId);
   store.commit((draft) => {
     const cursor = createCursor(draft.seed);
-    draft.shopStocks = rollShopStocks(identity, cursor, draft.day);
+    draft.shopStocks = rollShopStocks(identity, cursor, draft.day, draft.disasterId);
     draft.seed = cursor.state;
   });
   return true;

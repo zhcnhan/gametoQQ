@@ -22,6 +22,7 @@ import { DAY_EVENT_DEFS, DAY_EVENT_NONE_WEIGHT, dayEventWeight, dayPriceFactor, 
 import { getIdentityDef } from '../data/identities';
 import { getItemDef } from '../data/items';
 import { SHOP_DEFS, actionCostOf, getShopDef } from '../data/shops';
+import { disasterModifiersOf } from '../data/disaster';
 import { dayLabel } from '../model/calendar';
 import { createCursor, nextFloat, nextInt, type RngCursor } from '../model/rng';
 import { firstBatchExpiry, makeStack, stackCount } from '../model/shelf';
@@ -104,17 +105,31 @@ export function priceOf(item: ItemDef, shop: ShopDef, identity: IdentityDef): nu
  * 事件带来的涨价（`run.shopPriceFactor`）不走这里：它在事件发生**之后**才存在，
  * 所以由 `basePriceOf()` 叠一次。两份倍率各管一段，账在 `basePriceOf` 上合。
  */
-export function rollShopStocks(identity: IdentityDef, cursor: RngCursor, day: number): ShopDayStock[] {
+export function rollShopStocks(identity: IdentityDef, cursor: RngCursor, day: number, disasterId?: string): ShopDayStock[] {
   const factor = dayPriceFactor(day);
-  return SHOP_DEFS.map((shop) => ({
+  /*
+   * §10B.3.1 的 L2 维度：**商店供应**与**物价加成**。
+   *
+   *  · `shopSupplyFactor` 直接乘在库存上（大停电 0.5 = 大半货架空着）。
+   *    `Math.max(0, ...)` 允许某件货真的变成 0 —— 那正是"断供"的表达，
+   *    而 `buildCartView` 本来就会对 `stock <= 0` 报"今天卖完了"。
+   *  · `closedShopIds` 让整家店不开门（这一场没电/被淹/被封）。
+   *  · `priceSurcharge` 是"这一场本来就贵"，与逐日物价曲线相乘。
+   *
+   * ★ 乘数走 `disasterModifiersOf`（唯一读点，含默认值与区间夹取）。
+   */
+  const mods = disasterModifiersOf(disasterId);
+  const priceMul = factor * (1 + mods.priceSurcharge);
+  return SHOP_DEFS.filter((shop) => !mods.closedShopIds.includes(shop.id)).map((shop) => ({
     shopId: shop.id,
     day,
     lines: shop.offers.map((offer) => {
       const item = getItemDef(offer.itemId);
+      const rolled = Math.max(1, offer.stock + nextInt(cursor, -1, 1));
       return {
         itemId: offer.itemId,
-        price: Math.max(1, Math.round(priceOf(item, shop, identity) * factor)),
-        stock: Math.max(1, offer.stock + nextInt(cursor, -1, 1))
+        price: Math.max(1, Math.round(priceOf(item, shop, identity) * priceMul)),
+        stock: Math.max(0, Math.round(rolled * mods.shopSupplyFactor))
       };
     })
   }));
@@ -164,10 +179,34 @@ export function boughtTodayOf(run: RunState, shopId: string, itemId: string): nu
  * `dayEventWeight` 负责把 `onlyShops` 之外的店门权重压成 0：
  * 黑市商人只会出现在五金店后巷，别处抽不到他。
  */
-export function rollDayEvent(cursor: RngCursor, shopId: string, recent: readonly string[] = []): string | null {
-  const pool = DAY_EVENT_DEFS.map((def) => ({ def, weight: dayEventWeight(def, shopId) })).filter(
-    (e) => e.weight > 0
-  );
+export function rollDayEvent(
+  cursor: RngCursor,
+  shopId: string,
+  recent: readonly string[] = [],
+  disasterId?: string
+): string | null {
+  /*
+   * §10B.3.1 的 L2 维度：**事件池权重**。
+   *
+   * `eventPoolWeights` 是 `{标签: 倍数}` —— 寒潮局把"冷"抬到 3 倍、
+   * 骚乱局把"人"抬到 3 倍，于是**同一套事件表在不同灾难下带来不同的事**。
+   * 这是"多角度全方位"里最省事、效果最明显的一维：
+   * 它不需要新事件，只需要让已有的事件**按场次重新分配出场率**。
+   *
+   * 匹配口径：事件写了 `tags` 就按标签查；没写标签就退回按 id 查
+   * （存量内容不必立刻补标签，但新内容必须写 —— 校验会提示覆盖率）。
+   */
+  const mods = disasterModifiersOf(disasterId);
+  const weightMul = (def: { id: string; tags?: readonly string[] }): number => {
+    let mul = 1;
+    for (const tag of def.tags ?? []) mul *= mods.eventPoolWeights[tag] ?? 1;
+    if (!def.tags || def.tags.length === 0) mul *= mods.eventPoolWeights[def.id] ?? 1;
+    return mul;
+  };
+  const pool = DAY_EVENT_DEFS.map((def) => ({
+    def,
+    weight: dayEventWeight(def, shopId) * weightMul(def)
+  })).filter((e) => e.weight > 0);
   const total = DAY_EVENT_NONE_WEIGHT + pool.reduce((n, e) => n + e.weight, 0);
   if (total <= 0) return null;
   const roll = nextFloat(cursor) * total;
@@ -238,7 +277,17 @@ export function buildCartView(run: RunState, shopId: string, lines: readonly Car
   const identity = identityOf(run);
   if (!identity) return null;
 
-  const carryLimit = identity.carryLimit;
+  /*
+   * §10B.3.1 的 L2 维度：**单趟搬运上限**受这一场灾难影响。
+   *
+   * 高温 / 缺氧 / 风雪里，一趟能提的重量本来就该少 —— 这是"多角度全方位"里
+   * 最容易被忽略但玩家立刻能感觉到的一维：同样是 6 罐燃料，
+   * 平时一趟拿走，沙暴里得跑两趟（而行动点就那么多）。
+   *
+   * `Math.max(1, ...)`：再糟的天气也不该让玩家一件都搬不动（那会变成死局）。
+   */
+  const mods = disasterModifiersOf(run.disasterId);
+  const carryLimit = Math.max(1, roundKg(identity.carryLimit * mods.carryFactor));
   const vehicleCapacity = identity.vehicleCapacity;
   const capacityLeft = roundKg(Math.max(0, vehicleCapacity - run.carLoad));
 
@@ -408,7 +457,7 @@ export function enterShop(store: GameStore, shopId: string): ShopResult {
     if (firstTime) {
       draft.log.push(`${dayLabel(draft.day)} · 进了${getShopDef(shopId).name}。`);
     }
-    const eventId = rollDayEvent(cursor, shopId, draft.eventHistory.day);
+    const eventId = rollDayEvent(cursor, shopId, draft.eventHistory.day, draft.disasterId);
     if (eventId) {
       draft.dayEvent = { defId: eventId, shopId, choice: null, applied: null };
       recordEvent(draft, 'day', eventId);

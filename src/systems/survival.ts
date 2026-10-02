@@ -45,7 +45,7 @@ import { countOnHandy } from '../model/shelf';
 import { computeOrganizeScore } from '../model/score';
 import { spoilEverything, virtualDay } from '../model/spoil';
 import { EMERGENCY_DEFS, EMERGENCY_NONE_WEIGHT } from '../data/emergencies';
-import { getDisasterDef } from '../data/disaster';
+import { disasterModifiersOf, getDisasterDef } from '../data/disaster';
 import { CATEGORY_LABELS, getItemDef } from '../data/items';
 import {
   EXHAUSTED_REACH,
@@ -292,12 +292,24 @@ export function settleSurvivalDay(run: RunState, cursor?: RngCursor): SurvivalRe
   const workCost = workCostOf(score.placement, score.fefo, takenPieces);
 
   const deltas = { health: 0, mood: 0, stamina: 0, shelter: 0 };
+  /*
+   * §10B.3.1 的 L2 维度：这一场灾难改哪些"生活条件"。
+   * `disasterModifiersOf` 是**唯一读点**（默认值、区间夹取、坏值防御都在那里）——
+   * 这里只负责用。不要在这附近再写 `disaster.xxx ?? 1`，那会造出第二个真相。
+   */
+  const mods = disasterModifiersOf(run.disasterId);
   // 睡一觉回多少体力，看**入夜前**的庇护所（§12.3 v0.7）：屋子跌破 40 → 冷得睡不踏实，
   // 只回一半。判定必须在 wear 扣减之前 —— "昨晚睡在什么样的屋里"说的是结算前那个数。
-  const sleptRecover = sleepRecoverAt(run.stats.shelter);
+  // ★ L2：再乘这一场的**休息效率**（大停电 0.55 = 睡着也冻醒，体力回不满）。
+  const sleptRecover = Math.round(sleepRecoverAt(run.stats.shelter) * mods.restEfficiency);
   const sleptBadly = sleptRecover < STAMINA_RECOVER;
   deltas.stamina += sleptRecover - workCost;
-  deltas.shelter -= Math.round(severity * SHELTER_WEAR_PER_SEVERITY);
+  /*
+   * 庇护所磨损 = 灾难强度造成的 + 这一场的额外衰减（L2）。
+   * `shelterDecayPerDay` 是负数，所以这里是**减它**（= 加绝对值）：语义是"屋子坏得更快"。
+   * 并进同一项再取整，避免两次取整各丢一点。
+   */
+  deltas.shelter -= Math.round(severity * SHELTER_WEAR_PER_SEVERITY - mods.shelterDecayPerDay);
   deltas.mood += moodFromPlacement(score.placement);
 
   // ④ 缺货：没凑齐就是没凑齐，缺口越大越疼（封顶见 SHORTAGE_MAX_STACK）

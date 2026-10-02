@@ -125,3 +125,95 @@ export function outdoorTemp(day: number, disasterId: string = M1_DISASTER_ID): n
   if (!temps) return 0;
   return temps[clamped] ?? temps[SURVIVAL_DAYS] ?? 0;
 }
+
+// ——————————————————————————————————————————————————————————————
+// §10B.3.1 的 L2 影响维度：**唯一读点**
+// ——————————————————————————————————————————————————————————————
+
+/**
+ * 把灾难的 L2 维度读成一组"带默认值的乘数"。
+ *
+ * ## 为什么要有这层（而不是各处直接读 `disaster.carryFactor ?? 1`）
+ *
+ * 三条理由，每条都对应本项目踩过的坑：
+ *
+ *  ① **默认值只写一次。** 散着写 `?? 1` 的地方迟早会有一处写成 `?? 0`
+ *     （那会让整个品类凭空消失）；
+ *  ② **防御坏值。** 存档可以被手改、灾难表将来可以来自数据甚至 mod，
+ *     一个 `NaN` 乘数会污染整份存档（M2 的 D-20 就是这么来的）。
+ *     这里统一做 `Number.isFinite` + 区间夹取；
+ *  ③ **可读点唯一。** 加一个维度时只需要在类型里加字段、在这里加一行、
+ *     在**一个**调用点接上 —— 而不是全项目搜"哪里该改"。
+ *
+ * ★ 约定：**不写 = 这一维在这场上不起作用**（乘数 1 / 增量 0），
+ * 而不是"值等于 1"。寒潮不写这些字段是有意义的 —— 它真的没有这些影响。
+ */
+export interface DisasterModifiers {
+  /** 屋子每天额外掉的庇护所（≤ 0） */
+  shelterDecayPerDay: number;
+  /** 睡觉回体力的乘数 */
+  restEfficiency: number;
+  /** 单趟搬运上限的乘数 */
+  carryFactor: number;
+  /** 每天行动点增减 */
+  actionPointDelta: number;
+  /** 商店库存乘数 */
+  shopSupplyFactor: number;
+  /** 关掉的点位 */
+  closedShopIds: readonly string[];
+  /** 全局涨价加成 */
+  priceSurcharge: number;
+  /** 事件池权重 */
+  eventPoolWeights: Readonly<Record<string, number>>;
+  /** 有人来敲门的概率乘数 */
+  npcVisitFactor: number;
+}
+
+const IDENTITY_MODIFIERS: DisasterModifiers = {
+  shelterDecayPerDay: 0,
+  restEfficiency: 1,
+  carryFactor: 1,
+  actionPointDelta: 0,
+  shopSupplyFactor: 1,
+  closedShopIds: [],
+  priceSurcharge: 0,
+  eventPoolWeights: {},
+  npcVisitFactor: 1
+};
+
+/** 夹取一个乘数；认不出就退回默认值。`lo`/`hi` 是设计区间，防手改档与生成离群值 */
+function factor(value: unknown, fallback: number, lo: number, hi: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+  return Math.max(lo, Math.min(hi, value));
+}
+
+/**
+ * 当前这一场的 L2 影响维度。
+ *
+ * `disasterId` 认不出（例如手改过的档）时返回一整套中性值 ——
+ * **灾难不认识不该让游戏崩**，而"没有额外影响"是最保守的退路。
+ */
+export function disasterModifiersOf(disasterId: string | undefined): DisasterModifiers {
+  const def = disasterId ? DISASTER_BY_ID.get(disasterId) : undefined;
+  if (!def) return IDENTITY_MODIFIERS;
+  const closed = Array.isArray(def.closedShopIds) ? def.closedShopIds.filter((s) => typeof s === 'string') : [];
+  const weights: Record<string, number> = {};
+  if (def.eventPoolWeights && typeof def.eventPoolWeights === 'object') {
+    for (const [tag, w] of Object.entries(def.eventPoolWeights)) {
+      const v = factor(w, 1, 0, 10);
+      if (v !== 1) weights[tag] = v;
+    }
+  }
+  return {
+    // 庇护所衰减只取"更坏"的方向：正数会让灾难变成修房子，那不是这个字段的语义
+    shelterDecayPerDay: Math.min(0, factor(def.shelterDecayPerDay, 0, -4, 0)),
+    restEfficiency: factor(def.restEfficiency, 1, 0.4, 1.2),
+    carryFactor: factor(def.carryFactor, 1, 0.5, 1),
+    actionPointDelta: Math.round(factor(def.actionPointDelta, 0, -1, 1)),
+    shopSupplyFactor: factor(def.shopSupplyFactor, 1, 0.4, 1),
+    closedShopIds: closed,
+    priceSurcharge: factor(def.priceSurcharge, 0, 0, 0.8),
+    eventPoolWeights: weights,
+    npcVisitFactor: factor(def.npcVisitFactor, 1, 0, 1.5)
+  };
+}

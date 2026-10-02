@@ -74,6 +74,7 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
     weight: 1.0,
     def: {
       id: 'd_queue_aunt',
+        tags: ['queue', 'people'],
       text: '前面排了很长的队。收银台只开了两个，一个购物车横在过道上。',
       options: [
         {
@@ -102,6 +103,7 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
     weight: 1.6,
     def: {
       id: 'd_panic_buying',
+        tags: ['panic', 'supply'],
       text: '群里说高速封了。前面几个人的车都在往米面那边靠。',
       // 这条要的就是"今天该不该早买"的那个决定，所以它不限点位
       options: [
@@ -137,6 +139,7 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
     weight: 1.4,
     def: {
       id: 'd_purchase_limit',
+        tags: ['limit', 'supply'],
       // ★ 限购写在**处境**里，而不是当成选项发给玩家
       text: '门口贴了张手写的纸：米面油盐，每人限购两件。理货员在数人头。',
       options: [
@@ -163,6 +166,7 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
     weight: 0.6,
     def: {
       id: 'd_black_market',
+        tags: ['market', 'people'],
       text: '五金店后巷停着一辆没牌照的面包车。有人从车窗里递出一箱货，收钱就走。',
       // 只在五金店 —— 后巷这件事有地址，到处都能碰上就假了
       onlyShops: ['hardware'],

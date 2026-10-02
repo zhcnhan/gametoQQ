@@ -68,7 +68,55 @@ export interface DisasterProfile {
    * 用**必填**而不是可选：将来加进第 2、第 3 个灾难时，忘记想"这场怎么处理腐坏"
    * 会直接编译不过 —— 这条设计决定（"腐坏是灾难的属性"）需要被类型系统记住。
    */
+  /**
+   * 每年/每天/每秒的腐坏倍率。
+   *
+   * 只在 `day >= 0`（灾难已登陆）时生效；囤货期永远是真实速度。
+   */
   spoilRate: number;
+
+  // ———————— §10B.3.1 的 L2 影响维度（全部可选，不写 = 1 / 0） ————————
+  /*
+   * ## 为什么这些字段必须是"可选 + 默认 1"而不是必填
+   *
+   * 寒潮（唯一的存量灾难）不需要它们 —— 强制必填会逼着给寒潮编一堆 1，
+   * 而那些 1 会掩盖"寒潮真的没有这条影响"这个事实。
+   * 所以：**不写 = 这一维在这场上不起作用**，而不是"值等于 1"。
+   *
+   * ## 为什么它们值得存在（用户的原话）
+   *
+   * "灾难是要跟其他所有一切做衔接的……多角度全方位影响的。"
+   * 只靠消耗/腐坏/刚需/温度那 4 维，一百场灾难会写成"十二种 × 八种数值"。
+   * 这 8 个字段把灾难从"数字变了"推进到"**生活方式变了**"：
+   * 屋子坏得更快、睡不安稳、搬得更少、门开得少、什么都贵、碰上的人不一样。
+   *
+   * 每一项都标了它在代码里的**唯一读点** —— 加维度时照着那个点接就行，
+   * 不要在多处各算一份（那正是"两份状态各自漂移"的老毛病）。
+   */
+
+  /** 屋子每天额外掉多少庇护所（负数 = 更坏）。读点：`systems/survival.ts` 的日结算 */
+  shelterDecayPerDay?: number;
+  /** 睡觉回复体力的**乘数**（0.6 = 只回六成）。读点：`data/survival.ts` 的 `sleepRecoverAt` */
+  restEfficiency?: number;
+  /** 单趟搬运上限的**乘数**（0.7 = 高温/风雪里一趟少提三成）。读点：`systems/shop.ts` 的 `buildCartView` */
+  carryFactor?: number;
+  /** 每天行动点增减（-1 = 天黑得早，一天少做一件事）。读点：`systems/phases.ts` 的 `endDay` */
+  actionPointDelta?: number;
+  /** 商店库存乘数（0.5 = 大半货架空着）。读点：`systems/shop.ts` 的 `rollShopStocks` */
+  shopSupplyFactor?: number;
+  /** 这一场关掉的点位（不开门）。读点：`systems/shop.ts` 的 `rollShopStocks` 与界面 */
+  closedShopIds?: string[];
+  /** 全局涨价加成（0.35 = 本来就贵三成五）。读点：`systems/shop.ts` 的 `rollShopStocks` */
+  priceSurcharge?: number;
+  /**
+   * 事件池权重：`{ 标签: 倍数 }`。读点：`systems/shop.ts` 的 `rollDayEvent`。
+   *
+   * 它让"这一场会碰上什么事"跟着灾难走（寒潮多"冷"、骚乱多"人"）。
+   * 没写标签的事件按 1 倍算 —— 所以只写想强调的那几个标签就行。
+   */
+  eventPoolWeights?: Record<string, number>;
+  /** 有人来敲门的概率乘数（1.3 = 邻居来得更勤）。读点：`systems/help.ts` 的 `rollHelpRequest` */
+  npcVisitFactor?: number;
 }
 
 export interface DayForecast {
@@ -670,6 +718,17 @@ export interface DayEventDef {
    * 黑市商人只在五金店后巷那种事，由它表达 —— 而不是在文案里暗示。
    */
   onlyShops?: readonly string[];
+  /**
+   * 事件主题标签（§10B.3.1 的 L2 维度"事件池权重"要用它）。
+   *
+   * 灾难可以用 `eventPoolWeights: { 冷: 3, 邻居: 2 }` 把**某一类事**的出场率抬高 ——
+   * 寒潮局多碰上"冷"、骚乱局多碰上"人与人"。没有标签就没法做这件事，
+   * 只能按 id 一条条列（那在数百条内容时不可维护）。
+   *
+   * 可选：存量事件不写也能跑（权重按 1 倍算），
+   * 但**新内容必须写** —— `check-content.mjs` 会提示覆盖率。
+   */
+  tags?: readonly string[];
   options: readonly DayOption[];
 }
 

@@ -38,11 +38,28 @@ import { createCursor, nextFloat, pickEventAvoidingRecent, type RngCursor } from
 import { computeOrganizeScore } from '../model/score';
 import type { CategoryId, RunState } from '../model/types';
 import type { GameStore } from '../state/store';
+import { disasterModifiersOf } from '../data/disaster';
 import { generateBoxStacks, nextBoxSeq } from './setup';
 
-/** 门口有人吗？有则返回订单 id。消耗一次 RNG */
-export function rollHelpRequest(cursor: RngCursor, recent: readonly string[] = []): string | null {
-  if (nextFloat(cursor) >= HELP_REQUEST_CHANCE) return null;
+/**
+ * 门口有人吗？有则返回订单 id。消耗一次 RNG。
+ *
+ * §10B.3.1 的 L2 维度：`npcVisitFactor` 把"有人来敲门"的概率按灾难缩放。
+ * 大停电时邻居来得更勤（1.3，大家都没电、抱团），骚乱时没人敢出门（0.5）。
+ * **这一维改变的是"人情"这条线在整局里的分量** —— 而人情能换回款，
+ * 所以它同时影响现金与物资，是少数几条真正跨系统的维度。
+ *
+ * 概率夹在 0~1：`npcVisitFactor` 再大也不该让门口**永远**站着人
+ * （那样"门口有人"就不再是一个事件，而是背景噪音）。
+ */
+export function rollHelpRequest(
+  cursor: RngCursor,
+  recent: readonly string[] = [],
+  disasterId?: string
+): string | null {
+  const mods = disasterModifiersOf(disasterId);
+  const chance = Math.max(0, Math.min(1, HELP_REQUEST_CHANCE * mods.npcVisitFactor));
+  if (nextFloat(cursor) >= chance) return null;
   return pickEventAvoidingRecent(cursor, HELP_REQUEST_DEFS, recent, helpRequestWeight)?.id ?? null;
 }
 
