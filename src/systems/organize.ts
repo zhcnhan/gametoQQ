@@ -25,7 +25,7 @@ import {
   stackCount
 } from '../model/shelf';
 import { computeOrganizeScore, type OrganizeScore } from '../model/score';
-import type { CategoryId, ItemStack, RunState, Shelf, SlotPos, Zone } from '../model/types';
+import type { CategoryId, HeldOrigin, ItemStack, RunState, Shelf, SlotPos, Zone } from '../model/types';
 import type { GameStore } from '../state/store';
 import { boxLabel, nextBoxSeq } from './setup';
 
@@ -81,24 +81,98 @@ function ok(events: OrganizeEvent[]): CommandResult {
 
 // ———————— 会话态（不进存档） ————————
 
-/**
- * 手里捏着的物资**不落盘**：§4A 明说"整理到一半的状态完整保留（手里捏着的物资回到原位即可）"。
- * 刷新后 held 丢失 = 那件物资回到它原来的箱子/格子，正是策划案要的行为。
+/*
+ * `HeldOrigin` 现在定义在 `model/types.ts`（它要落盘，而 RunState 引用了它）。
+ * 这里重新导出，是为了不破坏已有的 `import { type HeldOrigin } from './organize'`。
  */
-export type HeldOrigin =
-  | { kind: 'none' }
-  | { kind: 'box'; boxId: string }
-  | { kind: 'shelf'; shelfId: string; pos: SlotPos };
+export type { HeldOrigin };
 
 export interface OrganizeSession {
+  /**
+   * 手里正捏着的那件物资。
+   *
+   * ## ★ 它与 `run.held` 是**同一件事**，必须同步（这是被一个真 bug 逼出来的）
+   *
+   * 这个字段原来只活在内存里，于是"拿起来之后刷新页面"会让物资**凭空消失**：
+   * 格子/箱子里已经被移走了，会话又没了。
+   *
+   * 现在**落盘的那一份在 `run.held` / `run.heldFrom`**（随 `store.commit` 一起进存档），
+   * 而这个字段是它的**内存镜像** —— 让 ui 与命令层读起来方便（不必每次翻 saveGame）。
+   *
+   * `setHeld()` / `clearHeldState()` 是两个唯一的写入口，它们保证两边不会分家。
+   * **不要直接赋值**：那正是"两份状态各自漂移"的来源。
+   */
   held: ItemStack | null;
   heldFrom: HeldOrigin;
   /** 已经给过"整整齐齐"小字奖励的货架，避免每放一件就弹一次 */
   tidyShelfIds: string[];
 }
 
+/**
+ * 唯一允许改"手里那件"的地方 —— 同时写内存镜像与落盘字段。
+ *
+ * `next` 为 null 表示把手清空。**两边一起改**，不允许只改一边。
+ */
+function setHeld(run: RunState, session: OrganizeSession, next: ItemStack | null, from: HeldOrigin): void {
+  session.held = next;
+  session.heldFrom = next ? from : { kind: 'none' };
+  run.held = next;
+  run.heldFrom = next ? from : { kind: 'none' };
+}
+
 export function createOrganizeSession(): OrganizeSession {
   return { held: null, heldFrom: { kind: 'none' }, tidyShelfIds: [] };
+}
+
+/**
+ * 从存档里恢复整理会话（刷新/读档后调用）。
+ *
+ * ★ 这条函数存在的理由就是"手里那件不许丢"。见 `RunState.held` 的注释。
+ *
+ * 正常情况下 `run.held` 与 `run.heldFrom` 是一对有效数据，直接镜像到会话即可。
+ * 但如果来处**已经不存在**了（箱子被拆空后消失、格子被人为改过），
+ * 就把物资送进**临时搁置箱** —— 宁可它出现在一个奇怪的地方，
+ * 也**绝不允许它消失**。这与 `returnHeld` 的最后一级兜底是同一个口径。
+ *
+ * @returns 是否发生了一次"归档到临时搁置箱"（供调用方决定要不要提交落盘）
+ */
+export function restoreOrganizeSession(store: GameStore, session: OrganizeSession): boolean {
+  const run = store.run;
+  const held = run.held;
+  if (!held) {
+    // 没有手里那件 → 会话也必须是空的（防止两份状态不一致）
+    session.held = null;
+    session.heldFrom = { kind: 'none' };
+    return false;
+  }
+
+  const from = run.heldFrom;
+  const originAlive =
+    from.kind === 'shelf'
+      ? run.shelves.some((s) => s.id === from.shelfId)
+      : from.kind === 'box'
+        ? run.boxesToUnpack.some((b) => b.id === from.boxId)
+        : true; // kind:'none' → 原位无从谈起，就地保持"拿在手里"
+
+  if (originAlive) {
+    session.held = held;
+    session.heldFrom = from;
+    return false;
+  }
+
+  // 来处没了 → 进临时搁置箱，绝不丢
+  store.commit((draft) => {
+    draft.boxesToUnpack.push({
+      id: `box_${nextBoxSeq(draft.boxesToUnpack)}`,
+      defId: STRAY_BOX_ID,
+      items: [held]
+    });
+    draft.held = null;
+    draft.heldFrom = { kind: 'none' };
+  });
+  session.held = null;
+  session.heldFrom = { kind: 'none' };
+  return true;
 }
 
 /** 重开一局时清空会话态（手里那件物资跟着作废） */
@@ -178,6 +252,20 @@ export function householdTotals(run: RunState): { stacks: number; pieces: number
       weight += getItemDef(stack.itemId).unitWeight * n;
     }
   }
+  /*
+   * ★ **手里那件也算家里的**（v15 补的一个连带 bug）。
+   *
+   * "拿起来"会把物资从格子/箱子里移走，所以不把它算进来的话：
+   *  · 顶部台账条的"在库 N 件"会在玩家举着东西时**少算**；
+   *  · 依赖 `householdTotals` 的探针 / 测试同样少算 —— 而那是本项目的验收工具。
+   * 一件物资不会因为在手里就不属于这个家。
+   */
+  if (run.held) {
+    stacks += 1;
+    const n = stackCount(run.held);
+    pieces += n;
+    weight += getItemDef(run.held.itemId).unitWeight * n;
+  }
   return { stacks, pieces, weight: Math.round(weight * 100) / 100 };
 }
 
@@ -227,8 +315,8 @@ export function takeFromBox(store: GameStore, session: OrganizeSession, boxId: s
     }
   });
 
-  session.held = item;
-  session.heldFrom = { kind: 'box', boxId };
+  // 唯一写入口：同时写内存镜像（session）与落盘字段（run）
+  setHeld(run, session, item, { kind: 'box', boxId });
   events.unshift({ type: 'boxOpened', boxId, itemId: item.itemId, leftInBox });
   return ok(events);
 }
@@ -256,8 +344,7 @@ export function pickupFromShelf(store: GameStore, session: OrganizeSession, shel
     draft.shelves[idx] = setSlotStack(s, pos, null);
   });
 
-  session.held = stack;
-  session.heldFrom = { kind: 'shelf', shelfId, pos };
+  setHeld(run, session, stack, { kind: 'shelf', shelfId, pos });
   return ok([{ type: 'picked', itemId: stack.itemId, shelfId, pos }]);
 }
 
@@ -285,8 +372,13 @@ export function placeHeld(store: GameStore, session: OrganizeSession, shelfId: s
       const dropped = dropStack(s, pos, taken);
       if (dropped) draft.shelves[idx] = dropped;
     });
-    session.held = left;
-    if (!left) session.heldFrom = { kind: 'none' };
+    /*
+     * 剩下的（可能没有）留在手里。
+     *
+     * 有剩余时来处记 `none`：手里这件是"上一步没放下的一部分"，
+     * 它不该被当成"从某一格拖起来的"，否则下一次落点会被判成互换。
+     */
+    setHeld(run, session, left, { kind: 'none' });
     const events: OrganizeEvent[] = [
       { type: 'placed', itemId: held.itemId, shelfId, pos, partial: left !== null, count: move }
     ];
@@ -302,8 +394,8 @@ export function placeHeld(store: GameStore, session: OrganizeSession, shelfId: s
     if (!s) return;
     draft.shelves[idx] = setSlotStack(s, pos, held);
   });
-  session.held = target;
-  session.heldFrom = { kind: 'shelf', shelfId, pos };
+  // 格上那件进手里，来处就是这一格（"接着搬"的语义）
+  setHeld(run, session, target, { kind: 'shelf', shelfId, pos });
   const events: OrganizeEvent[] = [
     { type: 'placed', itemId: held.itemId, shelfId, pos, partial: false, count: stackCount(held) }
   ];
@@ -369,8 +461,7 @@ export function swapHeldWithSlot(
   });
 
   // 互换的定义就是"谁都不留在手上"
-  session.held = null;
-  session.heldFrom = { kind: 'none' };
+  setHeld(run, session, null, { kind: 'none' });
 
   return ok([
     {
@@ -449,9 +540,9 @@ export function swapSlots(
 
 // ———————— 命令：把手里的东西放回去（名副其实的"回原位"，永不丢件） ————————
 
-function clearHeld(session: OrganizeSession): void {
-  session.held = null;
-  session.heldFrom = { kind: 'none' };
+/** 把手清空 —— 唯一写入口 `setHeld` 的薄封装，保证落盘字段一起清 */
+function clearHeld(run: RunState, session: OrganizeSession): void {
+  setHeld(run, session, null, { kind: 'none' });
 }
 
 function shelfLabelOf(run: RunState, shelfId: string, index: number): string {
@@ -486,7 +577,7 @@ export function returnHeld(store: GameStore, session: OrganizeSession): CommandR
           const i = draft.shelves.findIndex((s) => s.id === origin.shelfId);
           if (i >= 0) draft.shelves[i] = restored;
         });
-        clearHeld(session);
+        clearHeld(run, session);
         return ok([{ type: 'returned', itemId: held.itemId, toWhere: `${shelfLabelOf(run, origin.shelfId, shelfIndex)} 原位` }]);
       }
     }
@@ -504,7 +595,7 @@ export function returnHeld(store: GameStore, session: OrganizeSession): CommandR
         const i = draft.shelves.findIndex((s) => s.id === origin.shelfId);
         if (i >= 0) draft.shelves[i] = next;
       });
-      clearHeld(session);
+      clearHeld(run, session);
       return ok([{ type: 'returned', itemId: held.itemId, toWhere: `${shelfLabelOf(run, origin.shelfId, shelfIndex)}（同架就近）` }]);
     }
   }
@@ -519,7 +610,7 @@ export function returnHeld(store: GameStore, session: OrganizeSession): CommandR
         // 塞回箱内首位：下一个摸出来的还是它，玩家的思路不会断
         if (target) target.items.unshift(held);
       });
-      clearHeld(session);
+      clearHeld(run, session);
       return ok([{ type: 'returned', itemId: held.itemId, toWhere: label }]);
     }
   }
@@ -534,7 +625,7 @@ export function returnHeld(store: GameStore, session: OrganizeSession): CommandR
       const target = draft.shelves[shelfIndex];
       if (target) draft.shelves[shelfIndex] = next;
     });
-    clearHeld(session);
+    clearHeld(run, session);
     return ok([{ type: 'returned', itemId: held.itemId, toWhere: shelfLabelOf(run, (run.shelves[i] as Shelf).id, i) }]);
   }
 
@@ -546,7 +637,7 @@ export function returnHeld(store: GameStore, session: OrganizeSession): CommandR
       items: [held]
     });
   });
-  clearHeld(session);
+  clearHeld(run, session);
   return ok([{ type: 'returned', itemId: held.itemId, toWhere: '临时搁置箱' }]);
 }
 

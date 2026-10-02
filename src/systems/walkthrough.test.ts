@@ -19,6 +19,7 @@ import { NIGHT_SLEEP } from '../data/nightEvents';
 import { SURVIVAL_DAYS, getDisasterDef } from '../data/disaster';
 import { dailyDrainOf } from '../data/survival';
 import type { CategoryId, RunState } from '../model/types';
+import { makeStack, setSlotStack } from '../model/shelf';
 import { GameStore } from '../state/store';
 import { SAVE_VERSION, createSaveGame, deserialize, serialize } from '../state/save';
 import { settleRunMeta } from './codex';
@@ -32,7 +33,17 @@ import {
   sleep,
   startSurvival
 } from './phases';
-import { applyZone, assignZone, createOrganizeSession, placeHeld, sortAllByFEFO, takeFromBox } from './organize';
+import {
+  applyZone,
+  assignZone,
+  createOrganizeSession,
+  householdTotals,
+  pickupFromShelf,
+  placeHeld,
+  restoreOrganizeSession,
+  sortAllByFEFO,
+  takeFromBox
+} from './organize';
 import { buildCartView, buyCart, enterShop, findShopStock, resolveDayEvent } from './shop';
 import { createStartingRun } from './setup';
 
@@ -183,6 +194,42 @@ function reload(text: string): GameStore {
   if (!back) throw new Error('存档读不回来');
   return new GameStore(back, createSaveSchedulerStub());
 }
+
+/**
+ * ★★ "拿着东西的时候刷新页面" —— 玩家报过的一个真丢件 bug。
+ *
+ * 原来的 `held` 只活在内存里，而"拿起来"会把物资**从格子/箱子里移走**，
+ * 于是刷新后格子里没有、会话也没了 = **凭空消失**。
+ * 这条守的是：无论刷新多少次，一件都不许少。
+ */
+describe('★★ 拿着东西刷新页面：一件都不许丢', () => {
+  it('从货架拿起 → 连刷三次 → 手里那件还在，总数不变', () => {
+    const session = createOrganizeSession();
+    let store = new GameStore(createSaveGame(createStartingRun(20261001)), createSaveSchedulerStub());
+
+    // 铺一件到货架上，然后拿在手里
+    const idx = store.run.shelves.findIndex((s) => s.id === 'shelf_a');
+    store.commit((draft) => {
+      const s = draft.shelves[idx];
+      if (!s) return;
+      draft.shelves[idx] = setSlotStack(s, { row: 0, col: 0 }, makeStack('canned_beans', 3, null));
+    });
+    const before = householdTotals(store.run).pieces;
+    const picked = pickupFromShelf(store, session, 'shelf_a', { row: 0, col: 0 });
+    expect(picked.ok).toBe(true);
+    expect(session.held?.itemId).toBe('canned_beans');
+
+    // 连刷三次，每次都用**新建的会话**（模拟真实刷新：会话是内存，重启即空）
+    for (let i = 0; i < 3; i++) {
+      store = reload(refreshRoundTrip(store));
+      const fresh = createOrganizeSession();
+      restoreOrganizeSession(store, fresh);
+      expect(fresh.held?.itemId, `第 ${i + 1} 次刷新后手里那件不该丢`).toBe('canned_beans');
+      expect(fresh.held?.batches[0]?.count).toBe(3);
+      expect(householdTotals(store.run).pieces, `第 ${i + 1} 次刷新后总数不该变`).toBe(before);
+    }
+  });
+});
 
 /** 把货架上的东西按品类铺好、贴一张写全清单的胶带、标顺手位、FEFO 排一遍 */
 function tidyUp(store: GameStore, session: ReturnType<typeof createOrganizeSession>): void {

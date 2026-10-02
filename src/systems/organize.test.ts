@@ -10,6 +10,7 @@ import {
   inventoryTotals,
   pickupFromShelf,
   placeHeld,
+  restoreOrganizeSession,
   returnHeld,
   sortAllByFEFO,
   swapSlots,
@@ -242,6 +243,123 @@ describe('放回：名副其实的"回原位"', () => {
     const res = returnHeld(store, session);
     expect(res.ok).toBe(false);
     expect(res.events[0]?.type).toBe('rejected');
+  });
+});
+
+describe('★ 手里那件物资不许丢（v15：它现在落盘）', () => {
+  /*
+   * 玩家报的原话："手里拿着东西时刷新页面，这件物资会丢"。
+   *
+   * 根因：`held` 原来只活在内存（`OrganizeSession`），而"拿起来"会把物资
+   * **从格子/箱子里移走** —— 于是刷新后格子里没有、会话也没了 = 凭空消失。
+   * 这违反本项目"杀进程损失 = 0"的核心承诺，也与 §4A 写明的
+   * "手里捏着的物资回到原位即可"不符。
+   */
+
+  it('★ 从货架拿起 → 物资进了 run.held（就会随存档落盘）', () => {
+    const { store, session } = setup();
+    const idx = store.run.shelves.findIndex((s) => s.id === 'shelf_a');
+    store.commit((draft) => {
+      const s = draft.shelves[idx];
+      if (!s) return;
+      draft.shelves[idx] = setSlotStack(s, { row: 0, col: 0 }, makeStack('canned_beans', 3, null));
+    });
+    const before = householdTotals(store.run).pieces;
+
+    pickupFromShelf(store, session, 'shelf_a', { row: 0, col: 0 });
+
+    expect(session.held?.itemId).toBe('canned_beans');
+    // ★ 关键：落盘字段也有一份（`store.commit` 会把它写进 localStorage）
+    expect(store.run.held?.itemId, 'run.held 必须同步 —— 否则刷新就丢').toBe('canned_beans');
+    expect(store.run.heldFrom).toEqual({ kind: 'shelf', shelfId: 'shelf_a', pos: { row: 0, col: 0 } });
+    // 而且**总数不变**：拿在手里不等于离开这个家
+    expect(householdTotals(store.run).pieces, '举着东西时总数不许少算').toBe(before);
+  });
+
+  it('★★ 拿起之后"刷新"（重建会话）→ 手里那件还在，一件都没丢', () => {
+    const { store, session } = setup();
+    const idx = store.run.shelves.findIndex((s) => s.id === 'shelf_a');
+    store.commit((draft) => {
+      const s = draft.shelves[idx];
+      if (!s) return;
+      draft.shelves[idx] = setSlotStack(s, { row: 0, col: 0 }, makeStack('canned_beans', 3, null));
+    });
+    const before = householdTotals(store.run).pieces;
+    pickupFromShelf(store, session, 'shelf_a', { row: 0, col: 0 });
+
+    // 模拟刷新：新会话 + 从同一份 run 恢复
+    const fresh = createOrganizeSession();
+    const archived = restoreOrganizeSession(store, fresh);
+
+    expect(archived, '来处还在，不该走临时搁置箱那条路').toBe(false);
+    expect(fresh.held?.itemId, '★ 刷新后手里那件必须还在').toBe('canned_beans');
+    expect(fresh.held?.batches[0]?.count).toBe(3);
+    expect(fresh.heldFrom).toEqual({ kind: 'shelf', shelfId: 'shelf_a', pos: { row: 0, col: 0 } });
+    expect(householdTotals(store.run).pieces, '★ 一件都不许丢').toBe(before);
+  });
+
+  it('★★ 来处已经不存在（箱子被拆空后消失）→ 进临时搁置箱，而不是消失', () => {
+    const { store, session } = setup();
+    const box = store.run.boxesToUnpack[0];
+    if (!box) throw new Error('开局应该有箱子');
+    const boxId = box.id;
+
+    /*
+     * 把箱子削到只剩一件。
+     * 刻意**直接改状态**而不是用 `returnHeld` —— 后者会把东西放回**原箱**，
+     * 于是箱子永远不满也不空、最后一件拿不掉（这一版就是那么写错的）。
+     */
+    store.commit((draft) => {
+      const b = draft.boxesToUnpack.find((x) => x.id === boxId);
+      if (b && b.items.length > 1) b.items.splice(1);
+    });
+    // ★ 基准要在"削箱之后"取：削箱本身会丢掉一批件数，那不是这条测试要验的事
+    const before = householdTotals(store.run).pieces;
+
+    // 拿起最后那一件 —— 空箱会自动消失（`takeFromBox` 的行为）
+    const res = takeFromBox(store, session, boxId);
+    expect(res.ok).toBe(true);
+    expect(store.run.boxesToUnpack.some((b) => b.id === boxId), '箱子应该已经消失').toBe(false);
+    expect(store.run.heldFrom).toEqual({ kind: 'box', boxId });
+    const heldItemId = store.run.held?.itemId;
+
+    // 刷新 → 来处（那个箱子）已经没了
+    const fresh = createOrganizeSession();
+    const archived = restoreOrganizeSession(store, fresh);
+
+    expect(archived, '应该走"归档到临时搁置箱"那条路').toBe(true);
+    expect(fresh.held, '手里空了（东西已经归位）').toBeNull();
+    expect(store.run.held, '落盘字段也要清干净').toBeNull();
+    expect(store.run.heldFrom).toEqual({ kind: 'none' });
+    // ★ 关键：物资出现在临时搁置箱里，而不是消失
+    const stray = store.run.boxesToUnpack.find((b) => b.defId === 'box_stray');
+    expect(stray, '必须有临时搁置箱').toBeDefined();
+    expect(stray?.items.some((s) => s.itemId === heldItemId), '那件物资应该在搁置箱里').toBe(true);
+    expect(householdTotals(store.run).pieces, '★ 一件都不许丢').toBe(before);
+  });
+
+  it('★ 手里是空的时候，恢复不该凭空造出手里那件', () => {
+    const { store } = setup();
+    const fresh = createOrganizeSession();
+    expect(restoreOrganizeSession(store, fresh)).toBe(false);
+    expect(fresh.held).toBeNull();
+    expect(fresh.heldFrom).toEqual({ kind: 'none' });
+  });
+
+  it('★ 手里那件放下去之后，落盘字段也一起清空（两份状态不许分家）', () => {
+    const { store, session } = setup();
+    const idx = store.run.shelves.findIndex((s) => s.id === 'shelf_a');
+    store.commit((draft) => {
+      const s = draft.shelves[idx];
+      if (!s) return;
+      draft.shelves[idx] = setSlotStack(s, { row: 0, col: 0 }, makeStack('canned_beans', 3, null));
+    });
+    pickupFromShelf(store, session, 'shelf_a', { row: 0, col: 0 });
+    placeHeld(store, session, 'shelf_a', { row: 1, col: 1 });
+
+    expect(session.held, '手里空了').toBeNull();
+    expect(store.run.held, '落盘字段也必须是空的').toBeNull();
+    expect(store.run.heldFrom).toEqual({ kind: 'none' });
   });
 });
 

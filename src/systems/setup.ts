@@ -152,6 +152,9 @@ export function createStartingRun(seed: number = randomSeed()): RunState {
     shopBoughtToday: {},
     dayEvent: null,
     eventHistory: emptyEventHistory(),
+    // v15：手里那件物资（§4A 要求它随存档保留；开局当然是空的）
+    held: null,
+    heldFrom: { kind: 'none' },
     night: null,
     helpRequest: null,
     survival: {

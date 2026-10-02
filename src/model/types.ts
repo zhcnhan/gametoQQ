@@ -658,6 +658,17 @@ export interface EventHistory {
 /** 每类各留最近几条。4 条够拉开间隔，又不会让"从没出过的"永远排不上 */
 export const EVENT_HISTORY_KEEP = 4;
 
+/**
+ * 手里那件物资的**来处**（§4A：刷新或被杀进程时，它要能回到这里）。
+ *
+ * 定义在 `model/` 而不是 `systems/organize.ts`，因为**它现在要落盘**：
+ * `RunState` 引用了它，而 `model/` 不许反向依赖 `systems/`。
+ */
+export type HeldOrigin =
+  | { kind: 'none' }
+  | { kind: 'box'; boxId: string }
+  | { kind: 'shelf'; shelfId: string; pos: SlotPos };
+
 export interface RunState {
   // 当局存档
   phase: GamePhase;
@@ -726,6 +737,37 @@ export interface RunState {
    * 见 `EventHistory` 的注释（含"为什么是压权重而不是禁掉"）。
    */
   eventHistory: EventHistory;
+
+  // ———————— 整理（M0 起，v15 落盘） ————————
+
+  /**
+   * **手里正捏着的那件物资**（§4A：整理到一半的状态必须完整保留）。
+   *
+   * ## ★ 它为什么必须落盘（这是被一个真 bug 逼出来的）
+   *
+   * 它原来只活在 `OrganizeSession` 里（纯内存）。而"拿起一件"这个动作会把物资
+   * **从格子/箱子里移走**，所以一旦这时刷新页面：
+   *
+   *   格子里没有了 + 会话没了 = **那件物资凭空消失**。
+   *
+   * 这直接违反本项目的核心承诺"杀进程损失 = 0"，也与 §4A 写明的
+   * "整理到一半的状态完整保留（手里捏着的物资回到原位即可）"不符 ——
+   * `organize.ts` 里当时甚至有一条注释**声称**已经这么做了，但实际是丢掉了。
+   * 玩家报的原话就是"手里拿着东西时刷新页面，这件物资会丢"。
+   *
+   * ## 语义
+   *
+   * 落盘的是"手里有什么 + 它从哪来"，于是刷新后有两种选择：
+   *  · **原样保持"拿在手里"**（实现选的是这条 —— 它最贴近 §4A 的"回到同一个状态"）；
+   *  · 或者按 `heldFrom` 送回原处。
+   * 两条都不丢件。选前者是因为刷新后"手里还捏着刚才那件"比"东西自己跑回箱子里"
+   * 更符合玩家的心理模型，也与 `currentShopId` 那条"恢复即续玩"的先例一致。
+   *
+   * 与 `heldFrom` 成对使用：`held === null` 时 `heldFrom` 必须是 `{ kind: 'none' }`。
+   */
+  held: ItemStack | null;
+  /** `held` 的来处（`held` 为 null 时无意义） */
+  heldFrom: HeldOrigin;
 
   // ———————— M1 夜间（阶段 B） ————————
 

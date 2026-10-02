@@ -17,7 +17,7 @@ import { createCursor } from './model/rng';
 import type { GamePhase } from './model/types';
 import { bootstrapStore } from './state/store';
 import { declineRequest, fulfillRequest, leaveRequest, type HelpResult } from './systems/help';
-import { createOrganizeSession, resetSession } from './systems/organize';
+import { createOrganizeSession, resetSession, restoreOrganizeSession } from './systems/organize';
 import { rollShopStocks } from './systems/shop';
 import { tradeForBox } from './systems/trade';
 import {
@@ -57,6 +57,16 @@ document.body.appendChild(fxRoot);
 
 const store = bootstrapStore(() => createStartingRun());
 const session = createOrganizeSession();
+
+/*
+ * ★ 恢复"手里正捏着的那件"（v15：它现在落盘了）。
+ *
+ * 在此之前它只活在内存里，而"拿起一件"会把物资**从格子/箱子里移走** ——
+ * 于是拿起来之后刷新页面，那件物资**凭空消失**（玩家报的就是这个）。
+ * 现在从存档里恢复；万一来处已经不存在（箱子被拆空后消失等），
+ * `restoreOrganizeSession` 会把它送进临时搁置箱 —— **绝不丢件**。
+ */
+restoreOrganizeSession(store, session);
 
 // 存档自愈：v3 迁移过来的档没有"当天的点位库存"，这里补一次。
 // 幂等 —— 库存已经属于今天时它一步都不动（不碰 RNG，不影响"同 seed 同结果"）。

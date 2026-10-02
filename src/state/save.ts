@@ -63,7 +63,7 @@ export const STORAGE_KEY = 'tunhuo.save';
  *        它解决的是 M2 走测反馈的"同一个 NPC 隔天又问同一件事"：求援池 6 单、每天 45%、
  *        均匀随机 → 同一个 NPC 前后两次问同一件事的概率是 50%。
  */
-export const SAVE_VERSION = 14;
+export const SAVE_VERSION = 15;
 /** 落盘节流上限（提示词 0：debounce ≤ 300ms） */
 export const SAVE_DEBOUNCE_MS = 250;
 
@@ -158,6 +158,7 @@ export function migrate(raw: unknown): SaveGame | null {
   if (declared < 12) save = migrateV11ToV12(save);
   if (declared < 13) save = migrateV12ToV13(save);
   if (declared < 14) save = migrateV13ToV14(save);
+  if (declared < 15) save = migrateV14ToV15(save);
   return normalizeRun(save);
 }
 
@@ -172,6 +173,38 @@ export function migrate(raw: unknown): SaveGame | null {
 export function migrateV13ToV14(save: SaveGame): SaveGame {
   const run = save.run;
   if (run) run.eventHistory = emptyEventHistory();
+  save.meta.version = SAVE_VERSION;
+  return save;
+}
+
+/**
+ * v14 → v15：**手里那件物资开始落盘**。
+ *
+ * ## 为什么改这个（这是一个真数据丢失 bug）
+ *
+ * "手里正捏着的那件"原来只活在内存（`OrganizeSession`），而"拿起来"会把物资
+ * **从格子/箱子里移走** —— 于是拿起来之后刷新页面：
+ *
+ *     格子里没有了 ＋ 会话没了 = **那件物资凭空消失**
+ *
+ * 这直接违反本项目的核心承诺"杀进程损失 = 0"，也与 §4A 写明的
+ * "整理到一半的状态完整保留（手里捏着的物资回到原位即可）"不符。
+ * 玩家报的原话是"手里拿着东西时刷新页面，这件物资会丢"。
+ *
+ * ## 迁移策略：补空
+ *
+ * 老档没有这个字段，补 `null` + `{ kind: 'none' }`。
+ * **刻意不反推**：老档里"玩家当时手里有没有东西"这个信息**根本没有被记录过**，
+ * 所以补空是唯一诚实的选择（凭空补一件物资等于发道具）。
+ * 代价是：一个"正拿着东西"的老档读了之后手是空的 —— 但老档在那个瞬间
+ * 本来就会丢件（那就是这个 bug），所以迁移不会让情况变坏。
+ */
+export function migrateV14ToV15(save: SaveGame): SaveGame {
+  const run = save.run;
+  if (run) {
+    run.held = null;
+    run.heldFrom = { kind: 'none' };
+  }
   save.meta.version = SAVE_VERSION;
   return save;
 }
@@ -501,6 +534,40 @@ function normalizeRun(save: SaveGame): SaveGame | null {
   );
   run.visitedShopIds = asArray<string>(run.visitedShopIds).filter((v) => typeof v === 'string');
   run.currentShopId = typeof run.currentShopId === 'string' ? run.currentShopId : null;
+
+  /*
+   * ———————— v15：手里那件物资 ————————
+   *
+   * 两条兜底，都是"宁可手空着，也不许界面或算法读到半截数据"：
+   *  ① `held` 必须是能认出来的堆（有 itemId + batches 数组），否则丢弃；
+   *     它的形状与 `ItemStack` 一致，界面对它的用法与格子里那件完全一样；
+   *  ② `heldFrom` 必须是三种已知形态之一，否则退回 `{ kind: 'none' }` ——
+   *     来处不明只会让"拖拽时判不判互换"保守一点，不会丢件。
+   *
+   * 注意**不做"来处还在不在"的校验**：那件事交给 `systems/organize.ts` 的
+   * `restoreOrganizeSession()`。存档层不认识货架与箱子的语义（见文件头的职责边界）。
+   */
+  const heldRaw: unknown = run.held;
+  run.held =
+    isObject(heldRaw) && typeof heldRaw.itemId === 'string' && Array.isArray(heldRaw.batches)
+      ? (heldRaw as unknown as ItemStack)
+      : null;
+  const fromRaw: unknown = run.heldFrom;
+  const from = isObject(fromRaw) ? (fromRaw as { kind?: unknown; shelfId?: unknown; boxId?: unknown; pos?: unknown }) : null;
+  if (!run.held) {
+    run.heldFrom = { kind: 'none' };
+  } else if (from?.kind === 'box' && typeof from.boxId === 'string') {
+    run.heldFrom = { kind: 'box', boxId: from.boxId };
+  } else if (from?.kind === 'shelf' && typeof from.shelfId === 'string' && isObject(from.pos)) {
+    const pos = from.pos as { row?: unknown; col?: unknown };
+    run.heldFrom = {
+      kind: 'shelf',
+      shelfId: from.shelfId,
+      pos: { row: Math.max(0, Math.round(Number(pos.row) || 0)), col: Math.max(0, Math.round(Number(pos.col) || 0)) }
+    };
+  } else {
+    run.heldFrom = { kind: 'none' };
+  }
 
   // ———————— M2 白天事件（§6.2 / D-10） ————————
   // 物价倍率兜底成 1（原价）。手改出来的 0 或负数会让所有价格夹到 1 元，

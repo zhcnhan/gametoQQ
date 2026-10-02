@@ -241,9 +241,54 @@ describe('跨局结算：只发一次奖', () => {
   });
 });
 
-describe('存档 v13/v14：M2 新字段的迁移与自愈', () => {
-  it('当前版本是 v14（v13 加事件近期记录）', () => {
-    expect(SAVE_VERSION).toBe(14);
+describe('存档 v13/v14/v15：M2 新字段的迁移与自愈', () => {
+  it('当前版本是 v15（v14 加"手里那件物资"落盘）', () => {
+    expect(SAVE_VERSION).toBe(15);
+  });
+
+  it('★ v14 老档：手里那件补空（不反推 —— 老档根本没记录过这件事）', () => {
+    const run = createStartingRun(5) as unknown as Record<string, unknown>;
+    delete run['held'];
+    delete run['heldFrom'];
+    const back = deserialize(
+      serialize({ meta: { version: 14 } as never, run: run as never, savedAt: 1, syncVersion: 1, deviceId: 'd' })
+    );
+    expect(back?.run?.held).toBeNull();
+    expect(back?.run?.heldFrom).toEqual({ kind: 'none' });
+  });
+
+  it('★★ v15：手里那件能存档往返（这是"刷新不丢件"的地基）', () => {
+    const run = createStartingRun(5);
+    run.held = { itemId: 'canned_beans', batches: [{ count: 3, expiresAtDay: 12 }] } as never;
+    run.heldFrom = { kind: 'shelf', shelfId: 'shelf_a', pos: { row: 1, col: 2 } };
+    const back = deserialize(
+      serialize({ meta: { version: 15 } as never, run, savedAt: 1, syncVersion: 1, deviceId: 'd' })
+    );
+    expect(back?.run?.held?.itemId).toBe('canned_beans');
+    expect(back?.run?.held?.batches[0]?.count).toBe(3);
+    expect(back?.run?.heldFrom).toEqual({ kind: 'shelf', shelfId: 'shelf_a', pos: { row: 1, col: 2 } });
+  });
+
+  it('★ v15 自愈：手里那件形状不对 → 丢弃；来处形状不对 → 退回 none', () => {
+    const run = createStartingRun(5) as unknown as Record<string, unknown>;
+    run['held'] = { nope: true }; // 没有 itemId / batches
+    run['heldFrom'] = { kind: '不存在的来处' };
+    const back = deserialize(
+      serialize({ meta: { version: 15 } as never, run: run as never, savedAt: 1, syncVersion: 1, deviceId: 'd' })
+    );
+    expect(back?.run?.held).toBeNull();
+    expect(back?.run?.heldFrom).toEqual({ kind: 'none' });
+  });
+
+  it('★ v15 自愈：手里是空的，来处必须一起被清成 none（两份状态不许分家）', () => {
+    const run = createStartingRun(5) as unknown as Record<string, unknown>;
+    run['held'] = null;
+    run['heldFrom'] = { kind: 'shelf', shelfId: 'shelf_a', pos: { row: 0, col: 0 } };
+    const back = deserialize(
+      serialize({ meta: { version: 15 } as never, run: run as never, savedAt: 1, syncVersion: 1, deviceId: 'd' })
+    );
+    expect(back?.run?.held).toBeNull();
+    expect(back?.run?.heldFrom).toEqual({ kind: 'none' });
   });
 
   it('★ v13 老档：事件近期记录补空数组', () => {
