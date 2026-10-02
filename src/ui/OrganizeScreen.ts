@@ -151,6 +151,18 @@ export class OrganizeScreen {
   }
 
   render(): void {
+    /*
+     * ★ 兜底：任何一次重绘都顺手清掉"游离的拖拽幽灵"。
+     *
+     * 幽灵是 `fx-layer` 里一个独立元素，不进 DOM 树状重绘，所以它只能靠
+     * 手势结束（`endGhost`）来收。只要那条路有一条我没覆盖到的分支
+     * （玩家反馈的"卡住了，得点一下原格子才好"），幽灵就会一直贴在屏幕上。
+     *
+     * 与其指望我把所有分支都找齐，不如在这儿兜住：**重绘 = 屏幕重来一遍**，
+     * 那幽灵就没有理由跨过一次重绘活下来。就算真有漏网的分支，
+     * 玩家看到的也只是"它消失了"，而不是"它卡在那儿不动"。
+     */
+    if (this.ghost !== null) this.endGhost();
     const view = buildView(this.store, this.session);
     this.renderSub(view);
     this.renderScore(view);

@@ -61,6 +61,8 @@ export function attachPointerGesture(
   /** 最近一次看到的指针事件时间戳（毫秒）。"手势自杀检测"用它判断是不是僵住了 */
   let lastSeenAt = 0;
   let lastButtons = 0;
+  /** 这一次手势的 pointerId（释放捕获要用） */
+  let pointerId = -1;
   let watchdog: number | null = null;
 
   const clearTimer = (): void => {
@@ -119,6 +121,16 @@ export function attachPointerGesture(
     window.removeEventListener('pointercancel', onCancel);
     document.removeEventListener('touchmove', blockScroll);
     el.classList.remove('is-dragging');
+    /*
+     * 主动释放捕获。正常情况下浏览器会在 pointerup 后自动释放，
+     * 但显式放一次能覆盖"手势被 finish() 提前结束"的路径
+     * （比如看门狗判定僵住、或者新的 pointerdown 把上一轮清掉）。
+     */
+    try {
+      if (el.hasPointerCapture(pointerId)) el.releasePointerCapture(pointerId);
+    } catch {
+      // 元素已经被重绘换掉时释放会失败，忽略即可
+    }
     clearWatchdog();
   };
 
@@ -197,6 +209,26 @@ export function attachPointerGesture(
     lastSeenAt = Date.now();
     lastButtons = e.buttons;
     startTime = Date.now();
+    pointerId = e.pointerId;
+    /*
+     * ★ 抓住指针（pointer capture）。
+     *
+     * 这是"拖到一半卡住"的**根治**：`pointerup` 原来只挂在 window 上听，
+     * 而指针一旦离开页面（拖到窗口外、切窗口、浏览器截走手势），
+     * `pointerup` 就可能再也不派发到我们的文档上 —— 于是幽灵停在屏幕上、
+     * 手势永远结束不了（玩家看到的就是"卡住了，得点一下原格子才好"）。
+     *
+     * 抓住之后，后续的 pointermove / pointerup / pointercancel **一定会送到 `el`**，
+     * 由它冒泡到 window。这比"事后靠看门狗猜"可靠得多：
+     *  · `setPointerCapture` 在指针已经抬起时会抛 `NotFoundError` —— 包在 try 里；
+     *  · 元素在手势中途被重绘换掉时，捕获会在元素从文档移除时**自动释放**，
+     *    而监听器本来就挂在 window 上，所以那种情况不受影响。
+     */
+    try {
+      el.setPointerCapture(e.pointerId);
+    } catch {
+      // 拿不到捕获不是致命问题：window 上的监听器仍然照常工作
+    }
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onCancel);
