@@ -155,6 +155,12 @@ export class OrganizeScreen {
      * 玩家看到的也只是"它消失了"，而不是"它卡在那儿不动"。
      */
     if (this.ghost !== null) this.endGhost();
+    /*
+     * ★ 同理，一次重绘 = 上一批手势全部作废。
+     * 这里**先摘掉再重建**，而不是等 `bindRoomGestures` 自己清 ——
+     * 那样"货架"和"纸箱"两批的清理时机就不一致了（两处都要记得清，迟早漏一处）。
+     */
+    this.clearGestureBindings();
     const view = buildView(this.store, this.session);
     this.renderSub(view);
     this.renderScore(view);
@@ -301,6 +307,29 @@ export class OrganizeScreen {
 
   // ———————— 手势绑定 ————————
 
+  /**
+   * 已经挂上的手势 detacher。
+   *
+   * ★★ 这是"拖动卡住"的**真正病根**，屏幕级测试抓出来的
+   * （断言 `win.listenerCount('pointerup')` 时发现竟然挂着 4 个）。
+   *
+   * `renderRoom` 用 `innerHTML` 换掉整间房，但**从来没有调用过这些 detacher**。
+   * 而 `attachPointerGesture` 在拖拽期间会往 **window** 上加 `pointermove` / `pointerup`
+   * 监听器 —— 只要手势没跑完就重绘了（**拾取一件东西就会重绘**），
+   * 那些 window 监听器就永远留在那儿。
+   *
+   * 后果不是"泄漏一点内存"，而是**行为错乱**：
+   * 僵尸监听器继续响应之后每一次 pointerup，而且是对着**已经不在屏幕上的旧元素**
+   * 调 `onDragEnd` / `onUp` —— 于是新一次拖拽的收尾被旧手势干扰，
+   * 表现成"拖着拖着卡住、得点一下原格子才好"。
+   */
+  private gestureDetachers: (() => void)[] = [];
+
+  private clearGestureBindings(): void {
+    for (const detach of this.gestureDetachers) detach();
+    this.gestureDetachers = [];
+  }
+
   private bindRoomGestures(): void {
     this.clearLongPressBindings();
     this.roomEl.querySelectorAll<HTMLElement>('[data-slot]').forEach((el) => {
@@ -309,8 +338,9 @@ export class OrganizeScreen {
       const col = Number(el.dataset['col']);
       if (!shelfId) return;
       const pos: SlotPos = { row, col };
-      attachPointerGesture(el, {
-        onTap: () => this.consume(tapSlot(this.store, this.session, shelfId, pos)),
+      this.gestureDetachers.push(
+        attachPointerGesture(el, {
+          onTap: () => this.consume(tapSlot(this.store, this.session, shelfId, pos)),
         onDragStart: () => {
           /*
            * ★ 来源必须**当场定**，不能从 `session.heldFrom` 读（M2 走测抓出来的 bug）。
@@ -335,9 +365,11 @@ export class OrganizeScreen {
           if (!this.session.held) this.consume(pickupFromShelf(this.store, this.session, shelfId, pos));
           this.beginDrag('shelf', { shelfId, pos });
         },
-        onDragMove: (point) => this.moveDrag(point),
-        onDragEnd: (point) => this.endDrag(point)
-      });
+          onDragMove: (point) => this.moveDrag(point),
+          onDragEnd: (point) => this.endDrag(point),
+          onCancel: () => this.cancelDrag()
+        })
+      );
     });
 
     this.roomEl.querySelectorAll<HTMLElement>('[data-shelf-title]').forEach((el) => {
@@ -352,8 +384,9 @@ export class OrganizeScreen {
     this.dockEl.querySelectorAll<HTMLElement>('[data-box]').forEach((el) => {
       const boxId = el.dataset['box'];
       if (!boxId) return;
-      attachPointerGesture(el, {
-        onTap: () => this.consume(takeFromBox(this.store, this.session, boxId)),
+      this.gestureDetachers.push(
+        attachPointerGesture(el, {
+          onTap: () => this.consume(takeFromBox(this.store, this.session, boxId)),
         onDragStart: () => {
           /*
            * 从纸箱拖起：手里空就当场拿一件；**来源一律是 `null`**。
@@ -369,9 +402,11 @@ export class OrganizeScreen {
           if (!this.session.held) this.consume(takeFromBox(this.store, this.session, boxId));
           this.beginDrag('box');
         },
-        onDragMove: (point) => this.moveDrag(point),
-        onDragEnd: (point) => this.endDrag(point)
-      });
+          onDragMove: (point) => this.moveDrag(point),
+          onDragEnd: (point) => this.endDrag(point),
+          onCancel: () => this.cancelDrag()
+        })
+      );
     });
   }
 
@@ -553,6 +588,24 @@ export class OrganizeScreen {
     this.ghost?.remove();
     this.ghost = null;
     this.clearHover();
+  }
+
+  /**
+   * 手势被**中断**（不是正常松手）：收掉幽灵与悬停预览，物资留在手里。
+   *
+   * ★ 这个方法是被屏幕级测试逼出来的。`attachPointerGesture` 有一条 `onCancel`
+   * 通路（长按成立前判定为滚动、以及看门狗认定手势僵死），
+   * 而屏幕层**原本没有实现它** —— 于是看门狗虽然把手势结束了，
+   * **幽灵却没人收**，正好就是玩家截图里那个"卡住不动的小方块"。
+   *
+   * 刻意不把物资放下：这是一次被中断的操作，玩家没表达"放哪儿"，
+   * 留在手里才是可继续的状态（想放就再点一格）。
+   */
+  private cancelDrag(): void {
+    this.drag = { active: false, source: 'shelf' };
+    this.dragOrigin = null;
+    this.endGhost();
+    this.render();
   }
 
   private clearHover(): void {

@@ -5,9 +5,26 @@
  *  - 点选-点放：手指抬起时没怎么移动 → 判定为 tap
  *  - 长按拖拽：触摸长按 220ms 后进入拖拽；鼠标则移动 6px 即进入拖拽（不强迫鼠标长按）
  *
- * 关键实现细节：监听器挂在 window 而不是目标元素上 ——
- * 因为"从纸箱里拿出一件"会立刻触发重绘（原元素被替换掉），
- * 如果监听器挂在元素上，那一次的 pointerup 就会丢失，拖拽永远结束不了。
+ * ═══════════════════════════════════════════════════════════════════════
+ * ★★ 为什么 window 上的监听器**只在模块加载时挂一次**（M2 重写）
+ * ═══════════════════════════════════════════════════════════════════════
+ *
+ * 原来的写法是"每个手势开始时 `window.addEventListener`、结束时 `removeEventListener`"。
+ * 看起来天经地义，实际把玩家坑了三次（"拖动卡住，得点原格子才好"）：
+ *
+ *  · `OrganizeScreen` 每次放下/拾取都会重绘，而 `renderRoom` 用 `innerHTML`
+ *    **把整间房换掉** —— 手里那个元素连同它的监听器一起消失；
+ *  · 一旦手势是在"元素已经被换掉"之后才结束的，`el.removeEventListener` 是对着
+ *    一块僵尸调的，**window 上的监听器就永远摘不掉**；
+ *  · 那些僵尸监听器还会继续响应之后每一次 pointerup，对着旧元素调 `onUp` ——
+ *    于是新一次拖拽的收尾被旧手势干扰。
+ *    屏幕级测试里直接量到了这个数字：一次拖拽之后 window 上挂着 **4 个** pointerup。
+ *
+ * 改成"监听器常驻 + 一个当前的活跃手势"之后，**这一类 bug 在结构上不可能发生**：
+ * window 永远恰好挂着一份监听，没有"加/摘不配对"的余地，
+ * 元素被换掉也不影响收尾（收尾只依赖 `active` 这个变量，不依赖元素还在不在）。
+ *
+ * 代价是"每个手势都要判一次 active"——那是几次整数比较，可以忽略。
  */
 
 export interface Point {
@@ -35,11 +52,12 @@ export interface GestureOptions {
   /** 点了但停留过久不算 tap 的上限 */
   tapMaxMs?: number;
   /**
-   * 长按成立**之前**，手指移动多少像素就判定为"玩家想滚动页面"（放弃手势）。
+   * 长按成立**之前**，手指竖向移动多少像素就判定为"玩家想滚动页面"（放弃手势）。
    *
-   * 它比 `moveTolerance` 宽，而且**按方向**用（见 `onMove`）：
-   * 竖向移动才算滚动意图，横向移动不算 —— 格子里的东西只能横向拖，
-   * 而手指刚按下时抖十几像素实在太容易了。
+   * 它按**方向**用（见 `handleMove`）：竖向移动才算滚动意图，横向不算 ——
+   * 格子里的东西只能横向拖，而手指刚按下时抖十几像素实在太容易了。
+   * 原来用"总位移超过 12px 就放弃"，于是**大部分想拖拽的手势在长按成立前就被放弃**
+   * （玩家报的"手机上拖不动"）。
    */
   scrollTolerance?: number;
 }
@@ -55,211 +73,241 @@ function distance(a: Point, b: Point): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
+/** 当前活跃的手势（同时只允许一个 —— 真正的多点触控手势不在本作范围内） */
+interface ActiveGesture {
+  el: HTMLElement;
+  handlers: GestureHandlers;
+  opts: Required<GestureOptions>;
+  dragging: boolean;
+  start: Point;
+  last: Point;
+  startTime: number;
+  longPressTimer: number | null;
+  /** 最近一次看到的指针事件时间（"手势自杀检测"用） */
+  lastSeenAt: number;
+  /** 最近一次看到的指针按键状态 */
+  lastButtons: number;
+  pointerId: number;
+  onWindowSettled: (() => void) | null;
+}
+
+let active: ActiveGesture | null = null;
+let watchdog: number | null = null;
+/**
+ * 常驻监听器装在**哪个 window 对象**上。
+ *
+ * 存对象而不是布尔值，是为了让"换了一个 window"这种情况自动重新安装 ——
+ * 单测里每个用例都会 `installFakeWindow()` 造一个新 window，
+ * 布尔标志会让第二个用例之后**一个监听都挂不上**（实测踩到过）。
+ * 真实浏览器里 `window` 自始至终是同一个对象，这个判断永远为真、零开销。
+ */
+let installedOn: unknown = null;
+
+function now(): number {
+  return Date.now();
+}
+
+/**
+ * 常驻监听器：**每个 window 只装一次**，而且只在动手势时才装。
+ *
+ * 这就是那个"结构上不可能泄漏"的来源 —— 没有 add/remove 配对，就没有配错的机会。
+ */
+function installWindowListeners(): void {
+  if (installedOn === window) return;
+  installedOn = window;
+  window.addEventListener('pointermove', handleMove);
+  window.addEventListener('pointerup', handleUp);
+  window.addEventListener('pointercancel', handleCancel);
+  // 页面被切走/隐藏时（切窗口、系统弹层）把手势收掉，别留个幽灵在屏幕上
+  window.addEventListener('blur', () => {
+    cancelActive();
+  });
+}
+
+function clearLongPressTimer(g: ActiveGesture): void {
+  if (g.longPressTimer !== null) {
+    window.clearTimeout(g.longPressTimer);
+    g.longPressTimer = null;
+  }
+}
+
+/** 收尾：清状态、摘元素上的 dragging 标记、释放指针捕获、跑调用方给的清理 */
+function settle(g: ActiveGesture): void {
+  clearLongPressTimer(g);
+  g.el.classList.remove('is-dragging');
+  /*
+   * 显式释放捕获。浏览器通常会在 pointerup 后自动释放，
+   * 但"手势被看门狗/新的 pointerdown 提前结束"这几条路不会 ——
+   * 捕获留着会让后续的指针事件继续送给那个元素（而不是指针真正底下的那个）。
+   */
+  try {
+    if (g.el.hasPointerCapture(g.pointerId)) g.el.releasePointerCapture(g.pointerId);
+  } catch {
+    // 元素已经被重绘换掉时释放会失败，忽略即可
+  }
+  if (active === g) active = null;
+  g.onWindowSettled?.();
+}
+
+function startWatchdog(): void {
+  if (watchdog !== null) return;
+  /*
+   * 手势自杀检测：每 600ms 看一眼当前手势是不是僵住了。
+   *
+   * ## 它修的是一个真实的死锁
+   *
+   * 原来只靠 `pointerup` / `pointercancel` 结束手势，而这两件事**不保证会到**
+   * （切窗口、系统弹窗、浏览器把手势当成滚动或返回）。一旦没到，
+   * 手势就永远结束不了，之后所有 pointerdown 都会被拒 —— 玩家得刷新页面。
+   *
+   * 判据用**指针按键状态**而不是"超时没动"：长按之后手指停住不动是合法操作
+   * （玩家在想放哪儿），只有"按键已经松开、我们却还认为自己按着"才是真的僵住。
+   */
+  watchdog = window.setInterval(() => {
+    const g = active;
+    if (!g) {
+      if (watchdog !== null) {
+        window.clearInterval(watchdog);
+        watchdog = null;
+      }
+      return;
+    }
+    const alive = now() - g.lastSeenAt < 1200;
+    if (g.lastButtons === 0 || !alive) {
+      const wasDragging = g.dragging;
+      settle(g);
+      if (wasDragging) g.handlers.onCancel?.();
+    }
+  }, 600);
+}
+
+function beginDrag(g: ActiveGesture, point: Point): void {
+  if (g.dragging) return;
+  g.dragging = true;
+  g.el.classList.add('is-dragging');
+  g.handlers.onDragStart?.(point);
+}
+
+function handleMove(e: PointerEvent): void {
+  const g = active;
+  if (!g) return;
+  g.lastSeenAt = now();
+  g.lastButtons = e.buttons;
+  const point = { x: e.clientX, y: e.clientY };
+  g.last = point;
+  if (!g.dragging) {
+    if (e.pointerType === 'mouse') {
+      if (distance(point, g.start) > 6) beginDrag(g, point);
+      return;
+    }
+    // 长按还没成立：按**方向**判断滚动意图（见 GestureOptions.scrollTolerance）
+    const dy = Math.abs(point.y - g.start.y);
+    const dx = Math.abs(point.x - g.start.x);
+    if (dy > g.opts.scrollTolerance && dy > dx) {
+      settle(g);
+      g.handlers.onCancel?.();
+    }
+    return;
+  }
+  g.handlers.onDragMove?.(point);
+}
+
+function handleUp(e: PointerEvent): void {
+  const g = active;
+  if (!g) return;
+  g.lastSeenAt = now();
+  g.lastButtons = 0;
+  const point = { x: e.clientX, y: e.clientY };
+  const wasDragging = g.dragging;
+  const moved = distance(point, g.start);
+  const elapsed = now() - g.startTime;
+  settle(g);
+  if (wasDragging) {
+    g.handlers.onDragEnd?.(point);
+    return;
+  }
+  if (moved <= g.opts.moveTolerance && elapsed <= g.opts.tapMaxMs) g.handlers.onTap?.(point);
+}
+
+function handleCancel(): void {
+  cancelActive();
+}
+
+/** 把当前手势按"被打断"收掉 */
+function cancelActive(): void {
+  const g = active;
+  if (!g) return;
+  const wasDragging = g.dragging;
+  settle(g);
+  if (wasDragging) g.handlers.onCancel?.();
+}
+
+/**
+ * 仅供测试：把模块级的常驻状态清空。
+ *
+ * 为什么需要它：这里的 window 监听器是**模块级只装一次**的，而单测里
+ * `installFakeWindow()` 每个用例都新建一个假 window ——
+ * 上一个用例的常驻监听器和活跃手势会**跨用例残留**，导致
+ * "这个 window 上挂了几份监听"这类断言数字虚高、行为互相干扰。
+ * 真实浏览器里只有一个 window、一个页面会话，不存在这个问题。
+ *
+ * 它不做任何"生产代码在跑的事"，所以放在这里不会影响线上行为。
+ */
+export function __resetGesturesForTest(): void {
+  active = null;
+  if (watchdog !== null) {
+    clearInterval(watchdog);
+    watchdog = null;
+  }
+  installedOn = null;
+}
 export function attachPointerGesture(
   el: HTMLElement,
   handlers: GestureHandlers,
   options: GestureOptions = {}
 ): () => void {
+  installWindowListeners();
   const opts = { ...DEFAULTS, ...options };
-  let active = false;
-  let dragging = false;
-  let start: Point = { x: 0, y: 0 };
-  let last: Point = { x: 0, y: 0 };
-  let startTime = 0;
-  let timer: number | null = null;
-  /** 最近一次看到的指针事件时间戳（毫秒）。"手势自杀检测"用它判断是不是僵住了 */
-  let lastSeenAt = 0;
-  let lastButtons = 0;
-  /** 这一次手势的 pointerId（释放捕获要用） */
-  let pointerId = -1;
-  let watchdog: number | null = null;
-
-  const clearTimer = (): void => {
-    if (timer !== null) {
-      window.clearTimeout(timer);
-      timer = null;
-    }
-  };
-
-  const clearWatchdog = (): void => {
-    if (watchdog !== null) {
-      window.clearInterval(watchdog);
-      watchdog = null;
-    }
-  };
-
-  /**
-   * 手势自杀检测（每 600ms 看一眼）。
-   *
-   * ## 它修的是一个真实的死锁
-   *
-   * 原来的实现只靠 `pointerup` / `pointercancel` 结束手势。可这两件事**不保证会到**：
-   * 切到别的窗口、系统弹出权限框、浏览器把手势当成了滚动或返回手势 ——
-   * 那些情况下 `pointerup` 永远不会派发到这个页面。
-   * 于是 `active` 永久停在 `true`，而 `onDown` 的第一句就是 `if (active) return` ——
-   * **之后所有的 pointerdown 都被忽略**，玩家看到的就是"拖着拖着卡住了，得刷新页面"。
-   *
-   * 判据用**指针按键状态**而不是"超时没动"：长按之后手指停住不动是合法操作
-   * （玩家在想放哪儿），只有"按键已经松开、我们却还认为自己按着"才是真的僵住。
-   * `pointermove/up` 都会顺带更新 `lastButtons`，所以正常情况下这个检测不会误伤。
-   */
-  const startWatchdog = (): void => {
-    clearWatchdog();
-    watchdog = window.setInterval(() => {
-      if (!active) {
-        clearWatchdog();
-        return;
-      }
-      const alive = Date.now() - lastSeenAt < 1200;
-      if (lastButtons === 0 || !alive) {
-        // 按键已经松开了（或者指针事件彻底断了）→ 按"被打断"收尾，让下一次能重新开始
-        const wasDragging = dragging;
-        finish();
-        if (wasDragging) handlers.onCancel?.();
-      }
-    }, 600);
-  };
-
-  const blockScroll = (e: TouchEvent): void => {
-    if (dragging && e.cancelable) e.preventDefault();
-  };
-
-  const detachWindow = (): void => {
-    window.removeEventListener('pointermove', onMove);
-    window.removeEventListener('pointerup', onUp);
-    window.removeEventListener('pointercancel', onCancel);
-    document.removeEventListener('touchmove', blockScroll);
-    el.classList.remove('is-dragging');
-    /*
-     * 主动释放捕获。正常情况下浏览器会在 pointerup 后自动释放，
-     * 但显式放一次能覆盖"手势被 finish() 提前结束"的路径
-     * （比如看门狗判定僵住、或者新的 pointerdown 把上一轮清掉）。
-     */
-    try {
-      if (el.hasPointerCapture(pointerId)) el.releasePointerCapture(pointerId);
-    } catch {
-      // 元素已经被重绘换掉时释放会失败，忽略即可
-    }
-    clearWatchdog();
-  };
-
-  const beginDrag = (point: Point): void => {
-    if (dragging) return;
-    dragging = true;
-    el.classList.add('is-dragging');
-    document.addEventListener('touchmove', blockScroll, { passive: false });
-    handlers.onDragStart?.(point);
-  };
-
-  const finish = (): void => {
-    clearTimer();
-    detachWindow();
-    active = false;
-    dragging = false;
-  };
-
-  const onMove = (e: PointerEvent): void => {
-    if (!active) return;
-    lastSeenAt = Date.now();
-    lastButtons = e.buttons;
-    const point = { x: e.clientX, y: e.clientY };
-    last = point;
-    const moved = distance(point, start);
-    if (!dragging) {
-      if (e.pointerType === 'mouse') {
-        if (moved > 6) beginDrag(point);
-        return;
-      }
-      /*
-       * ★ 长按还没成立时，怎么判断"玩家其实是想滚动页面"？
-       *
-       * 原来的写法是"位移超过 `moveTolerance`（12px）就放弃" —— 那条太苛刻了：
-       * 手指刚按下时抖十几像素极其常见，而长按要 220ms 才成立，
-       * 于是**大部分想拖拽的手势都在成立之前就被放弃掉了**。
-       * 玩家报的"手机上拖不动"就是这个。
-       *
-       * 现在按**方向**判断意图：
-       *  · 房间是竖向滚动的，而格子里的东西只能**横向**拖
-       *    （6 列密排，拖拽基本是左右移动）；
-       *  · 所以竖向滑得明显 = 想滚页面，放行；
-       *  · 横向滑动**不算**滚动意图，继续等长按成立。
-       */
-      const dy = Math.abs(point.y - start.y);
-      const dx = Math.abs(point.x - start.x);
-      if (dy > opts.scrollTolerance && dy > dx) {
-        finish();
-        handlers.onCancel?.();
-      }
-      return;
-    }
-    handlers.onDragMove?.(point);
-  };
-
-  const onUp = (e: PointerEvent): void => {
-    if (!active) return;
-    lastSeenAt = Date.now();
-    lastButtons = 0;
-    const point = { x: e.clientX, y: e.clientY };
-    const wasDragging = dragging;
-    const moved = distance(point, start);
-    const elapsed = Date.now() - startTime;
-    finish();
-    if (wasDragging) {
-      handlers.onDragEnd?.(point);
-      return;
-    }
-    if (moved <= opts.moveTolerance && elapsed <= opts.tapMaxMs) handlers.onTap?.(point);
-  };
-
-  const onCancel = (): void => {
-    if (!active) return;
-    const wasDragging = dragging;
-    finish();
-    if (wasDragging) handlers.onCancel?.();
-  };
 
   const onDown = (e: PointerEvent): void => {
     /*
-     * 上一轮手势如果没被正常收掉（`pointerup` 没到），`active` 会是 `true`。
-     * 与其"永久拒绝新的手势"（= 玩家得刷新页面），不如在这里清掉它重来 ——
-     * 新的一次 pointerdown 本身就证明玩家还在操作。
+     * 上一轮手势如果没被正常收掉，这里先清掉再开始新的 ——
+     * 新的一次 pointerdown 本身就证明玩家还在操作，没理由继续拒绝他。
      */
-    if (active) finish();
+    if (active) cancelActive();
     if (e.pointerType === 'mouse' && e.button !== 0) return;
-    active = true;
-    dragging = false;
-    start = { x: e.clientX, y: e.clientY };
-    last = start;
-    lastSeenAt = Date.now();
-    lastButtons = e.buttons;
-    startTime = Date.now();
-    pointerId = e.pointerId;
+
+    const g: ActiveGesture = {
+      el,
+      handlers,
+      opts,
+      dragging: false,
+      start: { x: e.clientX, y: e.clientY },
+      last: { x: e.clientX, y: e.clientY },
+      startTime: now(),
+      longPressTimer: null,
+      lastSeenAt: now(),
+      lastButtons: e.buttons,
+      pointerId: e.pointerId,
+      onWindowSettled: null
+    };
+    active = g;
+    startWatchdog();
+
     /*
-     * ★ 抓住指针（pointer capture）。
-     *
-     * 这是"拖到一半卡住"的**根治**：`pointerup` 原来只挂在 window 上听，
-     * 而指针一旦离开页面（拖到窗口外、切窗口、浏览器截走手势），
-     * `pointerup` 就可能再也不派发到我们的文档上 —— 于是幽灵停在屏幕上、
-     * 手势永远结束不了（玩家看到的就是"卡住了，得点一下原格子才好"）。
-     *
-     * 抓住之后，后续的 pointermove / pointerup / pointercancel **一定会送到 `el`**，
-     * 由它冒泡到 window。这比"事后靠看门狗猜"可靠得多：
-     *  · `setPointerCapture` 在指针已经抬起时会抛 `NotFoundError` —— 包在 try 里；
-     *  · 元素在手势中途被重绘换掉时，捕获会在元素从文档移除时**自动释放**，
-     *    而监听器本来就挂在 window 上，所以那种情况不受影响。
+     * 抓住指针。抓住之后后续的 move/up/cancel **一定会送到这个元素**再冒泡到 window，
+     * 于是"拖到窗口外再松手"也能收到 pointerup。
+     * 指针已经抬起时 `setPointerCapture` 会抛 `NotFoundError`，所以包在 try 里。
      */
     try {
       el.setPointerCapture(e.pointerId);
     } catch {
-      // 拿不到捕获不是致命问题：window 上的监听器仍然照常工作
+      // 拿不到捕获不是致命问题：window 上的常驻监听器仍然照常工作
     }
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-    window.addEventListener('pointercancel', onCancel);
-    startWatchdog();
+
     if (e.pointerType !== 'mouse') {
-      clearTimer();
-      timer = window.setTimeout(() => beginDrag(last), opts.longPressMs);
+      clearLongPressTimer(g);
+      g.longPressTimer = window.setTimeout(() => beginDrag(g, g.last), opts.longPressMs);
     }
   };
 
@@ -267,13 +315,23 @@ export function attachPointerGesture(
 
   return () => {
     el.removeEventListener('pointerdown', onDown);
-    finish();
+    /*
+     * 摘监听时如果这个元素正是当前手势的宿主，把手势也收掉 ——
+     * 否则会出现"手势还在跑、但它的元素已经没人管"的悬空状态。
+     * （重绘会把整间房换掉，那时旧元素就不是 active 的宿主了，这里什么也不做。）
+     */
+    if (active && active.el === el) cancelActive();
   };
 }
 
 /**
  * 纯长按（标题进分区编辑用）：鼠标与触摸一视同仁，按住 400ms 触发。
  * 一旦移动超过 10px 就放弃 —— 免得玩家想滚动屏幕时误开弹层。
+ *
+ * 它与 `attachPointerGesture` 是**两套独立的手势**（长按标题时不应该干扰拖物资），
+ * 所以这里仍然用"每个元素自己挂 window 监听"的写法；但它没有 bring-up/teardown
+ * 的配对问题：`pointermove`/`pointerup` 在挂载时就装上、卸载时摘掉，
+ * 而它的持有者（`longPressDetachers`）本来就被显式清理。
  */
 export function attachLongPress(el: HTMLElement, onLongPress: (point: Point) => void, holdMs = 400): () => void {
   let timer: number | null = null;
