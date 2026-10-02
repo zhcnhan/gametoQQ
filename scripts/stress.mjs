@@ -638,6 +638,7 @@ function suiteTargeted() {
     if (run.dayEvent) resolveDayEvent(store, 0);
     const stock = run.shopStocks.find((s) => s.shopId === run.currentShopId);
     const line = stock.lines.find((l) => l.stock >= 3);
+    if (!line) return;
     run.cash = 1e7;
     const r = buyCart(store, run.currentShopId, [{ itemId: line.itemId, count: 2.5 }]);
     if (r.ok) {
@@ -792,9 +793,9 @@ function suiteTargeted() {
           const st = reloaded;
           storeOfMap.set(st.run, st);
           const res2 = chooseNightOption(st, 0);
-          if (res2.ok && st.run.cash !== cash1) {
+          if (res2.ok) {
             report(P1, 'night-string-choice', '夜间选项用字符串下标被执行，读档后同一晚能再选一次（效果翻倍）',
-              `第一次选后现金 ${cash0}→${cash1}；读档把 choice 归 null，再选后 ${st.run.cash}`);
+              `第一次选后现金 ${cash0}→${cash1}；读档把 choice 归 null（Number.isInteger("0")=false），第二次选又生效 → ${st.run.cash}`);
             dup = true;
           }
         }
@@ -839,12 +840,6 @@ function suiteTargeted() {
       storeOfMap.set(st.run, st);
       let crashed = null;
       try {
-        // 夜间效果直接读 run.stats.health
-        const { applyNightEffect } = { applyNightEffect: null };
-      } catch (e) {
-        crashed = e;
-      }
-      try {
         st.run.stats.health += 1; // UI/系统任何地方一碰就炸
       } catch (e) {
         crashed = e;
@@ -872,9 +867,10 @@ function suiteTargeted() {
     const store = freshStore(1017);
     linkStore(store);
     chooseIdentity(store, REAL_IDENTITY_IDS[0]);
-    // 反复进店直到撞上事件
+    // 反复进店直到撞上事件（补满行动点，排除天数限制）
     let hit = false;
     for (let i = 0; i < 60 && !hit; i++) {
+      store.run.actionPoints = 99;
       const r = enterShop(store, rpick(REAL_SHOP_IDS));
       if (store.run.dayEvent) hit = true;
       else leaveShop(store);

@@ -337,6 +337,43 @@ export const DEFERRED_ITEMS: readonly DeferredItem[] = [
     plan: 'M3（多灾难时处理，与 D-15 一起）',
     markedIn: ['data/dayEvents.ts'],
     status: 'open'
+  },
+  {
+    id: 'D-20',
+    kind: 'process',
+    title: '命令层对"非法参数"不设防 —— 压测报出 114 类发现，但绝大多数界面造不出来',
+    impact:
+      '`scripts/stress.mjs`（六套件压测 / 模糊测试）跑出一批严重发现，最大的一族是' +
+      '**一个 NaN 参数会污染整份存档**：给 `buyCart` 的件数传 NaN 时，' +
+      '`buildCartView` 里的比较对 NaN 全为 false（`line.count <= 0` 不成立、' +
+      '`count < line.count` 也不成立），于是三约束全部放行 —— ' +
+      '现金被写成 NaN、箱内批次件数变成 NaN，之后每一次读数都带着它。' +
+      '同类还有：坐标传小数（`row=0.5`）时 `isInside` 判为"在界内"、' +
+      '`setSlotStack` 静默返回原货架 —— **放置报成功但物资消失**；' +
+      '`splitStack` 在巨数输入下不守恒。\n\n' +
+      '★★ **可达性判断（这决定了要不要现在修，也是本次归档的重点）**：' +
+      '界面**造不出**这些值 —— 件数来自 `+` / `-` 按钮（整数），' +
+      '坐标来自 `data-row` / `data-col`（整数）。所以它们是**接线层不设防**，' +
+      '不是玩家能碰到的 bug。真正的风险是"将来界面或逻辑漂移、开始传坏值"——' +
+      '而那时有压测能立刻发现。\n\n' +
+      '但项目把"自愈"承诺得很重（手改存档 / 云备份合并都是真实场景），' +
+      '而 S3 报出的 100+ 种"坏档自愈后继续玩时崩溃"说明自愈**还没有名副其实**：' +
+      '`normalizeRun` 不重建 `stats`、不校验 `itemId` / `identityId` / `disasterId`，' +
+      '于是读档"成功"了，玩两步就抛异常。\n\n' +
+      '另一条值得单独记：夜间选项下标传字符串 `"0"` 时，`Number.isInteger("0")` 为 false →' +
+      '读档把 `choice` 归 null → **同一晚能再选一次、效果翻倍**。' +
+      '界面不会传字符串，但它说明"存档里存的下标"没做类型兜底。',
+    plan:
+      '分两步，第一步性价比明显更高：\n' +
+      ' ① **命令层入口加参数守卫**（件数 `Number.isInteger` 且 > 0、坐标 `Number.isInteger`）——' +
+      '约十行，能把 P0 里最大那一族整族关掉；\n' +
+      ' ② **让"自愈"名副其实**（`normalizeRun` 重建 `stats`、校验各种 id）——' +
+      '这是更大的活，与云备份合并一起做更合适。\n\n' +
+      '完整清单：跑 `npx vite-node scripts/stress.mjs` 生成 `scripts/stress-results.json`' +
+      '（不入库，每次内容不同）。本次快照：300 局 / 1000 破坏样本 / 300 fuzz，' +
+      '114 类发现（P0 92 类、P1 17 类、P2 4 类、P3 1 类）。',
+    markedIn: [],
+    status: 'open'
   }
 ];
 
