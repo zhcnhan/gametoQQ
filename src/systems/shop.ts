@@ -17,14 +17,14 @@
  * 事件本体在 `data/dayEvents.ts`，判定与落账在本文件下半部分。
  * 「物价波动」走的是另一条路（它没得选，见 `data/dayEvents.ts` 的 `dayPriceFactor`）。
  */
-import { getBoxDef } from '../data/boxes';
+import { BOX_DEFS, getBoxDef, type BoxDef } from '../data/boxes';
 import { DAY_EVENT_DEFS, DAY_EVENT_NONE_WEIGHT, dayEventWeight, dayPriceFactor, findDayEvent } from '../data/dayEvents';
 import { getIdentityDef } from '../data/identities';
 import { getItemDef } from '../data/items';
 import { SHOP_DEFS, getShopDef } from '../data/shops';
 import { dayLabel } from '../model/calendar';
 import { createCursor, nextFloat, nextInt, type RngCursor } from '../model/rng';
-import { makeStack, stackCount } from '../model/shelf';
+import { firstBatchExpiry, makeStack, stackCount } from '../model/shelf';
 import type {
   CategoryId,
   DayEffectApplied,
@@ -511,6 +511,21 @@ export function applyDayEffect(run: RunState, effect: DayOptionEffect, shopId: s
  * 按到期日升序取（和 FEFO 一样，先拿快过期的）—— 这条不为了好玩，
  * 只为了让"店里少了什么"和"你拿到了什么"是同一批货，对得上账。
  */
+/**
+ * 拿到某品类的东西：**优先从这家店当前的货架上取**，货架不够时用同品类的箱子补足。
+ *
+ * ## 为什么必须有"补足"这一步（这是被玩家的截图逼出来的）
+ *
+ * 第一版是"货架上有就取、没有就返回空"。看起来合理，实际会造成一个**最糟的组合**：
+ * 文案已经说了"你拿了两袋米"（那是数据表里写死的），而效果返回空 ——
+ * 于是屏幕上同时出现"你拿了两袋米"和"这一趟没拿到货"，
+ * 玩家拿到的是**自相矛盾的两句话**（他的截图就是这一张）。
+ *
+ * 口径因此定成：**文案承诺了货，就一定要给到货**。
+ * 店里的现货优先（那是"真从货架上少的"，账对得上），
+ * 缺的部分用同品类的箱子补 —— 因为这一趟的意义是"你拿到了"，
+ * 而不是"店里的库存算术"。返回空只在**品类根本不存在**时发生（那是配置错误，不是玩法）。
+ */
 function grabFromShop(
   run: RunState,
   shopId: string,
@@ -532,6 +547,24 @@ function grabFromShop(
       items.push(makeStack(line.itemId, take, rollExpiry(cursor, line.itemId, run.day)));
     }
   }
+
+  // 货架不够 → 用同品类的箱子补足这一趟承诺的件数
+  if (left > 0) {
+    const boxDef = boxForCategory(category);
+    if (boxDef) {
+      const generated = generateBoxStacks(cursor, boxDef, run.day).filter(
+        (s) => getItemDef(s.itemId).category === category
+      );
+      for (const stack of generated) {
+        if (left <= 0) break;
+        const take = Math.min(left, stackCount(stack));
+        if (take <= 0) continue;
+        left -= take;
+        items.push(makeStack(stack.itemId, take, firstBatchExpiry(stack)));
+      }
+    }
+  }
+
   const weight = items.reduce((n, s) => n + getItemDef(s.itemId).unitWeight * stackCount(s), 0);
   if (items.length === 0) return { grabbed: [], weight: 0, boxName: '' };
 
@@ -555,6 +588,19 @@ function grabFromShop(
     weight,
     boxName: def.name
   };
+}
+
+/**
+ * 这个品类该用哪个箱型补货。按 `BOX_DEFS` 的声明顺序找第一个含有该品类物资的箱子。
+ *
+ * 不写一张死表：物资表加东西时死表会漂，而 `BOX_DEFS` 的 pool 是唯一的真相。
+ * 找不到就退回 `box_mixed`（它的池子覆盖全部正经物资，一定找得到）。
+ */
+function boxForCategory(category: CategoryId): BoxDef | null {
+  for (const def of BOX_DEFS) {
+    if (def.pool.some((id) => getItemDef(id).category === category)) return def;
+  }
+  return BOX_DEFS.find((d) => d.id === 'box_mixed') ?? null;
 }
 
 function clampStat(value: number): number {

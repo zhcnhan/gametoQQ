@@ -187,6 +187,79 @@ describe('★ 结构约束：不许有"点了什么都不发生"的选项', () =
     expect(bad).toEqual([]);
   });
 
+  /**
+   * ★★ 这一条是补上来的，因为上一条**没拦住**一个真 bug。
+   *
+   * 现场：选项「先买了再走」的文案是"你照原计划**结完账**就出了门"，
+   * 而它的效果只有 `{ priceUp, stamina }` —— **根本没有结账那一步**。
+   * 玩家点完掉体力、物价还涨，屏幕上却说他买了东西。原话是"我结了账没拿到货？？？"。
+   *
+   * 上一条规则（"至少命中一个落到玩家身上的效果"）之所以放它过关，是因为
+   * `stamina: -4` 也算"落到玩家身上"——**扣体力也算有效果，可玩家的收获是零**。
+   * 规则没错，是边界划错了。所以这里换成**语义对照**：
+   * 文案里的说法与效果字段必须一一对得上，而且**不许描述它没做的事**。
+   */
+  it('★★ 文案与效果必须语义一致：说了"买了/结了账"就必须真有收支，说了"拿/抢"就必须真有货', () => {
+    const bad: string[] = [];
+
+    for (const def of DAY_EVENT_DEFS) {
+      for (const opt of def.options) {
+        const where = `${def.id} 的「${opt.label}」`;
+        const says = (re: RegExp): boolean => re.test(opt.outcome);
+        const hasGoods = opt.effect.grab !== undefined || opt.effect.boxDefId !== undefined;
+        const spentCash = (opt.effect.cash ?? 0) < 0;
+        // "收" = 真拿到东西，或者真花出去一笔钱换来东西
+        const receives = hasGoods || spentCash;
+
+        // ① 说了"买了 / 结了账 / 花了钱" → 必须有收支，否则就是在编一个没发生的交易
+        if (says(/买了|结完账|结了账|付了钱|花掉/) && !receives) {
+          bad.push(`${where} 文案说发生了交易，效果里既没有货也没有花钱：${opt.outcome}`);
+        }
+        // ② 说了"拿 / 抢 / 抓" → 必须真有货进袋
+        if (says(/拿了两|抓了|抢到|多给了你|带回来/) && !hasGoods) {
+          bad.push(`${where} 文案说拿了东西，效果里没有 grab / boxDefId：${opt.outcome}`);
+        }
+        // ③ 说了"货架空了 / 抢光" → 必须有 stockCut（商店那一头），
+        //    而且文案不许暗示是"自家"少了东西
+        if (says(/货架|架子/) && says(/空|扫掉|拿掉|没了/) && opt.effect.stockCut === undefined) {
+          bad.push(`${where} 文案说货架被抢空了，效果里没有 stockCut：${opt.outcome}`);
+        }
+        // ④ 反过来：真给了货，文案就必须提到拿到手（不许默默塞进待拆箱）。
+        //    这一条刻意写得宽松（一个"拿到"的同义动词表），因为它是**兜底**：
+        //    精确的那一半由 ①②③ 负责。它要拦的是"效果给了货、文案一字不提"
+        //    ——那正是玩家"我抢了东西，家里的东西并没有增长"的镜像版本。
+        if (hasGoods && !says(/拿|抓|给|带|箱|袋|到手|进袋|都还|买了|结账|结了账/)) {
+          bad.push(`${where} 效果里真给了货，文案却没提玩家拿到了什么：${opt.outcome}`);
+        }
+      }
+    }
+
+    expect(bad).toEqual([]);
+  });
+
+  it('★ 每个选项都得有"收获"，不能只是挨罚（扣体力不算收获）', () => {
+    // 又是那个 bug 的另一面：「先买了再走」唯一的"落到玩家身上"的效果是 stamina -4。
+    // 一条只有代价、没有任何收获的选项，和"什么都不发生"在玩家眼里是一回事。
+    const bad: string[] = [];
+    for (const def of DAY_EVENT_DEFS) {
+      for (const opt of def.options) {
+        const gains =
+          opt.effect.grab !== undefined ||
+          opt.effect.boxDefId !== undefined ||
+          (opt.effect.cash ?? 0) > 0 ||
+          (opt.effect.mood ?? 0) > 0 ||
+          opt.effect.visitLost === true ||
+          // 这两条也算收获，而且各有各的道理：
+          //  · stockCut —— "别人把货抢走了"是一种处境变化，玩家能看见（店里少了）
+          //  · limit   —— "能买得更多"是通融那条的收获，配合 grab 一起给
+          opt.effect.stockCut !== undefined ||
+          opt.effect.limit !== undefined;
+        if (!gains) bad.push(`${def.id} 的「${opt.label}」只有代价没有收获：${JSON.stringify(opt.effect)}`);
+      }
+    }
+    expect(bad).toEqual([]);
+  });
+
   it('每条事件都有一条"不参与"的路（§4A）', () => {
     for (const def of DAY_EVENT_DEFS) {
       const has = def.options.some((o) => o.effect.visitLost === true);
@@ -246,8 +319,30 @@ describe('白天事件接进 enterShop：门口先讲那件事', () => {
     }
   });
 
-  it('★ 限购：事件加的上限真的会限制能买几件，而且换天清掉', () => {
+  it('★★ 文案承诺了货，就一定要给到货 —— 哪怕这家店该品类已经卖光', () => {
+    // 这是被玩家的截图逼出来的：屏幕上同时出现"你拿了两袋米"与"这一趟没拿到货"。
+    // 原因是 `grabFromShop` 在店里的该品类没库存时静默返回空，而文案是写死的。
+    // 一条选项的文案既然承诺了，效果就必须无条件兑现（店里现货优先，缺的用箱子补）。
     const { store } = storeAtEvent('d_purchase_limit');
+    // 把超市的主食全部抽干：模拟"这家店该品类已经没了"
+    store.commit((draft) => {
+      const stock = draft.shopStocks.find((s) => s.shopId === 'supermarket');
+      if (stock) for (const line of stock.lines) line.stock = 0;
+    });
+    const before = countCategory(store.run.shelves, store.run.boxesToUnpack, 'food');
+    const res = resolveDayEvent(store, 0); // 就买两件（文案说"你拿了两袋米"）
+    expect(res.ok).toBe(true);
+    const after = countCategory(store.run.shelves, store.run.boxesToUnpack, 'food');
+    // 承诺的 2 件必须真的到手
+    expect(after - before).toBeGreaterThanOrEqual(2);
+    expect(store.run.dayEvent?.applied?.grabbed.length).toBeGreaterThan(0);
+    // 而且摘要里必须报出拿到的东西（正是玩家截图里缺的那一行）
+    expect(res.events.some((e) => e.type === 'dayEventResolved' && e.summary.some((s) => s.includes('拿到')))).toBe(
+      true
+    );
+  });
+
+  it('★ 限购：事件加的上限真的会限制能买几件，而且换天清掉', () => {    const { store } = storeAtEvent('d_purchase_limit');
     const res = resolveDayEvent(store, 0); // "按限购买" → 主食限 2 件
     expect(res.ok).toBe(true);
     expect(purchaseLimitOf(store.run, 'supermarket', 'canned_beans')).toBe(2);

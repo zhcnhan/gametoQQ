@@ -78,9 +78,11 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
       options: [
         {
           label: '排到底',
-          outcome: '你排了四十分钟。轮到你的时候，筐里的东西还在。',
-          // 排队的代价是力气与耐心，不是钱 —— 它是这三样里唯一不花钱的那个
-          effect: { stamina: -10, mood: -3 }
+          outcome: '你排了四十分钟。轮到你的时候，筐里的东西都还在。',
+          // ★ 代价要配收获：四十分钟换来的是**真把这趟买成了**。
+          // 上一版这里只扣体力与心情 —— 那和"点了没反应"在玩家眼里是一回事
+          // （规则见 dayEvent.test.ts 的"每个选项都得有收获"）。
+          effect: { grab: { category: 'food', count: 2 }, stamina: -10, mood: -3 }
         },
         {
           label: '不排了，换一家',
@@ -91,7 +93,7 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
         {
           label: '绕到后门问问',
           outcome: '理货的小伙子认得你，从后门给你结了账。',
-          effect: { stamina: -4, cash: -10, mood: 4 }
+          effect: { grab: { category: 'food', count: 2 }, stamina: -4, cash: -10, mood: 4 }
         }
       ]
     }
@@ -111,16 +113,22 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
           effect: { grab: { category: 'food', count: 2 }, stockCut: { category: 'food', count: 4 }, mood: 5 }
         },
         {
-          label: '先买了再走',
-          outcome: '你照原计划结完账就出了门。后面的人还在往里挤。',
-          // 纯"不参与"是干瘪的，所以给它一条真的代价与好处：
-          // 货是真的买到了（正常采购那套），代价是这一趟之后城里开始涨价
-          effect: { priceUp: 0.1, stamina: -4 }
+          label: '也去拿两袋',
+          // ★ 文案说"拿了两袋"就必须真给货（grab）。这一条的上一版写的是
+          // "你照原计划结完账就出了门"，而它的效果里根本没有"结账"那一步 ——
+          // 玩家点完只掉体力、物价还涨，屏幕上却说他买了东西。玩家的原话：
+          // "我结了账没拿到货？？？" 一条选项**不许描述它没有做的事**。
+          outcome: '你跟着挤进去拿了两袋，出来的时候后背全是汗。',
+          effect: { grab: { category: 'food', count: 2 }, stamina: -6, priceUp: 0.1 }
         },
         {
-          label: '今天不买了',
-          outcome: '你空着手出来，在门口站了会儿。',
-          effect: { visitLost: true, mood: -2 }
+          label: '等人散了再说',
+          // 这条的好处是真的：货架被抢空了一部分（stockCut 落到**商店**），
+          // 而你什么也没损失。文案不许再写"我买了" —— 你没买，你等了。
+          // `visitLost` 也一起给：这条事件里"我今天不在这儿买了"就是它的出口
+          // （§4A 要求每条事件都有一条明确的不参与路径，测试会强制）
+          outcome: '你退到货架外面等。前面的人把主食扫掉大半，你什么也没拿。',
+          effect: { stockCut: { category: 'food', count: 4 }, mood: 2, visitLost: true }
         }
       ]
     }
@@ -161,16 +169,19 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
       options: [
         {
           label: '问一句价钱',
-          outcome: '他伸出两根手指。你数出 {spentCash} 递过去。',
+          // 文案必须提到"拿到手"：花掉一笔钱换来一箱货，两件事都得说
+          // （规则见 dayEvent.test.ts 的"文案与效果必须语义一致"第 ④ 条）
+          outcome: '他伸出两根手指。你数出 {spentCash} 递过去，接过来一箱。',
           effect: { cash: -120, boxDefId: 'box_mixed' },
           requireFullCash: true
         },
         {
           label: '装作没看见',
-          outcome: '你从巷口走过去了。',
-          // §4A：每条事件都得有一条"不参与"的路。这里的代价只有一点心情 ——
-          // 你没买东西、也没白跑一趟（店还开着，可以照常进去买）
-          effect: { mood: -2 }
+          outcome: '你从巷口走过去了。省下一笔钱。',
+          // §4A：每条事件都得有一条"不参与"的路。这里的收获是**明确的**：
+          // 你没买、也没白跑一趟（店还开着，可以照常进去买）。
+          // 上一版只扣 2 点心情 —— 那等于"选项本身就是惩罚"，规则不允许
+          effect: { mood: 2 }
         },
         {
           label: '这店今天不进了',
