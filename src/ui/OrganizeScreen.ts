@@ -435,7 +435,9 @@ export class OrganizeScreen {
       const col = Number(slot.dataset['col']);
       const stack = shelfId ? getStack(this.shelfById(shelfId), { row, col }) : null;
       const sameItem = stack && this.session.held && stack.itemId === this.session.held.itemId;
+      // 三个记号各说一件事：会放（虚线）/ 会换（实线 + 角标）/ 这是吸附（半透明 + 虚线角标）
       slot.classList.add(stack && !sameItem ? 'is-hover-swap' : 'is-hover');
+      if (slot.dataset['snap'] === '1') slot.classList.add('is-hover-snap');
       playSfx('preview');
     }
   }
@@ -476,69 +478,104 @@ export class OrganizeScreen {
 
   private clearHover(): void {
     if (this.hoverEl) {
-      this.hoverEl.classList.remove('is-hover', 'is-hover-swap');
+      this.hoverEl.classList.remove('is-hover', 'is-hover-swap', 'is-hover-snap');
       this.hoverEl = null;
     }
+    // 清掉吸附标记：`nearestLegalSlot` 每次都会给当次选中的格子打上 `data-snap`，
+    // 不在这里清的话，上一帧那个格子的标记会留到下一次（它的 class 已经被移除，
+    // 但下一帧如果它又被选中，判断会读到陈旧状态）
+    this.roomEl.querySelectorAll<HTMLElement>('[data-slot][data-snap]').forEach((el) => {
+      delete el.dataset['snap'];
+    });
   }
 
   /**
-   * 吸附预览与落点判定。**指针底下是哪一格，就是哪一格。**
+   * 落点判定：**指针正下方那一格优先，不行就吸附到同架最近的合法落点**（玩家选的口径 3）。
    *
-   * ## ★ 这里改过一次，改的是"拖到别的物资上会怎样"
+   * ## 三段，按优先级
    *
-   * 原来的实现是：指针底下那格如果**被别的物资占着**，就改去高亮"同架离指针最近的空格"，
-   * 于是**"把 A 拖到 B 上"永远不会发生** —— 你想交换两件东西，它自动给你挪到旁边空格去。
-   * 玩家的要求是"让物品和物品之间拖拽可以直接交换"，而 `placeHeld` 里其实早就写好了
-   * 交换那一支（不同物资 → 交换，格上的东西进手里），只是永远走不到。
+   *  ① **指针底下就是格子** → 就用它。这是精确操作（"我要放这一格"）；
+   *  ② 指针底下是**货架卡**、但不是格子（卡片的留白、标签行、格子之间的缝）
+   *     → 吸附到同架**离指针最近的合法落点**，并在悬停预览上标明"这是吸附，不是精确命中"；
+   *  ③ 指针在货架卡之外（别的卡片、底部操作台、页面空白）→ 不吸附。
    *
-   * 现在：**占用格也是合法落点**，交换由 `placeHeld` 执行，悬停时给虚线框
-   * （`.is-hover-swap`，那套样式也早就写好了，同样是死代码）。
+   * ## 为什么 ② 要有，而且要有"预览"
    *
-   * ## 什么情况下仍然要"就近找空格"
+   * M2 走测反馈："拖动放进格子和交互的判定特别奇怪，好像是错位的" ——
+   * 原来的实现只认①，松在格子和格子之间的**那道 3px 缝**上就等于没放，
+   * 玩家看到的是"我明明对着格子松手了，东西还在手上"。
+   * ③ 这个边界同样重要：松在货架**外面**不该被吸进来 ——
+   * 那是"我要放下"和"我要拿走/放回"的分界。
    *
-   * 只有一种：**手里拿的是一叠的一部分**（`placeHeld` 把放不下的留在手里）。
-   * 这时玩家已经在"继续放"的流程里，落点再指向一个占用的格子没有意义
-   * （合并会失败、交换更荒唐）。判据就是 `heldFrom` 仍是货架 —— 手里那件是从货架上
-   * 拿起来的，说明它是上一步没放下的一部分。
+   * ## 什么情况下不吸附到"占用格"
+   *
+   * 只一种：**手里拿的是上一步没放下的一部分**（`DragState.partial`）。
+   * 那时玩家在"继续放同一件"的流程里，落点指向别的物资没有意义
+   * （合并会失败、交换更荒唐）—— 这时②的候选里只留空格。
    */
   private pickDropSlot(point: { x: number; y: number }): HTMLElement | null {
     const el = document.elementFromPoint(point.x, point.y);
     if (!(el instanceof HTMLElement)) return null;
-    const slot = el.closest<HTMLElement>('[data-slot]');
-    if (!slot) return null;
+
     const held = this.session.held;
-    if (!held) return slot;
-    const shelfId = slot.dataset['shelf'];
-    const row = Number(slot.dataset['row']);
-    const col = Number(slot.dataset['col']);
-    if (!shelfId) return null;
-    const stack = getStack(this.shelfById(shelfId), { row, col });
-    if (!stack) return slot;
-    // 叠在自己那一堆上 → 合并，正常落点
-    if (stack.itemId === held.itemId) return slot;
-    // 手里是"上一步没放下的一部分" → 就近找空格（交换没有意义）
-    if (this.drag.partial) return this.nearestEmptySlot(shelfId, point) ?? slot;
-    // 其余情况：**占用格就是合法落点**，交给 placeHeld 交换
-    return slot;
+    const exact = el.closest<HTMLElement>('[data-slot]');
+    // ① 精确命中
+    if (exact) {
+      if (!held) return exact;
+      const shelfId = exact.dataset['shelf'];
+      const stack = shelfId
+        ? getStack(this.shelfById(shelfId), {
+            row: Number(exact.dataset['row']),
+            col: Number(exact.dataset['col'])
+          })
+        : null;
+      // 叠在自己那一堆上 → 合并，正常落点
+      if (!stack || stack.itemId === held.itemId) return exact;
+      // 手里是"没放下的一部分" → 占用格不是合法落点，交给下面去吸附空格
+      if (!this.drag.partial) return exact;
+    }
+
+    // ② 指针在货架卡里但不是格子 → 吸附到同架最近的合法落点
+    const card = el.closest<HTMLElement>('[data-shelf-card]');
+    const shelfId = card?.dataset['shelfCard'];
+    if (!shelfId) return null; // ③ 货架之外，不吸附
+    return this.nearestLegalSlot(shelfId, point);
   }
 
-  private nearestEmptySlot(shelfId: string, point: { x: number; y: number }): HTMLElement | null {
+  /**
+   * 同架离指针最近的**合法落点**。
+   *
+   * "合法"= 空格，或者（非 partial 时）装着**别的**物资的格子（那是交换目标）。
+   * 返回的元素带 `data-snap="1"`，供悬停预览区分"精确命中"与"吸附"。
+   */
+  private nearestLegalSlot(shelfId: string, point: { x: number; y: number }): HTMLElement | null {
     const shelf = this.shelfById(shelfId);
+    const held = this.session.held;
+    const candidates: HTMLElement[] = [];
+    this.roomEl.querySelectorAll<HTMLElement>(`[data-slot][data-shelf="${shelfId}"]`).forEach((el) => {
+      const row = Number(el.dataset['row']);
+      const col = Number(el.dataset['col']);
+      const stack = getStack(shelf, { row, col });
+      if (stack) {
+        // 占用格：只有"非 partial"且不是同一件物资时才是合法落点（会交换）
+        if (this.drag.partial) return;
+        if (held && stack.itemId === held.itemId) return;
+      }
+      candidates.push(el);
+    });
+    if (candidates.length === 0) return null;
+
     let best: HTMLElement | null = null;
     let bestDist = Number.POSITIVE_INFINITY;
-    this.roomEl
-      .querySelectorAll<HTMLElement>(`[data-slot][data-shelf="${shelfId}"]`)
-      .forEach((el) => {
-        const row = Number(el.dataset['row']);
-        const col = Number(el.dataset['col']);
-        if (getStack(shelf, { row, col })) return;
-        const rect = el.getBoundingClientRect();
-        const dist = Math.hypot(rect.left + rect.width / 2 - point.x, rect.top + rect.height / 2 - point.y);
-        if (dist < bestDist) {
-          bestDist = dist;
-          best = el;
-        }
-      });
+    for (const el of candidates) {
+      const rect = el.getBoundingClientRect();
+      const dist = Math.hypot(rect.left + rect.width / 2 - point.x, rect.top + rect.height / 2 - point.y);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = el;
+      }
+    }
+    if (best !== null) best.dataset['snap'] = '1';
     return best;
   }
 

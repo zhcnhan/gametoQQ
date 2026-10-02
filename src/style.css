@@ -255,21 +255,26 @@ body::before {
   /*
    * ★ 轨道宽度必须**自带上限**，不能让 `1fr` 无限拉。
    *
-   * 这一条是桌面端"格子是乱的"的根治。原来的写法：
+   * 这一条是桌面端"格子是乱的"的根治。原来的写法是：
    *
-   *     grid-template-columns: repeat(6, minmax(0, 1fr));   /* 桌面上每列 313px */
-   *     .slot { max-width: 76px }                            /* 格子只占 76px */
+   *     grid-template-columns: repeat(6, minmax(0, 1fr));   → 桌面上每列 313px
+   *     格子那边 max-width: 76px                             → 格子只占 76px
    *
    * 后果是**每一列有 237px 是空的** —— 网格看起来既散又错位；
    * 而且落点判定（`elementFromPoint`）命中的是元素真实位置，
    * 指针落在那片空档里什么都命中不到，表现成"拖拽判定错位、有时候没反应"。
    *
-   * 现在轨道上限也是 76px（与 `.slot` 的 max-width 同值），
+   * 现在轨道上限也是 76px（与格子的 max-width 同值），
    * 再用 `justify-content: center` 把整片网格居中。
    *
    * ★ 为什么下限是 56px 而不是 0：56px 就是触点硬约束（提示词 0 第 7 条，
-   * 也是 `.slot` 的 `min-height`）。6 × 56 + 5 × 3 = 351px，
+   * 也是格子的 min-height）。6 × 56 + 5 × 3 = 351px，
    * 比 320px 视口的可用宽度（约 306px）宽 —— 所以下面那个媒体查询在窄屏把它放开。
+   *
+   * ★★ 写注释时**绝不要在注释里再写一对注释符**（哪怕是为了举例子）：
+   * CSS 的注释不能嵌套，内层那个结束符会提前把注释收掉，后面的字就变成
+   * "Unknown word"、整条规则作废。这一条踩过，代价是整片网格在桌面端散掉。
+   * 举例请用 `→` 或者把斜杠换成全角。
    */
   grid-template-columns: repeat(var(--cols, 6), minmax(56px, 76px));
   justify-content: center;
@@ -391,7 +396,7 @@ body::before {
   background: var(--card);
 }
 
-/* 交换目标多一个记号：右上角一个"{ }"式的双向箭头，不占布局 */
+/* 交换目标多一个记号：左上角一个实心小方块（原来注释写"右上角/双向箭头"，两处都不对） */
 .slot.is-hover-swap::after {
   content: '';
   position: absolute;
@@ -401,6 +406,29 @@ body::before {
   height: 10px;
   border-radius: 2px;
   background: var(--vermilion);
+}
+
+/*
+ * 吸附预览：指针没落在格子上，系统**替你挑了最近的那一格**（玩家选的口径 3）。
+ *
+ * 它必须与"精确命中"一眼看得出区别 —— 否则玩家会以为自己的操作很准，
+ * 实际上是差了一格（"我明明放在这一格"变成"它自己挪了"）。
+ * 区分方式：**虚线 outline + 右上角一个小空心圈**。
+ * 实线 = 你指的就是它；虚线 = 这是系统就近挑的。
+ */
+.slot.is-hover-snap {
+  outline-style: dashed;
+}
+
+.slot.is-hover-snap::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid var(--vermilion);
+  border-radius: 50%;
 }
 
 /*
