@@ -294,6 +294,19 @@ body::before {
 .slot {
   position: relative;
   aspect-ratio: 1 / 1;
+  /*
+   * ★★ `touch-action: none` —— 这是"手机上拖拽完全不跟手、拖出极小的范围就断"的根因。
+   *
+   * 格子原来没设它，于是浏览器按默认策略认为"这块区域可以滚动页面"：
+   * 手指按住并移动几像素之后，浏览器**接管**了这次手势去滚动，
+   * 同时向页面发 `pointercancel` —— 我们这边收到就按"手势被打断"收尾。
+   * 拖拽诊断的日志里正是"每约 6px 就出现一次 cancelDrag"。
+   *
+   * 设成 none 之后，**从格子上起手的手势不再被浏览器抢走**（滚动仍可从
+   * 货架卡的留白、卡片之间的缝、以及页面其它区域发起 —— 格子本身不大）。
+   * 这是"拖动"这个交互在触摸设备上能工作的前提条件，不是可选项。
+   */
+  touch-action: none;
   /* 375px 视口 → 57.2px；390px → 59.7px。触点硬约束（提示词 0 第 7 条） */
   min-height: 56px;
   min-width: 0;
@@ -557,6 +570,8 @@ body::before {
   color: inherit;
   font: inherit;
   cursor: pointer;
+  /* 同 `.slot`：纸箱也要能拖，所以不许浏览器把手势抢去滚动 */
+  touch-action: none;
   transform: rotate(-1.2deg);
   transition: transform var(--fast) var(--ease-out);
 }

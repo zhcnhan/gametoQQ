@@ -103,6 +103,21 @@ let watchdog: number | null = null;
  */
 let installedOn: unknown = null;
 
+/**
+ * 手势层的诊断开关（与 ui 层同名）：控制台 `__tunhuoTrace = true` 打开。
+ *
+ * 加它的原因很具体：手机的日志里出现"每 6px 就被打断一次"，
+ * 而"谁打断了它"有**五条**不同的路径（滚动判定 / 看门狗 / pointercancel /
+ * window blur / 新的 pointerdown 顶掉）。不打出来就只能靠猜 —— 猜了三轮了。
+ */
+function traceDrag(message: string): void {
+  const w = typeof window !== 'undefined' ? (window as unknown as Record<string, unknown>) : null;
+  if (w && w['__tunhuoTrace']) {
+    // eslint-disable-next-line no-console
+    console.log(`[手势] ${message}`);
+  }
+}
+
 function now(): number {
   return Date.now();
 }
@@ -120,6 +135,7 @@ function installWindowListeners(): void {
   window.addEventListener('pointercancel', handleCancel);
   // 页面被切走/隐藏时（切窗口、系统弹层）把手势收掉，别留个幽灵在屏幕上
   window.addEventListener('blur', () => {
+    traceDrag('cancel 来源=window blur');
     cancelActive();
   });
 }
@@ -174,6 +190,7 @@ function startWatchdog(): void {
     }
     const alive = now() - g.lastSeenAt < 1200;
     if (g.lastButtons === 0 || !alive) {
+      traceDrag(`cancel 来源=看门狗 buttons=${g.lastButtons} alive=${alive}`);
       const wasDragging = g.dragging;
       settle(g);
       if (wasDragging) g.handlers.onCancel?.();
@@ -204,6 +221,7 @@ function handleMove(e: PointerEvent): void {
     const dy = Math.abs(point.y - g.start.y);
     const dx = Math.abs(point.x - g.start.x);
     if (dy > g.opts.scrollTolerance && dy > dx) {
+      traceDrag(`cancel 来源=滚动判定 dy=${Math.round(dy)} dx=${Math.round(dx)}`);
       settle(g);
       g.handlers.onCancel?.();
     }
@@ -230,6 +248,7 @@ function handleUp(e: PointerEvent): void {
 }
 
 function handleCancel(): void {
+  traceDrag('cancel 来源=pointercancel');
   cancelActive();
 }
 
@@ -274,8 +293,12 @@ export function attachPointerGesture(
      * 上一轮手势如果没被正常收掉，这里先清掉再开始新的 ——
      * 新的一次 pointerdown 本身就证明玩家还在操作，没理由继续拒绝他。
      */
-    if (active) cancelActive();
+    if (active) {
+      traceDrag('cancel 来源=新的 pointerdown 顶掉上一轮');
+      cancelActive();
+    }
     if (e.pointerType === 'mouse' && e.button !== 0) return;
+    traceDrag(`pointerdown type=${e.pointerType} buttons=${e.buttons}`);
 
     const g: ActiveGesture = {
       el,

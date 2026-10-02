@@ -600,9 +600,23 @@ export class OrganizeScreen {
   }
 
   private endDrag(point: { x: number; y: number }): void {
-    trace(`endDrag active=${this.drag.active} held=${this.session.held ? this.session.held.itemId : 'null'}`);
     const wasActive = this.drag.active;
-    const slot = this.hoverEl ?? this.pickDropSlot(point);
+    /*
+     * ★★ 落点**按松手时的坐标重新判定**，不再优先用 `this.hoverEl`。
+     *
+     * `hoverEl` 是"上一帧悬停到的那一格"，它与"松手这一刻指针在哪"**不保证一致**：
+     *  · 最后一帧可能因为移动太小没触发 `moveDrag`（`slot === this.hoverEl` 会提前 return）；
+     *  · 中途被重绘换掉过元素时，缓存的可能是**已经不在文档里**的那一个；
+     *  · 玩家快速松手时，最后一次 `pointermove` 与 `pointerup` 之间可能还差一点。
+     *
+     * 拿旧缓存当落点的后果就是玩家报的怪现象：把 A 拖到 B 上，却提示
+     * "两个格子都得有东西才谈得上互换" —— 因为判定的其实是**起手那一格**
+     * （它已经被拿空了），而不是 B。
+     *
+     * `pickDropSlot` 本来就是纯函数式的判定（看坐标 + 当前盘面），重算一次很便宜，
+     * 而且**与悬停预览用的是同一套规则**，所以"看到什么就落到什么"。
+     */
+    const slot = this.pickDropSlot(point) ?? this.hoverEl;
     this.endGhost();
     if (!wasActive || !this.session.held) {
       this.drag = { active: false, source: 'shelf' };

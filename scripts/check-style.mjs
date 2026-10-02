@@ -223,6 +223,28 @@ if (strayWhite.length > 0) {
   note(`还有 ${strayWhite.length} 处硬编码 background:#fff —— 纯白在纸底上不是纸，用 var(--card)。`);
 }
 
+// ———————— ⑤ 可拖拽元素必须"不许浏览器抢手势" ————————
+/*
+ * `.slot` / `.box` 上必须有 `touch-action: none`。
+ *
+ * 这不是可选项：浏览器默认认为"这块区域可以滚动页面"，于是手指按住并移动几像素后
+ * 会**接管**手势去滚动，同时发 `pointercancel` —— 我们这边收到就按"被打断"收尾。
+ * 玩家报的"手机上拖拽完全不跟手、拖出极小的范围就断"正是这个，
+ * 而拖拽诊断日志把它量成了"每约 6px 一次 cancelDrag"。
+ *
+ * 它极易被后来者当"多余的样式"删掉，而删掉之后**没有任何东西会报错**，所以在这里钉住。
+ */
+const TOUCH_ACTION_REQUIRED = ['slot', 'box'];
+for (const cls of TOUCH_ACTION_REQUIRED) {
+  const rule = new RegExp(`\\.${cls}\\s*\\{[^}]*touch-action\\s*:\\s*none`, 's');
+  if (!rule.test(code)) {
+    note(
+      `.${cls} 缺少 touch-action: none —— 触摸设备上从这个元素起手的拖拽会被浏览器抢去滚动，\n` +
+        `    表现为"完全不跟手、拖一点点就断"，而且不会有任何报错。`
+    );
+  }
+}
+
 // ———————— 报账 ————————
 if (failures.length > 0) {
   console.error('[check-style] 样式层次出问题了：\n');
