@@ -21,7 +21,7 @@ import { BOX_DEFS, getBoxDef, type BoxDef } from '../data/boxes';
 import { DAY_EVENT_DEFS, DAY_EVENT_NONE_WEIGHT, dayEventWeight, dayPriceFactor, findDayEvent } from '../data/dayEvents';
 import { getIdentityDef } from '../data/identities';
 import { getItemDef } from '../data/items';
-import { SHOP_DEFS, getShopDef } from '../data/shops';
+import { SHOP_DEFS, actionCostOf, getShopDef } from '../data/shops';
 import { dayLabel } from '../model/calendar';
 import { createCursor, nextFloat, nextInt, type RngCursor } from '../model/rng';
 import { firstBatchExpiry, makeStack, stackCount } from '../model/shelf';
@@ -387,14 +387,22 @@ export function enterShop(store: GameStore, shopId: string): ShopResult {
   const run = store.run;
   if (run.phase !== 'stockpile_shop') return reject('现在不是在外面的时候');
   if (!SHOP_DEFS.some((s) => s.id === shopId)) return reject('没有这个点位');
-  if (run.actionPoints <= 0) return reject('今天的行动点用完了');
+  /*
+   * 进店要花几点，由 `ShopDef.actionCost` 决定（不写 = 1）。
+   * §10B 扩点位之后，远的店（郊区仓库 / 批发市场）可以花 2 点但更便宜 ——
+   * 那正是"多一家店"能做出的差异，否则它只是多一次点击。
+   * 检查用 `actionCostOf` 而不是硬编码 1：不然"要 2 点的店"会在只剩 1 点时
+   * 被放进去、然后扣成负数。
+   */
+  const cost = actionCostOf(shopId);
+  if (run.actionPoints < cost) return reject('今天的行动点不够去那儿');
   if (run.carLoad >= identityLimitOf(run)) return reject('车已经装满了，先回家卸货');
 
   const firstTime = !run.visitedShopIds.includes(shopId);
   const events: ShopEvent[] = [];
   store.commit((draft) => {
     const cursor = createCursor(draft.seed);
-    draft.actionPoints -= 1;
+    draft.actionPoints -= cost;
     draft.currentShopId = shopId;
     if (!draft.visitedShopIds.includes(shopId)) draft.visitedShopIds.push(shopId);
     if (firstTime) {

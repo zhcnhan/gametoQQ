@@ -1,0 +1,528 @@
+/**
+ * 内容校验：把 AI 批量生成的 JSON 收进来之前，先让机器判一遍合格。
+ *
+ * ## 为什么它必须存在（这是 §10B 第 1 步的核心）
+ *
+ * §10B 要往这个游戏里灌**数百种**内容（物资 / 事件 / 灾难 / 身份 / 订单）。
+ * 那件事的真正瓶颈**不是生成，是校对** —— 一批 50 条事件，人逐条读要一小时；
+ * 而其中绝大多数错都是**机器一眼能看出来的**（id 打错、字段缺失、引用了不存在的物资、
+ * 数值离群、文案承诺了效果给不出的东西）。
+ *
+ * 所以规矩是：**先有校验，再灌内容**。没有它，生成速度会被校对速度吃掉。
+ *
+ * ## 用法
+ *
+ *     node scripts/check-content.mjs                      # 校验现有内容表（进 npm run check）
+ *     node scripts/check-content.mjs content/*.json       # 校验待入库的生成物
+ *     node scripts/check-content.mjs --explain            # 打印每种内容的要求（喂给生成模型）
+ *
+ * ## 它检查什么（五类，与 §10B.5 一致）
+ *
+ *   ① **重复 id**（同一批内 / 与现有表冲突）
+ *   ② **字段缺失或类型不对**（例：`perishable: true` 必须有 `shelfLifeDays`）
+ *   ③ **引用悬空**（事件选项里的 `itemId` / `boxDefId` / `category` 必须真实存在）
+ *   ④ **可达性**（不能是"写了但永远出不来"的内容 —— M2 的 D-16 就是这类）
+ *   ⑤ **数值区间**（价格 / 重量 / 保质期落在设计区间内，挡住 AI 生成的离群值）
+ */
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join, basename } from 'node:path';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const root = join(here, '..');
+const src = join(root, 'src');
+
+const problems = [];
+const notes = [];
+const fail = (file, where, message) => problems.push({ file, where, message });
+const note = (message) => notes.push(message);
+
+// ——————————————————————————————————————————————————————————————
+// 1. 从源码里读出各内容表（脚本跑在 tsconfig 之外，所以用正则粗读）
+// ——————————————————————————————————————————————————————————————
+
+/**
+ * 粗读一个 TS 数据文件里的字符串字面量 id。
+ *
+ * ★ 刻意**不**用 TypeScript 编译器 API：这个脚本要能被"刚加完内容的人"直接跑，
+ * 而引入 `typescript` 的编程接口会让它变重。代价是它读不出运行期才拼出来的 id ——
+ * 而这套数据表本来就是纯字面量（§10B.5 要求"内容表纯数据、无副作用"）。
+ */
+function readIds(relPath, pattern) {
+  const abs = join(src, relPath);
+  if (!existsSync(abs)) return [];
+  const text = readFileSync(abs, 'utf8');
+  const ids = [];
+  for (const m of text.matchAll(pattern)) ids.push(m[1]);
+  return ids;
+}
+
+const ITEM_IDS = readIds('data/items.ts', /^\s*id:\s*'([^']+)'/gm);
+const BOX_IDS = readIds('data/boxes.ts', /^\s*id:\s*'([^']+)'/gm);
+const DISASTER_IDS = readIds('data/disaster.ts', /^\s*id:\s*'([^']+)'/gm);
+const NIGHT_IDS = readIds('data/nightEvents.ts', /^\s*id:\s*'([^']+)'/gm);
+const DAY_IDS = readIds('data/dayEvents.ts', /^\s*id:\s*'([^']+)'/gm);
+const EMERGENCY_IDS = readIds('data/emergencies.ts', /^\s*id:\s*'([^']+)'/gm);
+const HELP_IDS = readIds('data/helpRequests.ts', /^\s*id:\s*'([^']+)'/gm);
+const IDENTITY_IDS = readIds('data/identities.ts', /^\s*id:\s*'([^']+)'/gm);
+const SHOP_IDS = readIds('data/shops.ts', /^\s*id:\s*'([^']+)'/gm);
+
+const CATEGORIES = ['food', 'water', 'medicine', 'fuel', 'warmth', 'tool', 'luxury'];
+
+/** 已知 id 的全集，供"引用悬空"检查 */
+const KNOWN = {
+  item: new Set(ITEM_IDS),
+  box: new Set(BOX_IDS),
+  category: new Set(CATEGORIES),
+  disaster: new Set(DISASTER_IDS)
+};
+
+// ——————————————————————————————————————————————————————————————
+// 2. 每种内容的字段要求（单一真相：校验脚本与"生成提示词"共用同一份）
+// ——————————————————————————————————————————————————————————————
+
+/**
+ * 每条内容类型的 schema 描述。
+ *
+ * ★ 这份描述**同时是"生成提示词"的来源** —— 见 `--explain`。
+ * 两处共用一份，是为了避免"提示词里写的要求"和"校验器检查的要求"漂移；
+ * 那种漂移会让人对着提示词生成一堆东西、然后被校验器全部退回。
+ */
+const SCHEMAS = {
+  item: {
+    label: '物资',
+    idPattern: /^[a-z][a-z0-9_]*$/,
+    required: {
+      id: 'string（小写 + 下划线）',
+      name: 'string（中文名，2~6 字最佳）',
+      category: `'${CATEGORIES.join("' | '")}'`,
+      icon: 'string（图标键，**必须与 id 不同名**也要能认出来）',
+      unitWeight: 'number（kg/件，0.05~8）',
+      slotSize: 'number（1=小件 / 2=大瓶 / 4=整袋）',
+      stackLimit: 'number（单槽堆叠上限，1~20）',
+      perishable: 'boolean',
+      nutrition: 'Partial<{food,water,health,comfort}>（0~3）',
+      basePrice: 'number（元，1~400）',
+      tags: 'string[]（1~4 个，供分区规则引用）',
+      tier: 'number 1~4（1=开局可见，4=稀有）'
+    },
+    conditional: [{ when: (o) => o.perishable === true, need: 'shelfLifeDays', desc: 'number（天，3~2000）' }],
+    ranges: { unitWeight: [0.05, 8], stackLimit: [1, 20], basePrice: [1, 400], slotSize: [1, 8], tier: [1, 4] }
+  },
+  nightEvent: {
+    label: '夜间事件',
+    idPattern: /^n_[a-z0-9_]+$/,
+    required: {
+      id: 'string（以 n_ 开头）',
+      text: 'string（睡前处境，1~2 句，≤60 字）',
+      options: 'Array（2~3 条）'
+    },
+    optionRequired: {
+      label: 'string（≤8 字，手机一行放得下）',
+      outcome: 'string（选完一句话，可用 {spentCash}）',
+      effect: 'NightEffect（见下）'
+    },
+    tier: 'number 1~4'
+  },
+  dayEvent: {
+    label: '白天事件',
+    idPattern: /^d_[a-z0-9_]+$/,
+    required: {
+      id: 'string（以 d_ 开头）',
+      text: 'string（门前处境，1~2 句，≤60 字）',
+      options: 'Array（2~3 条）'
+    },
+    optionRequired: {
+      label: 'string（≤8 字）',
+      outcome: 'string（可用 {spentCash}）',
+      effect: 'DayOptionEffect（见下，必须含至少一个"落到玩家身上"的字段）'
+    },
+    optional: { onlyShops: 'string[]（只在这几个点位出现；不写=任意点位）' },
+    tier: 'number 1~4'
+  },
+  emergency: {
+    label: '突发事件',
+    idPattern: /^e_[a-z0-9_]+$/,
+    required: {
+      id: 'string（以 e_ 开头）',
+      text: 'string（陈述处境，1~2 句）',
+      category: `'${CATEGORIES.join("' | '")}'`,
+      needOnHandy: 'number（顺手位上要有几件才算化解，1~6）',
+      lost: 'number（没化解时按缺货口径受创的件数，1~4）',
+      consumes: 'boolean（可选：化解是否消耗掉那几件）'
+    },
+    tier: 'number 1~4'
+  },
+  identity: {
+    label: '玩家身份',
+    idPattern: /^[a-z][a-z0-9_]*$/,
+    required: {
+      id: 'string',
+      name: 'string（2~4 字）',
+      tagline: 'string（一句话人设，≤20 字）',
+      startCash: 'number（元，200~2000）',
+      vehicleCapacity: 'number（kg/天，10~90）',
+      carryLimit: 'number（kg/趟，5~40，必须 ≤ vehicleCapacity）',
+      perk: 'string（天赋一句话，≤20 字）',
+      perkRule: 'PerkRule（见 data/identities.ts 的现有两条）',
+      tier: 'number 1~4'
+    }
+  },
+  disaster: {
+    label: '灾难',
+    idPattern: /^[a-z][a-z0-9_]*$/,
+    required: {
+      id: 'string（**注意**：model/types.ts 里目前是字面量联合类型，加灾难要同时改它）',
+      name: 'string（2~4 字）',
+      calendar: 'DayForecast[]（必须覆盖 D-7..D+14 共 22 天，逐日 {day,severity,hint}）',
+      dailyDrain: 'Partial<Record<CategoryId, number>>（每日额外消耗权重）',
+      priorityCategories: 'CategoryId[]（1~3 个）',
+      windowScene: 'string（窗外渲染主题 key）',
+      spoilRate: 'number（腐坏倍率：<1 延长保质期 / >1 加速。**必填**，见 D-03）'
+    },
+    tier: 'number 1~4'
+  },
+  helpRequest: {
+    label: '求援订单',
+    idPattern: /^h_[a-z0-9_]+$/,
+    required: {
+      id: 'string（以 h_ 开头）',
+      demands: '{itemId,count}[]（1~3 条，itemId 必须真实存在）',
+      validUntilDay: 'number（天数）',
+      rewards: '{trust?,intel?,barter?}（至少一项）',
+      declineTrust: 'number（婉拒扣多少信任，0~5）'
+    },
+    tier: 'number 1~4'
+  },
+  shop: {
+    label: '囤货期点位（商店）',
+    idPattern: /^[a-z][a-z0-9_]*$/,
+    required: {
+      id: 'string（**不要用 supermarket/pharmacy/hardware**，那三个已存在）',
+      name: 'string（2~6 字）',
+      blurb: 'string（一句话点位描述，≤30 字，克制、不煽情）',
+      priceFactor: 'number（0.6~2.0；低于 1 = 比超市便宜，高于 1 = 更贵）',
+      offers: "{itemId,stock}[]（3~14 条；itemId 必须真实存在）",
+      specialty: 'string[]（1~3 个品类或标签：**这家店最划算的是什么**）'
+    },
+    optional: {
+      actionCost: 'number（进店花几点行动点，1~3；不写=1。远的店花 2 点但更便宜才有取舍）'
+    },
+    tier: 'number 1~4'
+  }
+};
+
+// ——————————————————————————————————————————————————————————————
+// 3. 逐条校验
+// ——————————————————————————————————————————————————————————————
+
+function checkRange(file, id, field, value, range) {
+  const [lo, hi] = range;
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    fail(file, id, `${field} 必须是有限数字，实际是 ${JSON.stringify(value)}`);
+    return;
+  }
+  if (value < lo || value > hi) {
+    fail(file, id, `${field}=${value} 超出设计区间 [${lo}, ${hi}]（离群值要人工确认）`);
+  }
+}
+
+/** 校验一条内容。`kind` 决定用哪份 schema */
+function checkEntry(file, kind, obj, index) {
+  const schema = SCHEMAS[kind];
+  if (!schema) return;
+  const where = `${schema.label}[${index}]`;
+
+  if (typeof obj !== 'object' || obj === null) {
+    fail(file, where, '不是一个对象');
+    return;
+  }
+  const id = typeof obj.id === 'string' ? obj.id : '';
+  if (!id) {
+    fail(file, where, '缺少 id');
+    return;
+  }
+  if (!schema.idPattern.test(id)) {
+    fail(file, id, `id 不符合命名要求 ${schema.idPattern}`);
+  }
+
+  // ② 必需字段
+  for (const [field, desc] of Object.entries(schema.required)) {
+    if (obj[field] === undefined) fail(file, id, `缺少必需字段 ${field}（${desc}）`);
+  }
+  // 条件字段
+  for (const c of schema.conditional ?? []) {
+    if (c.when(obj) && obj[c.need] === undefined) {
+      fail(file, id, `在 ${c.need} 应存在时缺失（${c.desc}）`);
+    }
+  }
+  // ⑤ 数值区间
+  for (const [field, range] of Object.entries(schema.ranges ?? {})) {
+    if (obj[field] !== undefined) checkRange(file, id, field, obj[field], range);
+  }
+
+  // 引用完整性
+  if (kind === 'item') {
+    if (obj.category !== undefined && !KNOWN.category.has(obj.category)) {
+      fail(file, id, `category='${obj.category}' 不是已知品类（${CATEGORIES.join('/')}）`);
+    }
+    if (!Array.isArray(obj.tags) || obj.tags.length === 0) {
+      fail(file, id, 'tags 必须是非空数组（分区规则要靠它引用）');
+    }
+    if (obj.perishable === true && typeof obj.shelfLifeDays !== 'number') {
+      fail(file, id, 'perishable=true 必须有 shelfLifeDays');
+    }
+    if (obj.perishable === false && obj.shelfLifeDays !== undefined) {
+      note(`${id}: perishable=false 却写了 shelfLifeDays —— 确认是否有意`);
+    }
+  }
+  if (kind === 'emergency' && obj.category !== undefined && !KNOWN.category.has(obj.category)) {
+    fail(file, id, `category='${obj.category}' 不是已知品类`);
+  }
+  if (kind === 'helpRequest') {
+    for (const d of Array.isArray(obj.demands) ? obj.demands : []) {
+      if (!KNOWN.item.has(d.itemId)) fail(file, id, `demands 引用了不存在的物资 '${d.itemId}'`);
+    }
+    const r = obj.rewards;
+    if (typeof r !== 'object' || r === null || (r.trust === undefined && r.intel === undefined && r.barter === undefined)) {
+      fail(file, id, 'rewards 至少要给一项（trust / intel / barter）');
+    }
+    for (const b of Array.isArray(r?.barter) ? r.barter : []) {
+      if (!KNOWN.item.has(b.itemId)) fail(file, id, `barter 引用了不存在的物资 '${b.itemId}'`);
+    }
+  }
+  if (kind === 'disaster') {
+    const cal = Array.isArray(obj.calendar) ? obj.calendar : [];
+    if (cal.length > 0 && cal.length !== 22) {
+      fail(file, id, `calendar 应覆盖 D-7..D+14 共 22 天，实际 ${cal.length} 天`);
+    }
+    if (typeof obj.spoilRate !== 'number') {
+      fail(file, id, 'spoilRate 必须显式给出（D-03：腐坏是灾难的属性，不许默认）');
+    }
+  }
+  if (kind === 'shop') {
+    /*
+     * 商店的校验重点是**"它和别的店重不重合"**（§6.2 的设计口径）。
+     *
+     * 一家"卖的东西和超市一样、价钱也一样"的店是**纯冗余** ——
+     * 玩家多花 1 个行动点却没有任何取舍。这类内容 AI 最容易生成，
+     * 因为它看起来很合理（"再开一家便利店吧"）。
+     */
+    const offers = Array.isArray(obj.offers) ? obj.offers : [];
+    if (offers.length < 3) fail(file, id, `offers 至少 3 条，实际 ${offers.length}（太少的店没有存在感）`);
+    if (offers.length > 14) fail(file, id, `offers 最多 14 条，实际 ${offers.length}（§10B.6 的数值区间）`);
+    for (const [oi, o] of offers.entries()) {
+      if (!KNOWN.item.has(o?.itemId)) {
+        fail(file, id, `offers[${oi}] 引用了不存在的物资 '${o?.itemId}'`);
+      }
+      checkRange(file, id, `offers[${oi}].stock`, o?.stock, [1, 30]);
+    }
+    if (Array.isArray(obj.specialty) && obj.specialty.length === 0) {
+      fail(file, id, 'specialty 不能是空数组（要写清这家店最划算的是什么）');
+    }
+    checkRange(file, id, 'priceFactor', obj.priceFactor, [0.6, 2.0]);
+    if (obj.actionCost !== undefined) checkRange(file, id, 'actionCost', obj.actionCost, [1, 3]);
+  }
+  if (kind === 'identity') {
+    if (typeof obj.carryLimit === 'number' && typeof obj.vehicleCapacity === 'number' && obj.carryLimit > obj.vehicleCapacity) {
+      fail(file, id, `carryLimit(${obj.carryLimit}) 不该大于 vehicleCapacity(${obj.vehicleCapacity})`);
+    }
+    if (obj.perkRule === undefined) fail(file, id, 'perkRule 不能省略 —— 天赋必须真的有效果');
+  }
+
+  // 事件：选项
+  if (kind === 'nightEvent' || kind === 'dayEvent') {
+    const opts = Array.isArray(obj.options) ? obj.options : [];
+    if (opts.length < 2 || opts.length > 3) {
+      fail(file, id, `选项数应为 2~3，实际 ${opts.length}（§11：选项 ≤3）`);
+    }
+    /**
+     * ★★ 这一条是 M2 用玩家真金白银换来的：**每个选项必须给玩家真实收获**。
+     *
+     * 判据的来龙去脉（别把它简化回去）：
+     *  · 最早的要求是"至少命中一个落到玩家身上的效果"。玩家一句
+     *    *"我结了账没拿到货？？？"* 把它的漏洞指了出来 ——
+     *    `stamina: -4` 也算"落到玩家身上"，于是一条**只有惩罚**的选项能过；
+     *  · 所以改成"必须净收益为正"。**注意"睡觉 +4 体力"是收益** ——
+     *    休息本身就是那个选项的意义，把它判成"只有代价"是判据写错了
+     *    （第一版就是这么错的，被自己的样例抓出来）。
+     *
+     * 一句话：**净变化必须为正**，且不能是"改商店"（那是处境不是奖励）。
+     */
+    const PLAYER_FACING = ['cash', 'health', 'mood', 'stamina', 'shelter', 'grab', 'boxDefId'];
+    for (const [oi, opt] of opts.entries()) {
+      const eff = opt?.effect ?? {};
+      const hits = PLAYER_FACING.filter((k) => eff[k] !== undefined);
+      const numericGain =
+        (eff.cash ?? 0) + (eff.health ?? 0) + (eff.mood ?? 0) + (eff.stamina ?? 0) + (eff.shelter ?? 0);
+      const gains = numericGain > 0 || eff.grab !== undefined || eff.boxDefId !== undefined;
+      if (hits.length === 0) {
+        fail(file, id, `选项[${oi}]「${opt?.label ?? '?'}」没有任何落到玩家身上的效果`);
+      } else if (!gains) {
+        fail(
+          file,
+          id,
+          `选项[${oi}]「${opt?.label ?? '?'}」净收益不为正（数值合计 ${numericGain}，也没有拿到货）—— ` +
+            `只有代价的选项不许有（§10B.7）`
+        );
+      }
+      if (typeof opt?.label === 'string' && opt.label.length > 8) {
+        fail(file, id, `选项[${oi}] label「${opt.label}」超过 8 字（手机竖屏一行放不下）`);
+      }
+      // 引用悬空
+      if (eff.grab?.category !== undefined && !KNOWN.category.has(eff.grab.category)) {
+        fail(file, id, `选项[${oi}] grab.category='${eff.grab.category}' 不是已知品类`);
+      }
+      if (eff.stockCut?.category !== undefined && !KNOWN.category.has(eff.stockCut.category)) {
+        fail(file, id, `选项[${oi}] stockCut.category='${eff.stockCut.category}' 不是已知品类`);
+      }
+      if (eff.limit?.category !== undefined && !KNOWN.category.has(eff.limit.category)) {
+        fail(file, id, `选项[${oi}] limit.category='${eff.limit.category}' 不是已知品类`);
+      }
+      if (eff.boxDefId !== undefined && !KNOWN.box.has(eff.boxDefId)) {
+        fail(file, id, `选项[${oi}] boxDefId='${eff.boxDefId}' 不是已知箱型（${BOX_IDS.join('/')}）`);
+      }
+      checkRange(file, id, `选项[${oi}].effect.cash`, eff.cash ?? 0, [-400, 400]);
+    }
+  }
+}
+
+/** 一批生成物或一张现有表的容器格式 */
+function checkBatch(file, data) {
+  if (typeof data !== 'object' || data === null) {
+    fail(file, '(根)', 'JSON 根必须是对象');
+    return [];
+  }
+  const kind = data.kind;
+  if (typeof kind !== 'string' || !SCHEMAS[kind]) {
+    fail(
+      file,
+      '(根)',
+      `缺少 kind 或它不认识。应为：${Object.keys(SCHEMAS).join(' / ')}`
+    );
+    return [];
+  }
+  const entries = data.entries;
+  if (!Array.isArray(entries)) {
+    fail(file, '(根)', 'missing entries 数组');
+    return [];
+  }
+  // ① 重复 id（批内）
+  const seen = new Map();
+  for (const [i, e] of entries.entries()) {
+    checkEntry(file, kind, e, i);
+    const id = e?.id;
+    if (typeof id === 'string') {
+      // 只记第一次出现的位置，否则报出来的"第几条"会指向后一次（指错位置比不报更糟）
+      if (seen.has(id)) fail(file, id, `批内重复 id（第 ${seen.get(id) + 1} 条与第 ${i + 1} 条）`);
+      else seen.set(id, i);
+      // 与现有表冲突
+      const existing = {
+        item: ITEM_IDS,
+        nightEvent: NIGHT_IDS,
+        dayEvent: DAY_IDS,
+        emergency: EMERGENCY_IDS,
+        identity: IDENTITY_IDS,
+        disaster: DISASTER_IDS,
+        helpRequest: HELP_IDS,
+        shop: SHOP_IDS
+      }[kind];
+      if (existing?.includes(id)) fail(file, id, `与现有内容表冲突（该 id 已存在）`);
+    }
+  }
+  return entries.map((e) => e?.id).filter((x) => typeof x === 'string');
+}
+
+// ——————————————————————————————————————————————————————————————
+// 4. 入口
+// ——————————————————————————————————————————————————————————————
+
+function explain() {
+  console.log('# 《囤货末世》内容格式要求（给生成模型）\n');
+  console.log('输出格式：一个 JSON 对象，`kind` 说明这是哪类内容，`entries` 是内容数组。\n');
+  console.log('```json');
+  console.log(JSON.stringify({ kind: 'nightEvent', entries: [{ id: 'n_example', text: '…', options: [] }] }, null, 2));
+  console.log('```\n');
+  for (const [kind, s] of Object.entries(SCHEMAS)) {
+    console.log(`## kind: \`${kind}\` —— ${s.label}\n`);
+    console.log('| 字段 | 要求 |');
+    console.log('| --- | --- |');
+    for (const [f, d] of Object.entries(s.required)) console.log(`| \`${f}\` | ${d} |`);
+    if (s.optionRequired) {
+      console.log('\n每条 `options[]`：\n');
+      console.log('| 字段 | 要求 |');
+      console.log('| --- | --- |');
+      for (const [f, d] of Object.entries(s.optionRequired)) console.log(`| \`${f}\` | ${d} |`);
+    }
+    if (s.tier) console.log(`\n另外每条都要有 \`tier\`：${s.tier}`);
+    console.log('');
+  }
+}
+
+const args = process.argv.slice(2);
+if (args.includes('--explain')) {
+  explain();
+  process.exit(0);
+}
+
+const files = args.filter((a) => !a.startsWith('--'));
+if (files.length === 0) {
+  // 无参数 = 自检：把现有表当"内容"读一遍，确认已知 id 之间没有冲突
+  console.log('[check-content] 现有内容表规模：');
+  const tables = [
+    ['物资 items', ITEM_IDS],
+    ['箱型 boxes', BOX_IDS],
+    ['灾难 disaster', DISASTER_IDS],
+    ['夜间事件', NIGHT_IDS],
+    ['白天事件', DAY_IDS],
+    ['突发事件', EMERGENCY_IDS],
+    ['求援订单', HELP_IDS],
+    ['身份', IDENTITY_IDS],
+    ['点位（商店）', SHOP_IDS]
+  ];
+  for (const [label, ids] of tables) console.log(`  ${label.padEnd(16)} ${ids.length} 条`);
+  const dupes = [];
+  for (const [label, ids] of tables) {
+    const s = new Set();
+    for (const id of ids) {
+      if (s.has(id)) dupes.push(`${label}: ${id}`);
+      s.add(id);
+    }
+  }
+  if (dupes.length > 0) fail('现有表', '(自检)', `重复 id：${dupes.join('、')}`);
+  note('这个脚本的真正用途是校验**待入库的生成物**：node scripts/check-content.mjs content/*.json');
+} else {
+  for (const f of files) {
+    const abs = join(process.cwd(), f);
+    if (!existsSync(abs)) {
+      fail(basename(abs), '(文件)', '不存在');
+      continue;
+    }
+    let data;
+    try {
+      // 允许 .json，也允许 .jsonl 之外的单文件对象
+      data = JSON.parse(readFileSync(abs, 'utf8'));
+    } catch (e) {
+      fail(basename(abs), '(解析)', `不是合法 JSON：${e.message}`);
+      continue;
+    }
+    const ids = checkBatch(basename(abs), data);
+    console.log(`[check-content] ${basename(abs)}：${ids.length} 条`);
+  }
+}
+
+if (notes.length > 0) {
+  console.log('');
+  for (const n of notes) console.log(`[提示] ${n}`);
+}
+
+if (problems.length > 0) {
+  console.error(`\n[check-content] ★ ${problems.length} 处不合格：\n`);
+  for (const p of problems) console.error(`  ✗ ${p.file} · ${p.where}：${p.message}`);
+  console.error(
+    '\n  要求详见：node scripts/check-content.mjs --explain\n' +
+      '  或 docs/囤货末世-游戏策划案.md §10B.5 / §10B.7'
+  );
+  process.exit(1);
+}
+console.log('[check-content] 全部合格');

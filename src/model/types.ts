@@ -97,8 +97,26 @@ export interface HelpRequestDef {
   declineTrust: number; // 婉拒的关系变化（负值）
 }
 
-/** 囤货期点位（§6.2：MVP 取 3 个 —— 超市 / 药店 / 五金店） */
-export type ShopId = 'supermarket' | 'pharmacy' | 'hardware';
+/**
+ * 囤货期点位 id。
+ *
+ * ## ★ 为什么从字面量联合类型改成了 `string`（§10B：内容要能海量扩展）
+ *
+ * 原来是 `'supermarket' | 'pharmacy' | 'hardware'`。那在只有 3 家店时是优点
+ * （拼错 id 编译不过），但 §10B 要把点位扩到十几个（农贸市场 / 加油站 / 母婴店 /
+ * 五金批发 / 黑市 / 诊所 / 学校 / 药房仓库……），**每加一家都要来改这个类型** ——
+ * 那就违背了"加内容 = 加一行数据，不动代码"这条从 M0 起就立着的规矩
+ * （见 `src/data/shops.ts` 文件头与 §10B.5）。
+ *
+ * 换成 `string` 之后，**约束改由两道守住**：
+ *  ① `data/shops.ts` 的 `isShopId()` —— 运行期的真相来源（存档自愈要用它）；
+ *  ② `scripts/check-content.mjs` —— 构建期的静态校验（悬空引用要在提交前拦住）。
+ *
+ * ★ 这不是"放松类型"，是**把校验从编译器搬到更合适的地方**：
+ * 编译器只能管"代码里写死的字面量"，而店铺将来会是**数据**（甚至来自 mod），
+ * 那种 id 编译器本来就管不到。
+ */
+export type ShopId = string;
 
 export interface ShopOfferDef {
   itemId: string;
@@ -114,6 +132,22 @@ export interface ShopDef {
   /** 价格系数：同一件物资在五金店比超市贵 */
   priceFactor: number;
   offers: ShopOfferDef[];
+  /**
+   * 进这家店花几点行动点。不写 = 1（§6.2 的原口径：1 行动点 = 进一个店门）。
+   *
+   * §10B 要扩点位，而"多一家店"如果只是"多一个能买同样东西的地方"，
+   * 那它只是多一次点击。让远的地方（郊区仓库 / 批发市场 / 黑市）
+   * **花 2 点但更便宜**，"跑几个点位"的取舍才继续成立。
+   */
+  actionCost?: number;
+  /**
+   * 这家店**最划算**的品类/标签（用于界面提示与内容校验时的自查）。
+   *
+   * §6.2 的设计口径是"点位之间必须不重合"，否则行动点设计塌掉。
+   * 把"我的专长是什么"写成数据，是为了让 `check-content.mjs` 能查出
+   * "新加这家店和另一家完全重合"——那种店是纯冗余。
+   */
+  specialty?: string[];
 }
 
 // ============ 运行时状态（model/） ============

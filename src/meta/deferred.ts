@@ -451,6 +451,27 @@ export const DEFERRED_ITEMS: readonly DeferredItem[] = [
     plan: '§10B 第 1 步（一切的地基，先做）',
     markedIn: ['data/items.ts'],
     status: 'open'
+  },
+  {
+    id: 'D-24',
+    kind: 'code',
+    title: '内容的"校验"做了，但"注册表"还没做（两者是两件事，别混）',
+    impact:
+      '为支撑 §10B 的数百种内容，本次先落地了**校验**这一环：`scripts/check-content.mjs`，' +
+      '已挂进 `npm run check`，能拦住五类问题 —— 重复 id（批内 + 与现有表冲突）、' +
+      '字段缺失或类型不对、引用悬空（`itemId` / `boxDefId` / `category` / `shopId`）、' +
+      '可达性（没写 `tier` 的"永远出不来"的内容）、以及数值离群（价格 / 重量 / 保质期 / label 长度）。\n\n' +
+      '它同时是**给生成模型的自查工具**：`node scripts/check-content.mjs --explain` 会打印' +
+      '每种内容的最新字段要求，而那份要求与校验器**共用同一份 `SCHEMAS`** —— ' +
+      '避免"提示词里写的要求"和"校验器检查的要求"漂移（那种漂移会让人对着提示词生成一堆、' +
+      '然后被校验器全部退回）。\n\n' +
+      '★ **但注册表（D-23）还没做，别把它当成已完成。** 两者分工不同：\n' +
+      ' · **校验**管"进来的数据合不合格"（构建期，防止坏内容入库）；\n' +
+      ' · **注册表**管"已经进来的内容怎么被查询与遍历"（运行期，图鉴 / 成就 / 解锁的输入）。\n' +
+      '现在图鉴界面仍要 import 八张表、成就条件仍没有地方放 —— 那是 D-23 的事。',
+    plan: '与 D-23 一起做（§10B 第 1 步的另一半）',
+    markedIn: ['data/shops.ts'],
+    status: 'open'
   }
 ];
 

@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "check:style": "node scripts/check-style.mjs",
-    "check": "npm run typecheck && npm run check:style && npm run test",
+    "check:content": "node scripts/check-content.mjs",
+    "check": "npm run typecheck && npm run check:style && npm run check:content && npm run test",
     "make-save": "vite-node scripts/make-save.mjs"
   },
   "devDependencies": {
