@@ -316,11 +316,21 @@ export function attachPointerGesture(
   return () => {
     el.removeEventListener('pointerdown', onDown);
     /*
-     * 摘监听时如果这个元素正是当前手势的宿主，把手势也收掉 ——
-     * 否则会出现"手势还在跑、但它的元素已经没人管"的悬空状态。
-     * （重绘会把整间房换掉，那时旧元素就不是 active 的宿主了，这里什么也不做。）
+     * ★★ 这里**刻意不取消进行中的手势**（原来的写法会取消，那是"完全不跟手"的根因）。
+     *
+     * `OrganizeScreen.render()` 每次都会摘掉全部手势再重建，
+     * 而"摘掉"发生在元素即将被 `innerHTML` 替换的前一刻 ——
+     * 如果在这里 `cancelActive()`，就等于**每一帧渲染都打断进行中的拖拽**：
+     * 玩家看到的是幽灵一顿一顿、跟手极差，甚至留下孤儿幽灵。
+     *
+     * 正确的分工是：
+     *  · 这个 detacher 只负责**摘掉元素自己的 pointerdown 监听**；
+     *  · 进行中的手势由 **window 上那份常驻监听**继续跑完 ——
+     *    它不依赖元素是否还在文档里，`onDragEnd` / `onCancel` 照常送到调用方；
+     *  · 幽灵是否还在文档里，由 `ui` 那一层自己判断（见 `moveGhostTo` 的 `isConnected`）。
+     *
+     * 换句话说：**"元素没了"不等于"手势该结束"**。手势的生死由指针决定，不由 DOM 决定。
      */
-    if (active && active.el === el) cancelActive();
   };
 }
 

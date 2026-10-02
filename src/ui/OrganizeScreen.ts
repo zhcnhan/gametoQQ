@@ -357,7 +357,11 @@ export class OrganizeScreen {
   private gestureDetachers: (() => void)[] = [];
 
   private clearGestureBindings(): void {
-    if (this.gestureDetachers.length > 0) trace(`clearGestureBindings: 摘掉 ${this.gestureDetachers.length} 个手势（其中若有正在拖的那个，会被打断）`);
+    /*
+     * 刻意**不打 trace**：它在每一帧渲染都会跑（一次摘 72 个），
+     * 打出来会把真正有用的信息淹没 —— 第一次排查时就是这样，
+     * 满屏都是它，反而看不清 `beginDrag` / `endDrag` 的配对关系。
+     */
     for (const detach of this.gestureDetachers) detach();
     this.gestureDetachers = [];
   }
@@ -669,6 +673,18 @@ export class OrganizeScreen {
   private endGhost(): void {
     this.ghost?.remove();
     this.ghost = null;
+    /*
+     * ★★ 顺手把**所有**游离的幽灵都扫掉，不只清我们自己记着的那个引用。
+     *
+     * 理由：拖拽诊断的日志里出现过"两次 `beginDrag` 之间没有 `endDrag`"的时序 ——
+     * 意味着前一次手势的幽灵**没被任何人认领**，于是它作为孤儿元素永久留在
+     * `fx-layer` 里（玩家看到的就是"留一个影子在那儿、点别的格子才把它顶掉"）。
+     * 只要"引用"与"实际"不同步一次就会产生孤儿，所以清理要**按 DOM 找**，
+     * 而不是依赖"我们记得它"。
+     *
+     * 幽灵是这个应用里唯一会出现在 `fx-layer` 的 `.drag-ghost`，可以放心全清。
+     */
+    for (const stray of this.fxLayer.querySelectorAll('.drag-ghost')) stray.remove();
     this.clearHover();
   }
 

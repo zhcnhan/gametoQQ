@@ -49,6 +49,21 @@ function mount(h: Harness, options?: Parameters<typeof attachPointerGesture>[2])
   );
 }
 
+/** 同上，但把 detacher 交回给调用方（用来测"摘监听时的行为"） */
+function mountDetached(h: Harness, options?: Parameters<typeof attachPointerGesture>[2]): () => void {
+  return attachPointerGesture(
+    asElement(h.el),
+    {
+      onTap: () => h.log.push('tap'),
+      onDragStart: () => h.log.push('dragStart'),
+      onDragMove: () => h.log.push('dragMove'),
+      onDragEnd: () => h.log.push('dragEnd'),
+      onCancel: () => h.log.push('cancel')
+    },
+    options
+  );
+}
+
 describe('手势状态机（ui/drag.ts 的真实行为）', () => {
   let h: Harness;
   beforeEach(() => {
@@ -172,6 +187,44 @@ describe('手势状态机（ui/drag.ts 的真实行为）', () => {
     }
     expect(h.win.listenerCount('pointermove'), '跑 5 轮之后不许多出来').toBe(before.move);
     expect(h.win.listenerCount('pointerup'), 'window 上就该恰好一份').toBe(1);
+  });
+
+  it('★★ 摘掉元素监听**不许**打断进行中的手势（这是"完全不跟手"的根因）', () => {
+    /*
+     * 玩家报的现象：拖拽"完全不跟手"、幽灵一顿一顿、还留下孤儿幽灵。
+     * 诊断日志把它指出来了 —— 每次重绘都会摘掉全部手势，而原来的 detacher
+     * 在摘监听时**顺手取消了进行中的手势**：
+     *
+     *     clearGestureBindings: 摘掉 72 个手势（其中若有正在拖的那个，会被打断）
+     *     cancelDrag（手势被打断）          ← 每一帧都来一次
+     *
+     * `OrganizeScreen.render()` 是"每次放下/拾取都会跑"的，所以这等于
+     * **每一帧都打断正在进行的拖拽**。
+     *
+     * 正确的分工：detacher 只摘元素自己的 pointerdown；
+     * 进行中的手势由 window 上那份常驻监听继续跑完 —— 手势的生死由指针决定，
+     * 不由 DOM 决定（重绘换掉元素不该等于"玩家松手了"）。
+     */
+    const detach = mountDetached(h);
+    h.el.dispatch('pointerdown', pointerEvent(30, 30, { pointerType: 'mouse' }));
+    h.win.dispatch('pointermove', pointerEvent(90, 30, { pointerType: 'mouse' }));
+    expect(h.log).toEqual(['dragStart']);
+
+    detach(); // 模拟"重绘把元素换掉了"
+
+    // 手势必须继续：还能移动、还能正常松手收尾
+    h.win.dispatch('pointermove', pointerEvent(120, 30, { pointerType: 'mouse' }));
+    h.win.dispatch('pointerup', pointerEvent(120, 30, { pointerType: 'mouse', buttons: 0 }));
+    expect(h.log, '摘监听之后手势必须继续跑完，而不是被取消').toEqual(['dragStart', 'dragMove', 'dragEnd']);
+  });
+
+  it('★ 摘掉监听之后，元素上不再收到 pointerdown（但手势本身不受影响）', () => {
+    const detach = mountDetached(h);
+    detach();
+    h.el.dispatch('pointerdown', pointerEvent(30, 30, { pointerType: 'mouse' }));
+    h.win.dispatch('pointermove', pointerEvent(90, 30, { pointerType: 'mouse' }));
+    h.win.dispatch('pointerup', pointerEvent(90, 30, { pointerType: 'mouse', buttons: 0 }));
+    expect(h.log, '摘干净之后不该再有任何回调').toEqual([]);
   });
 
   it('★ 抓了指针就要放掉（捕获泄漏会让后续事件全跑到旧元素上）', () => {
