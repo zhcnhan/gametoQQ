@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { countStacks, fefoSorted, getStack, isShelfFEFO, stackCount } from '../model/shelf';
+import { countStacks, fefoSorted, getStack, isShelfFEFO, makeStack, setSlotStack, stackCount } from '../model/shelf';
 import type { SlotPos } from '../model/types';
 import { createSaveGame } from '../state/save';
 import { GameStore } from '../state/store';
@@ -12,6 +12,7 @@ import {
   placeHeld,
   returnHeld,
   sortAllByFEFO,
+  swapSlots,
   takeFromBox,
   toggleHandy,
   type OrganizeSession
@@ -245,6 +246,123 @@ describe('放回：名副其实的"回原位"', () => {
 });
 
 describe('交换不丢件', () => {
+  /**
+   * ★ 这一组守的是**两条路必须分开**（玩家的原话：
+   * "他现在的交换逻辑不是把两个物品交换，而是把被交换的那个东西换到手上，这不好"）。
+   *
+   *  · 点选-点放：手里拿着东西 → 放上去，被换的那件**进手里**（`placeHeld`）；
+   *  · 拖拽：不拿东西，A 拖到 B 上 → **两格对调，手保持空**（`swapSlots`）。
+   */
+  describe('★ swapSlots：两格对调，手保持空（拖拽那条路）', () => {
+    /** 直接往两格放两件不同的物资（绕开命令层，好让品类是确定的） */
+    function twoSlots(store: GameStore): { a: SlotPos; b: SlotPos } {
+      const a: SlotPos = { row: 0, col: 0 };
+      const b: SlotPos = { row: 0, col: 1 };
+      store.commit((draft) => {
+        const shelf = draft.shelves[0];
+        if (!shelf) return;
+        draft.shelves[0] = setSlotStack(shelf, a, makeStack('canned_beans', 3, null));
+        const s2 = draft.shelves[0];
+        if (s2) draft.shelves[0] = setSlotStack(s2, b, makeStack('bandage', 2, null));
+      });
+      return { a, b };
+    }
+
+    it('同架两格互换：东西对调，谁都不进手里', () => {
+      const { store, session } = setup();
+      const { a, b } = twoSlots(store);
+
+      const res = swapSlots(store, { shelfId: 'shelf_a', pos: a }, { shelfId: 'shelf_a', pos: b });
+      expect(res.ok).toBe(true);
+      const shelf = store.run.shelves[0]!;
+      expect(getStack(shelf, a)?.itemId).toBe('bandage');
+      expect(getStack(shelf, b)?.itemId).toBe('canned_beans');
+      // ★ 关键：手是空的（这正是玩家要的"独立开"）
+      expect(session.held).toBeNull();
+      expect(session.heldFrom).toEqual({ kind: 'none' });
+    });
+
+    it('总数守恒（换不是丢也不是复制）', () => {
+      const { store } = setup();
+      const { a, b } = twoSlots(store);
+      const before = householdTotals(store.run).pieces;
+      swapSlots(store, { shelfId: 'shelf_a', pos: a }, { shelfId: 'shelf_a', pos: b });
+      expect(householdTotals(store.run).pieces).toBe(before);
+    });
+
+    it('事件带上了两边位置，界面才能两边都给反馈', () => {
+      const { store } = setup();
+      const { a, b } = twoSlots(store);
+      const res = swapSlots(store, { shelfId: 'shelf_a', pos: a }, { shelfId: 'shelf_a', pos: b });
+      const ev = res.events.find((e) => e.type === 'swapped');
+      expect(ev).toBeDefined();
+      if (ev && ev.type === 'swapped') {
+        expect(ev.itemId).toBe('canned_beans');
+        expect(ev.toItemId).toBe('bandage');
+        expect(ev.from).toEqual({ shelfId: 'shelf_a', pos: a });
+        expect(ev.pos).toEqual(b);
+      }
+    });
+
+    it('跨货架也能换', () => {
+      const { store } = setup();
+      store.commit((draft) => {
+        const s0 = draft.shelves[0];
+        const s1 = draft.shelves[1];
+        if (s0) draft.shelves[0] = setSlotStack(s0, { row: 0, col: 0 }, makeStack('canned_beans', 1, null));
+        if (s1) draft.shelves[1] = setSlotStack(s1, { row: 1, col: 2 }, makeStack('battery', 4, null));
+      });
+      const res = swapSlots(
+        store,
+        { shelfId: 'shelf_a', pos: { row: 0, col: 0 } },
+        { shelfId: 'shelf_b', pos: { row: 1, col: 2 } }
+      );
+      expect(res.ok).toBe(true);
+      expect(getStack(store.run.shelves[0]!, { row: 0, col: 0 })?.itemId).toBe('battery');
+      expect(getStack(store.run.shelves[1]!, { row: 1, col: 2 })?.itemId).toBe('canned_beans');
+    });
+
+    it('三种边界都拒绝：空着的一格 / 同一件物资 / 同一格', () => {
+      const { store } = setup();
+      const { a, b } = twoSlots(store);
+      // 空格
+      expect(swapSlots(store, { shelfId: 'shelf_a', pos: a }, { shelfId: 'shelf_a', pos: { row: 2, col: 2 } }).ok).toBe(
+        false
+      );
+      // 同一格
+      expect(swapSlots(store, { shelfId: 'shelf_a', pos: a }, { shelfId: 'shelf_a', pos: a }).ok).toBe(false);
+      // 同一件物资（那是"叠起来"，不是互换）
+      store.commit((draft) => {
+        const s = draft.shelves[0];
+        if (s) draft.shelves[0] = setSlotStack(s, { row: 1, col: 1 }, makeStack('canned_beans', 1, null));
+      });
+      expect(
+        swapSlots(store, { shelfId: 'shelf_a', pos: a }, { shelfId: 'shelf_a', pos: { row: 1, col: 1 } }).ok
+      ).toBe(false);
+      // 拒绝之后不许动过任何东西
+      expect(getStack(store.run.shelves[0]!, a)?.itemId).toBe('canned_beans');
+      expect(getStack(store.run.shelves[0]!, b)?.itemId).toBe('bandage');
+    });
+
+    it('★ 两条路确实是分开的：placeHeld 仍然把被换的那件放进手里', () => {
+      // 这一条是"独立开"的另一半 —— 不能为了新行为把旧行为改坏：
+      // 点选-点放时手里那件必须有去处，否则它会凭空消失
+      const { store, session } = setup();
+      const { a, b } = twoSlots(store);
+      expect(pickupFromShelf(store, session, 'shelf_a', { row: 1, col: 5 }).ok).toBe(true); // 空手
+      // 直接把手里的东西设成一件不同的物资，再放到 b 上
+      session.held = makeStack('battery', 1, null);
+      session.heldFrom = { kind: 'box', boxId: 'x' };
+      const res = placeHeld(store, session, 'shelf_a', b);
+      expect(res.ok).toBe(true);
+      expect(getStack(store.run.shelves[0]!, b)?.itemId).toBe('battery');
+      // 原来在 b 上的那件进手里了（不是消失、也不是原地不动）
+      expect(session.held?.itemId).toBe('bandage');
+      // 而 a 那一格完全没被碰过
+      expect(getStack(store.run.shelves[0]!, a)?.itemId).toBe('canned_beans');
+    });
+  });
+
   it('不同物资落在同一格 → 格上那件进手里', () => {
     const { store, session } = setup();
     takeFromBox(store, session, firstBoxId(store));

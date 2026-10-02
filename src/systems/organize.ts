@@ -36,7 +36,25 @@ export type OrganizeEvent =
   | { type: 'boxEmptied'; boxId: string; label: string }
   | { type: 'picked'; itemId: string; shelfId: string; pos: SlotPos }
   | { type: 'placed'; itemId: string; shelfId: string; pos: SlotPos; partial: boolean; count: number }
-  | { type: 'swapped'; itemId: string; shelfId: string; pos: SlotPos }
+  /**
+   * 两格**互相**交换（谁都不进手里）。
+   *
+   * ★ 它与"`placed` 落在一个被占用的格子上"是两件事，M2 走测时被玩家要求拆开：
+   *  · `placed` 落在占用格 = "我把手里的东西放上去，那一件换到我手里"（接着搬）；
+   *    这是**点选-点放**的路径，手里本来就有东西；
+   *  · 这里 = "这两件对调"：A 去 B 的位置、B 去 A 的位置，**手始终是空的**。
+   *    这是**拖拽**的路径。合成一件事的话，玩家想理一下顺序时会发现
+   *    "我只是想把这两件对调，结果有一件跑到手上来了"。
+   */
+  | {
+      type: 'swapped';
+      itemId: string;
+      shelfId: string;
+      pos: SlotPos;
+      /** 被换走的那一件（去到 `from`） */
+      toItemId: string;
+      from: { shelfId: string; pos: SlotPos };
+    }
   /** 放回：toWhere 是给玩家看的一句人话（"粮油箱" / "货架 B 的原位" / "临时搁置箱"） */
   | { type: 'returned'; itemId: string; toWhere: string }
   | { type: 'sorted'; changedShelves: number }
@@ -276,7 +294,9 @@ export function placeHeld(store: GameStore, session: OrganizeSession, shelfId: s
     return ok(events);
   }
 
-  // ② 不同物资：交换（格上的东西进手里）
+  // ② 不同物资：**手上的这件放上去，格上那件进手里**（接着搬）
+  //    注意这与 `swapSlots` 不是一回事：这里手是"满载"的，交换只是副产物。
+  //    "两件对调、手保持空"是拖拽那条路径，走 `swapSlots`。
   store.commit((draft) => {
     const s = draft.shelves[idx];
     if (!s) return;
@@ -284,9 +304,79 @@ export function placeHeld(store: GameStore, session: OrganizeSession, shelfId: s
   });
   session.held = target;
   session.heldFrom = { kind: 'shelf', shelfId, pos };
-  const events: OrganizeEvent[] = [{ type: 'swapped', itemId: held.itemId, shelfId, pos }];
+  const events: OrganizeEvent[] = [
+    { type: 'placed', itemId: held.itemId, shelfId, pos, partial: false, count: stackCount(held) }
+  ];
   events.push(...detectNewTidy(store.run, session));
   return ok(events);
+}
+
+/**
+ * **两格互换**（拖拽专用）：`from` 与 `to` 上的东西对调，**手保持空**。
+ *
+ * ## 为什么它必须是一个独立命令（玩家要求）
+ *
+ * 原来的实现只有"把手里那件放到占用格上"，副产物是"被换的那件进手里"。
+ * 对**点选-点放**来说那是对的（玩家本来就在搬东西，手上那件得有个去处）；
+ * 但对**拖拽**来说是错的 —— 玩家的原话是
+ * "他现在的交换逻辑不是把两个物品交换，而是把被交换的那个东西换到手上，这不好"。
+ * 想理一下两件的顺序，结果手上多了一件，还得再找地方放下。
+ *
+ * ## 三条边界
+ *
+ *  · 两格必须都有东西（空格子的情况是"搬过去"，那只该走 `placeHeld`/`dropStack`）；
+ *  · 同一件物资不互换（那是合并，交给 `placeHeld`）——否则会白耗一次操作、还弹个假音效；
+ *  · 互不影响其它格子，也不碰 `session.held`（调用方负责确保手是空的）。
+ */
+export function swapSlots(
+  store: GameStore,
+  from: { shelfId: string; pos: SlotPos },
+  to: { shelfId: string; pos: SlotPos }
+): CommandResult {
+  const run = store.run;
+  const fromIdx = run.shelves.findIndex((s) => s.id === from.shelfId);
+  const toIdx = run.shelves.findIndex((s) => s.id === to.shelfId);
+  const fromShelf = fromIdx >= 0 ? run.shelves[fromIdx] : undefined;
+  const toShelf = toIdx >= 0 ? run.shelves[toIdx] : undefined;
+  if (!fromShelf || !toShelf) return reject('这里没有货架');
+  if (!isInside(fromShelf, from.pos) || !isInside(toShelf, to.pos)) return reject('格子不存在');
+  if (from.shelfId === to.shelfId && from.pos.row === to.pos.row && from.pos.col === to.pos.col) {
+    return reject('同一格');
+  }
+
+  const a = getStack(fromShelf, from.pos);
+  const b = getStack(toShelf, to.pos);
+  if (!a || !b) return reject('两个格子都得有东西才谈得上互换');
+  if (a.itemId === b.itemId) return reject('同一件物资，直接叠起来就行');
+
+  store.commit((draft) => {
+    // 同一块货架上换：一次改完，避免"先清空再写回"中间态被存档逮到
+    if (fromIdx === toIdx) {
+      const s = draft.shelves[fromIdx];
+      if (!s) return;
+      const cleared = setSlotStack(s, from.pos, null);
+      draft.shelves[fromIdx] = setSlotStack(cleared, to.pos, a);
+      const after = draft.shelves[fromIdx];
+      if (after) draft.shelves[fromIdx] = setSlotStack(after, from.pos, b);
+      return;
+    }
+    // 跨货架：两边各写一次
+    const sFrom = draft.shelves[fromIdx];
+    const sTo = draft.shelves[toIdx];
+    if (sFrom) draft.shelves[fromIdx] = setSlotStack(sFrom, from.pos, b);
+    if (sTo) draft.shelves[toIdx] = setSlotStack(sTo, to.pos, a);
+  });
+
+  return ok([
+    {
+      type: 'swapped',
+      itemId: a.itemId,
+      shelfId: to.shelfId,
+      pos: to.pos,
+      toItemId: b.itemId,
+      from: { shelfId: from.shelfId, pos: from.pos }
+    }
+  ]);
 }
 
 // ———————— 命令：把手里的东西放回去（名副其实的"回原位"，永不丢件） ————————

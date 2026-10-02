@@ -21,6 +21,7 @@ import {
   pickupFromShelf,
   returnHeld,
   sortAllByFEFO,
+  swapSlots,
   takeFromBox,
   tapSlot,
   toggleHandy,
@@ -408,9 +409,23 @@ export class OrganizeScreen {
    */
   private holdingPartial = false;
 
+  /**
+   * 这一趟拖拽**从哪儿起的**（`null` = 从纸箱里拖出来的，没有货架来源）。
+   *
+   * 它只服务一件事：**拖拽落在一个被别的物资占着的格子上时，走"两格互换"
+   * （`swapSlots`，手保持空）而不是"放上去、被换的进手里"**。
+   * 后者是点选-点放的语义（手里本来就有东西要安置），玩家明确要求把这两条路拆开。
+   *
+   * 必须连**货架**一起记：跨货架互换时只知道行列会写到错的架子上。
+   */
+  private dragOrigin: { shelfId: string; pos: SlotPos } | null = null;
+
   private beginDrag(source: DragState['source']): void {
     if (!this.session.held) return;
     this.drag = { active: true, source, partial: this.holdingPartial };
+    // 从货架拖起时记下来源；从"没放下的一部分"继续时，来源就是手里那件的来处
+    const origin = this.session.heldFrom;
+    this.dragOrigin = origin.kind === 'shelf' ? { shelfId: origin.shelfId, pos: origin.pos } : null;
     const el = document.createElement('div');
     el.className = 'drag-ghost';
     const held = this.session.held;
@@ -457,6 +472,37 @@ export class OrganizeScreen {
       const row = Number(slot.dataset['row']);
       const col = Number(slot.dataset['col']);
       if (shelfId) {
+        /*
+         * ★ 这里分成两条路（玩家要求"独立开"）：
+         *
+         *  · **拖拽 A 落在 B 上** → 两格互换，手保持空（`swapSlots`）；
+         *  · **手里拿着东西点格子** → 放上去，被换的那件进手里（`placeHeld`）。
+         *
+         * 判据：这一趟是从**货架的某一格**拖起来的（`dragOrigin` 有值）、
+         * 手里拿的不是"没放下的一半"（那是在继续放同一件）、
+         * 而且落点那一格上压着**别的**物资。
+         */
+        const target = getStack(this.shelfById(shelfId), { row, col });
+        const held = this.session.held;
+        const origin = this.dragOrigin;
+        const sameSlot =
+          origin !== null &&
+          origin.shelfId === shelfId &&
+          origin.pos.row === row &&
+          origin.pos.col === col;
+        const canSwap =
+          origin !== null &&
+          !this.drag.partial &&
+          target !== null &&
+          held !== null &&
+          target.itemId !== held.itemId &&
+          !sameSlot;
+        if (canSwap && origin) {
+          this.consume(
+            swapSlots(this.store, { shelfId: origin.shelfId, pos: origin.pos }, { shelfId, pos: { row, col } })
+          );
+          return;
+        }
         this.consume(placeHeld(this.store, this.session, shelfId, { row, col }));
         return;
       }
@@ -641,7 +687,10 @@ export class OrganizeScreen {
         case 'swapped':
           playSfx('preview');
           this.pendingFocus = { shelfId: ev.shelfId, pos: ev.pos };
+          // **两个格子都要有反馈**：交换是 A 去 B、B 去 A，只动落点那一个的话，
+          // 屏幕上只有一边有动静，玩家会怀疑"另一件到底动没动"
           after.push(() => this.wordOn(slotSelector(ev.shelfId, ev.pos), 'swap'));
+          after.push(() => this.wordOn(slotSelector(ev.from.shelfId, ev.from.pos), 'swap'));
           break;
         case 'returned':
           playSfx('return');
