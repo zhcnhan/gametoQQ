@@ -36,7 +36,7 @@ describe('物资图标', () => {
     const svg = itemIconSvg('can');
     expect(svg.startsWith('<svg')).toBe(true);
     expect(svg).toContain('viewBox="0 0 24 24"');
-    // 至少有一个图标用了 fill-opacity 那层淡影 —— 那是这一版"看起来厚"的来源
+    // 至少有一半图标用了 fill-opacity 那层淡影 —— 那是这一版"看起来厚"的来源
     const filled = ITEM_ICON_KEYS.filter((key) => itemIconSvg(key).includes('fill-opacity'));
     expect(filled.length).toBeGreaterThan(ITEM_ICON_KEYS.length / 2);
   });
@@ -45,3 +45,4 @@ describe('物资图标', () => {
     expect(itemIconSvg('这个键不存在')).toBe('');
   });
 });
+

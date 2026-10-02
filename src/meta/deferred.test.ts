@@ -22,6 +22,7 @@ const SOURCES = import.meta.glob('../**/*.ts', {
   eager: true
 }) as Record<string, string>;
 
+
 /**
  * key 形如 `'../model/types.ts'` → 归一成登记册里使用的 `'model/types.ts'`。
  *
@@ -173,3 +174,4 @@ describe('已拍板的设计决定：不许被"顺手修好"', () => {
     expect(findDeferred('D-02')?.status).toBe('open');
   });
 });
+

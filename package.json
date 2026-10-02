@@ -6,10 +6,12 @@
   "description": "《囤货末世》—— 末日囤货手账 · 整理模拟（手机竖屏 H5）",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "npm run check && tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "check:style": "node scripts/check-style.mjs",
+    "check": "npm run typecheck && npm run check:style && npm run test"
   },
   "devDependencies": {
     "typescript": "~5.6.3",

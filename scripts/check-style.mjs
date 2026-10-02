@@ -1,0 +1,236 @@
+/**
+ * 样式层次的守卫脚本（`src/style.css` 的"看久了累、不高级"那条修法）。
+ *
+ * ## 为什么是脚本而不是单测
+ *
+ * 这件事本来该是一条 vitest 用例，但**vitest 读不到 src/style.css 的原文**：
+ * `import.meta.glob('../style.css', { query: '?raw' })` 会匹配到键、
+ * 内容却是**空串**（`?raw`、`as: 'raw'`、`../**\/*.css` 三种写法都试过，全是 0 长度）——
+ * vitest 对 `.css` 有自己的资产处理，抢在 `?raw` 之前。
+ * 与其为一条断言去装 jsdom / 改构建配置，不如让 `pnpm run build` 顺手跑这个脚本：
+ * **它拦的是"后来者一个 border: 2px 把层次又抹平"**，而那件事必须有人拦。
+ *
+ * 用法：`node scripts/check-style.mjs`（已挂在 `npm run build` 前面）。
+ *
+ * ## 它守什么（背景）
+ *
+ * M2 收尾时把全站边框数了一遍：**13 类元素用 2px 以上的纯墨粗边框**，
+ * 剩下 8 类也不过 1.5px —— 整个界面只有"响"和"比较响"两档、**没有安静的那一档**，
+ * 满屏都在喊；再加上"每张卡片右下都有 3~4px 实心墨影"，同一种重量铺满整块屏幕。
+ * 玩家的原话是"看久了有点疲劳，一点都不高级"。
+ *
+ * 修法是分三档（2.5px 锚点 / 1.5px 内容行 / 1px 控件）+ 影子只给真正浮起来的东西，
+ * **色相一个都没动**（§5A 的纸底 / 墨色 / 朱红是拍板的）。
+ * 这个脚本钉住那个成果。
+ */
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const cssPath = join(here, '..', 'src', 'style.css');
+const css = readFileSync(cssPath, 'utf8');
+/** 末尾补一个换行：这个文件在 git 里是 CRLF，末尾有可能缺换行，会让"读末尾"的检查漏掉一条规则 */
+const cssText = css.endsWith('\n') ? css : `${css}\n`;
+
+const failures = [];
+const note = (message) => failures.push(message);
+
+/** 去掉注释，免得注释里引用的示例规则被当成真规则数进来 */
+const code = cssText.replace(/\/\*[\s\S]*?\*\//g, '');
+
+/**
+ * 把 `选择器 { 声明 }` 逐块解析出来。
+ *
+ * ★ 刻意**不用**"逐行记住上一个选择器"那种写法 —— 第一版就是那样，
+ * 结果把 `border-width` 这类覆盖也当成了粗边框声明，账算成 17 类（真值是 15 类，
+ * 而且含了很多来自逗号选择器列表的错配）。花括号配对是这里唯一稳的读法：
+ * 它同时正确处理 ① 逗号选择器列表 ② 嵌套的 `@media` ③ 多条声明写在一行。
+ *
+ * 简化假设（对这份样式表成立）：字符串与 data-URI 里没有裸的 `{` `}`。
+ * `--paper-noise` 那条 data-URI 用的是 `%3C` / `%3E` 转义，所以不会破坏配对。
+ */
+function eachRule(source, visit) {
+  let depth = 0;
+  let selectorStart = 0;
+  let bodyStart = -1;
+  for (let i = 0; i < source.length; i++) {
+    const ch = source[i];
+    if (ch === '{') {
+      if (depth === 0) {
+        selectorStart = selectorStart;
+        bodyStart = i + 1;
+      }
+      depth += 1;
+      continue;
+    }
+    if (ch !== '}') continue;
+    depth -= 1;
+    if (depth !== 0) continue;
+    const selector = source.slice(selectorStart, bodyStart - 1).trim();
+    const body = source.slice(bodyStart, i);
+    visit(selector, body);
+    selectorStart = i + 1;
+  }
+}
+
+/** 逗号选择器列表 → 单个类名（只取 `.xxx` 那部分，忽略伪类 / 后代选择器） */
+function selectorNames(selector) {
+  const names = [];
+  for (const part of selector.split(',')) {
+    const m = /\.([a-zA-Z][\w-]*)/.exec(part.trim());
+    if (m) names.push(m[1]);
+  }
+  return names;
+}
+
+/**
+ * 结构性色块：它们**不是"一排排重复出现的内容"**，所以不参与"粗边框种类数"的账。
+ *
+ * 这一条是量法修正，不是放水：真正造疲劳的是**同一种重量被重复铺满屏幕**
+ * （24 个格子、一屏 7 行货、3 张卡并排）。而下面这几个各只有一处、而且承担的是
+ * "把屏幕切成几块"的结构职责 —— 把它们数进去，等于逼着页面失去骨架：
+ *
+ *   · topbar / dock —— 页面上下两条边（一个顶栏、一个底栏，各一处）；
+ *   · drawer-body   —— 纸胶带抽屉（浮层，本来就该重）；
+ *   · calendar-strip —— 开局那一根日历条（一屏一处）。
+ */
+const STRUCTURAL = new Set(['topbar', 'dock', 'drawer-body', 'calendar-strip']);
+
+/**
+ * 解一遍层叠：每个元素**最终生效**的 border 与 box-shadow 是什么。
+ *
+ * ★ 这一版才是对的。第一版是"只要有一条规则写了粗边框就算它响" ——
+ * 可 CSS 是**层叠**的：后面那条 `border: 1.5px` 才是生效值。
+ * 于是它把"已经被降级的元素"也报成响的（13 类里有 9 类是假账），
+ * 一个满嘴假账的守卫比没有守卫更糟：人会学会忽略它。
+ *
+ * 只做本文件真正用到的两件事：
+ *  · 按源码顺序记下每个类**最后一次**出现的 `border`（简写）或 `border-*`（单边）；
+ *  · 同样记下最后一次 `box-shadow`。
+ * `@media` 里的规则也一起算（它们同样是样式表的一部分），
+ * 不做"这个视口下到底哪条生效"的精确求解 —— 对"数一数种类"这件事够用。
+ */
+function resolveCascade(source) {
+  const border = new Map(); // 类名 → { full?: string, sides: Set<string>, setAt: number }
+  const shadow = new Map();
+  let order = 0;
+
+  eachRule(source, (selector, body) => {
+    order += 1;
+    const names = selectorNames(selector);
+    if (names.length === 0) return;
+
+    const full = /(?:^|;)\s*border\s*:\s*([^;]+)/.exec(body);
+    const sides = [...body.matchAll(/(?:^|;)\s*border-(top|bottom|left|right|width|color|style)\s*:\s*([^;]+)/g)];
+    const sh = /(?:^|;)\s*box-shadow\s*:\s*([^;]+)/.exec(body);
+
+    for (const name of names) {
+      if (full || sides.length > 0) {
+        const prev = border.get(name) ?? { sides: new Set(), setAt: -1 };
+        // 简写会重置单边；单边只覆盖自己那一边 —— 但这里只关心"宽度 + 颜色"的整体印象，
+        // 所以记简写值；没有简写时用最后一次 border-width / border-color 组合
+        const next = {
+          full: full ? full[1].trim() : prev.full,
+          sides: new Set([...prev.sides, ...sides.map((m) => `${m[1]}:${m[2].trim()}`)]),
+          setAt: order
+        };
+        if (full) next.sides = new Set();
+        border.set(name, next);
+      }
+      if (sh) shadow.set(name, sh[1].trim());
+    }
+  });
+
+  return { border, shadow };
+}
+
+/** 某元素最终生效的 border 里，宽度是不是 2px 以上、颜色是不是纯墨 */
+function isLoudBorder(entry) {
+  if (!entry) return false;
+  const text = entry.full ?? [...entry.sides].join(';');
+  const width = /(?:^|[:\s])(2|2\.5|3)px/.exec(text);
+  if (!width) return false;
+  // 颜色：简写里直接看；没有简写时看 border-color 那一边
+  const hasInkColor = /var\(--ink\)/.test(text);
+  return hasInkColor;
+}
+
+const { border: resolvedBorder, shadow: resolvedShadow } = resolveCascade(code);
+
+// ———————— ① 粗边框不许失控（只数重复出现的内容，且只数**最终生效**的） ————————
+const loud = new Set();
+for (const [name, entry] of resolvedBorder) {
+  if (STRUCTURAL.has(name)) continue;
+  if (isLoudBorder(entry)) loud.add(name);
+}
+const LOUD_MAX = 9;
+if (loud.size > LOUD_MAX) {
+  note(
+    `最终生效的"2px 以上纯墨边框"有 ${loud.size} 类（上限 ${LOUD_MAX}）：${[...loud].sort().join(', ')}\n` +
+      `    → 超了就退回"满屏都在喊"。降一档（内容行 1.5px var(--ink-40) / 控件 1px）即可。\n` +
+      `    → 如果新加的这一类确实是"结构性色块"（一屏只有一处、负责切分屏幕），把它加进 STRUCTURAL。`
+  );
+}
+
+// ———————— ② 实心墨影只给真正浮起来的东西（同样只看最终生效值） ————————
+const SHADOW_OK = new Set(['drag-ghost', 'drawer-body', 'zone-tape', 'tape-slot', 'shelf-card', 'identity-card']);
+const shadowed = new Set();
+for (const [name, value] of resolvedShadow) {
+  if (SHADOW_OK.has(name)) continue;
+  if (value === 'none' || !/var\(--ink/.test(value)) continue;
+  shadowed.add(name);
+}
+if (shadowed.size > 0) {
+  note(
+    `最终仍有实心墨影、但不该有的元素：${[...shadowed].sort().join(', ')}\n` +
+      `    → "看起来浮起来"只能给真正浮起来的东西（拖拽幽灵 / 抽屉 / 锚点卡片）。\n` +
+      `    → 成排出现的卡片（商店、纸箱、夜间选项）带影子 = 一排东西同时浮起来，那个隐喻就没有意义了。`
+  );
+}
+
+// ———————— ③ 层次覆盖块必须在文件最末尾 ————————
+// 同权重下 CSS 靠"后来者赢"，那片覆盖块一旦被挪到前面，就会被
+// `.good { border: 2px … }` 这类简写盖掉（实测过，所以这条是硬要求）。
+const tail = code.slice(-2400);
+const tailChecks = [
+  // 注意选择器**可以是多行的**（`.good,` `.trade-item,` `.box,` … `{`），
+  // 所以这里用"从 `.good,` 到 `{` 之间不能出现 `}`"来表达，而不是写死接哪一行
+  [/\.good,[^{}]*\{\s*\r?\n\s*border:\s*1\.5px/, '内容行降级（.good → 1.5px 次黑）'],
+  [/\r?\n\s*border:\s*1px solid var\(--ink-40\)/, '控件降级（→ 1px）'],
+  [/\.btn-primary\s*\{\s*\r?\n\s*border-color:\s*transparent/, '实心按钮去边框（.btn-primary）'],
+  [
+    /\.box,[^{}]*\.shop-card,[^{}]*\.night-option[^{}]*\{\s*\r?\n\s*box-shadow:\s*none/,
+    '影子收敛（.box / .shop-card / .night-option）'
+  ]
+];
+for (const [re, label] of tailChecks) {
+  if (!re.test(tail)) {
+    note(`样式表末尾缺少「${label}」那条规则 —— 层次覆盖块被挪走或被覆盖了。`);
+  }
+}
+
+// ———————— ④ 色相没被动过，也没有漏网的纯白 ————————
+for (const [value, label] of [
+  ['--paper: #f7f3ea', '纸底'],
+  ['--ink: #2c2c2a', '墨色'],
+  ['--vermilion: #c8372d', '朱红']
+]) {
+  if (!cssText.includes(value)) note(`§5A 拍板的${label}（${value}）被改了 —— 色相不该在"做层次"时被动。`);
+}
+const strayWhite = code.split('\n').filter((l) => /^\s*background:\s*#fff\s*;/.test(l));
+if (strayWhite.length > 0) {
+  note(`还有 ${strayWhite.length} 处硬编码 background:#fff —— 纯白在纸底上不是纸，用 var(--card)。`);
+}
+
+// ———————— 报账 ————————
+if (failures.length > 0) {
+  console.error('[check-style] 样式层次出问题了：\n');
+  for (const f of failures) console.error(`  ✗ ${f}`);
+  console.error(`\n  背景见 scripts/check-style.mjs 开头的注释（"看久了累、不高级"那条修法）。`);
+  process.exit(1);
+}
+
+console.info(
+  `[check-style] 层次正常：内容粗边框 ${loud.size} 类（≤${LOUD_MAX}）、越界的实心墨影 0 类、色相未动。`
+);
