@@ -262,21 +262,44 @@ body::before {
   /* 375px 视口 → 57.2px；390px → 59.7px。触点硬约束（提示词 0 第 7 条） */
   min-height: 56px;
   min-width: 0;
+  /*
+   * 桌面兜底：手机这一档是 57px 的触点，桌面上 6 列摊到 1200px 会变成 190px 的巨格。
+   * 上限 76px —— 再宽就不再是"格子"了，而"格子"是这个游戏的核心隐喻。
+   */
+  max-width: 76px;
   display: grid;
   place-items: center;
   padding: 0;
-  border: 2px solid var(--ink);
+  /*
+   * ★ 层次（这是"看久了累"的修法，色相一个都没动）：
+   *
+   * 原来是 24 个 `background:#fff` + `border:2px solid var(--ink)` ——
+   * 纯白方块套纯黑粗边，排成网格之后是整屏最响的东西，而且"纯白"在纸底上不是纸。
+   * 现在：
+   *  · 格子底用纸色（`--paper`），跟页面同一张纸，只是被压出了一格；
+   *  · 边框降到 1.5px 的次黑（`--ink-40`），让"网格"退到背景里；
+   *  · 有货的格子靠**图标与数量**说话，空格子安静下去（不再抢眼）。
+   * 一句话：以前每一格都在喊，现在只有装了东西的格子才值得看。
+   */
+  border: 1.5px solid var(--ink-40);
   border-radius: var(--radius);
-  background: #fff;
+  background: var(--paper);
   color: inherit;
   font: inherit;
   cursor: pointer;
-  transition: transform var(--fast) var(--ease-out), outline-color var(--fast) linear;
+  transition: transform var(--fast) var(--ease-out), outline-color var(--fast) linear, background var(--fast) linear;
+}
+
+/* 装了东西的格子：换到更亮的卡纸底，于是"有货/没货"一眼分得开 */
+.slot:not(.is-empty) {
+  background: var(--card);
+  border-color: var(--ink-16);
 }
 
 .slot.is-empty {
-  background: var(--ink-08);
-  border: 2px dashed var(--ink-16);
+  /* 空格子退到最轻：虚线 + 极淡纸色。它占位，但不参与视觉竞争 */
+  background: transparent;
+  border: 1.5px dashed var(--ink-16);
 }
 
 .slot:active {
@@ -308,18 +331,40 @@ body::before {
   background: var(--vermilion);
 }
 
-/* 吸附预览 */
+/*
+ * 吸附预览。
+ *
+ * ★ 两件事都改了：
+ *  1. 去掉了 `transform: scale(1.05)` —— 悬停时那一格**放大**，会让整个网格
+ *     跟着抖一下（网格是 6 列密排，任何一格的尺寸变化都会推动邻居）。
+ *     改成只加 outline（outline 不参与布局）；
+ *  2. `.is-hover-swap` 从"虚线"改成"实线 + 一个角上的交换记号"：
+ *     实线 = 这一格会**换**（原来的物资进你手里），虚线 = 这一格会**放**。
+ *     原来那套是死代码（`pickDropSlot` 永远不返回占用格，见那个函数的注释），
+ *     现在它能被走到了，所以必须一眼分得清"放"和"换"。
+ */
 .slot.is-hover {
   outline: 3px solid var(--vermilion);
   outline-offset: 1px;
-  background: #fff3f0;
-  transform: scale(1.05);
+  background: var(--card);
 }
 
 .slot.is-hover-swap {
-  outline: 3px dashed var(--vermilion);
+  outline: 3px solid var(--vermilion);
   outline-offset: 1px;
-  transform: scale(1.05);
+  background: var(--card);
+}
+
+/* 交换目标多一个记号：右上角一个"{ }"式的双向箭头，不占布局 */
+.slot.is-hover-swap::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--vermilion);
 }
 
 /*
@@ -516,7 +561,7 @@ body::before {
   padding: 0 10px;
   border: 2px solid var(--ink);
   border-radius: var(--radius);
-  background: #fff;
+  background: var(--card);
   color: inherit;
   font: inherit;
   font-size: 13px;
@@ -549,7 +594,7 @@ body::before {
   padding: 0 10px;
   border: 1.5px solid var(--ink);
   border-radius: 999px;
-  background: #fff;
+  background: var(--card);
   color: inherit;
   font: inherit;
   font-size: 12px;
@@ -842,7 +887,7 @@ body::before {
   padding: 0 10px;
   border: 2px solid var(--ink);
   border-radius: var(--radius);
-  background: #fff;
+  background: var(--card);
   color: inherit;
   font: inherit;
   font-size: 15px;
@@ -1481,7 +1526,7 @@ button:disabled {
   padding: 0;
   border: 2px solid var(--ink);
   border-radius: var(--radius);
-  background: #fff;
+  background: var(--card);
   color: inherit;
   font: inherit;
   font-size: 20px;

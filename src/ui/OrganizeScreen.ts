@@ -45,6 +45,14 @@ export interface OrganizeScreenProps {
 interface DragState {
   active: boolean;
   source: 'shelf' | 'box' | 'hand';
+  /**
+   * 手里拿的是**一叠的一部分**（`placeHeld` 把放不下的留在手里）。
+   *
+   * 它只影响一件事：落点。这时玩家在"继续放同一件东西"的流程里，
+   * 所以指针底下若是**别的**物资，该就近找空格（合并会失败、交换更荒唐），
+   * 而不是像正常拖拽那样把它当成交换目标。见 `pickDropSlot`。
+   */
+  partial: boolean;
 }
 
 export class OrganizeScreen {
@@ -64,7 +72,7 @@ export class OrganizeScreen {
   private pendingFocus: { shelfId: string; pos: SlotPos } | null = null;
   private hoverEl: HTMLElement | null = null;
   private ghost: HTMLElement | null = null;
-  private drag: DragState = { active: false, source: 'shelf' };
+  private drag: DragState = { active: false, source: 'shelf', partial: false };
 
   constructor(root: HTMLElement, store: GameStore, session: OrganizeSession, props: OrganizeScreenProps) {
     this.root = root;
@@ -390,9 +398,19 @@ export class OrganizeScreen {
 
   // ———————— 拖拽 ————————
 
+  /**
+   * 手里那件是不是"上一步没放下的一部分"。
+   *
+   * `placeHeld` 在一格塞不下时会把剩下的留在手里，而且**来处仍然是那块货架**
+   * （所以光看 `session.heldFrom` 分不出"刚拿起来"和"没放下"）。
+   * 这里记一个会话级的标记：`placed.partial` 置真，下一件被拿起来（`picked`）时清掉。
+   * 它唯一的读者是 `pickDropSlot`（决定"占用格算不算合法落点"）。
+   */
+  private holdingPartial = false;
+
   private beginDrag(source: DragState['source']): void {
     if (!this.session.held) return;
-    this.drag = { active: true, source };
+    this.drag = { active: true, source, partial: this.holdingPartial };
     const el = document.createElement('div');
     el.className = 'drag-ghost';
     const held = this.session.held;
@@ -427,10 +445,10 @@ export class OrganizeScreen {
     const slot = this.hoverEl ?? this.pickDropSlot(point);
     this.endGhost();
     if (!wasActive || !this.session.held) {
-      this.drag = { active: false, source: 'shelf' };
+      this.drag = { active: false, source: 'shelf', partial: false };
       return;
     }
-    this.drag = { active: false, source: 'shelf' };
+    this.drag = { active: false, source: 'shelf', partial: false };
 
     if (slot) {
       const shelfId = slot.dataset['shelf'];
@@ -464,8 +482,24 @@ export class OrganizeScreen {
   }
 
   /**
-   * 吸附预览：优先用指针底下的格子；如果那格放不下（被别的物资占了），
-   * 就找同架离指针最近的空格高亮 —— 这就是 §5 引擎②"拖到货架附近自动吸附"。
+   * 吸附预览与落点判定。**指针底下是哪一格，就是哪一格。**
+   *
+   * ## ★ 这里改过一次，改的是"拖到别的物资上会怎样"
+   *
+   * 原来的实现是：指针底下那格如果**被别的物资占着**，就改去高亮"同架离指针最近的空格"，
+   * 于是**"把 A 拖到 B 上"永远不会发生** —— 你想交换两件东西，它自动给你挪到旁边空格去。
+   * 玩家的要求是"让物品和物品之间拖拽可以直接交换"，而 `placeHeld` 里其实早就写好了
+   * 交换那一支（不同物资 → 交换，格上的东西进手里），只是永远走不到。
+   *
+   * 现在：**占用格也是合法落点**，交换由 `placeHeld` 执行，悬停时给虚线框
+   * （`.is-hover-swap`，那套样式也早就写好了，同样是死代码）。
+   *
+   * ## 什么情况下仍然要"就近找空格"
+   *
+   * 只有一种：**手里拿的是一叠的一部分**（`placeHeld` 把放不下的留在手里）。
+   * 这时玩家已经在"继续放"的流程里，落点再指向一个占用的格子没有意义
+   * （合并会失败、交换更荒唐）。判据就是 `heldFrom` 仍是货架 —— 手里那件是从货架上
+   * 拿起来的，说明它是上一步没放下的一部分。
    */
   private pickDropSlot(point: { x: number; y: number }): HTMLElement | null {
     const el = document.elementFromPoint(point.x, point.y);
@@ -479,9 +513,12 @@ export class OrganizeScreen {
     const col = Number(slot.dataset['col']);
     if (!shelfId) return null;
     const stack = getStack(this.shelfById(shelfId), { row, col });
-    if (stack && stack.itemId !== held.itemId) {
-      return this.nearestEmptySlot(shelfId, point) ?? slot;
-    }
+    if (!stack) return slot;
+    // 叠在自己那一堆上 → 合并，正常落点
+    if (stack.itemId === held.itemId) return slot;
+    // 手里是"上一步没放下的一部分" → 就近找空格（交换没有意义）
+    if (this.drag.partial) return this.nearestEmptySlot(shelfId, point) ?? slot;
+    // 其余情况：**占用格就是合法落点**，交给 placeHeld 交换
     return slot;
   }
 
@@ -554,11 +591,14 @@ export class OrganizeScreen {
         }
         case 'picked':
           playSfx('pick');
+          // 新拿起来的一件：它不可能是"上一步没放下的那件"
+          this.holdingPartial = false;
           break;
         case 'placed':
           playSfx('place');
           this.pendingFocus = { shelfId: ev.shelfId, pos: ev.pos };
           after.push(() => this.wordOn(slotSelector(ev.shelfId, ev.pos), 'place'));
+          this.holdingPartial = ev.partial;
           if (ev.partial) showToast(this.fxLayer, '这一格塞满了，剩下的还在手里');
           break;
         case 'swapped':
