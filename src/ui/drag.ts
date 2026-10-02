@@ -58,12 +58,55 @@ export function attachPointerGesture(
   let last: Point = { x: 0, y: 0 };
   let startTime = 0;
   let timer: number | null = null;
+  /** 最近一次看到的指针事件时间戳（毫秒）。"手势自杀检测"用它判断是不是僵住了 */
+  let lastSeenAt = 0;
+  let lastButtons = 0;
+  let watchdog: number | null = null;
 
   const clearTimer = (): void => {
     if (timer !== null) {
       window.clearTimeout(timer);
       timer = null;
     }
+  };
+
+  const clearWatchdog = (): void => {
+    if (watchdog !== null) {
+      window.clearInterval(watchdog);
+      watchdog = null;
+    }
+  };
+
+  /**
+   * 手势自杀检测（每 600ms 看一眼）。
+   *
+   * ## 它修的是一个真实的死锁
+   *
+   * 原来的实现只靠 `pointerup` / `pointercancel` 结束手势。可这两件事**不保证会到**：
+   * 切到别的窗口、系统弹出权限框、浏览器把手势当成了滚动或返回手势 ——
+   * 那些情况下 `pointerup` 永远不会派发到这个页面。
+   * 于是 `active` 永久停在 `true`，而 `onDown` 的第一句就是 `if (active) return` ——
+   * **之后所有的 pointerdown 都被忽略**，玩家看到的就是"拖着拖着卡住了，得刷新页面"。
+   *
+   * 判据用**指针按键状态**而不是"超时没动"：长按之后手指停住不动是合法操作
+   * （玩家在想放哪儿），只有"按键已经松开、我们却还认为自己按着"才是真的僵住。
+   * `pointermove/up` 都会顺带更新 `lastButtons`，所以正常情况下这个检测不会误伤。
+   */
+  const startWatchdog = (): void => {
+    clearWatchdog();
+    watchdog = window.setInterval(() => {
+      if (!active) {
+        clearWatchdog();
+        return;
+      }
+      const alive = Date.now() - lastSeenAt < 1200;
+      if (lastButtons === 0 || !alive) {
+        // 按键已经松开了（或者指针事件彻底断了）→ 按"被打断"收尾，让下一次能重新开始
+        const wasDragging = dragging;
+        finish();
+        if (wasDragging) handlers.onCancel?.();
+      }
+    }, 600);
   };
 
   const blockScroll = (e: TouchEvent): void => {
@@ -76,6 +119,7 @@ export function attachPointerGesture(
     window.removeEventListener('pointercancel', onCancel);
     document.removeEventListener('touchmove', blockScroll);
     el.classList.remove('is-dragging');
+    clearWatchdog();
   };
 
   const beginDrag = (point: Point): void => {
@@ -95,6 +139,8 @@ export function attachPointerGesture(
 
   const onMove = (e: PointerEvent): void => {
     if (!active) return;
+    lastSeenAt = Date.now();
+    lastButtons = e.buttons;
     const point = { x: e.clientX, y: e.clientY };
     last = point;
     const moved = distance(point, start);
@@ -115,6 +161,8 @@ export function attachPointerGesture(
 
   const onUp = (e: PointerEvent): void => {
     if (!active) return;
+    lastSeenAt = Date.now();
+    lastButtons = 0;
     const point = { x: e.clientX, y: e.clientY };
     const wasDragging = dragging;
     const moved = distance(point, start);
@@ -135,16 +183,24 @@ export function attachPointerGesture(
   };
 
   const onDown = (e: PointerEvent): void => {
-    if (active) return;
+    /*
+     * 上一轮手势如果没被正常收掉（`pointerup` 没到），`active` 会是 `true`。
+     * 与其"永久拒绝新的手势"（= 玩家得刷新页面），不如在这里清掉它重来 ——
+     * 新的一次 pointerdown 本身就证明玩家还在操作。
+     */
+    if (active) finish();
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     active = true;
     dragging = false;
     start = { x: e.clientX, y: e.clientY };
     last = start;
+    lastSeenAt = Date.now();
+    lastButtons = e.buttons;
     startTime = Date.now();
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onCancel);
+    startWatchdog();
     if (e.pointerType !== 'mouse') {
       clearTimer();
       timer = window.setTimeout(() => beginDrag(last), opts.longPressMs);

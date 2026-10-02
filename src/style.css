@@ -252,8 +252,38 @@ body::before {
 
 .shelf-grid {
   display: grid;
-  grid-template-columns: repeat(var(--cols, 6), minmax(0, 1fr));
+  /*
+   * ★ 轨道宽度必须**自带上限**，不能让 `1fr` 无限拉。
+   *
+   * 这一条是桌面端"格子是乱的"的根治。原来的写法：
+   *
+   *     grid-template-columns: repeat(6, minmax(0, 1fr));   /* 桌面上每列 313px */
+   *     .slot { max-width: 76px }                            /* 格子只占 76px */
+   *
+   * 后果是**每一列有 237px 是空的** —— 网格看起来既散又错位；
+   * 而且落点判定（`elementFromPoint`）命中的是元素真实位置，
+   * 指针落在那片空档里什么都命中不到，表现成"拖拽判定错位、有时候没反应"。
+   *
+   * 现在轨道上限也是 76px（与 `.slot` 的 max-width 同值），
+   * 再用 `justify-content: center` 把整片网格居中。
+   *
+   * ★ 为什么下限是 56px 而不是 0：56px 就是触点硬约束（提示词 0 第 7 条，
+   * 也是 `.slot` 的 `min-height`）。6 × 56 + 5 × 3 = 351px，
+   * 比 320px 视口的可用宽度（约 306px）宽 —— 所以下面那个媒体查询在窄屏把它放开。
+   */
+  grid-template-columns: repeat(var(--cols, 6), minmax(56px, 76px));
+  justify-content: center;
   gap: 3px;
+}
+
+/*
+ * 窄屏兜底：320px 这类视口放不下 6 × 56px，让轨道按比例缩下去
+ * （`.slot` 在同一个媒体查询里也去掉了 min-height —— 两边一起才不溢出）。
+ */
+@media (max-width: 400px) {
+  .shelf-grid {
+    grid-template-columns: repeat(var(--cols, 6), minmax(0, 1fr));
+  }
 }
 
 .slot {
@@ -265,8 +295,14 @@ body::before {
   /*
    * 桌面兜底：手机这一档是 57px 的触点，桌面上 6 列摊到 1200px 会变成 190px 的巨格。
    * 上限 76px —— 再宽就不再是"格子"了，而"格子"是这个游戏的核心隐喻。
+   *
+   * ★ 这个上限**必须与 `.shelf-grid` 的轨道上限同值**（都是 76px）。
+   * 两边不一致就会出现"轨道宽、格子窄"的局面，而落点判定命中的是元素真实位置 ——
+   * 指针落在轨道里、格子外的空档上就什么都命中不到，表现成"拖拽错位、有时没反应"。
+   * 第一版给格子加了 max-width 却忘了给轨道加，桌面端就是这样坏掉的。
    */
   max-width: 76px;
+  justify-self: center;
   display: grid;
   place-items: center;
   padding: 0;
