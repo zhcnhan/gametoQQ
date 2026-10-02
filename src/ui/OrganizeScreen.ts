@@ -744,64 +744,117 @@ export class OrganizeScreen {
   }
 
   /**
-   * 落点判定：**指针正下方那一格优先，不行就吸附到同架最近的合法落点**（玩家选的口径 3）。
+   * 落点判定：**指针正下方那一格优先，不行就吸附到同架最近的合规落点**（口径 3）。
    *
    * ## 三段，按优先级
    *
-   *  ① **指针底下就是格子** → 就用它。这是精确操作（"我要放这一格"）；
-   *  ② 指针底下是**货架卡**、但不是格子（卡片的留白、标签行、格子之间的缝）
-   *     → 吸附到同架**离指针最近的合法落点**，并在悬停预览上标明"这是吸附，不是精确命中"；
-   *  ③ 指针在货架卡之外（别的卡片、底部操作台、页面空白）→ 不吸附。
+   *  ① **指针底下就是格子** → 用它（精确操作）；
+   *  ② 命中的是**特效层里的东西**（拖拽幽灵、拟声字…）→ 不看它，改按坐标
+   *     **几何命中**最近的格子；
+   *  ③ 指针在货架卡里但不是格子 → 吸附到同架最近的合规落点；
+   *  ④ 指针在货架卡之外 → 不吸附（那是"我要放下"和"我要放回"的分界）。
    *
-   * ## 为什么 ② 要有，而且要有"预览"
+   * ## ★ 第 ② 段是怎么来的（玩家报的现象）
    *
-   * M2 走测反馈："拖动放进格子和交互的判定特别奇怪，好像是错位的" ——
-   * 原来的实现只认①，松在格子和格子之间的**那道 3px 缝**上就等于没放，
-   * 玩家看到的是"我明明对着格子松手了，东西还在手上"。
-   * ③ 这个边界同样重要：松在货架**外面**不该被吸进来 ——
-   * 那是"我要放下"和"我要拿走/放回"的分界。
+   * "把 A 正正好好放在 B 上反而判定不到，中心周围一小圈才能判定到。"
    *
-   * ## 什么情况下占用格**不是**合法落点
+   * `elementFromPoint` 命中的是**最上层**元素。幽灵就跟着指针、**正好在指针底下**，
+   * 所以它天然是候选。我给 `.drag-ghost` 补了 `pointer-events: none`（正确且必要），
+   * 但玩家反馈"没变化" —— 说明**至少还有一个因素**，而我不该再去赌它是什么
+   * （可能是浏览器/设备模拟对 `pointer-events` 的处理，也可能是别的覆盖层）。
    *
-   * 判据只有一条，而且只看**这一趟拖拽**：`dragOrigin === null`
-   * （从纸箱里拖出来的、或手上那件是"没放下的一部分"）。
-   * 那时玩家在"把这一件放下去"的流程里，落点指向别的物资没有意义
-   * （合并会失败、互换更荒唐）—— 这时候选里只留空格与**同类可合并**的格。
-   *
-   * ★ 刻意**不用**"手里拿的是不是没放下的一半"这种会话级标记去判（原来有一个
-   * `DragState.partial`）：那等于用两套说法描述同一件事，而两套说法会不一致 ——
-   * 玩家报的"拖两件互换，它说必须得有东西才谈得上互换"根因就是两个标记打架。
-   * 现在只有 `dragOrigin` 一个来源。
+   * 所以第 ② 段**从结构上绕开这个问题**：命中到 `fx-layer` 里的东西时，
+   * 不信 `elementFromPoint`，改按坐标自己找 —— 幽灵在哪儿、它吃不吃指针事件，
+   * 都不再影响判定。**证据比机制更重要**：我赌错一次，就不赌第二次。
    */
   private pickDropSlot(point: { x: number; y: number }): HTMLElement | null {
     const el = document.elementFromPoint(point.x, point.y);
-    if (!(el instanceof HTMLElement)) return null;
-
     const held = this.session.held;
-    const exact = el.closest<HTMLElement>('[data-slot]');
-    // ① 精确命中
-    if (exact) {
-      if (!held) return exact;
-      const shelfId = exact.dataset['shelf'];
-      const stack = shelfId
-        ? getStack(this.shelfById(shelfId), {
-            row: Number(exact.dataset['row']),
-            col: Number(exact.dataset['col'])
-          })
-        : null;
-      // 空格、或同类（会合并）→ 正常落点
-      if (!stack || stack.itemId === held.itemId) return exact;
-      // 占用格上是**别的**物资：
-      //  · 这一趟是从某格拖起的 → 合法（会互换）；
-      //  · 否则（从纸箱拿的 / 手上是没放下的一半）→ 交给②去吸附空格
-      if (this.dragOrigin !== null) return exact;
+    const inFxLayer = el instanceof HTMLElement && el.closest('[data-fx]') !== null;
+
+    if (!inFxLayer) {
+      const exact = el instanceof HTMLElement ? el.closest<HTMLElement>('[data-slot]') : null;
+      if (exact) {
+        if (!held) return exact;
+        const shelfId = exact.dataset['shelf'];
+        const stack = shelfId
+          ? getStack(this.shelfById(shelfId), {
+              row: Number(exact.dataset['row']),
+              col: Number(exact.dataset['col'])
+            })
+          : null;
+        // 空格、或同类（会合并）→ 正常落点
+        if (!stack || stack.itemId === held.itemId) return exact;
+        // 占用格上是**别的**物资：这一趟从某格拖起的 → 合规（会互换）
+        if (this.dragOrigin !== null) return exact;
+      }
     }
 
-    // ② 指针在货架卡里但不是格子 → 吸附到同架最近的合法落点
-    const card = el.closest<HTMLElement>('[data-shelf-card]');
+    // ② 命中的是特效层（幽灵等）→ 按坐标几何命中
+    const byGeometry = this.slotUnderPoint(point);
+    if (byGeometry) return byGeometry;
+
+    // ③ 指针在货架卡里但不是格子 → 吸附到同架最近的合规落点
+    const card =
+      el instanceof HTMLElement
+        ? el.closest<HTMLElement>('[data-shelf-card]')
+        : this.cardUnderPoint(point);
     const shelfId = card?.dataset['shelfCard'];
-    if (!shelfId) return null; // ③ 货架之外，不吸附
+    if (!shelfId) return null; // ④ 货架之外，不吸附
     return this.nearestLegalSlot(shelfId, point);
+  }
+
+  /**
+   * 按坐标找"指针正下方的那一格"（几何命中），不看 `elementFromPoint`。
+   *
+   * 用于绕开"特效层里的东西挡在指针底下"这种情况 —— 幽灵的位置是可信的
+   * （我们自己设的 `left/top`），而"谁在指针最上层"是浏览器的说法，可能受
+   * `pointer-events`、层叠上下文、设备模拟等一堆因素影响。
+   */
+  private slotUnderPoint(point: { x: number; y: number }): HTMLElement | null {
+    const held = this.session.held;
+    let best: HTMLElement | null = null;
+    let bestArea = Number.POSITIVE_INFINITY;
+    this.roomEl.querySelectorAll<HTMLElement>('[data-slot]').forEach((slot) => {
+      const r = slot.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) return;
+      if (point.x < r.left || point.x > r.left + r.width) return;
+      if (point.y < r.top || point.y > r.top + r.height) return;
+      const shelfId = slot.dataset['shelf'];
+      if (held && shelfId) {
+        const stack = getStack(this.shelfById(shelfId), {
+          row: Number(slot.dataset['row']),
+          col: Number(slot.dataset['col'])
+        });
+        // 与①同一套合规判据，两处必须一致
+        if (stack && stack.itemId !== held.itemId && this.dragOrigin === null) return;
+      }
+      // 取面积最小的那个（嵌套时取最里层），并优先取文档里靠后的（上层）
+      const area = r.width * r.height;
+      if (area <= bestArea) {
+        bestArea = area;
+        best = slot;
+      }
+    });
+    return best;
+  }
+
+  /** 按坐标找指针底下的货架卡（`elementFromPoint` 不可信时的兜底） */
+  private cardUnderPoint(point: { x: number; y: number }): HTMLElement | null {
+    let best: HTMLElement | null = null;
+    let bestArea = Number.POSITIVE_INFINITY;
+    this.roomEl.querySelectorAll<HTMLElement>('[data-shelf-card]').forEach((card) => {
+      const r = card.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) return;
+      if (point.x < r.left || point.x > r.left + r.width) return;
+      if (point.y < r.top || point.y > r.top + r.height) return;
+      const area = r.width * r.height;
+      if (area <= bestArea) {
+        bestArea = area;
+        best = card;
+      }
+    });
+    return best;
   }
 
   /**

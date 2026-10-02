@@ -532,11 +532,28 @@ export function installFakeWindow(document: FakeDocument): FakeWindow {
  * 这套界面是自产的、可控的模板，够用 —— 一旦不够用，测试会当场炸出来（querySelector 返回空），
  * 而不是悄悄给出错误结果。
  */
-function parseHtml(html: string, doc: FakeDocument, parent: FakeElement): void {
+function parseHtml(html: string, doc: FakeDocument, parent: FakeElement, depth = 0): void {
+  if (depth > 60) throw new Error('[fakeDom] HTML 嵌套超过 60 层，疑似病理循环');
   // 去掉注释
   const src = html.replace(/<!--[\s\S]*?-->/g, '');
   let i = 0;
+  let guard = 0;
   while (i < src.length) {
+    /*
+     * ★ 硬上限：一次解析最多创建 2000 个元素。
+     *
+     * 这个假体的解析器很粗（不做完整的 HTML 容错），某些畸形输入会让
+     * `findClosingTag` 与递归**互相喂**，变成病理性循环 ——
+     * 表现是"测试跑 45 秒然后 V8 内存爆掉"，非常难查。
+     * 与其让那种情况吃掉 4GB 内存，不如在这里明确报错：
+     * 报错信息会直接告诉后来者"是解析器碰到它处理不了的输入了"。
+     */
+    if (++guard > 2000) {
+      throw new Error(
+        `[fakeDom] HTML 解析超过 2000 个元素，疑似病理循环。` +
+          `输入片段：${JSON.stringify(src.slice(0, 200))}`
+      );
+    }
     const lt = src.indexOf('<', i);
     if (lt < 0) break;
     const gt = src.indexOf('>', lt);
