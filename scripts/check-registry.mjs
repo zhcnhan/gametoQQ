@@ -25,6 +25,7 @@
  * 用法：`npm run check:registry`（已挂进 `npm run check`）
  */
 import { SURVIVAL_DAYS } from '../src/data/disaster';
+import { sameButL1, usedDimensions } from '../src/data/disasterDimensions';
 import { countOfKind, entriesOfKind, unobtainableEntries } from '../src/data/registry';
 
 const problems = [];
@@ -106,7 +107,66 @@ if (lonely.length > 0) {
 }
 
 // ——————————————————————————————————————————————————————————————
-// ⑤ 内容量盘点（给 §10B.6 的产能口径对账）
+// ⑤ ★ 维度签名：机械地判"换皮"（§10B.3.1）
+// ——————————————————————————————————————————————————————————————
+
+/**
+ * §10B.3.1 的机械验收办法：
+ *
+ * > 把全部灾难按 17 个维度各自的取值排成矩阵，
+ * > **任意两场灾难如果只在前 4 个维度上不同，就必须合并或重写。**
+ *
+ * ## 为什么这条校验必须在"已经在册的灾难"上跑，而不只是在待入库的 JSON 上
+ *
+ * 换皮是**成对**的性质：单独看一场永远看不出问题（每一场单看都合理），
+ * 只有把它和**已有的那几场**放在一起比才显形。所以它只能在这里跑 ——
+ * 只有这里才有完整的灾难表。
+ *
+ * ## 它同时校验"声称的层级"
+ *
+ * `level: 'L3'` 意味着"这一场动的是玩法"（§10B.3.1 的实施分层），
+ * 而只用了 4 个维度的一场显然做不到那件事。所以声称 L2/L3/L4 的场次
+ * 必须真的用够维度 —— 否则那个字段就是一句自夸。
+ */
+const disasterDefs = entriesOfKind('disaster')
+  .map((e) => e.raw)
+  .filter(Boolean);
+
+const MIN_DIMS = { L1: 4, L2: 6, L3: 10, L4: 15 };
+
+console.log(`[check-registry] 灾难维度签名（${disasterDefs.length} 场）：`);
+for (const def of disasterDefs) {
+  const used = usedDimensions(def);
+  const need = MIN_DIMS[def.level] ?? 0;
+  console.log(
+    `  ${used.length >= need ? '✓' : '·'} ${String(def.name).padEnd(6)} ${String(def.family ?? '?').padEnd(4)} ${def.level} ` +
+      `用到 ${String(used.length).padStart(2)} 维（要求 ≥${need}）：${used.join('/')}`
+  );
+}
+console.log('');
+
+// 逐对比较：只在前 4 维不同 → 不合格
+for (let i = 0; i < disasterDefs.length; i++) {
+  for (let j = i + 1; j < disasterDefs.length; j++) {
+    const problem = sameButL1(disasterDefs[i], disasterDefs[j]);
+    if (problem) problems.push(problem);
+  }
+}
+
+// 声称的层级与实际的维度数必须对得上
+for (const def of disasterDefs) {
+  const need = MIN_DIMS[def.level] ?? 0;
+  const used = usedDimensions(def);
+  if (used.length < need) {
+    problems.push(
+      `「${def.name}」声称 ${def.level}（至少要用到 ${need} 个维度），实际只用到 ${used.length} 个：` +
+        `${used.join('/')} —— 声称的层级与场地不符`
+    );
+  }
+}
+
+// ——————————————————————————————————————————————————————————————
+// ⑥ 内容量盘点（给 §10B.6 的产能口径对账）
 // ——————————————————————————————————————————————————————————————
 
 const TARGETS = [
