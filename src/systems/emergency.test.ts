@@ -10,8 +10,8 @@
  *     不是"全屋有没有"。
  */
 import { describe, expect, it } from 'vitest';
-import { EMERGENCY_DEFS, EMERGENCY_NONE_WEIGHT, findEmergency } from '../data/emergencies';
-import { CATEGORY_LABELS, getItemDef } from '../data/items';
+import { EMERGENCY_CHANCE, EMERGENCY_DEFS, findEmergency } from '../data/emergencies';
+import { CATEGORY_LABELS, ITEM_DEFS, getItemDef } from '../data/items';
 import { createCursor } from '../model/rng';
 import { countOnHandy, makeStack, setSlotStack } from '../model/shelf';
 import type { RunState } from '../model/types';
@@ -54,16 +54,24 @@ describe('突发事件的抽签：种子化、低频、可复现', () => {
   });
 
   it('★ 低频：约三成日子有事 —— 它要像意外，不能像日程', () => {
-    // 表里 7 条事件权重各 1，虚拟的"今天没事"权重 16.3 → 7 / 23.3 ≈ 30%。
-    // 这里用大样本把这条口径钉住（抽 2000 次），免得将来有人顺手把权重改大
+    /*
+     * ★ 这里从"权重"改成"概率"，是 M3 的一次真修正（不只是测试写法变了）。
+     *
+     * 原来这条断言算的是 `事件数 / (事件数 + EMERGENCY_NONE_WEIGHT)` ——
+     * 那个式子**把事件数写进了期望值**，所以它永远自洽：表里加多少条事件，
+     * 它都会说"符合预期"。M3 把突发事件从 7 条加到 28 条，有事概率
+     * 从 30% 涨到 63%，**而这条测试当时是绿的**（它算出的期望也一起涨到了 63%）。
+     *
+     * 真正抓住它的是下面那句硬上限 `< 0.45`。所以现在把期望也钉在
+     * **设计意图**（`EMERGENCY_CHANCE = 30%`）上，加了内容就不会跟着漂。
+     */
     const cursor = createCursor(12345);
     let hits = 0;
     const draws = 2000;
     for (let i = 0; i < draws; i++) if (rollEmergency(cursor)) hits += 1;
     const rate = hits / draws;
-    const expected = EMERGENCY_DEFS.length / (EMERGENCY_DEFS.length + EMERGENCY_NONE_WEIGHT);
-    expect(rate).toBeGreaterThan(expected - 0.05);
-    expect(rate).toBeLessThan(expected + 0.05);
+    expect(rate).toBeGreaterThan(EMERGENCY_CHANCE - 0.05);
+    expect(rate).toBeLessThan(EMERGENCY_CHANCE + 0.05);
     // 而且它必须明显低于夜间事件的 60% —— 否则"突发事件"就不再是突发
     expect(rate).toBeLessThan(0.45);
   });
@@ -110,6 +118,58 @@ describe('突发事件的判定：顺手位上有就化解，没有就按缺货�
     run.boxesToUnpack = [{ id: 'b1', defId: 'box_medical', items: [makeStack('bandage', 5, null)] }];
     const outcome = settleEmergency(run, cutHand as NonNullable<typeof cutHand>);
     expect(outcome.resolved).toBe(false);
+  });
+
+  it('★★ 表里的**每一个品类**都有一条能化解它的路（M3 补内容后新增的守卫）', () => {
+    /*
+     * ## 为什么必须逐品类过一遍
+     *
+     * M3 把突发事件从 7 条（只要医疗与燃料）扩到 28 条（**七个品类各 3 条**），
+     * 而这件事把一个此前看不出来的空洞暴露了出来：
+     *
+     * 探针里那条"标了顺手位 → 突发事件化解得掉"的用例当时是**假绿** ——
+     * 它靠的不是"顺手位这条机制"，而是"突发事件恰好只要医疗与燃料"这个
+     * **内容侧的事实**（而探针的货恰好在那两类上铺得够）。品类一扩，
+     * 那条断言立刻用一句"体力没差"指向了错误的方向。
+     *
+     * 所以这里不再靠"那批货恰好覆盖得到"，而是**对每一个出现的品类**
+     * 都构造一次"顺手位上有它 / 没有它"的判定。表里将来加第 8 个品类时，
+     * 这条会自动覆盖到它 —— 只要那个品类真的有物资能放在顺手位上。
+     *
+     * 判据同时也是内容纪律的机器版：**一条事件要的品类，
+     * 必须是玩家真的能囤到的东西**（否则它不是检查题，是随机扣血）。
+     */
+    const categories = [...new Set(EMERGENCY_DEFS.map((d) => d.category))];
+    // 七个品类都要有事件（内容量口径：§10B.6 说突发事件按"压力轴"分批，
+    // 而品类覆盖是它最省事的验收办法）
+    expect(categories.length).toBeGreaterThanOrEqual(7);
+
+    const uncovered: string[] = [];
+    for (const category of categories) {
+      // 找一个该品类的物资，用它当"放在顺手位上的急救品"
+      const item = ITEM_DEFS.find((d) => d.category === category);
+      if (!item) {
+        uncovered.push(`品类 ${category} 没有任何物资能囤 —— 要它的突发事件永远化解不掉`);
+        continue;
+      }
+      const defs = EMERGENCY_DEFS.filter((d) => d.category === category);
+      // 该品类里要得最多的那一条：能化解它，就说明这个品类真的够用
+      const hardest = defs.reduce((a, b) => (b.needOnHandy > a.needOnHandy ? b : a));
+
+      // ① 顺手位上有足够的件数 → 化解
+      const withHandy = bareRun();
+      put(withHandy, 'shelf_a', item.id, hardest.needOnHandy);
+      withHandy.shelves = withHandy.shelves.map((s) => (s.id === 'shelf_a' ? { ...s, handyRank: 1 } : s));
+      const ok = settleEmergency(withHandy, hardest);
+      if (!ok.resolved) uncovered.push(`品类 ${category}（${hardest.id} 要 ${hardest.needOnHandy} 件）放够了却没化解`);
+
+      // ② 同样的货放在**不是顺手位**的架子上 → 受创
+      const withoutHandy = bareRun();
+      put(withoutHandy, 'shelf_b', item.id, hardest.needOnHandy);
+      const bad = settleEmergency(withoutHandy, hardest);
+      if (bad.resolved) uncovered.push(`品类 ${category}（${hardest.id}）没放顺手位却化解了`);
+    }
+    expect(uncovered).toEqual([]);
   });
 
   it('差一件也不算化解（needOnHandy 是下限，不是"有就行"）', () => {

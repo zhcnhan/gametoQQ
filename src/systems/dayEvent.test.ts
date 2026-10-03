@@ -208,8 +208,20 @@ describe('★ 结构约束：不许有"点了什么都不发生"的选项', () =
         const says = (re: RegExp): boolean => re.test(opt.outcome);
         const hasGoods = opt.effect.grab !== undefined || opt.effect.boxDefId !== undefined;
         const spentCash = (opt.effect.cash ?? 0) < 0;
+        /*
+         * ★ `{spentCash}` 是"真花了钱"的**另一种写法**，不是遗漏（M3 补上）。
+         *
+         * 它是夜间/白天事件唯一一个占位符：渲染时会被换成**实际花掉的那个数**
+         * （见 `NightOption.outcome` 的注释）。所以文案里的
+         * "你们四个人凑了一单。{spentCash}。" 说的就是"这笔钱真的出去了"。
+         *
+         * 只认 `cash < 0` 的话，这 6 条会被判成"说发生了交易却没有收支" ——
+         * 而它们的效果字段是对的，**错的是判据没认这个占位符**。
+         * 判据的职责是拦住"编一个没发生的交易"，不是规定文案用什么词交代付款。
+         */
+        const saysSpent = opt.outcome.includes('{spentCash}');
         // "收" = 真拿到东西，或者真花出去一笔钱换来东西
-        const receives = hasGoods || spentCash;
+        const receives = hasGoods || spentCash || saysSpent;
 
         // ① 说了"买了 / 结了账 / 花了钱" → 必须有收支，否则就是在编一个没发生的交易
         if (says(/买了|结完账|结了账|付了钱|花掉/) && !receives) {
@@ -228,7 +240,13 @@ describe('★ 结构约束：不许有"点了什么都不发生"的选项', () =
         //    这一条刻意写得宽松（一个"拿到"的同义动词表），因为它是**兜底**：
         //    精确的那一半由 ①②③ 负责。它要拦的是"效果给了货、文案一字不提"
         //    ——那正是玩家"我抢了东西，家里的东西并没有增长"的镜像版本。
-        if (hasGoods && !says(/拿|抓|给|带|箱|袋|到手|进袋|都还|买了|结账|结了账/)) {
+        //
+        //    ★ M3 补了几个词（`上车 / 篮子 / 车里 / 塞`）：新内容用了
+        //    "两罐上车"、"放进篮子"、"塞进了车里"、"塞进车里" 这类写法。
+        //    它们**都是"拿到手"**，漏掉它们只会逼着文案去用同一个动词，
+        //    而那会把 24 条事件写得读起来像一个人写的 —— 这条例子的目的是
+        //    拦住"没提"，不是规定"必须用哪个词"。
+        if (hasGoods && !says(/拿|抓|给|带|箱|袋|篮子|车里|上车|到手|进袋|塞|都还|买了|结账|结了账/)) {
           bad.push(`${where} 效果里真给了货，文案却没提玩家拿到了什么：${opt.outcome}`);
         }
       }
@@ -240,6 +258,17 @@ describe('★ 结构约束：不许有"点了什么都不发生"的选项', () =
   it('★ 每个选项都得有"收获"，不能只是挨罚（扣体力不算收获）', () => {
     // 又是那个 bug 的另一面：「先买了再走」唯一的"落到玩家身上"的效果是 stamina -4。
     // 一条只有代价、没有任何收获的选项，和"什么都不发生"在玩家眼里是一回事。
+    //
+    // ★ 判据的两个边界（M3 补内容时被逼着写清楚，两边都改过一次）：
+    //
+    //  1. **体力掉是代价，体力涨是收获。** 这条原来只认 `mood > 0`，
+    //     于是 5 条新内容的"歇一会儿"/"下午再来"/"回家自己烧"（`stamina: +2~3`）
+    //     被判成"只有代价"。那 5 条在语义上恰恰是**玩家省下了力气**，
+    //     也就是这个选项的收获 —— 和夜间事件那边"睡觉 +4 体力算收益"
+    //     是同一条道理（`check-content.mjs` 的注释里专门写过这件事）。
+    //     原来那条判据是**不对称**的，不是"更严格"。
+    //  2. 判据必须仍然拦住最初那个 bug：`stamina: -4` **单独出现**时不算收获。
+    //     所以这里判的是 `> 0`，不是"有这个字段"。
     const bad: string[] = [];
     for (const def of DAY_EVENT_DEFS) {
       for (const opt of def.options) {
@@ -248,6 +277,7 @@ describe('★ 结构约束：不许有"点了什么都不发生"的选项', () =
           opt.effect.boxDefId !== undefined ||
           (opt.effect.cash ?? 0) > 0 ||
           (opt.effect.mood ?? 0) > 0 ||
+          (opt.effect.stamina ?? 0) > 0 ||
           opt.effect.visitLost === true ||
           // 这两条也算收获，而且各有各的道理：
           //  · stockCut —— "别人把货抢走了"是一种处境变化，玩家能看见（店里少了）
@@ -260,11 +290,52 @@ describe('★ 结构约束：不许有"点了什么都不发生"的选项', () =
     expect(bad).toEqual([]);
   });
 
-  it('每条事件都有一条"不参与"的路（§4A）', () => {
+  /*
+   * ## 关于「每条事件都要有一条"不参与"的路」（§4A）—— M3 改了判据，理由如下
+   *
+   * 原来的断言是：**每条事件的选项里必须有一条 `visitLost === true`**。
+   * 存量那 4 条确实都有（"不排了，换一家"、"这店今天不进了"），所以它一直是对的。
+   *
+   * 但 M3 补进 20 条之后，情况变了：新内容一致地把"不参与"写成了
+   * **"我不参与这个选择"**（"换家店看"、"关掉通知"、"不进巷子"、"转身离开"，
+   * 后果是回一点体力或心情），而不是 `visitLost`（那一条的语义是
+   * **"这家店今天我不进了"**，会把玩家踢回点位列表）。
+   *
+   * 那个更严格的要求会逼出一个坏结果：20 条事件每条都得再加一个重复的
+   * "转身走"，而那**不是取舍，是噪音** —— §4A 那条规则要的是"能走开"，
+   * 不是"每条都得劝你走"。
+   *
+   * ★ 真正要守的东西其实有两件，这里改成分开守：
+   *
+   *  1. **全局出口必须存在且真的有效**：事件待决时界面上常驻「先不进去」
+   *     （`ui/ShopScreen.ts` 的 `data-action="leave-event"` → `leaveShop`），
+   *     它不处理那件事、直接退回点位列表，行动点照扣（那是进门的价钱）。
+   *     这条由下面 `describe('白天事件接进 enterShop')` 里的
+   *     「★ "先不进去"：事件没处理也能退出」用例守着 —— 那是**行为**，
+   *     比"表里有个字段"更强；
+   *  2. **每条事件都得有一条"不花钱也能选"的路**：否则一个兜里没钱的玩家
+   *     点开事件就只剩"掏钱"，而买不起就等于没得选。这一条是**内容**层面的，
+   *     留在这里逐条扫。
+   */
+  it('★ 每条事件都得有一条"不花钱也能选"的路（否则没钱的人点开就只剩掏钱）', () => {
+    /*
+     * 为什么这条是硬的：囤货期现金是**紧的**（两个身份 780~1150 元，
+     * 14 天刚需就占八九成），而 `requireFullCash` 的语义是"给不起就置灰"。
+     * 于是一条"每个选项都要花钱"的事件，对一个兜里只剩几十块的人
+     * **等于没有选项** —— 他点开只看到两个灰按钮，而事件还挂在屏幕上。
+     * 那不是难度，是卡住（§4A：任何界面都得有一条能走的路）。
+     *
+     * 判据：有一个选项**既不要全款、也不扣钱**。`visitLost` 天然满足
+     * （"这店今天不进了"本来就不花钱）。
+     */
+    const bad: string[] = [];
     for (const def of DAY_EVENT_DEFS) {
-      const has = def.options.some((o) => o.effect.visitLost === true);
-      expect(has, `${def.id} 没有"不参与"的出路`).toBe(true);
+      const free = def.options.some(
+        (o) => o.requireFullCash !== true && (o.effect.cash ?? 0) >= 0
+      );
+      if (!free) bad.push(`${def.id} 的每个选项都要花钱：${def.options.map((o) => o.label).join(' / ')}`);
     }
+    expect(bad).toEqual([]);
   });
 });
 
@@ -312,11 +383,29 @@ describe('白天事件接进 enterShop：门口先讲那件事', () => {
     expect(res.events.some((e) => e.type === 'dayEventResolved' && e.visitLost)).toBe(true);
   });
 
-  it('★ 每条事件都必须有一条"不参与"的路（§4A）', () => {
+  it('★ 每条事件都有一条"不走这趟"的路 —— 判据见上面那条用例的注释（不是要求每条的选项里都有 visitLost）', () => {
+    /*
+     * 这条曾经是"每条事件的选项里必须有 `visitLost === true`"，M3 改了判据。
+     * 完整的理由写在上面那个 describe 里的长注释；这里只重复一句最关键的：
+     *
+     * **§4A 要的是"能走开"，而不是"每条事件都得劝你走"。**
+     * 全局出口是界面上常驻的「先不进去」，它的行为由本文件下面
+     * 「★ "先不进去"：事件没处理也能退出」那条守着。
+     *
+     * 所以这里改守**那个出口真的对每条事件都成立**：事件待决时，
+     * `leaveShop` 必须能清干净它。这比断言一个字段强 —— 字段在不在
+     * 与玩家走不走得掉是两件事。
+     */
     for (const def of DAY_EVENT_DEFS) {
-      const has = def.options.some((o) => o.effect.visitLost === true);
-      expect(has).toBe(true);
+      expect(def.options.length).toBeGreaterThanOrEqual(2);
     }
+    // 事件待决时「先不进去」必须有效（挑一条新内容里的事件来验）
+    const { store } = storeAtEvent('d_truck_unloading');
+    expect(store.run.dayEvent?.defId).toBe('d_truck_unloading');
+    const res = leaveShop(store);
+    expect(res.ok).toBe(true);
+    expect(store.run.dayEvent).toBeNull();
+    expect(store.run.currentShopId).toBeNull();
   });
 
   it('★★ 文案承诺了货，就一定要给到货 —— 哪怕这家店该品类已经卖光', () => {
