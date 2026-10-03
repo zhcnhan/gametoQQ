@@ -9,7 +9,7 @@
  * severity 取 0..1 的连续值：M1 阶段 C 的每日消耗加成、阶段 M2 的窗外天气渲染
  * 都直接乘这个数，不用再做一次映射。
  */
-import type { DayForecast, DisasterProfile } from '../model/types';
+import type { CategoryId, DayForecast, DisasterProfile } from '../model/types';
 
 export const STOCKPILE_DAYS = 7; // 囤货期天数（§8：7 天）
 /**
@@ -631,7 +631,13 @@ export function outdoorTemp(day: number, disasterId: string = M1_DISASTER_ID): n
 // ——————————————————————————————————————————————————————————————
 
 /**
- * 把灾难的 L2 维度读成一组"带默认值的乘数"。
+ * 把灾难的影响维度读成一组"带默认值的乘数"。
+ *
+ * 原来是"L2 那 8 维"，M3 的 5e 把 **L3 的四维（13~16）**也收了进来 ——
+ * 收进来的理由是这一层存在的第二个理由（见下 ③）：**可读点唯一**。
+ * L3 各维的取值口径不同（一个是按品类的映射、一个是空间乘数、
+ * 一个是每日扣血、一个是评分权重），如果各自散在读点处做默认值与夹取，
+ * "不写 = 中性"这条约定就会有四份实现、四份可能写错的地方。
  *
  * ## 为什么要有这层（而不是各处直接读 `disaster.carryFactor ?? 1`）
  *
@@ -667,6 +673,18 @@ export interface DisasterModifiers {
   eventPoolWeights: Readonly<Record<string, number>>;
   /** 有人来敲门的概率乘数 */
   npcVisitFactor: number;
+
+  // ———————— §10B.3.1 的 L3 影响维度（第 13~16 维） ————————
+  /** 每件东西在这一场更管用 / 更不管用（按品类；只列想改的那些，其余是 1） */
+  categoryEfficiency: Readonly<Partial<Record<CategoryId, number>>>;
+  /** 可用空间的乘数（0.8 = 低处那一成格子用不了）。读点：`systems/setup.ts` 铺货架时 */
+  capacityFactor: number;
+  /** 这一场用不了的家具（按 `Shelf.id`）。与 `capacityFactor` 是两个粒度 */
+  unusableShelfIds: readonly string[];
+  /** 硬扛的代价：每天不看玩家做了什么就扣这么多健康（0~3）。读点：`systems/survival.ts` 的日结算 */
+  healthRiskPerDay: number;
+  /** 评分口径：这一局看什么（键是 `model/score.ts` 的分项名，默认权重 1） */
+  scoreWeights: Readonly<Record<string, number>>;
 }
 
 const IDENTITY_MODIFIERS: DisasterModifiers = {
@@ -678,7 +696,12 @@ const IDENTITY_MODIFIERS: DisasterModifiers = {
   closedShopIds: [],
   priceSurcharge: 0,
   eventPoolWeights: {},
-  npcVisitFactor: 1
+  npcVisitFactor: 1,
+  categoryEfficiency: {},
+  capacityFactor: 1,
+  unusableShelfIds: [],
+  healthRiskPerDay: 0,
+  scoreWeights: {}
 };
 
 /** 夹取一个乘数；认不出就退回默认值。`lo`/`hi` 是设计区间，防手改档与生成离群值 */
@@ -697,11 +720,35 @@ export function disasterModifiersOf(disasterId: string | undefined): DisasterMod
   const def = disasterId ? DISASTER_BY_ID.get(disasterId) : undefined;
   if (!def) return IDENTITY_MODIFIERS;
   const closed = Array.isArray(def.closedShopIds) ? def.closedShopIds.filter((s) => typeof s === 'string') : [];
+  const unusable = Array.isArray(def.unusableShelfIds)
+    ? def.unusableShelfIds.filter((s) => typeof s === 'string')
+    : [];
   const weights: Record<string, number> = {};
   if (def.eventPoolWeights && typeof def.eventPoolWeights === 'object') {
     for (const [tag, w] of Object.entries(def.eventPoolWeights)) {
       const v = factor(w, 1, 0, 10);
       if (v !== 1) weights[tag] = v;
+    }
+  }
+  /*
+   * 品类效率（维度 13）：逐品类夹到 [0.5, 1.5]，且**只留下真正改了的那些**。
+   *
+   * "只留非 1 的"与 `eventPoolWeights` 同一个做法：让"这一场动了哪几个品类"
+   * 一眼可数（维度签名读的就是这份结果）。
+   */
+  const efficiency: Partial<Record<CategoryId, number>> = {};
+  if (def.categoryEfficiency && typeof def.categoryEfficiency === 'object') {
+    for (const [category, value] of Object.entries(def.categoryEfficiency)) {
+      const v = factor(value, 1, 0.5, 1.5);
+      if (v !== 1) efficiency[category as CategoryId] = v;
+    }
+  }
+  /** 评分权重：只留非 1 的，理由同品类效率 */
+  const scoreWeights: Record<string, number> = {};
+  if (def.scoreWeights && typeof def.scoreWeights === 'object') {
+    for (const [key, value] of Object.entries(def.scoreWeights)) {
+      const v = factor(value, 1, 0, 10);
+      if (v !== 1) scoreWeights[key] = v;
     }
   }
   return {
@@ -714,6 +761,23 @@ export function disasterModifiersOf(disasterId: string | undefined): DisasterMod
     closedShopIds: closed,
     priceSurcharge: factor(def.priceSurcharge, 0, 0, 0.8),
     eventPoolWeights: weights,
-    npcVisitFactor: factor(def.npcVisitFactor, 1, 0, 1.5)
+    npcVisitFactor: factor(def.npcVisitFactor, 1, 0, 1.5),
+    // ———— L3（13~16） ————
+    categoryEfficiency: efficiency,
+    /*
+     * 空间只取"更小"的方向（≤ 1）：一个 > 1 的空间乘数等于"这一场屋子变大了"，
+     * 而那是**奖励** —— 灾难不该发奖励。要表达"这一场屋子更大"请用 tier 与身份，
+     * 不要用灾难字段（§10B.0 的主轴是"更大的空间才是奖励"，
+     * 但那个奖励来自元进程，不是来自灾难表）。
+     */
+    capacityFactor: factor(def.capacityFactor, 1, 0.5, 1),
+    unusableShelfIds: unusable,
+    /*
+     * 健康风险上限写 **3**：设计上它是"硬扛的代价"，不是"这一局结束得有多快"。
+     * 3 分 × 14 天 = 42 点健康，那已经是"整局都在漏血"的强度了；
+     * 再高就不是难度，而是替玩家把这一局判掉（§12.3：代价都可逆、都能爬回来）。
+     */
+    healthRiskPerDay: factor(def.healthRiskPerDay, 0, 0, 3),
+    scoreWeights
   };
 }

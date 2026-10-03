@@ -7,7 +7,7 @@
  * 身份 / 灾难 / 日历 / 每日库存都不在这里，它们在 data/ 与 systems/phases.ts。
  */
 import { BOX_DEFS, type BoxDef } from '../data/boxes';
-import { FIRST_STOCKPILE_DAY, M1_DISASTER_ID } from '../data/disaster';
+import { FIRST_STOCKPILE_DAY, M1_DISASTER_ID, disasterModifiersOf } from '../data/disaster';
 import { getItemDef } from '../data/items';
 import { EMPTY_SURVIVAL_SNAPSHOT, NEVER_TRADED } from '../data/survival';
 import { createCursor, nextFloat, nextInt, pick, randomSeed, shuffle, type RngCursor } from '../model/rng';
@@ -30,12 +30,44 @@ export const SHELF_IDS = ['shelf_a', 'shelf_b', 'shelf_c'] as const;
  *
  * DEFERRED(D-02): 第三块的 kind='fridge' 目前**只影响它显示成"冰箱 C"**，
  *   没有任何玩法效果（§8 说的"腐坏减速"要等阶段 C，且要等 M3 的灾难才真正吃紧）。
+ *
+ * ## ★ §10B.3.1 的维度 14「空间限制」落在这里
+ *
+ * 两个粒度，各有各的表达：
+ *
+ *  · `capacityFactor`（整屋小一圈）→ **每块的底下一排格子不可用**。
+ *    选"砍排"而不是"砍列"是为了对得上这一维的叙事：进水、结冰、塌方
+ *    都是**从下往上**吃掉空间，而左右对称地砍列读起来像"屋子变窄了"，
+ *    那与"低处完了"是两件事；
+ *  · `unusableShelfIds`（这一块没了）→ 整块移出列表。
+ *
+ * ★ 两者都是**乘在盘面上**，不是乘在数值上 —— 这正是 §10B.0 的主轴
+ * （"更大的空间才是奖励"的反面：这一场你**没有**那么大的空间），
+ * 也是"整理这件事本身变难"最直接的兑现方式。
+ *
+ * ## 两处必须守住的边界
+ *
+ *  1. **至少留一格**、而且**至少留一块家具**：§4A 承诺任何界面都得有一条能走的路，
+ *     而"一格都没有"不是难度，是卡死。所以两道 `Math.max`；
+ *  2. **`handyRank` 不会指向被拆掉的那块**：顺手位是开局之后玩家自己标的
+ *     （`toggleHandy`），而这里只影响"开局时有哪些家具" ——
+ *     被拆掉的块从列表里消失，它上面本来就没有标记。
  */
-export function createStartingShelves(roomId: string = ROOM_ID): Shelf[] {
+export function createStartingShelves(
+  roomId: string = ROOM_ID,
+  disasterId: string = M1_DISASTER_ID
+): Shelf[] {
+  const mods = disasterModifiersOf(disasterId);
   const kinds: Shelf['kind'][] = ['shelf', 'shelf', 'fridge'];
-  return SHELF_IDS.slice(0, STARTING_SHELF_COUNT).map((id, i) =>
-    createShelf(id, roomId, kinds[i] ?? 'shelf', SHELF_W, SHELF_H, null)
-  );
+  return SHELF_IDS.slice(0, STARTING_SHELF_COUNT)
+    // 整块用不了的先摘掉（至少留一块）
+    .filter((id) => !mods.unusableShelfIds.includes(id))
+    .slice(0, Math.max(1, STARTING_SHELF_COUNT - mods.unusableShelfIds.length))
+    .map((id, i) => {
+      // 整屋小一圈 → 每块少掉底下的几排（至少留一排）
+      const usableH = Math.max(1, Math.round(SHELF_H * mods.capacityFactor));
+      return createShelf(id, roomId, kinds[i] ?? 'shelf', SHELF_W, usableH, null);
+    });
 }
 
 export function boxDefAt(index: number): BoxDef {
@@ -131,9 +163,13 @@ export function createStartingRun(seed: number = randomSeed()): RunState {
     identityId: '',
     // §10B.3：熟练度等级在 `chooseIdentity` 那一刻才定；开局页上还没有身份，所以是 1
     identityLevel: 1,
+    // ★ 显式传 `disasterId`（下面那一行的同一场灾难）。
+    //   不传的话会走默认值 `M1_DISASTER_ID`，而"选的那一场"与"铺房间用的那一场"
+    //   一旦分家，空间限制（维度 14）就会**静默套错灾难** ——
+    //   这行参数是给将来"开局页选灾难"留的接线点：那时两边都要用选中的那个 id。
     disasterId: M1_DISASTER_ID,
     cash: 0,
-    shelves: createStartingShelves(),
+    shelves: createStartingShelves(ROOM_ID, M1_DISASTER_ID),
     zones: [],
     // 重生前家里就有的三箱货（§4.1 第0段"重生开局"）—— 不让玩家对着空货架开场
     boxesToUnpack: createStartingBoxes(cursor, STARTING_BOX_COUNT, FIRST_STOCKPILE_DAY),

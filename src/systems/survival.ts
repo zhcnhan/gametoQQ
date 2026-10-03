@@ -327,6 +327,29 @@ export function settleSurvivalDay(run: RunState, cursor?: RngCursor): SurvivalRe
   run.survival.shortagePieces += realShortageUnits;
   run.survival.unreachablePieces += unreachableUnits;
 
+  /*
+   * ④.5 **健康风险**（维度 15，§10B.3.1 的 L3）：硬扛的代价。
+   *
+   * ## 它与"缺货扣健康"（④）的区别，正是这一维存在的理由
+   *
+   * ④ 是**玩家做错了什么**的代价（没囤够）；这一维**不看玩家做了什么** ——
+   * 屋子在漏、空气有毒、水里带菌，只要住在这儿就在掉血。
+   * 所以它必须小（设计区间 0~3）：它制造的是"这一场拖不起"的压力，
+   * 而不是替玩家把这一局结束掉。一个 6 分的日风险会在 14 天里扣掉 84 点健康 ——
+   * 那不是难度，那是换一种方式告诉玩家"别玩了"。
+   *
+   * ## 为什么放在④之后、⑤（硬撑判定）之前
+   *
+   * ⑤ 用的是"④ 之后、⑥ 之前"的四维快照。健康风险是**今天真实发生的事**，
+   * 所以它该进那个快照：一个原本勉强不算硬撑的人，因为屋里的毒气
+   * 今天就掉进了"快垮了"那一档 —— 这是对的，而且是这一维最有戏的地方。
+   *
+   * 区间与坏值防御都在 `disasterModifiersOf`（唯一读点），这里只用。
+   */
+  if (mods.healthRiskPerDay > 0) {
+    deltas.health -= mods.healthRiskPerDay;
+  }
+
   // ⑤ 硬撑：判定用的是"④ 之后、⑥ 之前"的状态 —— 药能把你救回来，但今天确实难受过
   const shadow = {
     health: clamp(run.stats.health + deltas.health, 0, 100),

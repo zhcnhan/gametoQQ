@@ -176,6 +176,7 @@ export class EndingScreen implements Screen {
 
           <section class="block">
             <h2 class="block-title">整理体检</h2>
+            ${weightNoteHtml(disaster, score.weighted)}
             <div class="score-rows">
               ${this.scoreRow('归位率', placement, '你自己给胶带写的清单，东西有没有照放。它决定每天找东西要花多少体力')}
               ${this.scoreRow('临期优先', fefo, '同一块货架有没有按到期日排好，快到期的排在前面')}
@@ -479,6 +480,27 @@ function itemNameOf(itemId: string): string {
 
 function npcNameOf(npcId: string): string {
   return NPC_DEFS.find((n) => n.id === npcId)?.name ?? npcId;
+}
+
+/**
+ * 维度 16「分数口径」那一行（§10B.3.1）。
+ *
+ * ★ **只在权重真的不是默认值时**才渲染。一份"总评 67%"对玩家没有信息量，
+ * 而一行废话会把下面三行真数字挤得没那么显眼 —— 这个项目里"加一句不如不加"
+ * 的例子已经有过（结算页的"本局没有新点亮的"那段注释）。
+ *
+ * 说清"看重哪一项"而不是只给一个总分：总分是个没有刻度的数（多少算好？），
+ * 而"这一场更看应急可达率"是玩家能立刻拿去改变打法的信息。
+ */
+function weightNoteHtml(disaster: DisasterProfile, weighted: number): string {
+  const raw = disaster.scoreWeights;
+  if (!raw) return '';
+  const parts: string[] = [];
+  if (typeof raw['emergency'] === 'number' && raw['emergency'] !== 1) parts.push('急用的东西够不够得到');
+  if (typeof raw['fefo'] === 'number' && raw['fefo'] !== 1) parts.push('快到期的有没有排在前面');
+  if (typeof raw['placement'] === 'number' && raw['placement'] !== 1) parts.push('东西有没有照清单放');
+  if (parts.length === 0) return '';
+  return `<p class="block-note warm">这一场更看重${escapeHtml(parts.join('、'))}。总评 ${toPercent(weighted)}%。</p>`;
 }
 
 function escapeHtml(text: string): string {

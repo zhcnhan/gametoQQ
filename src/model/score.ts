@@ -34,6 +34,68 @@ export interface OrganizeScore {
   stacks: number;
   /** 已"整整齐齐"的货架 id（FEFO 达标 + 分区接收全部物资） */
   tidyShelfIds: string[];
+  /**
+   * 加权总分 0..1（维度 16「分数口径」）。
+   *
+   * ## 它与上面三个分量的关系，是说清楚"这一场看什么"
+   *
+   * 三个分量本身永远是那三个（归位率 / 临期优先 / 应急可达），
+   * 而**灾难可以改它们的权重** —— 洪水那一场里"急用的东西够不够得到"
+   * 比"摆得多整齐"重要得多。
+   *
+   * ★ 这个数**只用于结算页展示与分级**。它**不参与**每日结算里的任何计算
+   * （那边读的是**单个分量**：`workCostOf(placement, fefo, …)`、
+   * `moodFromPlacement(placement)`）—— 这条边界是刻意的：如果每日结算改读加权总分，
+   * 那么"这一场权重怎么配"就会顺手改掉每天的体力开销与心情，
+   * 而那属于**难度**，不属于"评分口径"。两个概念混在一起，
+   * 探针（好档活 / 乱档倒）的结论就会随权重漂移。
+   */
+  weighted: number;
+}
+
+/**
+ * 三个分量的**默认权重**（都为 1 = 不加权）。
+ *
+ * 维度 16 的取值就是在这个基础上覆盖：`scoreWeights: { emergency: 2 }`
+ * 表示"这一场里应急可达率算双份"。
+ */
+export const DEFAULT_SCORE_WEIGHTS = { placement: 1, fefo: 1, emergency: 1 } as const;
+
+/**
+ * 把三个分量按权重合起来（维度 16）。
+ *
+ * 分母用**权重之和**，所以结果永远落在 0..1 —— 加权重不该让分数爆表，
+ * 只该让"这一场更看哪一项"。
+ *
+ * ★ **一个越界的权重改变的是"分配"，不是"总分"**：`{ emergency: 3 }`
+ * 意味着"另外两项各占四分之一、应急占四分之三"（分母是 1+1+3=5），
+ * 而不是"总分变成 5 倍"。这条例子在测试里是显式断言过的 ——
+ * 因为另一种理解（乘上去、再除以 3）会让任何一次加权都顺手把总分抬起来，
+ * 而那等于偷偷改难度。
+ */
+export function weightedScore(
+  parts: { placement: number; fefo: number; emergency: number },
+  weights: Partial<Record<keyof typeof DEFAULT_SCORE_WEIGHTS, number>> = {}
+): number {
+  /*
+   * ★ 先**只挑出有限数**，再夹取 —— 顺序不能反。
+   * `Math.min(10, NaN)` 是 NaN，而 `NaN > 0` 为假 → 整条链会**静默返回 0 分**。
+   * 那是"一个坏值改变了结论"，与 D-20 同一种形状。
+   */
+  const pick = (key: keyof typeof DEFAULT_SCORE_WEIGHTS): number => {
+    const value = weights[key];
+    if (typeof value !== 'number' || !Number.isFinite(value)) return DEFAULT_SCORE_WEIGHTS[key];
+    return Math.max(0, Math.min(10, value));
+  };
+  const w = {
+    placement: pick('placement'),
+    fefo: pick('fefo'),
+    emergency: pick('emergency')
+  };
+  const total = w.placement + w.fefo + w.emergency;
+  if (!(total > 0)) return 0; // 全零权重是坏数据：退回 0 而不是 NaN（NaN 会一路印到结算页）
+  const sum = parts.placement * w.placement + parts.fefo * w.fefo + parts.emergency * w.emergency;
+  return Math.max(0, Math.min(1, sum / total));
 }
 
 /**
@@ -99,14 +161,51 @@ export function computeOrganizeScore(
   boxes: readonly UnpackBox[],
   disaster: DisasterProfile
 ): OrganizeScore {
+  // 归位率的分母包含还没拆的纸箱 —— 见 model/shelf.ts 的 placementRate
+  const placement = placementRate(shelves, zones, boxes);
+  const fefo = fefoRate(shelves);
+  const emergency = emergencyRate(shelves, boxes, disaster);
   return {
-    // 归位率的分母包含还没拆的纸箱 —— 见 model/shelf.ts 的 placementRate
-    placement: placementRate(shelves, zones, boxes),
-    fefo: fefoRate(shelves),
-    emergency: emergencyRate(shelves, boxes, disaster),
+    placement,
+    fefo,
+    emergency,
     stacks: shelves.reduce((sum, s) => sum + countStacks(s), 0),
-    tidyShelfIds: shelves.filter((s) => isShelfTidy(s, zones)).map((s) => s.id)
+    tidyShelfIds: shelves.filter((s) => isShelfTidy(s, zones)).map((s) => s.id),
+    /*
+     * 维度 16：权重直接读灾难定义。
+     *
+     * ★ 这里**刻意不经过 `disasterModifiersOf`**（与其余维度不同）：
+     * 那一层的职责是"夹取乘数 / 挡坏值"，而权重是**评分口径**，
+     * 它的默认值（1）与合法区间（0~10）已经在 `disasterModifiersOf` 里夹过了 ——
+     * `model/` 不许 import `data/disaster.ts` 的**函数**会成环吗？不会（那是单向的），
+     * 但 `model/` 只依赖 `DisasterProfile` 这个**类型**是本层的规矩。
+     *
+     * 所以：坏值（NaN / 负数）在这里**再也挡一次**，宁可写两行也不破层。
+     * 挡的方向是"退回默认 1"—— 一个坏权重让某项失分，比抛异常好得多。
+     */
+    weighted: weightedScore({ placement, fefo, emergency }, cleanWeights(disaster.scoreWeights))
   };
+}
+
+/**
+ * 把灾难给的权重整成"界面一定接得住"的形态：认不出的键丢掉、坏值退回 1。
+ *
+ * ★ 这里有一个**差点漏掉的坑**（第一次写就是这么错的，被测试当场抓到）：
+ * 光判"是不是数字"不够 —— 还要判 `Number.isFinite`。一个 `NaN` 会让后面
+ * `total > 0` 为假（`NaN > 0` 是 false），于是整条链**静默返回 0 分**：
+ * 屏幕上会显示一个 0，而玩家完全不知道那是因为"这一场的某一维权重是 NaN"。
+ *
+ * 这和 D-20 是同一个形状：**一个坏值不该改变结论，只该被退回默认值。**
+ */
+function cleanWeights(raw: unknown): Partial<Record<keyof typeof DEFAULT_SCORE_WEIGHTS, number>> {
+  if (typeof raw !== 'object' || raw === null) return {};
+  const out: Partial<Record<keyof typeof DEFAULT_SCORE_WEIGHTS, number>> = {};
+  for (const key of Object.keys(DEFAULT_SCORE_WEIGHTS) as (keyof typeof DEFAULT_SCORE_WEIGHTS)[]) {
+    const value = (raw as Record<string, unknown>)[key];
+    if (typeof value !== 'number' || !Number.isFinite(value)) continue;
+    out[key] = Math.max(0, Math.min(10, value));
+  }
+  return out;
 }
 
 /** 0..1 → 0..100 整数，用于日报与结算界面 */

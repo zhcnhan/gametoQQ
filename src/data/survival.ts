@@ -236,10 +236,50 @@ export const SHORTAGE_MAX_STACK = 3;
 export const MOOD_DELTA_CAP = 12;
 
 /**
+ * 当天的**品类效率**（维度 13，§10B.3.1 的 L3）。
+ *
+ * ## 它与"刚需排序"（维度 3）为什么是两件事
+ *
+ *  · `priorityCategories` 回答"**什么最值钱**"——界面按它标注、顺手位按它建议；
+ *  · 本函数回答"**同样的投入能换回多少**"——实际消耗与恢复的效果。
+ *
+ * 一件东西可以既是这一场最刚需的、又打了折 —— 那正是"这一场不好过"的表达，
+ * 也是洪水那条"到处是水，但没有一口能直接喝"的来源。
+ *
+ * ## 为什么做成函数（而不是在消耗处直接读 `disaster.categoryEfficiency ?? 1`）
+ *
+ * 与 `disasterModifiersOf` 同一条理由：**默认值只写一次、坏值只挡一次**。
+ * 散着写 `?? 1` 的地方迟早会有一处写成 `?? 0`，而 0 会让整个品类凭空消失 ——
+ * 那是 D-20 的同一种形状（一个坏值污染整份存档）。
+ *
+ * 区间取 `[0.5, 1.5]`：设计上"这一场这个东西更不管用"最狠到打对折、
+ * "更管用"最多到一点五倍。更极端的值会让"够不够"完全由这一维决定，
+ * 而灾难不该单靠一个乘数就把一局说死。
+ */
+export function categoryEfficiencyOf(disaster: DisasterProfile, category: CategoryId): number {
+  const raw = disaster.categoryEfficiency?.[category];
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return 1;
+  return Math.max(0.5, Math.min(1.5, raw));
+}
+
+/**
  * 当天要消耗的品类与件数。
  * ⚠ 消耗按**件数**，不读 `ItemDef.nutrition` —— 已拍板（见策划案 §6.4 与 §8 的拍板标注）：
  * 燃料走件数消耗，其余品类一并沿用同一把尺子，避免"半袋大米"这种需要拆分的算法。
  * `nutrition` 里真正被读的只有 `health` 与 `comfort` 两个键，都用在**自动补给**上（见上）。
+ *
+ * ★ 维度 13（品类效率）落在这里。它**乘在件数上**，而且有两道闸：
+ *
+ *  1. **四舍五入**：效率本身就是"一件顶几件"的近似，保留小数会让
+ *     `consumeCategory`（按件取）对不上账；
+ *  2. **向下不破 1**：`Math.max(1, …)` —— 效率再高也不该让某个品类变成"不用吃"。
+ *     那一天会让"囤够了"这件事在一整个维度上失去意义（§4A 承诺任何界面
+ *     都得有一条能走的路，而"不用囤也能活"比"卡住"更糟：它让玩法消失）。
+ *
+ * 🚧 尚未接线：同维度的另一半是"恢复类"（`healOf` / `shelterOf`，即
+ * 这一场里药品与保暖**更管用**）。目前只在消耗侧生效 —— 因为恢复侧要动
+ * `autoSupply` 的取用逻辑，而那属于"同一维的两半分两次做"，留给 5d 之后。
+ * 这一行注释就是那笔账，别让它变成"已经做完了"的错觉。
  */
 export function dailyDrainOf(disaster: DisasterProfile): { category: CategoryId; need: number }[] {
   const merged = new Map<CategoryId, number>();
@@ -250,8 +290,12 @@ export function dailyDrainOf(disaster: DisasterProfile): { category: CategoryId;
     merged.set(category, (merged.get(category) ?? 0) + need);
   }
   return [...merged.entries()]
-    .filter(([, need]) => need > 0)
-    .map(([category, need]) => ({ category, need }));
+    .map(([category, need]) => ({
+      category,
+      // 维度 13：同一个品类在这一场更管用 / 更不管用
+      need: Math.max(1, Math.round(need * categoryEfficiencyOf(disaster, category)))
+    }))
+    .filter((line) => line.need > 0);
 }
 
 /**
