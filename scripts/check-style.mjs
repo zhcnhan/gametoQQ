@@ -23,7 +23,7 @@
  * **色相一个都没动**（§5A 的纸底 / 墨色 / 朱红是拍板的）。
  * 这个脚本钉住那个成果。
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -273,6 +273,125 @@ for (const cls of POINTER_EVENTS_NONE_REQUIRED) {
   }
 }
 
+// ———————— ⑦ `scripts/*.mjs` 必须是纯 JS（TS 语法会在运行期炸，而 tsc 看不见） ————————
+
+/**
+ * ## 它拦的是哪一类错（同一个坑我踩了四次）
+ *
+ * `scripts/*.mjs` 是**纯 JavaScript**，但它们常常 import `src/` 的 TS 模块
+ * 并靠 `vite-node` 跑。于是写 TS 语法（`as const`、`x: string[]`、
+ * `interface`、`new Set<string>()`）时：
+ *
+ *   · `tsc --noEmit` **看不见** —— `tsconfig.json` 的 `include` 只有
+ *     `["src", "vite.config.ts"]`，而 `scripts/` 不在里面（那是刻意的：
+ *     脚本用 `node:` 前缀的 import，纳进来就得引 `@types/node`，而本项目零依赖）；
+ *   · 于是它一路过掉 typecheck，直到**真的跑那个脚本**才以
+ *     `RollupError: Expected ',', got 'ident'` 的形式炸出来，
+ *     而报错只给一个字符偏移（`pos: 901`），要自己 `slice` 才看得到现场。
+ *
+ * 踩过的四次：`type ContentKind` 的 import、`as const`、`new Set<string>()`、
+ * 以及一次类型标注。**每一次都发生在"刚写完一个新脚本、还没跑过"的时候**，
+ * 而每一次的代价都是"跑一次、看报错、改、再跑"。所以它值得从
+ * "我记得别写"变成"机器记得"。
+ *
+ * ## 判据：先剥掉字符串与注释，再找 TS 专有语法
+ *
+ * ★ 顺序不能反。"先找关键词再除掉注释"会把**注释里举例的 TS 写法**
+ * 也判成违规（本文件上面那段就写着 `as const`），那就成了一条会自己咬人的守卫。
+ */
+function stripCommentsAndStrings(text, state = { inStr: null, inBlock: false }) {
+  let out = '';
+  let inLine = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    const next = text[i + 1];
+    if (inLine) {
+      out += ' ';
+      continue;
+    }
+    if (state.inBlock) {
+      if (c === '*' && next === '/') {
+        state.inBlock = false;
+        i++;
+      }
+      out += ' ';
+      continue;
+    }
+    if (state.inStr) {
+      if (c === '\\') {
+        out += '  ';
+        i++;
+      } else {
+        if (c === state.inStr) state.inStr = null;
+        out += ' ';
+      }
+      continue;
+    }
+    if (c === '/' && next === '/') {
+      inLine = true;
+      i++;
+      out += '  ';
+      continue;
+    }
+    if (c === '/' && next === '*') {
+      state.inBlock = true;
+      i++;
+      out += '  ';
+      continue;
+    }
+    if (c === "'" || c === '"' || c === '`') {
+      state.inStr = c;
+      out += ' ';
+      continue;
+    }
+    out += c;
+  }
+  return out;
+}
+
+/** `.mjs` 里不该出现的 TS 专有语法（写成"报什么错、怎么改"） */
+const TS_IN_MJS = [
+  [/\bas\s+const\b/g, '`as const` 是 TS 语法', '改成普通数组 / 对象；类型靠 JSDoc 或不写'],
+  [/\bsatisfies\s+[A-Z]/g, '`satisfies` 是 TS 语法', '同上'],
+  [/\binterface\s+[A-Z]/g, '`interface` 是 TS 语法', '改用注释说明形状'],
+  [
+    /\b(?:const|let|var)\s+[A-Za-z_$][\w$]*\s*:\s*[A-Za-z_$[]/g,
+    '变量声明带了类型标注',
+    '去掉 `: 类型`'
+  ],
+  [/\bnew\s+[A-Za-z_$][\w$]*\s*</g, '泛型实例化（`new Set<string>()`）', '去掉 `<...>`'],
+  [/\btype\s+[A-Za-z_$][\w$]*\s*=/g, '`type X = …` 是 TS 语法', '改用注释或 JSDoc']
+];
+
+const scriptsDir = join(here);
+const scriptNames = readdirSync(scriptsDir).filter((f) => f.endsWith('.mjs'));
+for (const name of scriptNames) {
+  const raw = readFileSync(join(scriptsDir, name), 'utf8');
+  const rawLines = raw.split('\n');
+  /*
+   * ★ 剥注释/字符串的**状态必须跨行传递**。逐行独立剥会让多行块注释的
+   * 中间行被当成代码 —— 我第一版就是那么写的，于是**这份守卫自己那份文档注释里**
+   * 的 `const a = [1, 2] as const;` 与 `let b: string[] = [];` 被报成了违规。
+   * 那种守卫比没有守卫更坏：它会逼着后来者去改一段根本没问题的注释。
+   */
+  const state = { inStr: null, inBlock: false };
+  for (let i = 0; i < rawLines.length; i++) {
+    const line = rawLines[i];
+    const body = stripCommentsAndStrings(line, state);
+    if (body.trim().length === 0) continue;
+    for (const [re, what, how] of TS_IN_MJS) {
+      re.lastIndex = 0;
+      if (!re.test(body)) continue;
+      note(
+        `scripts/${name}:${i + 1} 写了 TS 语法（${what}）：${line.trim()}\n` +
+          `      → ${how}。\n` +
+          `      ⚠ tsc 看不见 scripts/（不在 tsconfig 的 include 里），所以这行会一路过掉类型检查，\n` +
+          `        直到真的跑这个脚本时才以 RollupError 炸出来（报错只给字符偏移，很难查）。`
+      );
+    }
+  }
+}
+
 // ———————— 报账 ————————
 if (failures.length > 0) {
   console.error('[check-style] 样式层次出问题了：\n');
@@ -282,5 +401,6 @@ if (failures.length > 0) {
 }
 
 console.info(
-  `[check-style] 层次正常：内容粗边框 ${loud.size} 类（≤${LOUD_MAX}）、越界的实心墨影 0 类、色相未动。`
+  `[check-style] 层次正常：内容粗边框 ${loud.size} 类（≤${LOUD_MAX}）、越界的实心墨影 0 类、色相未动；` +
+    `${scriptNames.length} 个 .mjs 脚本都是纯 JS。`
 );
