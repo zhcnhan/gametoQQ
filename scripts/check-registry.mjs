@@ -166,6 +166,50 @@ for (const def of disasterDefs) {
 }
 
 // ——————————————————————————————————————————————————————————————
+// ⑤.5 ★ 事件池权重必须真的挂得上（否则维度 11 是装饰）
+// ——————————————————————————————————————————————————————————————
+
+/**
+ * 维度 11（`eventPoolWeights`）靠**标签**匹配事件（见 `systems/shop.ts` 的
+ * `rollDayEvent`）。所以一条权重如果指向一个**没有任何事件带着的标签**，
+ * 它算得再准也不会生效 —— 而"用了这一维"在维度签名里照样算数
+ * （签名看的是"有没有值"，不是"有没有用"）。
+ *
+ * 这正是"静默失效"的典型形状：内容看起来对（那一场确实写了 `water: 3`），
+ * 玩起来没变（水的权重一直是 1）。**签名查不出这一类，所以要有这一道。**
+ *
+ * ★ 这道守卫上线时抓到 10 处：全项目 17 条权重里，
+ * 只有 5 个标签（`people` / `panic` / `supply` / `limit` / `market` / `queue`）
+ * 真的存在于事件上，而 `cold` / `heat` / `water` / `dark` / `neighbor`
+ * **一条事件都没带** —— 于是"热浪多碰上热的事"这件事从来没有发生过。
+ */
+const eventTags = new Set();
+const eventIds = new Set();
+for (const kind of ['dayEvent', 'nightEvent']) {
+  for (const entry of entriesOfKind(kind)) {
+    eventIds.add(entry.id);
+    for (const tag of entry.tags) eventTags.add(tag);
+  }
+}
+console.log(`[check-registry] 事件标签（维度 11 只能挂在这些上）：${[...eventTags].sort().join(' / ') || '（一个都没有）'}`);
+
+const danglingWeights = [];
+for (const def of disasterDefs) {
+  for (const [tag, value] of Object.entries(def.eventPoolWeights ?? {})) {
+    if (value === 1) continue; // 中性值不算"用了这一维"
+    if (eventTags.has(tag) || eventIds.has(tag)) continue;
+    danglingWeights.push(`「${def.name}」的 eventPoolWeights.${tag} = ${value}`);
+  }
+}
+if (danglingWeights.length > 0) {
+  problems.push(
+    `有 ${danglingWeights.length} 条事件池权重挂在空处（写了但不会有任何事件因此变多）：\n      ` +
+      danglingWeights.join('\n      ') +
+      '\n    → 要么给相关事件补上那个 tag，要么把这一条改成已有标签之一'
+  );
+}
+
+// ——————————————————————————————————————————————————————————————
 // ⑥ 内容量盘点（给 §10B.6 的产能口径对账）
 // ——————————————————————————————————————————————————————————————
 

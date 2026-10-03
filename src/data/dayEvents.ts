@@ -261,7 +261,8 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
             mood: 2
           }
         }
-      ]
+      ],
+      tags: ["queue", "supply"]
     }
   },
   {
@@ -292,7 +293,8 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
             mood: 1
           }
         }
-      ]
+      ],
+      tags: ["panic", "supply"]
     }
   },
   {
@@ -335,7 +337,8 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
             mood: 2
           }
         }
-      ]
+      ],
+      tags: ["cold"]
     }
   },
   {
@@ -361,7 +364,8 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
             stamina: 2
           }
         }
-      ]
+      ],
+      tags: ["neighbor", "people"]
     }
   },
   {
@@ -390,7 +394,8 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
             stamina: -4
           }
         }
-      ]
+      ],
+      tags: ["market", "panic", "supply"]
     }
   },
   {
@@ -420,7 +425,8 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
             stamina: 3
           }
         }
-      ]
+      ],
+      tags: ["heat", "queue", "water"]
     }
   },
   {
@@ -464,7 +470,8 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
             mood: 2
           }
         }
-      ]
+      ],
+      tags: ["supply"]
     }
   },
   {
@@ -498,7 +505,8 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
           },
           requireFullCash: true
         }
-      ]
+      ],
+      tags: ["queue", "supply"]
     }
   },
   {
@@ -530,7 +538,8 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
             stamina: 2
           }
         }
-      ]
+      ],
+      tags: ["supply"]
     }
   },
   {
@@ -558,7 +567,8 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
             mood: 1
           }
         }
-      ]
+      ],
+      tags: ["panic"]
     }
   },
   {
@@ -589,7 +599,8 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
             mood: 2
           }
         }
-      ]
+      ],
+      tags: ["cold"]
     }
   },
   {
@@ -629,7 +640,8 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
             mood: 2
           }
         }
-      ]
+      ],
+      tags: ["supply"]
     }
   },
   {
@@ -660,7 +672,8 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
             stamina: 2
           }
         }
-      ]
+      ],
+      tags: []
     }
   },
   {
@@ -691,7 +704,8 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
             stamina: 1
           }
         }
-      ]
+      ],
+      tags: ["queue", "supply"]
     }
   },
   {
@@ -718,7 +732,8 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
             stamina: 2
           }
         }
-      ]
+      ],
+      tags: ["heat", "queue", "water"]
     }
   },
   {
@@ -745,7 +760,8 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
             mood: 4
           }
         }
-      ]
+      ],
+      tags: ["neighbor", "people"]
     }
   },
   {
@@ -775,7 +791,8 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
           },
           requireFullCash: true
         }
-      ]
+      ],
+      tags: ["panic", "people", "supply"]
     }
   },
   {
@@ -806,7 +823,8 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
             stamina: 1
           }
         }
-      ]
+      ],
+      tags: ["dark", "market", "supply"]
     }
   },
   {
@@ -832,7 +850,8 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
             stamina: 2
           }
         }
-      ]
+      ],
+      tags: ["neighbor", "people"]
     }
   },
   {
@@ -874,7 +893,8 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
             mood: 2
           }
         }
-      ]
+      ],
+      tags: ["panic", "supply"]
     }
   },
   // ═══ 生成内容 day-01 止 ═══
