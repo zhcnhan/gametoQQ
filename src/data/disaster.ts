@@ -580,7 +580,644 @@ export const DISASTER_DEFS: readonly DisasterProfile[] = [
     decisions: ["前 48 小时先清空冰箱吃掉要坏的，还是保燃料熬更冷的夜", "行动点只剩两个，出门摸黑找燃料，还是在家把东西理好", "邻居来得勤，人情能换回款，但每次开门都要分东西出去"],
     notes: "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/13/15，共 14 个。spoilRate 1.6 的理由：室外虽冷但冰箱停机，室内冷藏链断裂。首次使用维度 8（行动点 -1）；食物反升为刚需（必须吃掉要坏的），刚需排序与寒潮相反，故不与寒潮撞车。"
   },
-  // ═══ 生成内容 disaster-00 止 ═══
+  // ═══ 生成内容 disaster-00 止 ═══,
+  // ═══ 生成内容 disaster-01 起（scripts/merge-content.mjs 插入，别手改这一段） ═══
+{
+    id: "riot_curfew",
+    name: "骚乱",
+    family: "社会",
+    level: "L3",
+    tier: 2,
+    axis: "通行与供给：门开不开不由你说了算，街上不安全，店早早关了",
+    temperatures: {
+      [0]: 11,
+      [3]: 10,
+      [7]: 9,
+      [11]: 9,
+      [14]: 10,
+      [-7]: 14,
+      [-4]: 13,
+      [-1]: 12
+    },
+    spoilRate: 1.4,
+    dailyDrain: {
+      food: 1,
+      medicine: 1
+    },
+    priorityCategories: ["food", "medicine"],
+    windowScene: "riot-street",
+    shelterDecayPerDay: -2,
+    restEfficiency: 0.75,
+    carryFactor: 0.65,
+    actionPointDelta: -1,
+    shopSupplyFactor: 0.5,
+    closedShopIds: ["market"],
+    priceSurcharge: 0.4,
+    eventPoolWeights: {
+      people: 3,
+      panic: 2,
+      supply: 2
+    },
+    npcVisitFactor: 1.4,
+    categoryEfficiency: {
+      tool: 0.7
+    },
+    scoreWeights: {
+      emergency: 2
+    },
+    calendar: [
+      {
+        day: -7,
+        severity: 0.1,
+        hint: "14°C。城南有个路口封了半天，群里在传。"
+      },
+      {
+        day: -6,
+        severity: 0.15,
+        hint: "13°C。超市的米面区排起了长队。"
+      },
+      {
+        day: -5,
+        severity: 0.2,
+        hint: "13°C。有家店提前两小时拉下了卷帘门。"
+      },
+      {
+        day: -4,
+        severity: 0.3,
+        hint: "12°C。公交改道，三条线停运。"
+      },
+      {
+        day: -3,
+        severity: 0.4,
+        hint: "12°C。公司让提前下班，说别走大路。"
+      },
+      {
+        day: -2,
+        severity: 0.5,
+        hint: "11°C。两家便利店被搬空了货架。"
+      },
+      {
+        day: -1,
+        severity: 0.7,
+        hint: "11°C。晚上八点，主街上几乎没人。"
+      },
+      {
+        day: 0,
+        severity: 0.75,
+        hint: "11°C。夜里开始宵禁，喇叭车绕了两圈。"
+      },
+      {
+        day: 1,
+        severity: 0.85,
+        hint: "10°C。五金店和农贸市场都没开门。"
+      },
+      {
+        day: 2,
+        severity: 0.9,
+        hint: "10°C。楼下的车被砸了两辆，没人管。"
+      },
+      {
+        day: 3,
+        severity: 0.95,
+        hint: "10°C。物业把大门锁了，进出要登记。"
+      },
+      {
+        day: 4,
+        severity: 0.9,
+        hint: "9°C。有人在楼道里换东西，声音压得很低。"
+      },
+      {
+        day: 5,
+        severity: 0.95,
+        hint: "9°C。远处有玻璃碎的声音，断断续续。"
+      },
+      {
+        day: 6,
+        severity: 1,
+        hint: "9°C。超市只开半天，队伍排到马路对面。"
+      },
+      {
+        day: 7,
+        severity: 1,
+        hint: "10°C。夜里有人挨家敲门，问有没有多的吃的。"
+      },
+      {
+        day: 8,
+        severity: 1,
+        hint: "10°C。公告说要按楼栋轮流出小区。"
+      },
+      {
+        day: 9,
+        severity: 0.95,
+        hint: "11°C。楼下停了两辆没牌子的车，一整天没动。"
+      },
+      {
+        day: 10,
+        severity: 1,
+        hint: "11°C。药店只在早上开一小时。"
+      },
+      {
+        day: 11,
+        severity: 1,
+        hint: "12°C。有人开始拿东西换药。"
+      },
+      {
+        day: 12,
+        severity: 0.95,
+        hint: "12°C。宵禁提前到七点。"
+      },
+      {
+        day: 13,
+        severity: 0.9,
+        hint: "13°C。街上清得很快，风一吹就没人。"
+      },
+      {
+        day: 14,
+        severity: 0.85,
+        hint: "13°C。今天没听见喇叭车。撑到今天就算过去了。"
+      }
+    ],
+    counterIntuitive: "出不去这件事让存粮变得更耐用 —— 囤得多不再只是安全感，而是「你根本买不回来」；反过来，药店那点存货比什么都金贵，因为被打伤这件事在这一场里是常态",
+    decisions: ["行动点少了一个，今天该出门碰运气，还是在家把东西理到随手能拿", "街上不安全，工具在混乱里更容易丢或坏，要不要带上", "邻居来得更勤，给出去的是口粮、换回来的是消息，这笔账怎么算"],
+    notes: "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/13/16，共 14 个。主打维度 12（NPC 行为：npcVisitFactor 1.4 —— 全案第一次让「人来得更勤」成为主要压力）与 16（分数口径：emergency 权重 2，因为这一场里「急用的够不够得到」比摆得整齐重要）。与已有四场都不撞：寒潮动燃料保暖且腐坏变慢、热浪动水与药且腐坏加快、洪水废掉保暖与低处空间、大停电动行动点与冰箱；本场动的是**通行与供给**，而且它是唯一一场把「NPC 来得更勤」当压力写的。"
+  },
+{
+    id: "sandstorm_air",
+    name: "沙暴",
+    family: "空气",
+    level: "L3",
+    tier: 2,
+    axis: "空气与呼吸：出不了门，屋里也在慢慢耗你",
+    temperatures: {
+      [0]: 26,
+      [3]: 28,
+      [7]: 29,
+      [11]: 27,
+      [14]: 24,
+      [-7]: 20,
+      [-4]: 21,
+      [-1]: 23
+    },
+    spoilRate: 1.2,
+    dailyDrain: {
+      water: 2,
+      medicine: 1
+    },
+    priorityCategories: ["water", "medicine"],
+    windowScene: "sand-haze",
+    shelterDecayPerDay: -2.5,
+    restEfficiency: 0.65,
+    carryFactor: 0.6,
+    actionPointDelta: 0,
+    shopSupplyFactor: 0.6,
+    closedShopIds: ["weekend_flea"],
+    priceSurcharge: 0.25,
+    eventPoolWeights: {
+      cold: 2,
+      supply: 2,
+      neighbor: 2
+    },
+    npcVisitFactor: 0.6,
+    categoryEfficiency: {
+      water: 0.8
+    },
+    healthRiskPerDay: 2,
+    scoreWeights: {
+      fefo: 2
+    },
+    calendar: [
+      {
+        day: -7,
+        severity: 0.1,
+        hint: "20°C。北边来的风，天是黄的。"
+      },
+      {
+        day: -6,
+        severity: 0.15,
+        hint: "21°C。能见度不到五百米，车都开了雾灯。"
+      },
+      {
+        day: -5,
+        severity: 0.2,
+        hint: "22°C。阳台上落了一层土，扫不干净。"
+      },
+      {
+        day: -4,
+        severity: 0.3,
+        hint: "23°C。学校停课，家长在楼下接孩子。"
+      },
+      {
+        day: -3,
+        severity: 0.4,
+        hint: "24°C。口罩又开始限购了。"
+      },
+      {
+        day: -2,
+        severity: 0.5,
+        hint: "25°C。窗户缝里能摸到细沙。"
+      },
+      {
+        day: -1,
+        severity: 0.7,
+        hint: "26°C。气象台说后面几天会更糟。"
+      },
+      {
+        day: 0,
+        severity: 0.85,
+        hint: "26°C。中午天暗下来，路灯全亮着。"
+      },
+      {
+        day: 1,
+        severity: 0.95,
+        hint: "27°C。外面看不清对面的楼。"
+      },
+      {
+        day: 2,
+        severity: 1,
+        hint: "28°C。窗台上一天能扫出半盆土。"
+      },
+      {
+        day: 3,
+        severity: 1,
+        hint: "28°C。嗓子干，喝水也不解。"
+      },
+      {
+        day: 4,
+        severity: 1,
+        hint: "29°C。有人用胶带把窗缝贴了一圈。"
+      },
+      {
+        day: 5,
+        severity: 1,
+        hint: "29°C。空气里有股土腥味，进屋也散不掉。"
+      },
+      {
+        day: 6,
+        severity: 1,
+        hint: "29°C。夜里咳醒了两回。"
+      },
+      {
+        day: 7,
+        severity: 1,
+        hint: "28°C。楼下的车都成了土黄色。"
+      },
+      {
+        day: 8,
+        severity: 1,
+        hint: "28°C。药店的止咳药卖完了。"
+      },
+      {
+        day: 9,
+        severity: 1,
+        hint: "27°C。风小了半天，土还悬在空中。"
+      },
+      {
+        day: 10,
+        severity: 1,
+        hint: "27°C。门口的垫子早就没用了。"
+      },
+      {
+        day: 11,
+        severity: 0.95,
+        hint: "27°C。有人说再撑几天就过去了。"
+      },
+      {
+        day: 12,
+        severity: 0.9,
+        hint: "26°C。能看见一点天了，还是黄的。"
+      },
+      {
+        day: 13,
+        severity: 0.85,
+        hint: "25°C。路上开始有人，都戴着口罩。"
+      },
+      {
+        day: 14,
+        severity: 0.8,
+        hint: "24°C。风转向了。撑过今天就算过去了。"
+      }
+    ],
+    counterIntuitive: "最难受的地方是「屋里」——门窗关死之后，细沙照样从缝里进来，所以这一场是唯一一场你待在家里也每天掉健康的灾难；而水反而更不经喝，因为嗓子一直在干",
+    decisions: ["出门一趟能补货，但吸进去的那点土会在后面几天找回来", "窗缝要用胶带封死（费工具）还是留着透气（继续掉健康）", "水的消耗比平常快两成，按 14 天囤的量其实只够 11 天"],
+    notes: "用到维度 1/2/3/4/5/6/7/9（含 closedShopIds）/10/11/12/13/15/16，共 13 个。主打维度 15（healthRiskPerDay 2 —— 「不看玩家做了什么也在掉血」的唯一一场，而且它必须小：2 × 14 = 28 点健康，是「拖不起」而不是「必死」）。healthRiskPerDay 的读点在日结算的④.5，进硬撑快照之前。与洪水不撞：洪水是「低处的东西完了」（空间），本场是「屋里的空气完了」（身体）。"
+  },
+{
+    id: "earthquake_structure",
+    name: "地震",
+    family: "结构",
+    level: "L3",
+    tier: 3,
+    axis: "空间与结构：有几块地方你再也放不了东西了",
+    temperatures: {
+      [0]: 7,
+      [3]: 6,
+      [7]: 5,
+      [11]: 5,
+      [14]: 6,
+      [-7]: 10,
+      [-4]: 9,
+      [-1]: 8
+    },
+    spoilRate: 1.5,
+    dailyDrain: {
+      food: 1,
+      medicine: 1
+    },
+    priorityCategories: ["medicine", "tool"],
+    windowScene: "cracked-wall",
+    shelterDecayPerDay: -3.5,
+    restEfficiency: 0.6,
+    carryFactor: 0.55,
+    actionPointDelta: 0,
+    shopSupplyFactor: 0.45,
+    closedShopIds: ["wholesale"],
+    priceSurcharge: 0.3,
+    eventPoolWeights: {
+      supply: 3,
+      people: 2
+    },
+    npcVisitFactor: 0.8,
+    capacityFactor: 0.72,
+    unusableShelfIds: ["shelf_c"],
+    healthRiskPerDay: 1,
+    scoreWeights: {
+      placement: 2
+    },
+    calendar: [
+      {
+        day: -7,
+        severity: 0.1,
+        hint: "10°C。凌晨有一次小震，床晃了两下。"
+      },
+      {
+        day: -6,
+        severity: 0.15,
+        hint: "9°C。群里在传断裂带的图，没人当真。"
+      },
+      {
+        day: -5,
+        severity: 0.2,
+        hint: "9°C。超市的矿泉水又有人整箱搬。"
+      },
+      {
+        day: -4,
+        severity: 0.3,
+        hint: "8°C。物业来检查了外墙，说没事。"
+      },
+      {
+        day: -3,
+        severity: 0.4,
+        hint: "8°C。又晃了一次，这次是白天。"
+      },
+      {
+        day: -2,
+        severity: 0.5,
+        hint: "7°C。有人开始在车里睡。"
+      },
+      {
+        day: -1,
+        severity: 0.7,
+        hint: "7°C。架子上有东西掉下来，摔了一个碗。"
+      },
+      {
+        day: 0,
+        severity: 0.9,
+        hint: "7°C。凌晨那一下很长，墙上有道裂缝。"
+      },
+      {
+        day: 1,
+        severity: 1,
+        hint: "6°C。余震一整天没停，人都下楼了。"
+      },
+      {
+        day: 2,
+        severity: 1,
+        hint: "6°C。冰箱倒了，门打不开。"
+      },
+      {
+        day: 3,
+        severity: 0.95,
+        hint: "6°C。楼下那间屋子裂得厉害，不让进。"
+      },
+      {
+        day: 4,
+        severity: 1,
+        hint: "5°C。批发站的仓库塌了一角，拉走了货。"
+      },
+      {
+        day: 5,
+        severity: 1,
+        hint: "5°C。楼道里的扶手松了，走的时候要扶墙。"
+      },
+      {
+        day: 6,
+        severity: 0.95,
+        hint: "5°C。余震变成一天几次，习惯了那种晃。"
+      },
+      {
+        day: 7,
+        severity: 0.9,
+        hint: "5°C。五金店排队，都在买锤子和钉子。"
+      },
+      {
+        day: 8,
+        severity: 0.9,
+        hint: "6°C。阳台的窗户关不严了，风往里灌。"
+      },
+      {
+        day: 9,
+        severity: 0.85,
+        hint: "6°C。有人在楼下空地上搭了棚子。"
+      },
+      {
+        day: 10,
+        severity: 0.8,
+        hint: "6°C。药店的绷带和云南白药都空了。"
+      },
+      {
+        day: 11,
+        severity: 0.8,
+        hint: "6°C。楼里通了电，水管还没修好。"
+      },
+      {
+        day: 12,
+        severity: 0.75,
+        hint: "6°C。余震少了，一天一两次。"
+      },
+      {
+        day: 13,
+        severity: 0.7,
+        hint: "6°C。远处有工程车的声音，一直在响。"
+      },
+      {
+        day: 14,
+        severity: 0.65,
+        hint: "6°C。没人再提余震。撑到今天就算过去了。"
+      }
+    ],
+    counterIntuitive: "这一场最大的损失不是东西没了，是「地方没了」——裂掉的那间屋子再也放不了东西，而你的物资一件没少，只是没处放；于是「理得有多紧」比「囤了多少」重要得多",
+    decisions: ["有一整块家具不能用了，东西要挤到剩下的地方去", "批发站塌了，大宗粮油这条路断了，剩下几天只能靠零售", "裂缝那一侧的墙还在漏风，修它要花掉本来留给燃料的时间"],
+    notes: "用到维度 1/2/3/4/5/6/7/9（含 closedShopIds）/10/11/12/13/14（含 unusableShelfIds）/15/16，共 14 个。主打维度 14（unusableShelfIds 摘掉一整块 + capacityFactor 0.72 砍排 —— 全案第一次让「空间本身」成为损失，而不是数值）。与洪水不撞：洪水也是空间，但它是「低处进水」（连续的小一圈 + 保暖作废），本场是「结构坏了」（整块没了 + 修墙的压力）。"
+  },
+{
+    id: "mold_rain",
+    name: "霉雨",
+    family: "生物",
+    level: "L3",
+    tier: 2,
+    axis: "湿与霉：东西不是不够，是留不住",
+    temperatures: {
+      [0]: 20,
+      [3]: 21,
+      [7]: 22,
+      [11]: 22,
+      [14]: 21,
+      [-7]: 18,
+      [-4]: 18,
+      [-1]: 19
+    },
+    spoilRate: 3,
+    dailyDrain: {
+      food: 1,
+      medicine: 1
+    },
+    priorityCategories: ["food", "medicine"],
+    windowScene: "damp-wall",
+    shelterDecayPerDay: -2,
+    restEfficiency: 0.7,
+    carryFactor: 0.75,
+    actionPointDelta: 0,
+    shopSupplyFactor: 0.7,
+    priceSurcharge: 0.2,
+    eventPoolWeights: {
+      water: 3,
+      supply: 2
+    },
+    npcVisitFactor: 0.9,
+    categoryEfficiency: {
+      food: 0.7,
+      warmth: 0.7
+    },
+    scoreWeights: {
+      fefo: 3
+    },
+    calendar: [
+      {
+        day: -7,
+        severity: 0.1,
+        hint: "18°C。雨从昨天起就没停过。"
+      },
+      {
+        day: -6,
+        severity: 0.15,
+        hint: "18°C。晾在阳台的衣服三天没干。"
+      },
+      {
+        day: -5,
+        severity: 0.2,
+        hint: "18°C。墙上开始有水汽，摸着是凉的。"
+      },
+      {
+        day: -4,
+        severity: 0.3,
+        hint: "19°C。米袋底下有点潮。"
+      },
+      {
+        day: -3,
+        severity: 0.4,
+        hint: "19°C。鞋柜里长了白毛。"
+      },
+      {
+        day: -2,
+        severity: 0.5,
+        hint: "20°C。有人说这雨要下一整周。"
+      },
+      {
+        day: -1,
+        severity: 0.7,
+        hint: "20°C。纸箱摸上去是软的。"
+      },
+      {
+        day: 0,
+        severity: 0.85,
+        hint: "20°C。厨房角落的霉斑一天扩了一圈。"
+      },
+      {
+        day: 1,
+        severity: 0.95,
+        hint: "21°C。面粉结块了，掰开里面有丝。"
+      },
+      {
+        day: 2,
+        severity: 1,
+        hint: "21°C。屋里有股闷味，开窗也一样。"
+      },
+      {
+        day: 3,
+        severity: 1,
+        hint: "22°C。挂面放了两天就发黏。"
+      },
+      {
+        day: 4,
+        severity: 1,
+        hint: "22°C。棉被摸着是潮的，盖着不暖。"
+      },
+      {
+        day: 5,
+        severity: 1,
+        hint: "22°C。罐头是这一场里唯一不坏的。"
+      },
+      {
+        day: 6,
+        severity: 1,
+        hint: "22°C。药盒上的字洇开了。"
+      },
+      {
+        day: 7,
+        severity: 1,
+        hint: "22°C。冰箱门一开一关，里面也是潮的。"
+      },
+      {
+        day: 8,
+        severity: 1,
+        hint: "22°C。有人说吃点霉的会拉肚子。"
+      },
+      {
+        day: 9,
+        severity: 1,
+        hint: "22°C。地板缝里冒出了小蘑菇。"
+      },
+      {
+        day: 10,
+        severity: 0.95,
+        hint: "22°C。雨小了一阵，屋里反而更闷。"
+      },
+      {
+        day: 11,
+        severity: 0.9,
+        hint: "22°C。开始有人把东西搬到楼道里晾。"
+      },
+      {
+        day: 12,
+        severity: 0.85,
+        hint: "21°C。雨停了半天，又下起来。"
+      },
+      {
+        day: 13,
+        severity: 0.8,
+        hint: "21°C。天气预报说明天转晴。"
+      },
+      {
+        day: 14,
+        severity: 0.75,
+        hint: "21°C。早上出了太阳。撑到今天就算过去了。"
+      }
+    ],
+    counterIntuitive: "这一场不是「不够吃」，是「留不住」—— 你囤得越多，坏掉的绝对量越大；而最耐放的东西（罐头）偏偏最重，车载一次装不了几件",
+    decisions: ["东西烂得比平常快三倍，临期优先在这一场从「加分项」变成「保命项」", "主食的消耗反而更快（受潮结块的只能先吃），但囤粮这件事本身在这一场更不值", "棉被吸了潮就不顶用，保暖品要不要现在就换成更耐放的"],
+    notes: "用到维度 1/2/3/4/5/6/7/9/10/11/12/13/16，共 13 个。主打维度 2（spoilRate 3 —— 全案最快，与寒潮的 0.5 正好是对立的两端）与 13（categoryEfficiency 打主食 0.7：能吃的变少，于是「够不够」的账要在更短的周期里重算）。与热浪不撞：热浪的腐坏倍率 2.4 且主线是水与药，本场 3.0 且主线是「湿度让所有干货失效」，并且它第一次让 categoryEfficiency 作用在 food 上（热浪打的是 water/medicine 的消耗）。"
+  },
+  // ═══ 生成内容 disaster-01 止 ═══
 ];
 
 const DISASTER_BY_ID: ReadonlyMap<string, DisasterProfile> = new Map(DISASTER_DEFS.map((d) => [d.id, d]));
