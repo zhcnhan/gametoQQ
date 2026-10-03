@@ -9,7 +9,8 @@ import { M1_DISASTER_ID, getDisasterDef } from '../data/disaster';
 import { IDENTITY_DEFS } from '../data/identities';
 import { CATEGORY_LABELS } from '../data/items';
 import { calendarBars, dayLabel } from '../model/calendar';
-import type { IdentityDef } from '../model/types';
+import type { IdentityDef, MetaProfile } from '../model/types';
+import { identityStartOf, unlockHintOf } from '../systems/identity';
 import { iconSvg } from '../fx/icons';
 import type { Screen } from './Router';
 
@@ -17,6 +18,15 @@ export interface PrologueScreenProps {
   /** 玩家按下「就这么定了」，参数是选中的身份 id */
   onConfirm: (identityId: string) => void;
   onRestart: () => void;
+  /**
+   * 跨局账本（§10B.3 的身份熟练度与分批都要读它）。
+   *
+   * 为什么把 meta **整个**传进来，而不是传 `{ levelOf }` 这样一个查询函数：
+   * 界面要画的是"这个身份我练到几级了、还差几次升级、要什么条件才解锁" ——
+   * 那是三四个不同的问法，包成一个函数反而要在界面里写死背后读的是哪些字段。
+   * 传数据、界面自己按需要格式化，是这一层原本就在做的事（它已经读 `IDENTITY_DEFS` 了）。
+   */
+  meta: MetaProfile;
 }
 
 export class PrologueScreen implements Screen {
@@ -60,8 +70,11 @@ export class PrologueScreen implements Screen {
           <section class="block">
             <h2 class="block-title">你重生了，先决定你是谁</h2>
             <div class="identity-list">
-              ${IDENTITY_DEFS.map((def) => this.identityCard(def)).join('')}
+              ${IDENTITY_DEFS.filter((def) => def.tier === 1)
+                .map((def) => this.identityCard(def))
+                .join('')}
             </div>
+            ${this.lockedHtml()}
           </section>
 
           <section class="block">
@@ -100,21 +113,60 @@ export class PrologueScreen implements Screen {
     `;
   }
 
+  /**
+   * 还没解锁的身份（§10B.3 的"身份分批"）。
+   *
+   * ## 为什么**要列出来**，而不是干脆不渲染
+   *
+   * 这是 §10B.2 对图鉴那一条的同一种道理：
+   *
+   * > **未点亮的那一格要看得见轮廓与"从哪儿来"的提示** —— 玩家需要知道
+   * > "还差什么、去哪儿找"，否则收集欲无从下手。
+   *
+   * 开局页上不列它们，玩家就永远不知道还有别的身份可玩 ——
+   * 而"下一次换个身份再来"正是 §10B.1 说的**重开新一局的动机**。
+   * 只列名字与解锁条件（不列数值）：摆出九个满数值的选择只会让人选不出来，
+   * 而"再活到最后一次就解锁"是一个明确的、可执行的目标。
+   */
+  private lockedHtml(): string {
+    const locked = IDENTITY_DEFS.filter((def) => def.tier !== 1);
+    if (locked.length === 0) return '';
+    return `
+      <p class="block-note">还有 ${locked.length} 个身份没解锁。</p>
+      <div class="identity-locked">
+        ${locked
+          .map(
+            (def) => `
+              <div class="identity-lock">
+                <span class="identity-lock-name">${escapeHtml(def.name)}</span>
+                <span class="identity-lock-hint">${escapeHtml(unlockHintOf(def.id))}</span>
+              </div>
+            `
+          )
+          .join('')}
+      </div>
+    `;
+  }
+
   private identityCard(def: IdentityDef): string {
     const active = this.selected === def.id ? ' is-active' : '';
+    // ★ §10B.3：卡片上显示的必须是**含熟练度加成**的那份数，与开局真正拿到的一致
+    const start = identityStartOf(this.props.meta, def.id);
     return `
       <button class="identity-card${active}" data-identity="${def.id}" aria-pressed="${this.selected === def.id}">
         <span class="identity-head">
           <span class="identity-name">${escapeHtml(def.name)}</span>
+          ${start.level > 1 ? `<span class="identity-level">Lv${start.level}</span>` : ''}
           ${active ? `<span class="identity-picked">${iconSvg('check')}</span>` : ''}
         </span>
         <span class="identity-tagline">${escapeHtml(def.tagline)}</span>
         <span class="identity-stats">
-          <span><i>现金</i><b>${def.startCash}</b></span>
-          <span><i>车载</i><b>${def.vehicleCapacity}kg</b></span>
-          <span><i>一趟能拿</i><b>${def.carryLimit}kg</b></span>
+          <span><i>现金</i><b>${start.startCash}</b></span>
+          <span><i>车载</i><b>${start.vehicleCapacity}kg</b></span>
+          <span><i>一趟能拿</i><b>${start.carryLimit}kg</b></span>
         </span>
         <span class="identity-perk">${escapeHtml(def.perk)}</span>
+        ${start.level > 1 ? `<span class="identity-note">熟练度 Lv${start.level}，开局参数已经算进去了</span>` : ''}
       </button>
     `;
   }

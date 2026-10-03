@@ -33,6 +33,7 @@ import {
   type PhaseResult
 } from './systems/phases';
 import { createStartingRun } from './systems/setup';
+import { CodexScreen } from './ui/CodexScreen';
 import { EndingScreen } from './ui/EndingScreen';
 import { NightScreen } from './ui/NightScreen';
 import { OrganizeScreen } from './ui/OrganizeScreen';
@@ -72,7 +73,21 @@ restoreOrganizeSession(store, session);
 // 幂等 —— 库存已经属于今天时它一步都不动（不碰 RNG，不影响"同 seed 同结果"）。
 ensureDayStocks(store);
 
+/**
+ * 图鉴是否打开（§10B.2 的界面 / 补 D-16）。
+ *
+ * ★ 它**不落盘**，而且这是刻意的：图鉴是"停下来看一眼"的地方，
+ * 不是一个要恢复的进度。刷新之后回到 `phase` 该在的那一屏，正是 §4A 要的
+ * （"任何时刻杀进程，损失 = 0" —— 而回到图鉴不算损失，回到该做的事才算）。
+ *
+ * 详见 `ui/Router.ts` 的 `ScreenKey` 注释：图鉴是唯一一个**不来自 phase** 的页面。
+ */
+let codexOpen = false;
+
 function keyOfPhase(phase: GamePhase): ScreenKey {
+  // 图鉴优先级最高：它可以从任何一屏打开（结算页、开局页），
+  // 而"打开着图鉴"这件事与这一局进行到哪一步无关
+  if (codexOpen) return 'codex';
   switch (phase) {
     case 'prologue':
       return 'prologue';
@@ -91,6 +106,12 @@ function keyOfPhase(phase: GamePhase): ScreenKey {
     default:
       return 'pending';
   }
+}
+
+/** 打开 / 关闭图鉴。两处都只是翻一个开关再让 Router 自己判断换不换页 */
+function setCodex(open: boolean): void {
+  codexOpen = open;
+  router.render();
 }
 
 function restart(): void {
@@ -182,6 +203,8 @@ function makeScreen(key: ScreenKey): Screen {
   switch (key) {
     case 'prologue':
       return new PrologueScreen(root as HTMLElement, {
+        // §10B.3：开局页要读跨局账本（身份熟练度 + 哪些身份解锁了）
+        meta: store.save.meta,
         onConfirm: (identityId) => {
           consumePhase(chooseIdentity(store, identityId));
           router.render();
@@ -260,7 +283,12 @@ function makeScreen(key: ScreenKey): Screen {
         }
       });
     case 'ending':
-      return new EndingScreen(root as HTMLElement, store, { onRestart: restart });
+      return new EndingScreen(root as HTMLElement, store, {
+        onRestart: restart,
+        onOpenCodex: () => setCodex(true)
+      });
+    case 'codex':
+      return new CodexScreen(root as HTMLElement, store, { onClose: () => setCodex(false) });
     default:
       // 兜底页。走到这里说明存档里是一个**当前版本不认识的 phase**（手改过的档、
       // 或者从更新的版本降级回来）。它不该断言任何"还没做"的东西 ——
@@ -354,12 +382,38 @@ if (import.meta.env.DEV) {
     router.render();
   };
 
+  /**
+   * 切到某个测试存档（`src/tools/save-*.txt`）。
+   *
+   * ## 为什么需要它：人工走查的成本几乎全在"走到那一屏"
+   *
+   * `jump(day)` 只能跳天数，而它**不伪造货物**（那是刻意的：看到的必须仍是
+   * 真实规则下的屏幕）。于是"想看结算页长什么样"就得真的囤满 7 天再打 14 天 ——
+   * 十几分钟，而走查一轮要看七八屏。那笔账一算，走查就会变成"只看第一屏"。
+   *
+   * 三个夹具正好各站在一个关键位置（`npm run make-save` 生成）：
+   *   · `good`       D-Day，全上架 + 贴好胶带 + 标了顺手位
+   *   · `messy`      D-Day，货架全空、一张胶带都没贴
+   *   · `100boxes`   囤货期 D-7，100 箱 1000+ 件（整理页的压测位）
+   *
+   * 它**读的是仓库里那几个 .txt**，所以走查用的档与 `saveFixtures.test.ts`
+   * 验收过的是同一份 —— 不会出现"我走查的那个档和测试里的不是一回事"。
+   *
+   * ★ 这是**开发期工具**：生产构建里整个 `if (import.meta.env.DEV)` 块都不存在。
+   */
+  const load = async (name: 'good' | 'messy' | '100boxes'): Promise<void> => {
+    const text = await (await fetch(`/src/tools/save-${name}.txt`)).text();
+    window.localStorage.setItem('tunhuo.save', text.trim());
+    window.location.reload();
+  };
+
   (window as unknown as Record<string, unknown>)['__tunhuo'] = {
     store,
     session,
     router,
     deferred: debts,
-    jump
+    jump,
+    load
   };
   // 每开一次页面报一次账。目的很具体：让"寒潮是冷库 → M1 无腐坏""冰箱没效果"
   // 这类**已被记录的空转**，在任何人准备动手"修好"它之前先自我解释一次。
@@ -367,4 +421,5 @@ if (import.meta.env.DEV) {
     `[囤货末世] 已知欠账 ${debts.length} 笔：${debts.map((d) => d.id).join(' / ')}，详见 src/meta/deferred.ts`
   );
   console.info('[囤货末世] 走测用：__tunhuo.jump(day) 可以跳到任意一天（只在 dev 构建里存在）');
+  console.info('[囤货末世] 走查用：__tunhuo.load("good" | "messy" | "100boxes") 切到测试存档');
 }

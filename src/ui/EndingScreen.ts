@@ -3,7 +3,7 @@
  *
  * ★ M1 的结局有**两种**，界面必须把它们说清楚（§12.3 v0.5 修订）：
  *
- *   · `outcome === 'survived'`  —— 撑满了 7 天；
+ *   · `outcome === 'survived'`  —— 活过了 7 天；
  *   · `outcome === 'collapsed'` —— 健康归零，走到第 N 天停下来了；
  *   · `outcome === null`        —— 老档（阶段 A 时期"囤货期走完就结束"），按"囤货期结束"说。
  *
@@ -12,6 +12,7 @@
  * 图鉴解锁（§9.6 第三项）属 M2，这里仍然只有生存天数 + 整理评分。
  */
 import { SURVIVAL_DAYS, getDisasterDef } from '../data/disaster';
+import { getIdentityDef, hasIdentityDef } from '../data/identities';
 import { getItemDef, hasItemDef } from '../data/items';
 import { NPC_DEFS } from '../data/npcs';
 import { dayLabel, hintAt } from '../model/calendar';
@@ -19,12 +20,16 @@ import { districtDays, supplyDays } from '../model/contrast';
 import { computeOrganizeScore, gradeLabel, toPercent } from '../model/score';
 import type { CodexState, DisasterProfile, RunState } from '../model/types';
 import type { GameStore } from '../state/store';
-import { CODEX_PAGE_LABELS, CODEX_PAGES, bestOf, codexTotals, settleRunMeta } from '../systems/codex';
+import { CODEX_PAGE_LABELS, CODEX_PAGES, bestOf, codexTotals, settleRunMeta, type RunVerdict } from '../systems/codex';
+import { achievementTotal, orderedUnlocked } from '../systems/achievements';
+import { MAX_IDENTITY_LEVEL, LEVEL_BONUS_PER_STEP, levelOf } from '../systems/identity';
 import { householdTotals } from '../systems/organize';
 import type { Screen } from './Router';
 
 export interface EndingScreenProps {
   onRestart: () => void;
+  /** 翻图鉴（§10B.2 的界面 / 补 D-16）。结算页是它最主要的入口 */
+  onOpenCodex: () => void;
 }
 
 export class EndingScreen implements Screen {
@@ -59,7 +64,7 @@ export class EndingScreen implements Screen {
     const emergency = toPercent(score.emergency);
     const collapsed = run.outcome === 'collapsed';
     const survived = run.outcome === 'survived';
-    // 倒下的那天就是"走到哪儿"；撑满时 run.day 正好等于 SURVIVAL_DAYS
+    // 倒下的那天就是"走到哪儿"；活到最后一天时 run.day 正好等于 SURVIVAL_DAYS
     const lasted = Math.max(0, run.day);
 
     // ★ 跨局结算只在这里发生一次（§9.6 / §6.7）。幂等由 `run.metaSettled` 保证：
@@ -160,7 +165,14 @@ export class EndingScreen implements Screen {
               }).join('')}
             </div>
             ${newlyHtml(fresh)}
+            <div class="dock-tools">
+              <button class="btn" data-action="codex">翻开图鉴</button>
+            </div>
           </section>
+
+          ${this.achievementsHtml(verdict)}
+
+          ${this.identityHtml(verdict)}
 
           <section class="block">
             <h2 class="block-title">整理体检</h2>
@@ -194,6 +206,139 @@ export class EndingScreen implements Screen {
     `;
   }
 
+  /**
+   * 成就与那枚**朱红印章**（§10B.2 的演出）。
+   *
+   * ## §10B.2 对演出的原话
+   *
+   * > **达成时的演出要克制但"帅"**：沿用 §5A 的纸墨朱红，一枚**朱红印章**
+   * > 盖在日报/结算页上。
+   *
+   * 所以这里没有彩带、没有弹窗、没有音效墙 —— 只有一枚印，加上它叫什么。
+   * "克制"是硬要求：§5A 规定朱红是唯一点缀色，它一旦被用来做大面积庆祝，
+   * 那些真正该被看见的警告（缺水、缺粮、健康见底）就再也跳不出来了。
+   *
+   * ## 为什么这里也列出**已经解锁过的**
+   *
+   * 只列"本局新盖的"有一个具体的坏处：一个反复玩的人会看到这一栏
+   * 大部分时候是空的，于是那一栏在他眼里等于不存在。所以：
+   *   · 本局新解锁的 → 朱红印章（一次性，值得被看见）；
+   *   · 已经有的     → 淡墨列出，不抢眼。
+   * 两者的**视觉重量差**才是"新"这个字的载体，而不是"有与没有"。
+   */
+  private achievementsHtml(verdict: RunVerdict | null): string {
+    const meta = this.store.save.meta;
+    const all = orderedUnlocked(meta);
+    if (all.length === 0) {
+      return `
+        <section class="block">
+          <h2 class="block-title">成就</h2>
+          <p class="block-note">还没有达成的成就。图鉴页码下面的那一栏写着每一条要怎么才算达成。</p>
+        </section>
+      `;
+    }
+    const fresh = new Set((verdict?.achievements.fresh ?? []).map((a) => a.id));
+    const freshDefs = all.filter((a) => fresh.has(a.id));
+
+    return `
+      <section class="block">
+        <h2 class="block-title">成就<em class="codex-count">${all.length} / ${achievementTotal()}</em></h2>
+        ${
+          freshDefs.length > 0
+            ? `<p class="block-note warm">本局盖了 <b>${freshDefs.length}</b> 枚印。</p>
+               <div class="seal-row">
+                 ${freshDefs
+                   .map(
+                     (a) =>
+                       `<span class="seal-chip"><span class="seal-dot">印</span>${escapeHtml(a.name)}</span>`
+                   )
+                   .join('')}
+               </div>
+               <div class="seal-grid" style="margin-top:8px">
+                 ${freshDefs
+                   .map(
+                     (a) => `
+                       <div class="seal is-on">
+                         <span class="seal-mark">印</span>
+                         <span class="seal-body">
+                           <b>${escapeHtml(a.name)}</b>
+                           <i>${escapeHtml(a.hint)}</i>
+                         </span>
+                       </div>
+                     `
+                   )
+                   .join('')}
+               </div>`
+            : '<p class="block-note">这一局没有新达成的成就。</p>'
+        }
+        ${
+          all.length > freshDefs.length
+            ? `<p class="block-note">已经拿到：${all
+                .filter((a) => !fresh.has(a.id))
+                .map((a) => escapeHtml(a.name))
+                .join(' · ')}</p>`
+            : ''
+        }
+      </section>
+    `;
+  }
+
+  /**
+   * 身份熟练度（§10B.3）—— **升级必须被看见**。
+   *
+   * ## 为什么这一段不能省
+   *
+   * §10B.3 的纪律③ 是"升级条件要看得出来"，理由很具体：
+   * 熟练度是**开局参数**（现金 / 车载 / 单趟），它不像成就那样有一次印章演出；
+   * 如果结算页一个字都不提，玩家就永远不会知道"我用护士又一次活到最后"这件事
+   * 除了通关之外还改变了什么 —— 那它就退化成一个隐藏数值，
+   * 而"隐藏的成长"等于没有成长。
+   *
+   * 三种状态分别说清楚（**不许含糊**）：
+   *  · 升级了 → 说出升到几级、下一局会多什么；
+   *  · 满级了 → 说"已经满了"，而不是含糊地什么都不说；
+   *  · 没升级 → 说明**为什么**（没活到最后就不算，口径见 `raiseIdentityLevel`）。
+   */
+  private identityHtml(verdict: RunVerdict | null): string {
+    const run = this.store.run;
+    if (!run.identityId) return '';
+    let name = run.identityId;
+    if (hasIdentityDef(run.identityId)) name = getIdentityDef(run.identityId).name;
+    const info = verdict?.identityLevel ?? null;
+    const level = info?.after ?? levelOf(this.store.save.meta, run.identityId);
+    const leveled = info !== null && info.after > info.before;
+
+    if (leveled && info) {
+      return `
+        <section class="block">
+          <h2 class="block-title">身份</h2>
+          <p class="block-note warm">
+            ${escapeHtml(name)} 练到 <b>Lv${info.after}</b>。
+            下一局用它开局会多 ${LEVEL_BONUS_PER_STEP.startCash} 元、
+            ${LEVEL_BONUS_PER_STEP.vehicleCapacity}kg 车载、
+            ${LEVEL_BONUS_PER_STEP.carryLimit}kg 单趟。
+          </p>
+        </section>
+      `;
+    }
+    if (level >= MAX_IDENTITY_LEVEL) {
+      return `
+        <section class="block">
+          <h2 class="block-title">身份</h2>
+          <p class="block-note">${escapeHtml(name)} 已经练满（Lv${MAX_IDENTITY_LEVEL}）。</p>
+        </section>
+      `;
+    }
+    return `
+      <section class="block">
+        <h2 class="block-title">身份</h2>
+        <p class="block-note">
+          ${escapeHtml(name)} 现在是 Lv${level}。活到最后一次就会升到 Lv${level + 1}
+          （倒下的那一局不算）。        </p>
+      </section>
+    `;
+  }
+
   private scoreRow(name: string, percent: number, explain: string): string {
     return `
       <div class="score-row">
@@ -210,6 +355,7 @@ export class EndingScreen implements Screen {
     if (!(target instanceof HTMLElement)) return;
     const action = target.closest<HTMLElement>('[data-action]')?.dataset['action'];
     if (action === 'restart') this.props.onRestart();
+    if (action === 'codex') this.props.onOpenCodex();
   }
 }
 

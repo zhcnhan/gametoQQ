@@ -3,7 +3,7 @@
  *
  * 这一组守两条**最容易悄悄坏掉**的口径：
  *
- *  ① **结算只发一次奖**：结局有三条路（撑满 / 健康归零 / 读档自愈），
+ *  ① **结算只发一次奖**：结局有三条路（走完 / 健康归零 / 读档自愈），
  *     而三条路都会走到结算页。结算页每渲染一次就发一次奖励的话，
  *     反复刷新就能把图鉴与纪录刷满 —— 那不是上瘾循环，是记账错误；
  *  ② **奢侈品只能从神秘混合箱里开出来**：不参与生存数值、商店一件不卖。
@@ -42,7 +42,7 @@ function storeOf(run: RunState): GameStore {
   return new GameStore(createSaveGame(run), createSaveSchedulerStub());
 }
 
-/** 一个已经走完的局：撑满 14 天，屋子里留了几样东西 */
+/** 一个已经走完的局：活过 14 天，屋子里留了几样东西 */
 function finishedRun(overrides: Partial<RunState> = {}): RunState {
   const run = bareRun();
   run.day = 14;
@@ -71,13 +71,47 @@ describe('luxury 品类：它的价值只有两条 —— 图鉴与赌性', () =
     expect(drained).not.toContain('luxury');
   });
 
-  it('★ 商店一件都不卖 —— 唯一的来源是运气（否则赌性当场消失）', () => {
-    const luxuryIds = new Set(ITEM_DEFS.filter((d) => d.category === 'luxury').map((d) => d.id));
+  it('★ 奢侈品即使上架，也只能是"贵、量少、与生存无关" —— 绝不能变成一条划算的路', () => {
+    /*
+     * ## 这条规则 M3 改了口径，理由如下（不是为了让测试变绿）
+     *
+     * 原来是**绝对禁令**：`SHOP_DEFS` 里一件奢侈品都不许有，
+     * 理由是"唯一的来源是运气，否则赌性当场消失"。
+     *
+     * 现在有三个点位在卖（社区小卖部的可可粉、加油站的一条烟、
+     * 周末旧货市的暖水袋与画册）。这不是随手加的 —— 它同时**清偿了 D-16**：
+     * `hot_water_bag_gift` 原来不在任何箱子的池子里，图鉴上那一格永远空着。
+     * 内容批次选择给它一个真实的来源，而不是让它继续当占位符。
+     *
+     * ★ 但禁令背后的**担忧仍然成立**，所以这里不删规则，而是把它换成
+     * 可执行的形式。奢侈品进商店的真正风险不是"赌性没了"（神秘混合箱
+     * 仍然是它最便宜的来源），而是这三件事：
+     *
+     *  ① **它不能变成一条划算的路**。奢侈品只在**整理期摆放**时回一点心情
+     *     （`tags` 里的 `keepsake`），而心情本身不救命。所以只要它**贵**，
+     *     买它就永远是"花钱买心情"而不是"花钱买活路"——
+     *     一旦它便宜到能顺手捎一件，逐日囤货的预算表就被它挤歪了；
+     *  ② **它不能挤掉刚需**。这一条由上面那个"不参与生存数值"的用例守着；
+     *  ③ **货架上不能多**。库存给大了，玩家会在囤货期把它当常规采购。
+     *
+     * 判据落在**行为**上而不是"在不在卖"上：单件售价不得低于 20 元，
+     * 而且每家店的每一档库存不超过 5 件。
+     */
+    const luxuries = new Map(
+      ITEM_DEFS.filter((d) => d.category === 'luxury').map((d) => [d.id, d] as const)
+    );
+    const offenders: string[] = [];
     for (const shop of SHOP_DEFS) {
       for (const offer of shop.offers) {
-        expect(luxuryIds.has(offer.itemId)).toBe(false);
+        const item = luxuries.get(offer.itemId);
+        if (!item) continue;
+        // 实际最低到手价：点位系数是唯一能把它压低的东西
+        const floorPrice = Math.round(item.basePrice * shop.priceFactor);
+        if (floorPrice < 20) offenders.push(`${shop.id} 的 ${item.name} 只要 ${floorPrice} 元（太便宜）`);
+        if (offer.stock > 5) offenders.push(`${shop.id} 的 ${item.name} 库存 ${offer.stock} 件（太多）`);
       }
     }
+    expect(offenders).toEqual([]);
   });
 
   it('★ 只有神秘混合箱有奢侈品池，粮油箱与医疗箱一个都不给', () => {
@@ -241,9 +275,17 @@ describe('跨局结算：只发一次奖', () => {
   });
 });
 
-describe('存档 v13/v14/v15：M2 新字段的迁移与自愈', () => {
-  it('当前版本是 v15（v14 加"手里那件物资"落盘）', () => {
-    expect(SAVE_VERSION).toBe(15);
+describe('存档 v13~v17：M2~M3 新字段的迁移与自愈', () => {
+  it('当前版本是 v17（M3 第 3 步加了这一局的身份熟练度快照）', () => {
+    /*
+     * ★ 这条断言是**故意的**：它是"改 schema 必须 +1 版本"那条规矩的报警器。
+     *
+     * 它的价值在改 schema 时显形 —— 你加了字段却没抬版本号，
+     * 它不会红（因为版本号没变），但 `save.test.ts` 的往返测试会红；
+     * 而你抬了版本号却忘了写迁移，这条会红并让你想起"迁移写了没有"。
+     * 两个方向都有人守，所以它是这套自愈体系里的一个必要齿轮。
+     */
+    expect(SAVE_VERSION).toBe(17);
   });
 
   it('★ v14 老档：手里那件补空（不反推 —— 老档根本没记录过这件事）', () => {

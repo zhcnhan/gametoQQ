@@ -8,6 +8,44 @@ import { describe, expect, it } from 'vitest';
 import { FakeDocument, installFakeWindow } from './fakeDom';
 
 describe('假 DOM 自检', () => {
+  it('★★ 逗号选择器是"或"，不是"与"（`closest("[data-page], [data-action]")` 必须命中）', () => {
+    /*
+     * ## 这条守的是一个**静默**的真 bug（M3 补图鉴界面时才发现）
+     *
+     * `parseSelector` 把 `[data-page], [data-action]` 拆成两个片段，
+     * 而 `querySelectorAll` / `closest` 用 `every` 要求**全部命中** ——
+     * 于是那串选择器要求元素**同时**有这两个属性，一个都匹配不到。
+     *
+     * 后果不是"选择器严格"，而是**事件委托整体失灵**：界面里
+     * `target.closest('[data-page], [data-action]')` 永远返回 null，
+     * 图鉴翻页与「返回」都点不动 —— 而**假体不报错**，测试只会看到
+     * "点了没反应"，很容易被误判成界面写错了。
+     *
+     * CSS 里逗号是"或"（选择器列表）。真实浏览器与这里必须一致，
+     * 否则屏幕级测试会替真实浏览器做出错误的判断。
+     */
+    const doc = new FakeDocument();
+    installFakeWindow(doc);
+    const host = doc.createElement('div');
+    doc.body.appendChild(host);
+    host.innerHTML =
+      '<button class="tab" data-page="items"></button>' +
+      '<button class="close" data-action="close"></button>' +
+      '<button class="neither"></button>';
+
+    // querySelectorAll：两组各自命中
+    const hit = host.querySelectorAll('[data-page], [data-action]');
+    expect(hit).toHaveLength(2);
+
+    // closest：从叶子往上找，任一组命中即算命中
+    const page = host.querySelector('[data-page="items"]');
+    const close = host.querySelector('[data-action="close"]');
+    const neither = host.querySelector('.neither');
+    expect(page?.closest('[data-page], [data-action]')).toBe(page);
+    expect(close?.closest('[data-page], [data-action]')).toBe(close);
+    expect(neither?.closest('[data-page], [data-action]')).toBeNull();
+  });
+
   it('解析 innerHTML：标签、有值属性、无值属性、类名、嵌套', () => {
     const doc = new FakeDocument();
     installFakeWindow(doc);

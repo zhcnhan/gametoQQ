@@ -32,6 +32,7 @@ import {
   resolveDayOutcome,
   type ShopResult
 } from '../systems/shop';
+import { startNumbersOf } from '../systems/identity';
 import type { Screen } from './Router';
 
 export interface ShopScreenProps {
@@ -90,7 +91,14 @@ export class ShopScreen implements Screen {
   private renderHead(): void {
     const run = this.store.run;
     const identity = run.identityId ? getIdentityDef(run.identityId) : null;
-    const capacity = identity ? identity.vehicleCapacity : 0;
+    /*
+     * ★ §10B.3：容量要**含熟练度加成**，而这一句以前直接读 `identity.vehicleCapacity`。
+     *
+     * 现在两处都走 `startNumbersOf(meta, id)` —— 与 `buildCartView`（命令层）
+     * 用的**同一个换算点**。两边各算一份的话，会出现"顶栏说还能装 20kg、
+     * 结账说只能装 18kg"这种最难查的账（本项目在限购那一处吃过同一个亏）。
+     */
+    const capacity = identity ? startNumbersOf(this.store.save.meta, identity.id).vehicleCapacity : 0;
     const fill = capacity > 0 ? Math.min(1, run.carLoad / capacity) : 0;
     const left = daysUntilDisaster(run.day);
 

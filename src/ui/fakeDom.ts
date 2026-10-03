@@ -227,15 +227,14 @@ export class FakeElement {
   closest(selector: string): FakeElement | null {
     let cur: FakeElement | null = this;
     while (cur) {
-      if (parseSelector(selector).every((p) => matches(cur as FakeElement, p))) return cur;
+      if (matchesAny(cur, selector)) return cur;
       cur = cur.parent;
     }
     return null;
   }
 
   querySelectorAll(selector: string): FakeElement[] {
-    const parts = parseSelector(selector);
-    return this.descendants().filter((el) => parts.every((p) => matches(el, p)));
+    return this.descendants().filter((el) => matchesAny(el, selector));
   }
 
   querySelector(selector: string): FakeElement | null {
@@ -257,6 +256,29 @@ function parseSelector(selector: string): string[] {
   let m: RegExpExecArray | null;
   while ((m = re.exec(selector)) !== null) parts.push(m[0]);
   return parts;
+}
+
+/**
+ * 逗号分组的选择器是否命中。
+ *
+ * ★ 这一层是 M3 补的，补的是一个**静默**的坑：
+ * `parseSelector` 会把 `[data-page], [data-action]` 拆成 `['[data-page]', '[data-action]']`，
+ * 而 `matches(...)` 被 `every` 用来要求**全部命中** —— 于是那串选择器
+ * 要求元素**同时**有 `data-page` 和 `data-action`，一个都不命中。
+ *
+ * 后果不是"选择器严格"，而是**事件委托彻底失灵**：界面里
+ * `target.closest('[data-page], [data-action]')` 永远返回 null，
+ * 于是图鉴翻页与「返回」都点不动 —— 而**假体不报错**，只有人去看才发现。
+ * （真实浏览器里逗号是"或"，这是 CSS 的基本语义。）
+ *
+ * 所以逗号在 `every` **之前**分组：任一组全命中即算命中。
+ */
+function matchesAny(el: FakeElement, selector: string): boolean {
+  return selector
+    .split(',')
+    .map((group) => group.trim())
+    .filter((group) => group.length > 0)
+    .some((group) => parseSelector(group).every((p) => matches(el, p)));
 }
 
 /** 一个简单选择器是否命中该元素 */

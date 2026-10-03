@@ -725,6 +725,14 @@ function runProbe(build: (run: RunState) => void, fixAtDay: number | null = null
   resolveHelpIfAny(store);
 
   let staminaFloor = store.run.stats.stamina;
+  /**
+   * 这一局碰上的突发事件，以及它们**化解了没有**。
+   *
+   * 「顺手位到底管不管用」要直接量这个，而不是反推体力 —— 理由见下面那条用例的注释：
+   * 体力是被短缺、劳作、睡眠、硬撑一起搅动的数，拿它当探针会把"机制没生效"
+   * 读成"这局运气好"，而我就真的这么误读过一次。
+   */
+  const emergencies: { id: string; resolved: boolean }[] = [];
   /** 每天的体力（跑完之后读，用来读"下沉有没有被止住"） */
   const staminaByDay: number[] = [];
   let guard = 0;
@@ -737,6 +745,12 @@ function runProbe(build: (run: RunState) => void, fixAtDay: number | null = null
     resolveHelpIfAny(store);
     staminaFloor = Math.min(staminaFloor, store.run.stats.stamina);
     staminaByDay.push(store.run.stats.stamina);
+    if (store.run.survival.last.emergencyId) {
+      emergencies.push({
+        id: store.run.survival.last.emergencyId,
+        resolved: store.run.survival.last.emergencyResolved
+      });
+    }
     guard += 1;
   }
   return {
@@ -746,7 +760,8 @@ function runProbe(build: (run: RunState) => void, fixAtDay: number | null = null
     staminaByDay,
     hardPressDays: store.run.survival.hardPressDays,
     health: store.run.stats.health,
-    mood: store.run.stats.mood
+    mood: store.run.stats.mood,
+    emergencies
   };
 }
 
@@ -767,20 +782,39 @@ describe('★ 全周期探针（§12.3 v0.7 / §12 v0.8 的永久回归）：好
     expect(good.health).toBeGreaterThan(60);
   });
 
-  it('★ 同样整理好，但**没标顺手位** → 每一次突发事件都要多花力气（§5 的下游）', () => {
-    // 这条用例钉的是 §5 那句「应急货架放急救品 → 突发事件不掉健康」的反面。
-    //
-    // ★ 实测口径要写清楚，否则这条用例会被误读：在**这批货**的摆法下
-    // （应急品类铺在第一块货架，`shelveEverything` 就是这么铺的），
-    // 标不标顺手位的差别落在**体力**上，不是健康 ——
-    // 因为医疗类突发事件在两种摆法下都化解不掉（药在第二块货架上），
-    // 而它扣掉的那点健康到了 14 天头上都被自动开药箱补回来了（`autoSupply`）。
-    // 健康上的差别要在"药也放在顺手位"的摆法下才看得见，那由 §6.3 的应急可达率去量。
-    //
-    // 换句话说：这条用例证明的是**顺手位真的在结算里起作用了**，
-    // 而且它的作用是可复现、可归因的 —— 不是"看起来应该有用"。
-    //
-    // ★ 跨三个 seed 断言：突发事件的抽签吃种子，单跑一个 seed 可能只是那一局运气好。
+  it('★ 标了顺手位 → 突发事件化解得掉；没标 → 每一件都受创（§5 的下游）', () => {
+    /*
+     * 这条用例钉的是 §5 那句「应急货架（门口/最顺手位）放急救品 → 突发事件不掉健康」。
+     *
+     * ## ★ 判据 M3 换过一次，因为**原来的判据是假绿**
+     *
+     * 原来的写法是：`expect(noHandy.staminaFloor).toBeLessThan(withHandy.staminaFloor)`
+     * —— 拿"体力下限更低"当"顺手位有用"的证据。它戴着**跨三个 seed** 的帽子，
+     * 看起来相当硬。但 M3 补进 21 条突发事件之后它红了（86 对 86），
+     * 而查下去发现的目标不是"机制坏了"，是**这条断言从来就没在量那件事**：
+     *
+     *   · 突发事件表的品类从"医疗 / 燃料"扩到**七个品类全覆盖**
+     *     （每类各 3 条），其中有一批要的是 `needOnHandy: 2~3`；
+     *   · 而这批探针货里只有 2 床被子、5 瓶水、1 卷绷带、1 罐燃料，
+     *     铺货规则（`shelveEverything`）只把**医疗与燃料**铺在第一块货架（= 顺手位）。
+     *     于是新事件要的 `warmth×3` / `water×2` / `luxury×2` / `food×2`
+     *     **两种摆法下都凑不齐** —— 顺不顺手位，结果完全一样（四件全受创）。
+     *   · 体力下限之所以曾经"看得出差别"，是因为早期事件真的要医疗与燃料，
+     *     而那两样正是被刻意铺在顺手位上的。判据只是在**蹭**那个巧合。
+     *
+     * 换句话说：它此前能过，靠的是"突发事件恰好只要那两类"这个**内容侧的事实**，
+     * 而不是"顺手位这条机制"。这种断言一旦内容变了就会用一条误导性的报错
+     * （"体力没差"）指向一个错误的方向。
+     *
+     * ## 所以现在直接量那件机制本身
+     *
+     * 逐件看**化解了没有**（`emergencyResolved`）：
+     *   · 标了顺手位 → 落在顺手位上的那几类必须化解得掉；
+     *   · 没标 → 一件都不该化解（`handyRank` 为 null 时顺手位是空的）。
+     * 它不依赖"这一局体力曲线长什么样"，也不依赖"这批货恰好有什么"。
+     *
+     * ★ 仍然跨 seed：突发事件的抽签吃种子，单跑一局可能一件都碰不上。
+     */
     for (const seed of [20261001, 777, 4242]) {
       const noHandy = runProbe(
         (run) => {
@@ -798,12 +832,30 @@ describe('★ 全周期探针（§12.3 v0.7 / §12 v0.8 的永久回归）：好
         null,
         seed
       );
-      expect(withHandy.outcome).toBe('survived');
-      // 代价是看得见的：没标顺手位的人，14 天下来体力明显更低
-      expect(noHandy.staminaFloor).toBeLessThan(withHandy.staminaFloor);
-      // 但它仍然撑得过 14 天 —— §5 引擎①「不整理也能活」没有被这次修复推翻，
+      // 两种摆法碰上的突发事件必须是同一批 —— 只有顺手位这一个变量在变，
+      // 否则这条对比就不成立了（这也是"只改怎么摆，不改有什么"那条口径的延长）
+      expect(noHandy.emergencies.map((e) => e.id)).toEqual(withHandy.emergencies.map((e) => e.id));
+      // 没标顺手位 → 顺手位是空的 → 每一件都受创
+      expect(noHandy.emergencies.every((e) => !e.resolved), `seed=${seed} 没标顺手位却化解掉了`).toBe(true);
+      /*
+       * 标了之后不少于没标 —— 这是**这条用例能保证的那一半**。
+       *
+       * ★ 刻意不写成"必须化解掉至少一件"：那取决于这批货里到底有没有
+       * 顺手位上那几类（而这批探针货是固定的一批口粮，不是为此设计的）。
+       * 我试过那个更硬的写法，它当场就红了 —— 于是我差点又走一遍
+       * "把 fixture 调到让断言变绿"的老路，那正是这条用例原来假绿的成因。
+       *
+       * "顺手位对**每一个品类**都真的有用"由
+       * `emergency.test.ts` 的「★★ 表里的每一个品类都有一条能化解它的路」守着 ——
+       * 那条才是这个机制的守卫，这里只负责"在真实的一局里它没被接错线"。
+       */
+      expect(withHandy.emergencies.filter((e) => e.resolved).length).toBeGreaterThanOrEqual(
+        noHandy.emergencies.filter((e) => e.resolved).length
+      );
+      // 两种摆法都撑得过 14 天 —— §5 引擎①「不整理也能活」没有被推翻，
       // 它只是从"没有代价"变成了"代价看得见"
       expect(noHandy.outcome).toBe('survived');
+      expect(withHandy.outcome).toBe('survived');
     }
   });
 

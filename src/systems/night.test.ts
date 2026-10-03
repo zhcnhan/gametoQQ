@@ -40,10 +40,10 @@ function storeAtNight(): GameStore {
 }
 
 describe('事件表：形态校验', () => {
-  it('6 条事件，id 唯一', () => {
-    expect(NIGHT_EVENT_DEFS).toHaveLength(6);
+  it('事件表非空、id 唯一（条数是内容量，不是不变量 —— 别把数字写死在这里）', () => {
+    expect(NIGHT_EVENT_DEFS.length).toBeGreaterThanOrEqual(6);
     const ids = NIGHT_EVENT_DEFS.map((def) => def.id);
-    expect(new Set(ids).size).toBe(6);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 
   it('每条 2~3 个选项（§6.2），标签 ≤ 8 字（手机竖屏一行放得下）', () => {
@@ -58,10 +58,26 @@ describe('事件表：形态校验', () => {
   });
 
   it('文本 1~2 句、克制（不许出现引号台词）', () => {
+    /*
+     * ★ 这里 M3 修了两处，两处都是"测试的写法与它声称的规则不是一回事"：
+     *
+     *  1. **数量断言从"恰好 6 条"改成"至少 6 条、id 唯一"。**
+     *     原来那条 `toHaveLength(6)` 守的其实是"表里恰好有 6 条"这个**事实**，
+     *     而不是任何设计规则 —— M3 把夜间事件补到 28 条时它当场就红了。
+     *     条数是内容量，不是不变量；**id 唯一**才是不变量。
+     *  2. **`text.includes('：')` 这个判据写宽了。**
+     *     它想拦的是**台词腔**（"王阿姨说：'…'"），但冒号本身在"报事实"
+     *     的句子里是正常的：`半夜冻醒了一次。你摸到床头的温度贴：9°C。`
+     *     这一条与 §10B 的内容口径完全一致（"天气只报温度与事实"），
+     *     而它在旧判据下会被判违规。
+     *     所以改成拦**真正的台词标志**：引号对（`""` / `''` / `「」`）
+     *     与"某某说："这种转述引语。
+     */
+    const DIALOGUE = /[“”‘’「」『』]|说\s*[：:]/;
     for (const def of NIGHT_EVENT_DEFS) {
       expect(def.text.length).toBeGreaterThan(8);
       expect(def.text.length).toBeLessThanOrEqual(60);
-      expect(def.text.includes('：')).toBe(false);
+      expect(DIALOGUE.test(def.text), `${def.id} 的正文像是台词：${def.text}`).toBe(false);
     }
   });
 
