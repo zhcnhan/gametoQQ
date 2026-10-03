@@ -18,7 +18,7 @@
  * 先知日历，而 M1 的 `DisasterProfile.calendar` 是静态表。所以这里的 `thanks`
  * 只有现金与箱型两种形态。
  */
-import type { CategoryId } from '../model/types';
+import type { CategoryId, ContentTier } from '../model/types';
 
 /**
  * 今天有人来敲门的概率（种子化决定，同 seed 同结果）。
@@ -45,6 +45,15 @@ export interface HelpRequestDef {
   trustLoss: number;
   /** 对方留下的东西（§6.5 的"以物易物"）。不是每单都有 */
   thanks?: { readonly cash?: number; readonly boxDefId?: string };
+  /**
+   * 内容分层（§10B.5 第 3 件）。
+   *
+   * ★ 这里刻意**不写 `?? 1` 的默认值**：分层是"这条内容打算在第几层放出来"的
+   * 一个明确决定，不是可以省略的装饰。校验器要求每条都写。
+   */
+  tier: ContentTier;
+  /** 生成时写下的「它逼玩家做什么决定」（评审留痕，不参与玩法，见 `ItemDef.decision`） */
+  decision?: string;
 }
 
 export const HELP_REQUEST_DEFS: readonly HelpRequestDef[] = [
@@ -56,7 +65,8 @@ export const HELP_REQUEST_DEFS: readonly HelpRequestDef[] = [
     demands: [{ category: 'medicine', count: 3 }],
     trustGain: 2,
     trustLoss: 2,
-    thanks: { cash: 60 }
+    thanks: { cash: 60 },
+    tier: 1
   },
   {
     id: 'q_wang_water',
@@ -65,7 +75,8 @@ export const HELP_REQUEST_DEFS: readonly HelpRequestDef[] = [
     demands: [{ category: 'water', count: 4 }],
     trustGain: 1,
     trustLoss: 2,
-    thanks: { cash: 30 }
+    thanks: { cash: 30 },
+    tier: 1
   },
 
   // ———————— 老同学 ————————
@@ -76,7 +87,8 @@ export const HELP_REQUEST_DEFS: readonly HelpRequestDef[] = [
     demands: [{ category: 'food', count: 4 }],
     trustGain: 2,
     trustLoss: 3,
-    thanks: { cash: 80 }
+    thanks: { cash: 80 },
+    tier: 1
   },
   {
     id: 'q_classmate_fuel',
@@ -85,7 +97,8 @@ export const HELP_REQUEST_DEFS: readonly HelpRequestDef[] = [
     demands: [{ category: 'fuel', count: 2 }],
     trustGain: 2,
     trustLoss: 2,
-    thanks: { cash: 100 }
+    thanks: { cash: 100 },
+    tier: 1
   },
 
   // ———————— 老陈 ————————
@@ -97,7 +110,8 @@ export const HELP_REQUEST_DEFS: readonly HelpRequestDef[] = [
     trustGain: 2,
     trustLoss: 1,
     // 他自己就是存货的人 —— 这类回报是他唯一给得起的东西
-    thanks: { boxDefId: 'box_staple' }
+    thanks: { boxDefId: 'box_staple' },
+    tier: 1
   },
   {
     id: 'q_shopkeeper_warmth',
@@ -106,7 +120,8 @@ export const HELP_REQUEST_DEFS: readonly HelpRequestDef[] = [
     demands: [{ category: 'warmth', count: 1 }],
     trustGain: 2,
     trustLoss: 1,
-    thanks: { boxDefId: 'box_medical' }
+    thanks: { boxDefId: 'box_medical' },
+    tier: 1
   }
 ];
 

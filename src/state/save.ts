@@ -31,6 +31,7 @@ import type {
 import { HANDY_SLOTS } from '../model/shelf';
 import { EVENT_HISTORY_KEEP } from '../model/types';
 import { emptyEventHistory } from '../systems/setup';
+import { sanitizeIdentityLevels, clampIdentityLevel } from '../data/identityLevels';
 import { createMemoryStorage, resolveStorage, type StorageLike } from './storage';
 
 export const STORAGE_KEY = 'tunhuo.save';
@@ -63,8 +64,18 @@ export const STORAGE_KEY = 'tunhuo.save';
  *  - v14：事件近期记录 —— `RunState.eventHistory`（夜间 / 求援 / 白天 / 突发事件各留最近 4 条）。
  *        它解决的是 M2 走测反馈的"同一个 NPC 隔天又问同一件事"：求援池 6 单、每天 45%、
  *        均匀随机 → 同一个 NPC 前后两次问同一件事的概率是 50%。
+ *  - v15：手里那件物资落盘（`RunState.held` / `heldFrom`）——
+ *        修掉"手里拿着东西时刷新页面，这件物资凭空消失"。
+ *  - v16：M3 第 2 步「成就系统」（§10B.2）——
+ *        ① `MetaProfile` 增加 `achievements`（已解锁 id）、`totalShelved`（生涯累计上架件数）、
+ *           `everBoughtItemIds`（生涯买过的物资，成就「先见之明」唯一的埋点增量）；
+ *        ② `SurvivalState` 增加 `cleanDays` / `minStamina` / `emergencyHurtCount` ——
+ *           三条成就的判据需要"整局一直怎样"，而快照只回答"最后一天怎样"。
+ *  - v17：M3 第 3 步「身份熟练度」（§10B.3）—— `RunState` 增加 `identityLevel`
+ *        （这一局用的等级，开局时从 `meta.identityLevels` **快照**下来）。
+ *        老档补 **1**，那正好是它们当时的真实情况（那时还没有等级这回事）。
  */
-export const SAVE_VERSION = 15;
+export const SAVE_VERSION = 17;
 /** 落盘节流上限（提示词 0：debounce ≤ 300ms） */
 export const SAVE_DEBOUNCE_MS = 250;
 
@@ -81,7 +92,10 @@ export function createMetaProfile(): MetaProfile {
     identityLevels: {},
     codex: { items: [], disasters: [], npcs: [] },
     bestSurvivalDays: {},
-    bestSafeStreak: 0
+    bestSafeStreak: 0,
+    achievements: [],
+    totalShelved: 0,
+    everBoughtItemIds: []
   };
 }
 
@@ -160,7 +174,66 @@ export function migrate(raw: unknown): SaveGame | null {
   if (declared < 13) save = migrateV12ToV13(save);
   if (declared < 14) save = migrateV13ToV14(save);
   if (declared < 15) save = migrateV14ToV15(save);
+  if (declared < 16) save = migrateV15ToV16(save);
+  if (declared < 17) save = migrateV16ToV17(save);
   return normalizeRun(save);
+}
+
+/**
+ * v16 → v17：M3 第 3 步「身份熟练度」（§10B.3）—— `RunState.identityLevel`。
+ *
+ * ## 为什么补 1 而不是"按 meta 现算一遍"
+ *
+ * 老档在那个时刻**用的就是 1 级**：`identityLevels` 那时还从来没有写入方
+ * （它是 M0 就存在、一直空转的字段），所以每一个老档的熟练度都是 1。
+ * 补 1 = 说真话。
+ *
+ * ★ 而"按 `meta.identityLevels` 现算"在这里是**错的**，有两个具体理由：
+ *  ① 那时那张表必然是空的，算出来也是 1 —— 多写一段代码得到同一个结果；
+ *  ② 更要紧的是**语义**：`identityLevel` 是"这一局用的等级"的**快照**。
+ *     按 meta 现算等于把一个"当时的事实"换成一个"现在算出来的数" ——
+ *     而两者会在玩家后来练高熟练度之后**分叉**（旧档会被追认成高等级，
+ *     于是同一份存档的历史变了）。快照一旦能被追溯修改，它就不是快照了。
+ */
+export function migrateV16ToV17(save: SaveGame): SaveGame {
+  const run = save.run;
+  if (run && typeof run.identityLevel !== 'number') run.identityLevel = 1;
+  save.meta.version = SAVE_VERSION;
+  return save;
+}
+
+/**
+ * v15 → v16：M3 第 2 步「成就系统」（§10B.2）。
+ *
+ * ## 老档补的都是"空"，而且**每一项都不反推** —— 但每一项的理由不一样
+ *
+ *  · `meta.achievements` 补空。**绝不反推**：M3 之前根本没有成就这个账本，
+ *    而其中好几条的判据（比如「罐头鉴赏家」要"点亮全部 canned"）在老档上
+ *    其实**真的成立**。反推的话，一个从没听说过成就的玩家会在读档那一刻
+ *    收到一堆解锁 —— 那不是在奖励他，那是在告诉他"你之前那些局白打了"。
+ *    成就的语义是"你在**有账本之后**做到了"，与图鉴同一条口径；
+ *  · `totalShelved` 补 0（同上）。它不反推还有第二个理由：反推要遍历
+ *    老档的全部货架去数件数，而那数出来的是"**现在**有多少"，
+ *    不是"生涯上架过多少"——**那是个错的数**，错的数比没有数更糟；
+ *  · `everBoughtItemIds` 补空（同上）。
+ *
+ * ## `SurvivalState` 的三个累计值：跟着 `normalizeRun` 一起补
+ *
+ * `cleanDays` / `minStamina` / `emergencyHurtCount` 在 `normalizeRun` 里补默认值
+ * （`0` / `100` / `0`），所以这里不用重复处理 —— 那条路径**所有**版本的档都会走。
+ * 刻意不在这里也写一遍：两份补值逻辑迟早会漂（§2.8）。
+ *
+ * ★ 老档正卡在 `ending` 时会怎样：`metaSettled` 已经非空，所以 `settleRunMeta`
+ * 会直接返回 null、不重发图鉴 —— **但成就要在那一刻补判一次**。
+ * 这是刻意的：一个 M3 之前打完的档，它的成果确实达到了某些成就的条件，
+ * 而"补发"在这里是对的（成就与图鉴不同：图鉴要"见过"这个动作，
+ * 而成就的判据是**从这一局的账里算出来的**，账还在，算得出来就该认）。
+ * 代价是这些老档会一次性收到若干解锁 —— 演出会告诉玩家发生了什么，不会静默。
+ */
+export function migrateV15ToV16(save: SaveGame): SaveGame {
+  save.meta = normalizeMeta(save.meta);
+  save.meta.version = SAVE_VERSION;
+  return save;
 }
 
 /**
@@ -223,7 +296,7 @@ function normalizeMeta(meta: MetaProfile): MetaProfile {
     asArray<unknown>(v).filter((x): x is string => typeof x === 'string');
   return {
     version: SAVE_VERSION,
-    identityLevels: isObject(meta.identityLevels) ? (meta.identityLevels as Record<string, number>) : {},
+    identityLevels: sanitizeIdentityLevels(meta.identityLevels),
     codex: {
       items: strList(codex.items),
       disasters: strList(codex.disasters),
@@ -235,7 +308,15 @@ function normalizeMeta(meta: MetaProfile): MetaProfile {
     bestSafeStreak:
       typeof meta.bestSafeStreak === 'number' && Number.isFinite(meta.bestSafeStreak)
         ? Math.max(0, Math.round(meta.bestSafeStreak))
-        : 0
+        : 0,
+    // 成就（v16）：三件都补"空"，而且**每一项都刻意不反推**，理由与 codex 那句相同 ——
+    // 老档走过的局没有这个账本，凭空补一份等于告诉玩家他达成过一些他从没达成过的事
+    achievements: strList(meta.achievements),
+    totalShelved:
+      typeof meta.totalShelved === 'number' && Number.isFinite(meta.totalShelved)
+        ? Math.max(0, Math.round(meta.totalShelved))
+        : 0,
+    everBoughtItemIds: strList(meta.everBoughtItemIds)
   };
 }
 
@@ -402,6 +483,11 @@ export function migrateV5ToV6(save: SaveGame): SaveGame {
       hardPressDays: 0,
       hardPressStreak: 0,
       safeStreak: 0,
+      // v16 的三个累计值：这一处是"从更早的版本一路补上来"的路径，
+      // 默认值必须与 `systems/setup.ts` 的开局值一致（否则同一种状态会有两个真值）
+      cleanDays: 0,
+      minStamina: 100,
+      emergencyHurtCount: 0,
       lastTradeDay: NEVER_TRADED,
       last: { ...EMPTY_SURVIVAL_SNAPSHOT }
     };
@@ -547,6 +633,15 @@ function normalizeRun(save: SaveGame): SaveGame | null {
     const fallback = IDENTITY_DEFS[0];
     if (fallback) run.identityId = fallback.id;
   }
+  /*
+   * §10B.3 的熟练度等级：夹到 1~3。
+   *
+   * 与身份 id 那条同一个道理 —— 一个手改过的档可能写着 `identityLevel: 99`，
+   * 而它会被 `LEVEL_BONUS_PER_STEP` 直接乘进去（99 级 = 开局多拿 3920 元、
+   * 车载 +294kg，那一局直接把三约束全废掉）。所以**读进来的那一份也要夹**，
+   * 与运行期写入用同一个区间（`clampIdentityLevel` 是唯一的定义处）。
+   */
+  run.identityLevel = clampIdentityLevel(run.identityLevel);
   /*
    * 四维：**重建**成"四个 0..100 的有限数"。
    *
@@ -750,6 +845,17 @@ function normalizeRun(save: SaveGame): SaveGame | null {
         : 0,
     safeStreak:
       typeof survival.safeStreak === 'number' && survival.safeStreak >= 0 ? Math.round(survival.safeStreak) : 0,
+    /*
+     * v16 的三个累计值。它们的默认值必须**保守**，因为"补一个大的上去"
+     * 会直接发成就（见 `migrateV15ToV16` 的说明）：
+     *   · `cleanDays` 补 0（"你一直摆得很好"是最不该白送的那一条）；
+     *   · `minStamina` 补 **100**（= "从没累过"，这是它在开局时的真值；
+     *     补 0 的话「一路从容」会白送给每一个老档）；
+     *   · `emergencyHurtCount` 补 0（同上，这条偏松，但它本来就是个计数）。
+     */
+    cleanDays: Math.max(0, num(survival.cleanDays)),
+    minStamina: Math.min(100, Math.max(0, num(survival.minStamina) || 100)),
+    emergencyHurtCount: Math.max(0, Math.round(num(survival.emergencyHurtCount))),
     // 它可以是负数（没换过时是 -99），所以不夹 ≥ 0
     lastTradeDay: typeof survival.lastTradeDay === 'number' ? Math.round(survival.lastTradeDay) : NEVER_TRADED,
     last: {

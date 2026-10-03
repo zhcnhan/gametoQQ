@@ -25,7 +25,8 @@ import { IDENTITY_DEFS } from '../data/identities';
 import { DISASTER_DEFS, disasterModifiersOf, outdoorTemp } from '../data/disaster';
 import { createCursor } from '../model/rng';
 import { createStartingRun } from '../systems/setup';
-import { chooseIdentity, endDay, ensureDayStocks } from '../systems/phases';
+import { chooseIdentity, chooseNightOption, endDay, ensureDayStocks, sleep } from '../systems/phases';
+import { NIGHT_SLEEP } from '../data/nightEvents';
 import { buildCartView, rollDayEvent } from '../systems/shop';
 import { rollHelpRequest } from '../systems/help';
 import { settleSurvivalDay } from '../systems/survival';
@@ -153,6 +154,16 @@ describe('§10B.3.1 L2 维度：逐维实测', () => {
      * `endDay` 要求 `phase === 'organize'`（"先把东西放下再睡"），开局是 `stockpile_shop`。
      * 不摆正 phase 的话命令会被 reject，而"行动点没变"看起来像是维度没生效 ——
      * 这个坑我在一次性脚本里踩过一次，写进注释免得下次再踩。
+     *
+     * ★★ 第二个坑（M3 补内容时才显形）：**`endDay` 不保证跨天**。
+     * 它先掷一次"今晚有没有事"（[`rollNight`]），有事就把 phase 推到 `night` 等你决定，
+     * **行动点要等关灯之后才重算**。所以"调一次 `endDay` 然后读 `actionPoints`"
+     * 本来就是错的写法 —— 它此前是**碰巧**对的：原来只有 6 条夜间事件，
+     * 这个 seed 恰好掷空。M3 把夜间事件加到 28 条之后，同一个 seed 掷中了事件，
+     * 于是行动点**一个都没动**（`3`），而报错看起来像"`actionPointDelta` 没生效"。
+     *
+     * 这类失败最值得记的一点：**测试通过的原因和它声称的原因不是同一个**。
+     * 所以这里改成走完"入夜 → 直接睡 → 跨天"的完整路径，不再依赖掷骰运气。
      */
     const apOf = (patch: Partial<DisasterProfile>): number =>
       withModifiers(patch, () => {
@@ -162,6 +173,10 @@ describe('§10B.3.1 L2 维度：逐维实测', () => {
           draft.phase = 'organize';
         });
         endDay(store);
+        if (store.run.phase === 'night') {
+          chooseNightOption(store, NIGHT_SLEEP); // 直接睡：不参与今晚的事
+          sleep(store);
+        }
         return store.run.actionPoints;
       });
     const base = apOf({});

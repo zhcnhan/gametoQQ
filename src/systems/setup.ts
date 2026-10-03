@@ -129,6 +129,8 @@ export function createStartingRun(seed: number = randomSeed()): RunState {
     phase: 'prologue',
     day: FIRST_STOCKPILE_DAY,
     identityId: '',
+    // §10B.3：熟练度等级在 `chooseIdentity` 那一刻才定；开局页上还没有身份，所以是 1
+    identityLevel: 1,
     disasterId: M1_DISASTER_ID,
     cash: 0,
     shelves: createStartingShelves(),
@@ -165,6 +167,11 @@ export function createStartingRun(seed: number = randomSeed()): RunState {
       hardPressDays: 0,
       hardPressStreak: 0,
       safeStreak: 0,
+      // v16（成就）：`cleanDays` 从 0 数起；`minStamina` 从满值起 ——
+      // 它是"最低体力"，开局还没累过，所以真值就是 100（补 0 会让成就白送）
+      cleanDays: 0,
+      minStamina: 100,
+      emergencyHurtCount: 0,
       lastTradeDay: NEVER_TRADED,
       last: { ...EMPTY_SURVIVAL_SNAPSHOT }
     },

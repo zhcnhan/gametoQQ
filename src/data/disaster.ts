@@ -55,6 +55,29 @@ export const DISASTER_DEFS: readonly DisasterProfile[] = [
   {
     id: 'cold_snap',
     name: '寒潮',
+    /**
+     * §10B.3.2 的家族与层级。
+     *
+     * ★ 寒潮是 `L2` 而**不是** `L1`，这一点值得写下理由：§10B.3.1 的分层表里
+     * L1 是"只有第 1~4 维"（消耗 / 腐坏 / 刚需 / 温度），而那正是寒潮的现状 ——
+     * 它一个 L2 维度都没用（下面那 8 个字段一个都没写）。
+     * 但**内容层的 tier 与机制层的 level 是两件事**：`level` 回答"这一场用到哪几层机制"，
+     * `tier` 回答"它什么时候该被玩家撞上"。寒潮的 `tier` 是 1（开局就是它）。
+     * 校验器按 `level` 核对维度签名（声称 L3 却只动 4 个维度 = 换皮），
+     * 按 `tier` 核对"这条内容放出来的时机"—— 两者不许互相顶替。
+     */
+    family: '温度',
+    level: 'L2',
+    tier: 1,
+    axis: '冷与消耗：燃料是唯一的硬通货，而零下的室外反而让东西放得住',
+    counterIntuitive:
+      '越冷的东西越不容易坏。这一场最大的敌人是消耗，不是腐坏 —— 所以"多囤"在别处是安全感，在这里是赔钱',
+    decisions: [
+      '燃料是最大的一笔开销（14 天刚需约占预算六成），少买两罐就能多一床棉被',
+      '室外是天然冷库，鲜食可以晚点吃，但屋里那点空间要留给不经冻的东西',
+      '顺手位放燃料还是放药：寒潮掉的是庇护所，突发事件要的就是这两样'
+    ],
+    notes: '用到维度 1/2/3/4，共 4 个 —— 它是全部灾难的**下限样板**（§10B.3.1 的 L1）。',
     calendar: [...COLD_SNAP_CALENDAR], // §7 的类型是可变数组，这里展开一份给它
     /**
      * 逐日外界温度。**这是那次"手写常量表"的搬迁结果（D-15）** ——
@@ -80,7 +103,475 @@ export const DISASTER_DEFS: readonly DisasterProfile[] = [
      * `spoilRate` 真正的用武之地是 M3 的热浪（>1，会让粮仓变成坟场）。
      */
     spoilRate: 0.5
-  }
+  },
+  // ═══ 生成内容 disaster-00 起（scripts/merge-content.mjs 插入，别手改这一段） ═══
+{
+    id: "heat_wave",
+    name: "热浪",
+    family: "温度",
+    level: "L2",
+    tier: 2,
+    axis: "高温与腐坏：水喝得快，东西烂得快，而夜里才是活动时间",
+    temperatures: {
+      [0]: 41,
+      [3]: 42,
+      [7]: 42,
+      [11]: 41,
+      [14]: 40,
+      [-7]: 34,
+      [-4]: 36,
+      [-1]: 39
+    },
+    spoilRate: 2.4,
+    dailyDrain: {
+      water: 3,
+      medicine: 1
+    },
+    priorityCategories: ["water", "medicine"],
+    windowScene: "heat-haze",
+    shelterDecayPerDay: -1.5,
+    restEfficiency: 0.6,
+    carryFactor: 0.7,
+    actionPointDelta: 0,
+    shopSupplyFactor: 0.85,
+    closedShopIds: [],
+    priceSurcharge: 0.25,
+    eventPoolWeights: {
+      heat: 3,
+      water: 2
+    },
+    npcVisitFactor: 0.7,
+    calendar: [
+      {
+        day: -7,
+        severity: 0.1,
+        hint: "34°C。新闻说是十年最早的连续高温。"
+      },
+      {
+        day: -6,
+        severity: 0.15,
+        hint: "35°C。超市的矿泉水开始整箱卖。"
+      },
+      {
+        day: -5,
+        severity: 0.2,
+        hint: "36°C。天气预报把高温预警升到橙色。"
+      },
+      {
+        day: -4,
+        severity: 0.3,
+        hint: "36°C。小区公告栏贴了节电通知。"
+      },
+      {
+        day: -3,
+        severity: 0.4,
+        hint: "37°C。夜里十二点还有 31°C。"
+      },
+      {
+        day: -2,
+        severity: 0.5,
+        hint: "38°C。药店的藿香正气水断货了。"
+      },
+      {
+        day: -1,
+        severity: 0.7,
+        hint: "39°C。路面温度实测 52°C。"
+      },
+      {
+        day: 0,
+        severity: 1,
+        hint: "41°C。柏油路软了，楼道里没人开窗。"
+      },
+      {
+        day: 1,
+        severity: 1,
+        hint: "41°C。电梯停在低层，有人被困过。"
+      },
+      {
+        day: 2,
+        severity: 1,
+        hint: "42°C。冰箱不停机，电表转得飞快。"
+      },
+      {
+        day: 3,
+        severity: 1,
+        hint: "42°C。楼下的树叶子卷了边。"
+      },
+      {
+        day: 4,
+        severity: 1,
+        hint: "42°C。后半夜才降到 29°C，能睡一会。"
+      },
+      {
+        day: 5,
+        severity: 1,
+        hint: "42°C。有人把凉席搬进了地下室。"
+      },
+      {
+        day: 6,
+        severity: 1,
+        hint: "41°C。自来水管里出来的是温水。"
+      },
+      {
+        day: 7,
+        severity: 1,
+        hint: "42°C。菜场下午三点就收了摊。"
+      },
+      {
+        day: 8,
+        severity: 1,
+        hint: "41°C。风扇开到最大，风是热的。"
+      },
+      {
+        day: 9,
+        severity: 1,
+        hint: "41°C。楼下的猫一整天没挪地方。"
+      },
+      {
+        day: 10,
+        severity: 1,
+        hint: "40°C。晚上十点还有 34°C。"
+      },
+      {
+        day: 11,
+        severity: 1,
+        hint: "41°C。冰箱里的肉提前吃完了。"
+      },
+      {
+        day: 12,
+        severity: 1,
+        hint: "40°C。物业在楼下发了两箱水。"
+      },
+      {
+        day: 13,
+        severity: 1,
+        hint: "40°C。凌晨下了一点雨，十分钟就停了。"
+      },
+      {
+        day: 14,
+        severity: 1,
+        hint: "40°C。预报说明天降到 35°C。"
+      }
+    ],
+    counterIntuitive: "夜里比白天好过，活动该挪到晚上；冰箱在这个温度下成了耗电大户，冷藏的不如趁早吃掉",
+    decisions: ["饮水要按 14 天压满，药品也要备中暑的量，但现金只够囤一样的一半", "鲜食在这一场烂得飞快，罐头耐放却太重，车载装不了多少", "白天出门搬得少还掉状态，行动点该花在出门还是在家守着"],
+    notes: "用到维度 1/2/3/4/5/6/7/9/10/11/12，共 11 个。spoilRate 2.4 的理由：持续 40°C 以上，鲜食按小时坏。与寒潮不撞：寒潮动燃料与保暖、腐坏变慢，本场动水与药品、腐坏加快，刚需排序与腐坏方向都相反。"
+  },
+{
+    id: "flood_urban",
+    name: "洪水",
+    family: "水",
+    level: "L3",
+    tier: 2,
+    axis: "水与污染：到处是水但没有一口能喝，低处的东西全完了",
+    temperatures: {
+      [0]: 20,
+      [3]: 19,
+      [7]: 18,
+      [11]: 18,
+      [14]: 19,
+      [-7]: 24,
+      [-4]: 23,
+      [-1]: 22
+    },
+    spoilRate: 1.8,
+    dailyDrain: {
+      water: 2,
+      medicine: 1
+    },
+    priorityCategories: ["water", "medicine"],
+    windowScene: "rain-flood",
+    shelterDecayPerDay: -3,
+    restEfficiency: 0.7,
+    carryFactor: 0.6,
+    actionPointDelta: 0,
+    shopSupplyFactor: 0.55,
+    closedShopIds: ["hardware"],
+    priceSurcharge: 0.3,
+    eventPoolWeights: {
+      water: 3,
+      neighbor: 2
+    },
+    npcVisitFactor: 1.2,
+    categoryEfficiency: {
+      warmth: 0.6
+    },
+    capacityFactor: 0.8,
+    healthRiskPerDay: 1,
+    calendar: [
+      {
+        day: -7,
+        severity: 0.1,
+        hint: "雨下了一整夜。气象台说上游来水了。"
+      },
+      {
+        day: -6,
+        severity: 0.15,
+        hint: "河水涨了半米。河边的步道封了。"
+      },
+      {
+        day: -5,
+        severity: 0.2,
+        hint: "连续第四天有雨。地下通道开始积水。"
+      },
+      {
+        day: -4,
+        severity: 0.3,
+        hint: "水文站发了洪水蓝色预警。"
+      },
+      {
+        day: -3,
+        severity: 0.4,
+        hint: "一楼的住户开始往楼上搬东西。"
+      },
+      {
+        day: -2,
+        severity: 0.5,
+        hint: "雨没停。排水口开始往外冒水。"
+      },
+      {
+        day: -1,
+        severity: 0.7,
+        hint: "江面离警戒线还差二十厘米。"
+      },
+      {
+        day: 0,
+        severity: 1,
+        hint: "凌晨决了堤。一楼进水到小腿。"
+      },
+      {
+        day: 1,
+        severity: 1,
+        hint: "水没过台阶。一楼的人全搬上来了。"
+      },
+      {
+        day: 2,
+        severity: 1,
+        hint: "自来水停了。公告说水厂被淹。"
+      },
+      {
+        day: 3,
+        severity: 1,
+        hint: "楼下漂着垃圾桶和一把椅子。"
+      },
+      {
+        day: 4,
+        severity: 1,
+        hint: "雨小了。水没退，停在原地。"
+      },
+      {
+        day: 5,
+        severity: 1,
+        hint: "有人划着充气垫出去买药。"
+      },
+      {
+        day: 6,
+        severity: 1,
+        hint: "来了两小时电，又断了。"
+      },
+      {
+        day: 7,
+        severity: 1,
+        hint: "水退了一掌深。泥留在了路上。"
+      },
+      {
+        day: 8,
+        severity: 1,
+        hint: "水退到脚踝。空气里一股腥味。"
+      },
+      {
+        day: 9,
+        severity: 1,
+        hint: "超市在清一楼的货，整车拉走。"
+      },
+      {
+        day: 10,
+        severity: 1,
+        hint: "自来水来了，通知说要烧开再喝。"
+      },
+      {
+        day: 11,
+        severity: 1,
+        hint: "墙角开始长霉点。"
+      },
+      {
+        day: 12,
+        severity: 1,
+        hint: "路上能走车了。店还关着一半。"
+      },
+      {
+        day: 13,
+        severity: 1,
+        hint: "晒了一天太阳，被子还是潮的。"
+      },
+      {
+        day: 14,
+        severity: 1,
+        hint: "水全退了。墙上的水印还在。"
+      }
+    ],
+    counterIntuitive: "到处是水，但没有一口能直接喝；水最多的一场，恰恰是饮用水最金贵的一场",
+    decisions: ["水源被污染后，干净水要按 14 天囤，但它又重又占地方", "低处的格子等于没有，整理时东西该往高处码，顺手位也得跟着搬家", "棉被吸了潮就不顶用，保暖品类在这一场近乎作废，预算要不要全挪给水", "邻居来往比平常勤，换东西方便，但每次开门都意味着分东西出去"],
+    notes: "用到维度 1/2/3/4/5/6/7/9（含 closedShopIds）/10/11/12/13/14/15，共 14 个。spoilRate 1.8 的理由：湿度 90% 以上，干货吸潮霉变。首次使用：capacityFactor 砍掉低处空间、categoryEfficiency 首次废掉整个保暖品类、closedShopIds 关掉五金店。"
+  },
+{
+    id: "blackout_winter",
+    name: "大停电",
+    family: "组合",
+    level: "L3",
+    tier: 2,
+    axis: "冷与黑：寒潮的温度叠加断电，存货变成了限期任务",
+    temperatures: {
+      [0]: -18,
+      [3]: -21,
+      [7]: -24,
+      [11]: -27,
+      [14]: -29,
+      [-7]: 4,
+      [-4]: 0,
+      [-1]: -8
+    },
+    spoilRate: 1.6,
+    dailyDrain: {
+      fuel: 3,
+      food: 1
+    },
+    priorityCategories: ["fuel", "food"],
+    windowScene: "dark-city",
+    shelterDecayPerDay: -2.5,
+    restEfficiency: 0.55,
+    carryFactor: 0.8,
+    actionPointDelta: -1,
+    shopSupplyFactor: 0.5,
+    closedShopIds: ["supermarket"],
+    priceSurcharge: 0.35,
+    eventPoolWeights: {
+      cold: 3,
+      dark: 2,
+      neighbor: 2
+    },
+    npcVisitFactor: 1.3,
+    categoryEfficiency: {
+      medicine: 0.8
+    },
+    healthRiskPerDay: 1.5,
+    calendar: [
+      {
+        day: -7,
+        severity: 0.1,
+        hint: "4°C。气象台挂了寒潮蓝色预警。"
+      },
+      {
+        day: -6,
+        severity: 0.15,
+        hint: "2°C。电网公司发了负荷预警。"
+      },
+      {
+        day: -5,
+        severity: 0.2,
+        hint: "0°C。窗上结了今年第一回霜。"
+      },
+      {
+        day: -4,
+        severity: 0.3,
+        hint: "-2°C。隔壁楼昨晚停了一小时电。"
+      },
+      {
+        day: -3,
+        severity: 0.4,
+        hint: "-5°C。五金店的蜡烛和电池卖空了。"
+      },
+      {
+        day: -2,
+        severity: 0.5,
+        hint: "-6°C。物业通知各楼栋轮流限电。"
+      },
+      {
+        day: -1,
+        severity: 0.7,
+        hint: "-8°C。风很大，电线在响。"
+      },
+      {
+        day: 0,
+        severity: 1,
+        hint: "-18°C。凌晨两点，全城的灯一起灭了。"
+      },
+      {
+        day: 1,
+        severity: 1,
+        hint: "-19°C。没有电。电梯停在了半层。"
+      },
+      {
+        day: 2,
+        severity: 1,
+        hint: "-20°C。冰箱里的东西开始化，得先吃掉。"
+      },
+      {
+        day: 3,
+        severity: 1,
+        hint: "-21°C。手机信号时有时无。"
+      },
+      {
+        day: 4,
+        severity: 1,
+        hint: "-22°C。屋里 3°C，呼吸有白气。"
+      },
+      {
+        day: 5,
+        severity: 1,
+        hint: "-22°C。邻居来敲门，问有没有蜡烛。"
+      },
+      {
+        day: 6,
+        severity: 1,
+        hint: "-23°C。水管冻住了，要烧雪水。"
+      },
+      {
+        day: 7,
+        severity: 1,
+        hint: "-24°C。来电了四十分钟，又灭了。"
+      },
+      {
+        day: 8,
+        severity: 1,
+        hint: "-25°C。楼道里有人生了炭盆。"
+      },
+      {
+        day: 9,
+        severity: 1,
+        hint: "-26°C。冰箱空了，要坏的都吃完了。"
+      },
+      {
+        day: 10,
+        severity: 1,
+        hint: "-27°C。夜里能听见远处的发电机。"
+      },
+      {
+        day: 11,
+        severity: 1,
+        hint: "-27°C。手露在外面十分钟就发麻。"
+      },
+      {
+        day: 12,
+        severity: 1,
+        hint: "-28°C。有电的楼收留了几个老人。"
+      },
+      {
+        day: 13,
+        severity: 1,
+        hint: "-29°C。天很晴，电还没有来。"
+      },
+      {
+        day: 14,
+        severity: 1,
+        hint: "-29°C。凌晨来电了。灯亮时没人说话。"
+      }
+    ],
+    counterIntuitive: "冰箱里的存货变成了限期任务，两天内吃不完就全坏；没电的夜反而让邻居走得更勤",
+    decisions: ["前 48 小时先清空冰箱吃掉要坏的，还是保燃料熬更冷的夜", "行动点只剩两个，出门摸黑找燃料，还是在家把东西理好", "邻居来得勤，人情能换回款，但每次开门都要分东西出去"],
+    notes: "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/13/15，共 14 个。spoilRate 1.6 的理由：室外虽冷但冰箱停机，室内冷藏链断裂。首次使用维度 8（行动点 -1）；食物反升为刚需（必须吃掉要坏的），刚需排序与寒潮相反，故不与寒潮撞车。"
+  },
+  // ═══ 生成内容 disaster-00 止 ═══
 ];
 
 const DISASTER_BY_ID: ReadonlyMap<string, DisasterProfile> = new Map(DISASTER_DEFS.map((d) => [d.id, d]));

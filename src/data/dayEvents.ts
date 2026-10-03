@@ -44,13 +44,47 @@
 import type { DayEventDef } from '../model/types';
 
 /**
- * "今天这家店没事"的权重（抽签池里的一个虚拟条目）。
+ * "今天这家店有事"的概率。
  *
- * 3.0 配合下面 4 条事件的权重（1.0 + 1.6 + 1.4 + 0.6 = 4.6）→
- * 有事的概率 ≈ 4.6 / 7.6 ≈ **六成**。比夜间事件（60%）略低、
- * 比突发事件（约三成）高得多：白天要变数，但一天进三家店，每家都有事就成了例会。
+ * ## ★ 为什么是概率，而不是一个权重常数（M3 改的，这是修一个真的坑）
+ *
+ * 原来这里是一个**权重** `DAY_EVENT_NONE_WEIGHT = 3.0`，注释写着
+ * "3.0 配合 4 条事件的权重 → 有事的概率 ≈ 六成（约四成没事）"。
+ * 那句话在当时是对的，但它把"六成"这件事**挂在了事件池的大小上**：
+ *
+ * ```
+ * 有事概率 = 池子总权重 / (池子总权重 + NONE)
+ * ```
+ *
+ * 于是 M3 把白天事件从 4 条加到 24 条时，同一个 `3.0` 让有事概率变成了
+ * **85.85%** —— 一天进三家店，家家有事，白天从"有变数"变成"例会"，
+ * 而**没有任何一处代码或类型会报错**。守卫它的那条测试报的是
+ * "expected 0.8585 to be less than 0.75"，读起来像是测试太严，其实是真的坏了。
+ *
+ * 同一个坑在突发事件那边也踩了一次（`EMERGENCY_NONE_WEIGHT`，
+ * 7 条 → 28 条时有事概率从 30% 涨到 63%）。所以两处一起改成**概率口径**：
+ * 设计意图写在概率上，池子多大由期望权重反推。
+ *
+ * ★ 附带的好处：`eventPoolWeights`（灾难的"事件池权重"维度）会乘事件的权重，
+ * 这时 NONE 也跟着按比例缩放 —— "这场灾难里事件更多/更少"变成一件能表达的事。
+ * 原来那种写法下，倍率一变，"没事"的概率会跟着乱飘。
  */
-export const DAY_EVENT_NONE_WEIGHT = 3.0;
+export const DAY_EVENT_CHANCE = 0.6;
+
+/**
+ * 抽签池里"今天没事"那一格的权重，**由 `DAY_EVENT_CHANCE` 与当次池子反推**。
+ *
+ * 为什么做成函数而不是常数：池子的大小是**当场**才知道的
+ * （`onlyShops` 会把点位之外的条目权重压成 0，灾难的 `eventPoolWeights`
+ * 又会乘倍率）。所以"没事"的权重必须跟着那一次的实际池子算，
+ * 而不是在模块加载时算一个固定值。
+ *
+ * @param poolWeight 这一次实际参与抽签的事件权重合计
+ */
+export function noneWeightFor(poolWeight: number): number {
+  if (!(poolWeight > 0)) return 1; // 空池：只剩"没事"这一格
+  return (poolWeight * (1 - DAY_EVENT_CHANCE)) / DAY_EVENT_CHANCE;
+}
 
 interface WeightedDayEvent {
   def: DayEventDef;
@@ -96,7 +130,8 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
           outcome: '理货的小伙子认得你，从后门给你结了账。',
           effect: { grab: { category: 'food', count: 2 }, stamina: -4, cash: -10, mood: 4 }
         }
-      ]
+      ],
+      tier: 1
     }
   },
   {
@@ -132,7 +167,8 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
           outcome: '你退到货架外面等。前面的人把主食扫掉大半，你什么也没拿。',
           effect: { stockCut: { category: 'food', count: 4 }, mood: 2, visitLost: true }
         }
-      ]
+      ],
+      tier: 1
     }
   },
   {
@@ -159,7 +195,8 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
           outcome: '你给理货员递了包烟。他多给了你两件。',
           effect: { cash: -20, grab: { category: 'food', count: 2 }, limit: { category: 'food', max: 5 } }
         }
-      ]
+      ],
+      tier: 1
     }
   },
   {
@@ -192,9 +229,655 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
           outcome: '你调头走了。',
           effect: { visitLost: true }
         }
+      ],
+      tier: 1
+    }
+  },
+  // ═══ 生成内容 day-01 起（scripts/merge-content.mjs 插入，别手改这一段） ═══
+  {
+    weight: 1.0,
+    def:   {
+      id: "d_truck_unloading",
+      text: "后门有人在卸货，司机在看手机。纸箱上印着罐头。",
+      onlyShops: ["supermarket"],
+      tier: 1,
+      decision: "趁乱搬两箱（费体力），还是照常排队买限购的",
+      options: [
+        {
+          label: "搬两箱走",
+          outcome: "两箱罐头上了车。司机抬头看了一眼，没说话。",
+          effect: {
+            grab: {
+              category: "food",
+              count: 6
+            },
+            stamina: -6
+          }
+        },
+        {
+          label: "照常排队",
+          outcome: "队伍没动。前面的人在数货架。",
+          effect: {
+            mood: 2
+          }
+        }
       ]
     }
-  }
+  },
+  {
+    weight: 1.0,
+    def:   {
+      id: "d_cash_only",
+      text: "收银台贴了张纸：今日只收现金，不找零。",
+      tier: 1,
+      decision: "为了凑整多拿一件，还是放下东西去别家",
+      options: [
+        {
+          label: "多拿一包盐",
+          outcome: "盐进了袋子。{spentCash}，正好。",
+          effect: {
+            grab: {
+              category: "food",
+              count: 1
+            },
+            cash: -8
+          },
+          requireFullCash: true
+        },
+        {
+          label: "换家店看",
+          outcome: "你拎着空篮子出了门。",
+          effect: {
+            stamina: 2,
+            mood: 1
+          }
+        }
+      ]
+    }
+  },
+  {
+    weight: 1.0,
+    def:   {
+      id: "d_price_jump",
+      text: "货架上的价签换过了。燃料罐从 30 跳到了 38。",
+      onlyShops: ["hardware"],
+      tier: 1,
+      decision: "按新价囤两罐（怕明天更贵），还是只买一罐看情况",
+      options: [
+        {
+          label: "囤两罐",
+          outcome: "两罐上车。{spentCash}。",
+          effect: {
+            grab: {
+              category: "fuel",
+              count: 2
+            },
+            cash: -76
+          },
+          requireFullCash: true
+        },
+        {
+          label: "买一罐",
+          outcome: "你把一罐放进篮子。价签明天还会换。",
+          effect: {
+            grab: {
+              category: "fuel",
+              count: 1
+            },
+            cash: -38
+          },
+          requireFullCash: true
+        },
+        {
+          label: "记下新价",
+          outcome: "你把 38 记进了手机备忘录。罐子还在货架上。",
+          effect: {
+            mood: 2
+          }
+        }
+      ]
+    }
+  },
+  {
+    weight: 1.0,
+    def:   {
+      id: "d_kid_candy",
+      text: "排在你前面的小孩盯着收银台边的糖，他妈妈在看价签。",
+      tier: 1,
+      decision: "替他付了（小钱换人情），还是不管",
+      options: [
+        {
+          label: "一起结了",
+          outcome: "他妈妈连声道谢。{spentCash}。",
+          effect: {
+            cash: -4,
+            mood: 5
+          }
+        },
+        {
+          label: "看自己的单",
+          outcome: "队伍往前挪了一格。",
+          effect: {
+            stamina: 2
+          }
+        }
+      ]
+    }
+  },
+  {
+    weight: 1.0,
+    def:   {
+      id: "d_last_box",
+      text: "货架上只剩最后一箱矿泉水。你和一个男人同时伸手。",
+      tier: 1,
+      decision: "让给他（换个人情），还是坚持先到先得",
+      options: [
+        {
+          label: "让他先拿",
+          outcome: "他愣了一下，说药店后巷还有半垛。",
+          effect: {
+            mood: 3
+          }
+        },
+        {
+          label: "抱走这箱",
+          outcome: "水很沉。你把它塞进了车里。",
+          effect: {
+            grab: {
+              category: "water",
+              count: 6
+            },
+            stamina: -4
+          }
+        }
+      ]
+    }
+  },
+  {
+    weight: 1.0,
+    def:   {
+      id: "d_pharmacy_queue",
+      text: "药店门口排到了马路牙子上。队尾有人在小声念药名。",
+      onlyShops: ["pharmacy"],
+      tier: 1,
+      decision: "排进去（耗体力），还是下午再来碰运气",
+      options: [
+        {
+          label: "排队等",
+          outcome: "四十分钟。你买到了感冒药和绷带。",
+          effect: {
+            grab: {
+              category: "medicine",
+              count: 2
+            },
+            stamina: -5
+          }
+        },
+        {
+          label: "下午再来",
+          outcome: "你在对面坐了一会儿。队伍没有变短。",
+          effect: {
+            stamina: 3
+          }
+        }
+      ]
+    }
+  },
+  {
+    weight: 1.0,
+    def:   {
+      id: "d_bulk_rice",
+      text: "粮油区挂了牌子：整袋米限购一袋，但可以按批发价拼单。",
+      onlyShops: ["supermarket"],
+      tier: 1,
+      decision: "和陌生人拼三袋拿批发价（要垫钱），还是自己买一袋",
+      options: [
+        {
+          label: "拼单三袋",
+          outcome: "你们四个人凑了一单，三袋米上了车。{spentCash}。",
+          effect: {
+            grab: {
+              category: "food",
+              count: 3
+            },
+            cash: -105
+          },
+          requireFullCash: true
+        },
+        {
+          label: "自己扛一袋",
+          outcome: "一袋四十。你扛着它排了二十分钟队。",
+          effect: {
+            grab: {
+              category: "food",
+              count: 1
+            },
+            cash: -40,
+            stamina: -2
+          },
+          requireFullCash: true
+        },
+        {
+          label: "今天先不买",
+          outcome: "你把批发价记在了单子上。米还堆在原地。",
+          effect: {
+            mood: 2
+          }
+        }
+      ]
+    }
+  },
+  {
+    weight: 1.0,
+    def:   {
+      id: "d_shelf_empty",
+      text: "泡面那排货架空了。理货员说下午三点补货。",
+      tier: 1,
+      decision: "等三小时补货（耗时间），还是买旁边的挂面替代",
+      options: [
+        {
+          label: "等到三点",
+          outcome: "补货车来了。你抱走半箱泡面。",
+          effect: {
+            grab: {
+              category: "food",
+              count: 4
+            },
+            stamina: -4
+          }
+        },
+        {
+          label: "拿挂面",
+          outcome: "挂面还剩很多。你抓了两把。",
+          effect: {
+            grab: {
+              category: "food",
+              count: 2
+            },
+            cash: -14
+          },
+          requireFullCash: true
+        }
+      ]
+    }
+  },
+  {
+    weight: 1.0,
+    def:   {
+      id: "d_old_man_scale",
+      text: "门口有个老人摆摊卖自家晒的干菜，用一杆小秤。",
+      tier: 1,
+      decision: "买他的干菜（比超市贵一点），还是进超市买",
+      options: [
+        {
+          label: "买两把干菜",
+          outcome: "秤杆压得平平的，两把干菜装进袋子。{spentCash}。",
+          effect: {
+            grab: {
+              category: "food",
+              count: 2
+            },
+            cash: -18,
+            mood: 2
+          },
+          requireFullCash: true
+        },
+        {
+          label: "进超市",
+          outcome: "超市的干菜区空了半边。",
+          effect: {
+            mood: 1,
+            stamina: 2
+          }
+        }
+      ]
+    }
+  },
+  {
+    weight: 1.0,
+    def:   {
+      id: "d_delivery_app",
+      text: "手机弹出通知：外卖平台还能下单，配送费翻了三倍。",
+      tier: 1,
+      decision: "花高价让人送上门（省体力费钱），还是自己出门搬",
+      options: [
+        {
+          label: "下单叫人送",
+          outcome: "骑手把袋子放在门口。{spentCash}。",
+          effect: {
+            boxDefId: "box_staple",
+            cash: -90
+          },
+          requireFullCash: true
+        },
+        {
+          label: "关掉通知",
+          outcome: "你把手机揣回兜里。自己的事自己干。",
+          effect: {
+            stamina: 2,
+            mood: 1
+          }
+        }
+      ]
+    }
+  },
+  {
+    weight: 1.0,
+    def:   {
+      id: "d_tool_demo",
+      text: "五金店老板在店门口试一台手摇发电机。围观的人不多。",
+      onlyShops: ["hardware"],
+      tier: 1,
+      decision: "现在就买（怕断货），还是再看看别家",
+      options: [
+        {
+          label: "搬一台走",
+          outcome: "老板帮你抬上车。{spentCash}。",
+          effect: {
+            grab: {
+              category: "tool",
+              count: 1
+            },
+            cash: -120
+          },
+          requireFullCash: true
+        },
+        {
+          label: "记下型号",
+          outcome: "你说再想想。老板点了点头。",
+          effect: {
+            mood: 2
+          }
+        }
+      ]
+    }
+  },
+  {
+    weight: 1.0,
+    def:   {
+      id: "d_scratch_card",
+      text: "超市搞活动：满两百抽一次奖。奖品池里有一台暖风机。",
+      onlyShops: ["supermarket"],
+      tier: 1,
+      decision: "为了凑单多买（赌一把奖品），还是只买清单上的",
+      options: [
+        {
+          label: "凑到两百",
+          outcome: "你刮开涂层：一个福袋。{spentCash}。",
+          effect: {
+            boxDefId: "box_mixed",
+            cash: -200
+          },
+          requireFullCash: true
+        },
+        {
+          label: "只买清单",
+          outcome: "账算得清清楚楚，清单上的东西都拿齐了。{spentCash}。",
+          effect: {
+            grab: {
+              category: "food",
+              count: 2
+            },
+            cash: -60
+          },
+          requireFullCash: true
+        },
+        {
+          label: "不凑热闹",
+          outcome: "你绕开了堆头的活动海报。",
+          effect: {
+            mood: 2
+          }
+        }
+      ]
+    }
+  },
+  {
+    weight: 1.0,
+    def:   {
+      id: "d_pharmacy_bundling",
+      text: "药店的感冒药不单卖了，要搭一盒维生素才给结账。",
+      onlyShops: ["pharmacy"],
+      tier: 1,
+      decision: "接受搭售（多花钱拿了不需要的），还是去别处找",
+      options: [
+        {
+          label: "连盒带走",
+          outcome: "维生素塞在袋底。{spentCash}。",
+          effect: {
+            grab: {
+              category: "medicine",
+              count: 2
+            },
+            cash: -45
+          },
+          requireFullCash: true
+        },
+        {
+          label: "转身离开",
+          outcome: "你去了下一条街。腿有点酸。",
+          effect: {
+            stamina: 2
+          }
+        }
+      ]
+    }
+  },
+  {
+    weight: 1.0,
+    def:   {
+      id: "d_price_freeze",
+      text: "广播里说：从明天起，主城区生活物资限价三天。",
+      tier: 1,
+      decision: "今天按现价抢（怕限价后断货），还是等明天的限价",
+      options: [
+        {
+          label: "今天就买",
+          outcome: "货架还有货，三袋主食搬上了车。{spentCash}。",
+          effect: {
+            grab: {
+              category: "food",
+              count: 3
+            },
+            cash: -70
+          },
+          requireFullCash: true
+        },
+        {
+          label: "等明天",
+          outcome: "你把清单重新排了一遍顺序。",
+          effect: {
+            mood: 2,
+            stamina: 1
+          }
+        }
+      ]
+    }
+  },
+  {
+    weight: 1.0,
+    def:   {
+      id: "d_free_hotwater",
+      text: "药店门口支了个桶，写着免费热水。队伍比买药的还长。",
+      onlyShops: ["pharmacy"],
+      tier: 1,
+      decision: "花体力排队接两壶（省家里燃料），还是回家自己烧",
+      options: [
+        {
+          label: "排队接水",
+          outcome: "两壶热水。拎着沉，但家里省了一罐气。",
+          effect: {
+            stamina: -3,
+            mood: 4
+          }
+        },
+        {
+          label: "回家自己烧",
+          outcome: "炉子点上了。水开还要二十分钟。",
+          effect: {
+            stamina: 2
+          }
+        }
+      ]
+    }
+  },
+  {
+    weight: 1.0,
+    def:   {
+      id: "d_student_volunteers",
+      text: "几个穿红马甲的学生在帮老人搬东西，不收钱。",
+      tier: 1,
+      decision: "请他们帮你搬（欠人情），还是自己慢慢来",
+      options: [
+        {
+          label: "请他们搭手",
+          outcome: "两个学生帮你把米扛上了楼。你塞了两瓶水。",
+          effect: {
+            stamina: 5,
+            mood: 2
+          }
+        },
+        {
+          label: "自己来",
+          outcome: "分了三趟，搬完了。腿肚子在打颤。",
+          effect: {
+            stamina: -2,
+            mood: 4
+          }
+        }
+      ]
+    }
+  },
+  {
+    weight: 1.0,
+    def:   {
+      id: "d_counter_short",
+      text: "前面的人和收银员吵起来了：找零少了五块。",
+      tier: 1,
+      decision: "帮他说话（耽误时间换人情），还是低头结账",
+      options: [
+        {
+          label: "说句公道话",
+          outcome: "监控回放了。那人拿到五块，朝你点头。",
+          effect: {
+            mood: 3
+          }
+        },
+        {
+          label: "低头结账",
+          outcome: "你数了两遍找零，一袋米拎在手上。{spentCash}。",
+          effect: {
+            grab: {
+              category: "food",
+              count: 1
+            },
+            cash: -15
+          },
+          requireFullCash: true
+        }
+      ]
+    }
+  },
+  {
+    weight: 1.0,
+    def:   {
+      id: "d_night_market",
+      text: "天黑了，后巷摆起一溜地摊。有蜡烛，有电池，有散装米。",
+      tier: 1,
+      decision: "在地摊补货（没小票但便宜），还是去正规店",
+      options: [
+        {
+          label: "地摊扫货",
+          outcome: "摊主用报纸给你包好。{spentCash}。",
+          effect: {
+            grab: {
+              category: "food",
+              count: 3
+            },
+            cash: -40
+          },
+          requireFullCash: true
+        },
+        {
+          label: "不进巷子",
+          outcome: "巷口的路灯坏了一盏。你绕开了。",
+          effect: {
+            mood: 2,
+            stamina: 1
+          }
+        }
+      ]
+    }
+  },
+  {
+    weight: 1.0,
+    def:   {
+      id: "d_senior_short",
+      text: "前面的老人翻遍口袋，还差四十块。收银员在等。",
+      tier: 1,
+      decision: "替他垫上（他说明天还），还是装没看见",
+      options: [
+        {
+          label: "替他垫上",
+          outcome: "晚上他来敲门，还了钱，多给了五块谢意。",
+          effect: {
+            cash: 5,
+            mood: 4
+          }
+        },
+        {
+          label: "装没看见",
+          outcome: "队伍慢慢往前挪。",
+          effect: {
+            stamina: 2
+          }
+        }
+      ]
+    }
+  },
+  {
+    weight: 1.0,
+    def:   {
+      id: "d_coupon_expiry",
+      text: "手机里有张满一百减二十的券，今天到期。",
+      tier: 1,
+      decision: "为用券多买到一百（买本来不买的），还是让券作废",
+      options: [
+        {
+          label: "凑单一百",
+          outcome: "券核掉了，凑够一百，东西到手。{spentCash}。",
+          effect: {
+            grab: {
+              category: "food",
+              count: 3
+            },
+            cash: -80
+          },
+          requireFullCash: true
+        },
+        {
+          label: "让它作废",
+          outcome: "券灰了。你只买了需要的。{spentCash}。",
+          effect: {
+            grab: {
+              category: "food",
+              count: 1
+            },
+            cash: -20
+          },
+          requireFullCash: true
+        },
+        {
+          label: "关掉手机",
+          outcome: "券静静躺在那里。你什么也没买。",
+          effect: {
+            mood: 2
+          }
+        }
+      ]
+    }
+  },
+  // ═══ 生成内容 day-01 止 ═══
 ];
 
 export const DAY_EVENT_DEFS: readonly DayEventDef[] = WEIGHTED.map((w) => w.def);

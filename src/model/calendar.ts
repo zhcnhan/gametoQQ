@@ -41,7 +41,7 @@ export function daysUntilDisaster(day: number): number {
   return Math.max(0, -day);
 }
 
-/** 生存期是否已经撑满目标天数（§8：撑过 7 天） */
+/** 生存期是否已经走完目标天数（§8：撑过 7 天） */
 export function isSurvivalComplete(day: number): boolean {
   return day >= SURVIVAL_DAYS;
 }

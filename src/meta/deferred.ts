@@ -291,15 +291,27 @@ export const DEFERRED_ITEMS: readonly DeferredItem[] = [
     kind: 'code',
     title: '图鉴只有账本，没有界面；而且有一批物资在当前内容下永远点不亮',
     impact:
-      'M2 把图鉴的**账**做实了（`MetaProfile.codex` 三页 + `systems/codex.ts` 的幂等结算 + ' +
-      '结算页的"本局新点亮 X 项"），但**没有独立的图鉴界面**（§9 界面清单第 7 条）。' +
-      '后果有两个：① 玩家看不到"还有多少没见过的"，收集目标只有结算页那一行数；' +
-      '② `ITEM_DEFS` 里已经有了图鉴点不亮的东西 —— `hot_water_bag_gift`（印花暖水袋）' +
-      '**不在任何箱子的池子里**，所以它现在是一个纯粹的占位：图鉴上永远空一格。' +
-      '这不是 bug，是"内容没跟上账本"，但不能就这么悬着。',
-    plan: 'M3（随内容扩张一起：图鉴界面 + 补齐哪些物资从哪儿来）',
-    markedIn: ['systems/codex.ts'],
-    status: 'open'
+      '**已清偿（M3 第 2 步）**，两半都清了：\n' +
+      '  ① **界面**：`ui/CodexScreen.ts` —— 三页并列（物资按 category 分组 / 灾难 / 关系），' +
+      '每页顶一条进度，未点亮的那一格画成虚线轮廓并带上**从哪儿来**的提示；' +
+      '结算页与图鉴之间用装配层的一个内存开关切换（图鉴不属于任何一局，' +
+      '所以它不进 `GamePhase`）。\n' +
+      '  ② **"永远点不亮"**：`hot_water_bag_gift` 现在有真实来源' +
+      '（周末旧货市在卖、神秘混合箱开得出）。\n\n' +
+      '★ 更要紧的是**这一类问题现在查得出来了**：`data/registry.ts` 的 ' +
+      '`unobtainableEntries()`（"从哪儿来"是**算出来的**，扫点位 offers 与箱子池），' +
+      '由 `registry.test.ts` 与 `scripts/check-registry.mjs` 两边盯着。' +
+      '它上线当场就抓到了第二次同类事故：**`item-01` 那 40 件新物资一件也不在任何池子里**' +
+      '（`shop-01` 的 offers 与 `boxes.ts` 的池子都只列着原来那 17 件）——' +
+      '那 40 件编译进了游戏、图鉴里有格子，而玩家一件也碰不到，' +
+      '而这在之前**没有任何报错**。',
+    plan: 'M3 第 2 步',
+    markedIn: [],
+    status: 'done',
+    resolvedIn:
+      'M3 第 2 步 —— ui/CodexScreen.ts（三页 + 从哪儿来 + 成就印章）＋ ' +
+      'data/registry.ts 的 unobtainableEntries（可达性算出来）＋ ' +
+      'boxes.ts 池子改成按品类推导（那 40 件才有地方出）'
   },
   {
     id: 'D-17',
@@ -414,8 +426,23 @@ export const DEFERRED_ITEMS: readonly DeferredItem[] = [
       '★ 现在的 `icons.test.ts` 那两条断言（键必须存在、不许两件共用一个键）**要保留** ——' +
       '换成组合式之后它们仍然成立，而且更有价值（它们守的是"生成器没漏参数化某个轴"）。',
     plan: '§10B 第 4 步（物资量上去之后、批量灌内容之前）',
-    markedIn: ['fx/icons.ts'],
-    status: 'open'
+    markedIn: [],
+    status: 'done',
+    resolvedIn:
+      '随 40 件新物资（57 件规模）清偿：新增 `fx/iconShapes.ts` 组合式生成器 ——' +
+      '基础轮廓 7 种（can/jar/bottle/box/carton/bag/misc）× 变体轴 3 个' +
+      '（体型 × 内胆纹样 × 色带三段与标记四形，最小轮廓也有 432 种组合），' +
+      '由键名确定性推导；`icons.ts` 变成"手写优先、生成兜底"的双表结构，' +
+      '**17 张已验收的手绘图一个字节没动**（任务书允许"新老共存"，选它是因为' +
+      '重构它们的收益是整齐、风险是玩家认不出来了）。\n\n' +
+      '★ 残留（下一轮接手要知道）：`can/jar/bottle/box/carton/bag/misc` 这 7 个基础词' +
+      '之外的轮廓（捆绑 / 桶 / 长条包装…）还没有装配函数，`ICON_BASES` 加词就必须' +
+      '同时补 `BASES` 表里的实现，否则那一整类物资会是空白；' +
+      '`icons.test.ts` 里有一条断言专门盯这件事（`ICON_BASES` 与 `SHAPE_BUILDERS` 对账）。\n\n' +
+      '★ 残留（第二件）：变体轴的**描述符表**（`CAN_FORMS` / `BAG_PATTERNS_BY_KEY` 等）' +
+      '是"生活常识级"的词表，会随内容批次增长；兜底走哈希，所以不会出现"新物资没图"，' +
+      '但**往表里插一行会让没命中的键重新洗牌**（注释里写了维护警告），改完必须跑' +
+      '`icons.test.ts`。'
   },
   {
     id: 'D-22',
@@ -441,43 +468,79 @@ export const DEFERRED_ITEMS: readonly DeferredItem[] = [
     kind: 'code',
     title: '八张内容表还没有统一注册表，图鉴 / 成就 / 解锁各自的查询是散的（§10B.5）',
     impact:
-      '§10B 要做"图鉴界面 + 成就 + 解锁关系"，三者的输入其实**都是同一件事：' +
-      '"这个世界上有哪些内容、玩家见过其中哪些"**。而现在内容是八张互不相干的表' +
-      '（items / boxes / disaster / nightEvents / dayEvents / emergencies / helpRequests / identities），' +
-      '每张表各自暴露一个 `hasXxx` / `findXxx`。\n\n' +
-      '不统一的后果有三个，而且都已经能看到影子：\n' +
-      ' ① **图鉴界面会 import 八张表**，将来加第九张就要改界面 —— 加内容不再便宜；' +
-      ' ② **成就条件会各自硬编码**（"点亮全部 canned"这种查询没有地方放）；' +
-      ' ③ **"写了但永远出不来"的内容没人发现** —— M2 的 D-16 就是"有一批物资在当前内容下' +
-      '永远点不亮"，而那是**批量生成内容之前必须能自动查出**的（§10B.7 第 ③ 环）。\n\n' +
-      '做法（§10B.5 已写细）：`data/registry.ts` 汇总八张表并暴露 `listByTag` /' +
-      '`findByCategory` / `itemsForTier` 这类查询；`scripts/check-content.mjs` 做' +
-      '重复 id / 字段缺失 / 引用悬空 / 可达性 / 数值区间五类静态校验，挂进 `npm run check`。\n\n' +
-      '★ 它是 §10B 的**第 1 步**，也是"数百种内容"能不能落地的分水岭：' +
-      '没有它，内容生成的速度会被校对速度吃掉。',
-    plan: '§10B 第 1 步（一切的地基，先做）',
-    markedIn: ['data/items.ts'],
-    status: 'open'
+      '**已清偿（M3 第 1 步）**：`data/registry.ts` 汇总**十张**表' +
+      '（八张内容表 + 箱型 + NPC —— 后两个也在册，因为箱型是物资的来源之一、' +
+      '而 NPC 是图鉴第三页的键），暴露 `listByTag` / `findByCategory` / `itemsForTier` / ' +
+      '`sourcesOfItem` / `unobtainableEntries` / `countOfKind` / `contentReference`，' +
+      '外加 §10B.5 要的 mod 挂载点 `mergeMods()`。\n\n' +
+      '三条当初记下的后果现在都堵上了：\n' +
+      ' ① 图鉴界面**不 import 八张表**（`ui/CodexScreen.ts` 只读注册表）；' +
+      ' ② 成就条件有了地方放（`data/achievements.ts` + `systems/achievements.ts`），' +
+      '而且**成就不给数值增益**那条纪律有了可执行的守卫（测试扫字段名）；' +
+      ' ③ "写了但永远出不来"现在**算得出来**（`unobtainableEntries`），' +
+      '并由 `registry.test.ts` 与 `scripts/check-registry.mjs` 两边盯着 —— ' +
+      '它上线当场就抓到了 40 件物资一件也拿不到（详见 D-16 的清偿说明）。\n\n' +
+      '★ 顺带清偿了两份作废的类型副本（`model/types.ts` 里的 `NpcDef` / `HelpRequestDef`）：' +
+      '它们从阶段 D 起就没有代码引用，而字段名与真正在用的那份**完全不同** —— ' +
+      '注册表按副本取字段，直到图鉴界面要显示"他是谁"时才暴露出来。',
+    plan: 'M3 第 1 步',
+    markedIn: [],
+    status: 'done',
+    resolvedIn:
+      'M3 第 1 步 —— data/registry.ts ＋ registry.test.ts ＋ scripts/check-registry.mjs ＋ ' +
+      'data/achievements.ts / systems/achievements.ts'
   },
   {
     id: 'D-24',
     kind: 'code',
     title: '内容的"校验"做了，但"注册表"还没做（两者是两件事，别混）',
     impact:
-      '为支撑 §10B 的数百种内容，本次先落地了**校验**这一环：`scripts/check-content.mjs`，' +
-      '已挂进 `npm run check`，能拦住五类问题 —— 重复 id（批内 + 与现有表冲突）、' +
-      '字段缺失或类型不对、引用悬空（`itemId` / `boxDefId` / `category` / `shopId`）、' +
-      '可达性（没写 `tier` 的"永远出不来"的内容）、以及数值离群（价格 / 重量 / 保质期 / label 长度）。\n\n' +
-      '它同时是**给生成模型的自查工具**：`node scripts/check-content.mjs --explain` 会打印' +
-      '每种内容的最新字段要求，而那份要求与校验器**共用同一份 `SCHEMAS`** —— ' +
-      '避免"提示词里写的要求"和"校验器检查的要求"漂移（那种漂移会让人对着提示词生成一堆、' +
-      '然后被校验器全部退回）。\n\n' +
-      '★ **但注册表（D-23）还没做，别把它当成已完成。** 两者分工不同：\n' +
-      ' · **校验**管"进来的数据合不合格"（构建期，防止坏内容入库）；\n' +
-      ' · **注册表**管"已经进来的内容怎么被查询与遍历"（运行期，图鉴 / 成就 / 解锁的输入）。\n' +
-      '现在图鉴界面仍要 import 八张表、成就条件仍没有地方放 —— 那是 D-23 的事。',
-    plan: '与 D-23 一起做（§10B 第 1 步的另一半）',
-    markedIn: ['data/shops.ts'],
+      '**已清偿（M3 第 1 步）**：注册表做了（见 D-23），两者的分工也**在代码里分开**了，' +
+      '而且分得比原计划更清楚 —— 现在是三个脚本，各管一段：\n\n' +
+      ' | 脚本 | 看什么 | 怎么读 |\n' +
+      ' | --- | --- | --- |\n' +
+      ' | `check-content.mjs` | **正要入库的** JSON（`content/**`） | `node` 正则粗读，不 import TS |\n' +
+      ' | `check-registry.mjs` | **已经在册的** TS 表（可达性 / tier / 内容量盘点） | `vite-node`，真 import 注册表 |\n' +
+      ' | `check-style.mjs` | 样式层次 | `node` |\n\n' +
+      '为什么要分两个：`check-content.mjs` 必须能被"刚加完内容的人"直接 `node` 跑' +
+      '（那时 TS 可能根本编译不过），所以它只能用正则；而"已经进来的内容到底能不能被玩家碰到"' +
+      '这件事**只有跑起来才算得准**，非要 `vite-node`。\n\n' +
+      '★ 一个踩过的坑（写下来免得重踩）：`scripts/*.mjs` 是**纯 JS**，' +
+      '写 `import { type X }` 或 `as const` 会在 `vite-node` 里以 RollupError 炸掉，' +
+      '而 `tsc --noEmit` **看不见**它（`.mjs` 不在 tsconfig 的 include 里）。\n' +
+      '两个脚本都因为这一条各挂过一次。',
+    plan: 'M3 第 1 步（与 D-23 一起）',
+    markedIn: [],
+    status: 'done',
+    resolvedIn:
+      'M3 第 1 步 —— scripts/check-content.mjs（入库前）＋ scripts/check-registry.mjs（在册的，vite-node）'
+  },
+  {
+    id: 'D-26',
+    kind: 'process',
+    title: '内容量离 §10B.6 的目标还差得远（物资 57/120~200、灾难 4/112~116……）',
+    impact:
+      'M3 第 1~2 步把**地基**做完了（注册表 / 校验 / tier / 图标组合式生成 / 图鉴 / 成就），' +
+      '并入库了第一批内容（118 条），但离 §10B.6 的目标量还有明显距离。' +
+      '`npm run check:registry` 每次都会打印这张对账表：\n\n' +
+      '     ✓ 点位      9 / 8~14\n' +
+      '     · 身份      8 / 10~16\n' +
+      '     · 物资     57 / 120~200\n' +
+      '     · 夜间事件  28 / 60~100\n' +
+      '     · 白天事件  24 / 60~100\n' +
+      '     · 突发事件  28 / 60~100\n' +
+      '     · 求援订单   6 / 30~50\n' +
+      '     · 灾难      4 / 112~116\n\n' +
+      '★ 把它登记成一条欠账而不是"继续生成就行"，有一个具体理由：' +
+      '**生成内容要花钱**，而它需要人（或更高级的模型）按 §10B.7 的提示词分批产出。' +
+      '所以这条欠账的真实内容是"**还给谁、按什么口径补**"，不是"代码没写完"。\n\n' +
+      '★ 还有一条与它相关的口径要在补内容前想清楚（第 1 步暴露的）：' +
+      '`ITEM_DEFS` 的**标签分布严重偏斜** —— 第一批 40 件全是主食与饮水，' +
+      '于是 `fuel` / `warmth` / `tool` 这些标签各只有 1~2 件物资共用，' +
+      '而 §10B.5 明说"同一个 tag 至少要有 3 件物资共用才有意义"（玩家拿它写分区规则）。' +
+      '下一批**优先补医疗 / 燃料 / 保暖 / 工具 / 奢侈品**，别再加主食了。',
+    plan: 'M3 第 8 步（分批灌内容；按 §10B.7 的流水线走）',
+    markedIn: [],
     status: 'open'
   }
 ];

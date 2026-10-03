@@ -44,7 +44,7 @@ import { consumeCategory } from '../model/consume';
 import { countOnHandy } from '../model/shelf';
 import { computeOrganizeScore } from '../model/score';
 import { spoilEverything, virtualDay } from '../model/spoil';
-import { EMERGENCY_DEFS, EMERGENCY_NONE_WEIGHT } from '../data/emergencies';
+import { EMERGENCY_DEFS, emergencyNoneWeight } from '../data/emergencies';
 import { disasterModifiersOf, getDisasterDef } from '../data/disaster';
 import { CATEGORY_LABELS, getItemDef } from '../data/items';
 import {
@@ -96,10 +96,13 @@ const SUPPLY_MAX_PER_DAY = 2;
  *   它会被排除 —— **连着两天同一件突发事件**是最刺眼的一种重复。
  */
 export function rollEmergency(cursor: RngCursor, recent: readonly string[] = []): EmergencyDef | null {
-  const total = EMERGENCY_NONE_WEIGHT + EMERGENCY_DEFS.length;
+  // "没事"那一格的权重按**当次池子**反推（见 `emergencyNoneWeight`）——
+  // 用固定权重的话，往表里加内容会顺手把频率改掉（M3 真的踩过：30% → 63%）
+  const none = emergencyNoneWeight(EMERGENCY_DEFS.length);
+  const total = none + EMERGENCY_DEFS.length;
   const roll = nextFloat(cursor) * total;
-  if (roll < EMERGENCY_NONE_WEIGHT) return null;
-  let index = Math.min(EMERGENCY_DEFS.length - 1, Math.floor(roll - EMERGENCY_NONE_WEIGHT));
+  if (roll < none) return null;
+  let index = Math.min(EMERGENCY_DEFS.length - 1, Math.floor(roll - none));
   const last = recent[0];
   for (let step = 0; step < EMERGENCY_DEFS.length; step++) {
     const candidate = EMERGENCY_DEFS[index];
@@ -357,6 +360,9 @@ export function settleSurvivalDay(run: RunState, cursor?: RngCursor): SurvivalRe
       deltas.health -= SHORTAGE_HEALTH * pain;
       deltas.mood -= SHORTAGE_MOOD * pain;
       deltas.stamina -= SHORTAGE_STAMINA * pain;
+      // 累计"没接住"的次数（v16，成就「门口那一块」读它）。
+      // 不能用 last.emergencyResolved 代替：那是今天的快照，只回答"最后一天怎样"
+      run.survival.emergencyHurtCount += 1;
     }
   }
 
@@ -386,6 +392,25 @@ export function settleSurvivalDay(run: RunState, cursor?: RngCursor): SurvivalRe
     shortageUnits === 0 && unreachableUnits === 0 && !hardPress && emergencyOutcome?.resolved !== false;
   if (safeToday) run.survival.safeStreak += 1;
   else run.survival.safeStreak = 0;
+
+  /*
+   * 「整理得挑不出毛病」的天数（v16，成就「一尘不染」读它）。
+   *
+   * 判据 = 归位率 1.00 且 临期优先 1.00 且今天一件没缺。
+   *
+   * ★ 为什么在**每天结算时**数一笔，而不是结算页现算一次：
+   * `score.placement` / `score.fefo` 读的是**此刻的盘面**，而玩家在 14 天里
+   * 可以把东西搬来搬去。现算只能回答"你**最后**摆得怎么样"，
+   * 这条成就问的是"你**一直**摆得怎么样" —— 两个问题不一样。
+   *
+   * 用 `score`（本函数开头已经算好的那份）而不是重算一遍：算两遍就会有两份
+   * 可能不一致的数，而那正是 §2.8 那条"同一件事只留一个真相来源"的禁忌。
+   */
+  if (score.placement >= 1 && score.fefo >= 1 && shortageUnits === 0) {
+    run.survival.cleanDays += 1;
+  }
+  // 最低体力（v16，成就「一路从容」读它）。它是"历史最低"，所以只往下走
+  run.survival.minStamina = Math.min(run.survival.minStamina, run.stats.stamina);
 
   // 落盘一份增量快照：刷新回来还要能看见"今天掉了哪些点"（§4A 恢复即续玩）
   run.survival.last = {

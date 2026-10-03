@@ -383,6 +383,7 @@ export function placeHeld(store: GameStore, session: OrganizeSession, shelfId: s
       { type: 'placed', itemId: held.itemId, shelfId, pos, partial: left !== null, count: move }
     ];
     events.push(...detectNewTidy(store.run, session));
+    countShelved(store, move);
     return ok(events);
   }
 
@@ -400,7 +401,38 @@ export function placeHeld(store: GameStore, session: OrganizeSession, shelfId: s
     { type: 'placed', itemId: held.itemId, shelfId, pos, partial: false, count: stackCount(held) }
   ];
   events.push(...detectNewTidy(store.run, session));
+  countShelved(store, stackCount(held));
   return ok(events);
+}
+
+/**
+ * 累计"生涯上架过多少件"（v16，成就「仓库管理员」读它）。
+ *
+ * ## ★ 为什么记在 `placeHeld` 里，而不是结算时数一遍货架
+ *
+ * "上架过 300 件"问的是**玩家做过的动作总量**，而"货架上现在有多少件"
+ * 回答的是**此刻的状态** —— 两者会被两件事拉开：玩家可以把东西拿下来
+ * （`pickupFromShelf`）、可以整堆搬回箱子（`returnHeld`）。
+ * 结算时数货架的话，一个反复搬了 500 件、最后只留 20 件在架上的玩家
+ * 会被记成 20 —— 而那恰恰是这条成就**最该奖励**的那个人。
+ *
+ * ## 为什么只数"放上去"的一个方向
+ *
+ * 拿下来不减。这条成就奖励的是**搬运的劳作本身**，而"我又把它拿下来了"
+ * 不该抹掉那次弯腰。两个方向都记会让它变成"净上架量"，
+ * 而那个数会随着玩家整理来整理去反复横跳 —— 玩家永远不知道自己在哪。
+ *
+ * ## ★ 它写的是跨局账本（`commitMeta`），这是分层的一处显式例外
+ *
+ * 完整的理由写在 `state/store.ts` 的 `commitMeta` 注释里（那一处说清了
+ * "为什么这是对的而不是破例"）。一句话：**这个数回答的是"我这辈子"，
+ * 不是"这一局"**，所以它本来就不该有一个单局的副本。
+ */
+function countShelved(store: GameStore, pieces: number): void {
+  if (!(pieces > 0)) return;
+  store.commitMeta((meta) => {
+    meta.totalShelved += pieces;
+  });
 }
 
 /**

@@ -1,0 +1,217 @@
+{
+  "kind": "emergency",
+  "batch": "emg-01",
+  "batchNote": "本批 21 条，7 个品类各 3 条。needOnHandy 分布：1件 6条 / 2件 10条 / 3件 3条 / 4件 2条。最弱的一条：e_bad_day（奢侈品的'检查题'天然偏弱，靠文案撑，后续批次可考虑更强的奢侈品疏忽类型）。",
+  "entries": [
+    {
+      "id": "e_weevils",
+      "text": "米袋里爬出几只米虫。整袋米都得翻一遍。",
+      "category": "food",
+      "needOnHandy": 1,
+      "lost": 1,
+      "consumes": false,
+      "tier": 1,
+      "decision": "整理期主食放没放在密封分区，顺手位留没留备用口粮"
+    },
+    {
+      "id": "e_soup_burn",
+      "text": "晚饭烧糊了。锅底一层黑，今天这顿得拿存货补上。",
+      "category": "food",
+      "needOnHandy": 2,
+      "lost": 1,
+      "consumes": true,
+      "tier": 1,
+      "decision": "顺手位留没留能直接吃的即食存货"
+    },
+    {
+      "id": "e_hungry_gnaw",
+      "text": "半夜饿醒了。你不想生火，只想抓一样能直接吃的东西。",
+      "category": "food",
+      "needOnHandy": 2,
+      "lost": 1,
+      "consumes": true,
+      "tier": 1,
+      "decision": "即食类主食放没放在伸手能够到的地方"
+    },
+    {
+      "id": "e_kettle_empty",
+      "text": "想烧水泡药，水壶是空的。存水在阳台，天已经黑了。",
+      "category": "water",
+      "needOnHandy": 2,
+      "lost": 1,
+      "consumes": false,
+      "tier": 1,
+      "decision": "饮用水放没放在屋里顺手位，还是全堆在阳台"
+    },
+    {
+      "id": "e_dust_water",
+      "text": "停水了半天。来水时先放出来的是一股黄汤，要放很久才清。",
+      "category": "water",
+      "needOnHandy": 4,
+      "lost": 2,
+      "consumes": false,
+      "tier": 1,
+      "decision": "干净存水的量够不够撑过水质反复的这几天"
+    },
+    {
+      "id": "e_thirsty_night",
+      "text": "夜里渴醒。你摸黑找水，碰倒了一只空瓶。",
+      "category": "water",
+      "needOnHandy": 2,
+      "lost": 1,
+      "consumes": true,
+      "tier": 1,
+      "decision": "睡前床头放没放能直接喝的水"
+    },
+    {
+      "id": "e_splinter",
+      "text": "拆箱子时一根木刺扎进了指缝。不深，但一直在疼。",
+      "category": "medicine",
+      "needOnHandy": 1,
+      "lost": 1,
+      "consumes": false,
+      "tier": 1,
+      "decision": "小药箱放没放在门口顺手位"
+    },
+    {
+      "id": "e_headache_night",
+      "text": "后半夜头开始疼。你翻遍三个抽屉才想起药在哪。",
+      "category": "medicine",
+      "needOnHandy": 2,
+      "lost": 2,
+      "consumes": false,
+      "tier": 1,
+      "decision": "常用药集中放一处，还是分散塞在各个抽屉"
+    },
+    {
+      "id": "e_allergy",
+      "text": "胳膊上起了一片疹子。可能是白天搬货蹭到了什么。",
+      "category": "medicine",
+      "needOnHandy": 2,
+      "lost": 2,
+      "consumes": true,
+      "tier": 1,
+      "decision": "外用药和口服药分没分区，顺手位有没有留"
+    },
+    {
+      "id": "e_heater_click",
+      "text": "取暖器按了三次才打着。火苗比平时小了一圈。",
+      "category": "fuel",
+      "needOnHandy": 2,
+      "lost": 2,
+      "consumes": true,
+      "tier": 1,
+      "decision": "燃料放没放在炉子边上，还是要穿过整个屋子去搬"
+    },
+    {
+      "id": "e_cold_snap_extra",
+      "text": "温度比预报又掉了两度。今晚得比计划多烧一档。",
+      "category": "fuel",
+      "needOnHandy": 4,
+      "lost": 3,
+      "consumes": true,
+      "tier": 1,
+      "decision": "囤货时按预报囤的，还是按更坏一档囤的"
+    },
+    {
+      "id": "e_canister_rust",
+      "text": "搬燃料罐时闻到一股味。罐口的密封圈老化了。",
+      "category": "fuel",
+      "needOnHandy": 1,
+      "lost": 2,
+      "consumes": false,
+      "tier": 1,
+      "decision": "燃料罐立着放在通风分区，还是压在了箱子底下"
+    },
+    {
+      "id": "e_quilt_damp",
+      "text": "被子摸上去是潮的。这屋子的湿气一天比一天重。",
+      "category": "warmth",
+      "needOnHandy": 3,
+      "lost": 2,
+      "consumes": false,
+      "tier": 1,
+      "decision": "保暖物资有没有垫高存放，还是直接贴地码着"
+    },
+    {
+      "id": "e_sock_wet",
+      "text": "袜子晾了两天还没干。脚上这双是最后一双干的。",
+      "category": "warmth",
+      "needOnHandy": 1,
+      "lost": 1,
+      "consumes": false,
+      "tier": 1,
+      "decision": "贴身的保暖件数留没留换洗余量"
+    },
+    {
+      "id": "e_draft_door",
+      "text": "门缝底下的风一阵阵灌进来。拖鞋边上一圈是凉的。",
+      "category": "warmth",
+      "needOnHandy": 3,
+      "lost": 2,
+      "consumes": false,
+      "tier": 1,
+      "decision": "门缝窗缝这些漏点，整理期拿旧织物堵没堵"
+    },
+    {
+      "id": "e_flashlight_dead",
+      "text": "手电按了两下才亮，光很黄。电池该换了。",
+      "category": "tool",
+      "needOnHandy": 1,
+      "lost": 1,
+      "consumes": true,
+      "tier": 1,
+      "decision": "备用电池和电器放在同一个分区，还是分开两处"
+    },
+    {
+      "id": "e_tape_gone",
+      "text": "想找胶带固定纸箱，胶带座是空的。最后一卷不知道塞哪了。",
+      "category": "tool",
+      "needOnHandy": 3,
+      "lost": 2,
+      "consumes": false,
+      "tier": 1,
+      "decision": "高频小工具留没留在顺手位，还是用完随手一塞"
+    },
+    {
+      "id": "e_toolbox_buried",
+      "text": "想拧两颗螺丝固定晃的货架，工具箱压在了米袋后面。",
+      "category": "tool",
+      "needOnHandy": 2,
+      "lost": 2,
+      "consumes": false,
+      "tier": 1,
+      "decision": "工具箱放没放在大件外面"
+    },
+    {
+      "id": "e_niece_birthday",
+      "text": "外甥女生日。你想找一样拿得出手的小东西当礼物。",
+      "category": "luxury",
+      "needOnHandy": 1,
+      "lost": 1,
+      "consumes": true,
+      "tier": 1,
+      "decision": "拿得出手的东西收没收到能立刻找到的地方"
+    },
+    {
+      "id": "e_bad_day",
+      "text": "今天什么都不顺。你只想找点能让自己缓一缓的东西。",
+      "category": "luxury",
+      "needOnHandy": 2,
+      "lost": 2,
+      "consumes": false,
+      "tier": 1,
+      "decision": "慰藉品放没放在伸手可及的地方，还是压在了箱底"
+    },
+    {
+      "id": "e_barter_ask",
+      "text": "楼下传话，想拿两罐燃料换一样不顶用但讨人喜欢的东西。",
+      "category": "luxury",
+      "needOnHandy": 2,
+      "lost": 1,
+      "consumes": true,
+      "tier": 1,
+      "decision": "奢侈品留没留可以出手的富余"
+    }
+  ]
+}

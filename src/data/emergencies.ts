@@ -33,11 +33,20 @@
 import type { EmergencyDef } from '../model/types';
 
 /**
- * "今天没事"的权重（抽签池里的一个虚拟条目）。
+ * "今天有事"的概率（抽签池里的一个虚拟条目）。
  *
- * ★ 它的取值直接决定频率，所以把账写在这儿：
- *   表里 7 条事件的权重各为 1 → 有事概率 = 7 / (7 + NONE)。
- *   取 **16.3** → 7 / 23.3 ≈ **30%**：14 天里大约摊到 4 次。
+ * ★ 它与 `data/dayEvents.ts` 的 `DAY_EVENT_CHANCE` 是**同一类修正**，
+ * 而这里踩的坑更典型 —— 原来的写法是一个**手算出来的权重常数**：
+ *
+ * ```
+ * EMERGENCY_NONE_WEIGHT = 16.3   // 注释写着"7 条事件各权重 1 → 7 / 23.3 ≈ 30%"
+ * ```
+ *
+ * 那个 `16.3` 的正确性完全依赖"表里恰好 7 条事件"。M3 把突发事件从
+ * 7 条加到 28 条，同一个常数让有事概率变成 **63%** —— 突发事件从"像意外"
+ * 变成"像日程"，而**没有任何代码或类型会报错**。
+ *
+ * 所以改成概率口径：设计意图写在概率上，"没事"那一格的权重由当次池子反推。
  *
  * 为什么是 30% 而不是夜间事件那种 60%：突发事件**不掉健康就是掉健康**，
  * 它没有"选一个温和的选项"这条路。夜间事件是"今晚要不要去顶班"（玩家有话说），
@@ -46,7 +55,17 @@ import type { EmergencyDef } from '../model/types';
  * 为什么用权重而不是"先掷一次概率再抽事件"：一次抽签只有一个 RNG 消耗点，
  * 所以"某一天有没有事"在整个存档里只依赖一个数，回放与调试都更容易对账。
  */
-export const EMERGENCY_NONE_WEIGHT = 16.3;
+export const EMERGENCY_CHANCE = 0.3;
+
+/**
+ * 抽签池里"今天没事"那一格的权重，由 `EMERGENCY_CHANCE` 与当次池子反推。
+ *
+ * @param poolWeight 这一次实际参与抽签的事件权重合计
+ */
+export function emergencyNoneWeight(poolWeight: number): number {
+  if (!(poolWeight > 0)) return 1;
+  return (poolWeight * (1 - EMERGENCY_CHANCE)) / EMERGENCY_CHANCE;
+}
 
 /**
  * 突发事件的池子。
@@ -60,7 +79,8 @@ export const EMERGENCY_DEFS: readonly EmergencyDef[] = [
     text: '拆木箱的时候手滑了一下，虎口拉开一道口子。',
     category: 'medicine',
     needOnHandy: 1,
-    lost: 1
+    lost: 1,
+    tier: 1
     // 不写 consumes：用掉的绷带由每日结算的自动补给去消耗（跌破 70 才动），
     // 这里再扣一次会让同一卷绷带被算两遍
   },
@@ -70,28 +90,32 @@ export const EMERGENCY_DEFS: readonly EmergencyDef[] = [
     category: 'fuel',
     needOnHandy: 1,
     lost: 2,
-    consumes: true
+    consumes: true,
+    tier: 1
   },
   {
     id: 'e_pipe_burst',
     text: '水管冻裂了，水顺着墙往下淌。',
     category: 'tool',
     needOnHandy: 1,
-    lost: 2
+    lost: 2,
+    tier: 1
   },
   {
     id: 'e_fever',
     text: '后半夜开始发冷，天亮时额头是烫的。',
     category: 'medicine',
     needOnHandy: 2,
-    lost: 2
+    lost: 2,
+    tier: 1
   },
   {
     id: 'e_window_gap',
     text: '风把窗缝吹开了。屋里那点热气正往外跑。',
     category: 'warmth',
     needOnHandy: 1,
-    lost: 1
+    lost: 1,
+    tier: 1
   },
   {
     id: 'e_water_frozen',
@@ -99,15 +123,229 @@ export const EMERGENCY_DEFS: readonly EmergencyDef[] = [
     category: 'fuel',
     needOnHandy: 1,
     lost: 1,
-    consumes: true
+    consumes: true,
+    tier: 1
   },
   {
     id: 'e_rat_in_box',
     text: '纸箱底被咬开一个洞。里面剩下什么，得翻出来才知道。',
     category: 'tool',
     needOnHandy: 1,
-    lost: 1
-  }
+    lost: 1,
+    tier: 1
+  },
+  // ═══ 生成内容 emg-01 起（scripts/merge-content.mjs 插入，别手改这一段） ═══
+{
+    id: "e_weevils",
+    text: "米袋里爬出几只米虫。整袋米都得翻一遍。",
+    category: "food",
+    needOnHandy: 1,
+    lost: 1,
+    consumes: false,
+    tier: 1,
+    decision: "整理期主食放没放在密封分区，顺手位留没留备用口粮"
+  },
+{
+    id: "e_soup_burn",
+    text: "晚饭烧糊了。锅底一层黑，今天这顿得拿存货补上。",
+    category: "food",
+    needOnHandy: 2,
+    lost: 1,
+    consumes: true,
+    tier: 1,
+    decision: "顺手位留没留能直接吃的即食存货"
+  },
+{
+    id: "e_hungry_gnaw",
+    text: "半夜饿醒了。你不想生火，只想抓一样能直接吃的东西。",
+    category: "food",
+    needOnHandy: 2,
+    lost: 1,
+    consumes: true,
+    tier: 1,
+    decision: "即食类主食放没放在伸手能够到的地方"
+  },
+{
+    id: "e_kettle_empty",
+    text: "想烧水泡药，水壶是空的。存水在阳台，天已经黑了。",
+    category: "water",
+    needOnHandy: 2,
+    lost: 1,
+    consumes: false,
+    tier: 1,
+    decision: "饮用水放没放在屋里顺手位，还是全堆在阳台"
+  },
+{
+    id: "e_dust_water",
+    text: "停水了半天。来水时先放出来的是一股黄汤，要放很久才清。",
+    category: "water",
+    needOnHandy: 4,
+    lost: 2,
+    consumes: false,
+    tier: 1,
+    decision: "干净存水的量够不够撑过水质反复的这几天"
+  },
+{
+    id: "e_thirsty_night",
+    text: "夜里渴醒。你摸黑找水，碰倒了一只空瓶。",
+    category: "water",
+    needOnHandy: 2,
+    lost: 1,
+    consumes: true,
+    tier: 1,
+    decision: "睡前床头放没放能直接喝的水"
+  },
+{
+    id: "e_splinter",
+    text: "拆箱子时一根木刺扎进了指缝。不深，但一直在疼。",
+    category: "medicine",
+    needOnHandy: 1,
+    lost: 1,
+    consumes: false,
+    tier: 1,
+    decision: "小药箱放没放在门口顺手位"
+  },
+{
+    id: "e_headache_night",
+    text: "后半夜头开始疼。你翻遍三个抽屉才想起药在哪。",
+    category: "medicine",
+    needOnHandy: 2,
+    lost: 2,
+    consumes: false,
+    tier: 1,
+    decision: "常用药集中放一处，还是分散塞在各个抽屉"
+  },
+{
+    id: "e_allergy",
+    text: "胳膊上起了一片疹子。可能是白天搬货蹭到了什么。",
+    category: "medicine",
+    needOnHandy: 2,
+    lost: 2,
+    consumes: true,
+    tier: 1,
+    decision: "外用药和口服药分没分区，顺手位有没有留"
+  },
+{
+    id: "e_heater_click",
+    text: "取暖器按了三次才打着。火苗比平时小了一圈。",
+    category: "fuel",
+    needOnHandy: 2,
+    lost: 2,
+    consumes: true,
+    tier: 1,
+    decision: "燃料放没放在炉子边上，还是要穿过整个屋子去搬"
+  },
+{
+    id: "e_cold_snap_extra",
+    text: "温度比预报又掉了两度。今晚得比计划多烧一档。",
+    category: "fuel",
+    needOnHandy: 4,
+    lost: 3,
+    consumes: true,
+    tier: 1,
+    decision: "囤货时按预报囤的，还是按更坏一档囤的"
+  },
+{
+    id: "e_canister_rust",
+    text: "搬燃料罐时闻到一股味。罐口的密封圈老化了。",
+    category: "fuel",
+    needOnHandy: 1,
+    lost: 2,
+    consumes: false,
+    tier: 1,
+    decision: "燃料罐立着放在通风分区，还是压在了箱子底下"
+  },
+{
+    id: "e_quilt_damp",
+    text: "被子摸上去是潮的。这屋子的湿气一天比一天重。",
+    category: "warmth",
+    needOnHandy: 3,
+    lost: 2,
+    consumes: false,
+    tier: 1,
+    decision: "保暖物资有没有垫高存放，还是直接贴地码着"
+  },
+{
+    id: "e_sock_wet",
+    text: "袜子晾了两天还没干。脚上这双是最后一双干的。",
+    category: "warmth",
+    needOnHandy: 1,
+    lost: 1,
+    consumes: false,
+    tier: 1,
+    decision: "贴身的保暖件数留没留换洗余量"
+  },
+{
+    id: "e_draft_door",
+    text: "门缝底下的风一阵阵灌进来。拖鞋边上一圈是凉的。",
+    category: "warmth",
+    needOnHandy: 3,
+    lost: 2,
+    consumes: false,
+    tier: 1,
+    decision: "门缝窗缝这些漏点，整理期拿旧织物堵没堵"
+  },
+{
+    id: "e_flashlight_dead",
+    text: "手电按了两下才亮，光很黄。电池该换了。",
+    category: "tool",
+    needOnHandy: 1,
+    lost: 1,
+    consumes: true,
+    tier: 1,
+    decision: "备用电池和电器放在同一个分区，还是分开两处"
+  },
+{
+    id: "e_tape_gone",
+    text: "想找胶带固定纸箱，胶带座是空的。最后一卷不知道塞哪了。",
+    category: "tool",
+    needOnHandy: 3,
+    lost: 2,
+    consumes: false,
+    tier: 1,
+    decision: "高频小工具留没留在顺手位，还是用完随手一塞"
+  },
+{
+    id: "e_toolbox_buried",
+    text: "想拧两颗螺丝固定晃的货架，工具箱压在了米袋后面。",
+    category: "tool",
+    needOnHandy: 2,
+    lost: 2,
+    consumes: false,
+    tier: 1,
+    decision: "工具箱放没放在大件外面"
+  },
+{
+    id: "e_niece_birthday",
+    text: "外甥女生日。你想找一样拿得出手的小东西当礼物。",
+    category: "luxury",
+    needOnHandy: 1,
+    lost: 1,
+    consumes: true,
+    tier: 1,
+    decision: "拿得出手的东西收没收到能立刻找到的地方"
+  },
+{
+    id: "e_bad_day",
+    text: "今天什么都不顺。你只想找点能让自己缓一缓的东西。",
+    category: "luxury",
+    needOnHandy: 2,
+    lost: 2,
+    consumes: false,
+    tier: 1,
+    decision: "慰藉品放没放在伸手可及的地方，还是压在了箱底"
+  },
+{
+    id: "e_barter_ask",
+    text: "楼下传话，想拿两罐燃料换一样不顶用但讨人喜欢的东西。",
+    category: "luxury",
+    needOnHandy: 2,
+    lost: 1,
+    consumes: true,
+    tier: 1,
+    decision: "奢侈品留没留可以出手的富余"
+  },
+  // ═══ 生成内容 emg-01 止 ═══
 ];
 
 const EMERGENCY_BY_ID: ReadonlyMap<string, EmergencyDef> = new Map(EMERGENCY_DEFS.map((d) => [d.id, d]));

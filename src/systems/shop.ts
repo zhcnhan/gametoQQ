@@ -18,8 +18,9 @@
  * 「物价波动」走的是另一条路（它没得选，见 `data/dayEvents.ts` 的 `dayPriceFactor`）。
  */
 import { BOX_DEFS, getBoxDef, type BoxDef } from '../data/boxes';
-import { DAY_EVENT_DEFS, DAY_EVENT_NONE_WEIGHT, dayEventWeight, dayPriceFactor, findDayEvent } from '../data/dayEvents';
+import { DAY_EVENT_DEFS, dayEventWeight, dayPriceFactor, findDayEvent, noneWeightFor } from '../data/dayEvents';
 import { getIdentityDef } from '../data/identities';
+import { LEVEL_BONUS_PER_STEP } from './identity';
 import { getItemDef } from '../data/items';
 import { SHOP_DEFS, actionCostOf, getShopDef } from '../data/shops';
 import { disasterModifiersOf } from '../data/disaster';
@@ -207,13 +208,15 @@ export function rollDayEvent(
     def,
     weight: dayEventWeight(def, shopId) * weightMul(def)
   })).filter((e) => e.weight > 0);
-  const total = DAY_EVENT_NONE_WEIGHT + pool.reduce((n, e) => n + e.weight, 0);
+  const poolWeight = pool.reduce((n, e) => n + e.weight, 0);
+  const none = noneWeightFor(poolWeight);
+  const total = none + poolWeight;
   if (total <= 0) return null;
   const roll = nextFloat(cursor) * total;
-  if (roll < DAY_EVENT_NONE_WEIGHT) return null;
+  if (roll < none) return null;
   // 最近出过的那一条不会再出（同夜间 / 求援 / 突发的口径，见 model/rng.ts）
   const last = recent[0];
-  let acc = DAY_EVENT_NONE_WEIGHT;
+  let acc = none;
   for (const entry of pool) {
     if (entry.def.id === last && pool.length > 1) continue;
     acc += entry.weight;
@@ -287,8 +290,16 @@ export function buildCartView(run: RunState, shopId: string, lines: readonly Car
    * `Math.max(1, ...)`：再糟的天气也不该让玩家一件都搬不动（那会变成死局）。
    */
   const mods = disasterModifiersOf(run.disasterId);
-  const carryLimit = Math.max(1, roundKg(identity.carryLimit * mods.carryFactor));
-  const vehicleCapacity = identity.vehicleCapacity;
+  /*
+   * §10B.3 的身份熟练度：车载与单趟上限都要**按这一局的等级**加一遍。
+   *
+   * ★ 等级从 `run.identityLevel` 读（开局时快照的），**不是**去 `meta` 现算 ——
+   * 理由写在 `RunState.identityLevel` 的注释里：现算会让命令层与界面层
+   * 有可能算出不同的数，而"界面说能拿 19kg、实际只拿 18kg"是最难查的一类 bug。
+   */
+  const levelSteps = Math.max(0, (run.identityLevel ?? 1) - 1);
+  const carryLimit = Math.max(1, roundKg((identity.carryLimit + levelSteps * LEVEL_BONUS_PER_STEP.carryLimit) * mods.carryFactor));
+  const vehicleCapacity = identity.vehicleCapacity + levelSteps * LEVEL_BONUS_PER_STEP.vehicleCapacity;
   const capacityLeft = roundKg(Math.max(0, vehicleCapacity - run.carLoad));
 
   const views: CartLineView[] = [];
@@ -849,7 +860,9 @@ export function buyCart(store: GameStore, shopId: string, lines: readonly CartLi
       const key = `${shopId}|${line.itemId}`;
       draft.shopBoughtToday[key] = (draft.shopBoughtToday[key] ?? 0) + line.count;
     }
-    // 批次到期日以"当前天"为基准：D-7 买的和 D-1 买的会差出好几天，FEFO 才排得出意义（§5 引擎④）
+    /*
+     * 批次到期日以"当前天"为基准：D-7 买的和 D-1 买的会差出好几天，FEFO 才排得出意义（§5 引擎④）
+     */
     const items: ItemStack[] = view.lines.map((line) =>
       makeStack(line.itemId, line.count, rollExpiry(cursor, line.itemId, draft.day))
     );
@@ -862,6 +875,29 @@ export function buyCart(store: GameStore, shopId: string, lines: readonly CartLi
       `${dayLabel(draft.day)} · 在${getShopDef(shopId).name}花了 ${view.cost} 元，${view.pieces} 件装成一箱（${view.weight}kg）。`
     );
   });
+
+  /*
+   * 生涯采购记录（v16，成就「先见之明」唯一的埋点增量 —— §10B.2 点名的那一处）。
+   *
+   * ★ 为什么走 `commitMeta` 而不是塞进 `run`：它回答的是"我这辈子买过什么"，
+   * 而 `run` 只回答"这一局买过什么"。结算是跨局的事，所以账也记在跨局账本上。
+   * 与 `shopBoughtToday` 的区别也要说清：那个**每天清零**（限购要那个语义），
+   * 而成就问的是"有没有买过" —— 一个买过、后来用掉/换掉的东西在那条账上会消失。
+   *
+   * 只在**真有东西**时写：空购物车不该触发一次落盘。
+   */
+  if (view.lines.length > 0) {
+    store.commitMeta((meta) => {
+      const had = new Set(meta.everBoughtItemIds);
+      let changed = false;
+      for (const line of view.lines) {
+        if (had.has(line.itemId)) continue;
+        had.add(line.itemId);
+        changed = true;
+      }
+      if (changed) meta.everBoughtItemIds = [...had].sort();
+    });
+  }
 
   return ok([
     { type: 'loaded', boxId, boxName: boxDef.name, pieces: view.pieces, weight: view.weight, cost: view.cost }

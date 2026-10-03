@@ -12,7 +12,8 @@
     "test": "vitest run",
     "check:style": "node scripts/check-style.mjs",
     "check:content": "node scripts/check-content.mjs",
-    "check": "npm run typecheck && npm run check:style && npm run check:content && npm run test",
+    "check:registry": "vite-node scripts/check-registry.mjs",
+    "check": "npm run typecheck && npm run check:style && npm run check:content && npm run check:registry && npm run test",
     "make-save": "vite-node scripts/make-save.mjs"
   },
   "devDependencies": {

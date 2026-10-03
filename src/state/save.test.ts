@@ -208,6 +208,18 @@ describe('存档 schema 与迁移', () => {
       hardPressStreak: 0,
       // M2（v13）：安全感连击从 0 起算 —— 老档没有"连击"这个概念，补 0 是诚实的
       safeStreak: 0,
+      /*
+       * M3（v16）三个累计值。默认值不是随便挑的，两个"零值"方向的含义正好相反：
+       *  · `cleanDays: 0` —— "你一直摆得很好"是最不该白送的一条，所以从 0 数起；
+       *  · `minStamina: 100` —— 它是**最低体力**，而"还没累过"的真值就是满值。
+       *    补 0 的话「一路从容」会白送给每一个老档（0 < 50 会让判据永远为真 …… 
+       *    实际上 0 会让 `minStamina >= 50` 为假从而**不发**，但那个 0 是错的账，
+       *    而错账迟早会被别的读者读到）。补 100 才是"这件事还没发生过"。
+       *  · `emergencyHurtCount: 0` —— 计数从 0 起。
+       */
+      cleanDays: 0,
+      minStamina: 100,
+      emergencyHurtCount: 0,
       lastTradeDay: -99,
       last: {
         ...EMPTY_SURVIVAL_SNAPSHOT

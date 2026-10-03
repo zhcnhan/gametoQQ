@@ -1,11 +1,32 @@
 /**
- * 手写线稿图标（§5A：物资不用扁平 emoji，走线稿；§13.2 优先 game-icons.net，
- * 缺失的品种自己手写）。全部 24×24、stroke=currentColor，跟着 CSS 的颜色走。
+ * 图标总入口：**手写线稿（17 件）+ 组合式生成（新键）**。
  *
- * `DEFERRED(D-21): 一物一手绘在数百种物资时是产能瓶颈，需换「基础轮廓 × 变体轴」的组合式生成`
- * —— 见 `docs/囤货末世-游戏策划案.md` §10B.9 与 `src/meta/deferred.ts` 的 D-21。
- * 现在 17 件手绘是**优点**（每件都认得出、互不混淆），但 §10B 要把物资扩到 120~200 种，
- * 那时"内容可以批量生成、图标不能"就会成为唯一卡点。
+ * 全部 24×24、stroke=currentColor，跟着 CSS 的颜色走（§5A 的纸底 / 墨色 / 朱红）。
+ *
+ * ## 这一版的结构（以及为什么是"新老共存"而不是"把手写的也重构成生成器"）
+ *
+ * 下面 `ITEM_ICONS` 那 17 张手写图是**玩家验收过的**（"每件都认得出"）。
+ * 任务书上给了两条路：把它们抽成"基础轮廓 + 空变体轴"，或者让它们继续走手写。
+ * **选后者**，理由只有一条但足够：
+ *
+ * > 重构它们的收益是"整齐"，风险是"玩家认不出来了"。
+ * > 而已经被真实验收过的像素，是这个项目里最贵的东西。
+ *
+ * 生成器（`iconShapes.ts`）只服务**新键**。这不是过渡期的妥协，而是长期的正确分工：
+ * 手写表回答"这一件长什么样"，生成器回答"这一类怎么派生出无数件"。
+ * 将来 §5A 的淡彩真进来了，两边的产出都是同一套 `<svg>` 字符串，键名一个字都不用动。
+ *
+ * 这一版同时**清偿了 D-21**（一物一手绘的产能瓶颈）—— 它原本登记在这里，
+ * 现在换成了组合式生成，欠账登记册里那条已改为 done（附残留说明）。
+ *
+ * ## 判别规则（写在这里，因为它决定 `hasIcon` 的真假）
+ *
+ * `icon` 是 `string`，打错一个字母不会有任何类型报错。所以生成器**只认
+ * `基础词-…` 这种形态的键**（`can-corned-beef`），而且基础词必须是白名单里的
+ * 罐/瓶/盒/袋/箱/坛/散装七个之一。于是：
+ *   · 手写键（`can` / `rice` / `cocoa_tin`）**永远走手写表** —— 注意 `can` 只有一段，
+ *     正好落在"生成器不认单段键"这条规则外面，不会被生成器抢走；
+ *   · 打错的键（`cna-beef`、`can_beef`）两边都不认 → 空串 → `hasIcon` 为假 → 测试红。
  *
  * ## 这一版解决的两个问题（都来自玩家反馈）
  *
@@ -20,6 +41,7 @@
  * 一条纪律：**新物资一定要有自己的键**。奢侈品原来借用了 can / toolbox / quilt 的图标，
  * 于是"可可粉铁罐"和"黄豆罐头"长得一模一样 —— 图鉴里那是致命的。
  */
+import { isGeneratableKey, shapePartsOf } from './iconShapes';
 
 /** 主轮廓的淡影浓度。0.12 是"看得见厚度、但不变成色块"的位置 */
 const FILL = 'fill="currentColor" fill-opacity="0.12"';
@@ -87,9 +109,22 @@ const UI_ICONS: Record<string, string> = {
 };
 
 export function iconSvg(key: string, className = 'ico'): string {
-  const body = ITEM_ICONS[key] ?? UI_ICONS[key];
+  const body = ITEM_ICONS[key] ?? UI_ICONS[key] ?? generatedBody(key);
   if (!body) return '';
   return `<svg class="${className}" ${SVG_ATTRS} aria-hidden="true">${body}</svg>`;
+}
+
+/**
+ * 把键交给组合式生成器，拿回一段 `<svg>` 内容（认不出的键 → 空串）。
+ *
+ * 为什么要"手写优先、生成兜底"这个顺序，而不是反过来：手写表是**验收过的名单**，
+ * 万一同名的生成结果出现了（比如以后有人把基础词表加宽），也应该让验收过的那张赢 ——
+ * 否则会静默地换掉一张玩家已经认熟的图，而没有任何测试会红。
+ */
+function generatedBody(key: string): string {
+  if (!isGeneratableKey(key)) return '';
+  const parts = shapePartsOf(key);
+  return parts ? parts.outline + parts.pattern + parts.accent : '';
 }
 
 export function itemIconSvg(iconKey: string): string {
@@ -104,10 +139,24 @@ export function itemIconSvg(iconKey: string): string {
  *  2. **奢侈品不许借用别人的图标** —— 原来"可可粉铁罐"用的是 `can`、
  *     "一条烟"和"一本画册"都用 `toolbox`，于是它们和黄豆罐头长得一模一样。
  *     图鉴里那是致命的：玩家分不出自己点亮的是哪一件。
+ *
+ * 手写与生成两条路都算"存在"：组合式生成器的产出是**由构造保证**的，
+ * 不需要在表里登记，所以这里不能只看 `ITEM_ICONS`。
  */
 export function hasIcon(key: string): boolean {
-  return ITEM_ICONS[key] !== undefined || UI_ICONS[key] !== undefined;
+  return ITEM_ICONS[key] !== undefined || UI_ICONS[key] !== undefined || generatedBody(key) !== '';
 }
 
 /** 物资图标（不含 UI 图标）的键。测试用它反查"有没有两个品类画得一样" */
 export const ITEM_ICON_KEYS: readonly string[] = Object.keys(ITEM_ICONS);
+
+/**
+ * 手写表与生成器**有没有抢同一个键**。
+ *
+ * 两者本来是不可能重叠的（生成器要求"基础词 + 至少一段"，手写键都是单段或下划线），
+ * 但这个前提是**隐含的**：以后给基础词表加上 `rice`、或者写一个 `bag-xxx` 的手写键，
+ * 就会悄悄出现"同一件货有两张图、以手写那张为准"。测试用它把这条隐含前提钉住。
+ */
+export function iconKeyOverlaps(): string[] {
+  return ITEM_ICON_KEYS.filter((key) => isGeneratableKey(key));
+}

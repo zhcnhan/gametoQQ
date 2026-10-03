@@ -26,7 +26,7 @@
  */
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join, basename } from 'node:path';
+import { dirname, join, basename, isAbsolute } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..');
@@ -573,9 +573,20 @@ if (files.length === 0) {
   note('这个脚本的真正用途是校验**待入库的生成物**：node scripts/check-content.mjs content/*.json');
 } else {
   for (const f of files) {
-    const abs = join(process.cwd(), f);
+    /**
+     * ★ 路径解析踩过的两个坑（都会让工具报"文件不存在"，而文件明明在那儿）：
+     *
+     *  ① `join(process.cwd(), 'C:/…')` 在 Windows 上会拼成
+     *     `D:\…\GameToQQ\C:\…` —— `path.join` 不认"参数是绝对路径"这件事，
+     *     只有 `path.resolve` 认。生成物的目录常常在仓库外面（桌面、下载目录），
+     *     所以这条一定会被踩到；
+     *  ② 相对路径按**仓库根**解析，而不是 `process.cwd()`。
+     *     否则同一条命令在根目录跑得通、在 `scripts/` 里跑就报不存在 ——
+     *     而这种"换个目录就坏"的工具，会让人以为是自己文件写错了。
+     */
+    const abs = isAbsolute(f) ? f : join(root, f);
     if (!existsSync(abs)) {
-      fail(basename(abs), '(文件)', '不存在');
+      fail(basename(abs), '(文件)', `不存在：${abs}`);
       continue;
     }
     let data;

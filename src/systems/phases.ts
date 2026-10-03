@@ -28,6 +28,7 @@ import { rollHelpRequest } from './help';
 import { NO_EFFECT, applyNightEffect, cashCost, describeEffect, optionAt, rollNight } from './night';
 import { rollShopStocks } from './shop';
 import { recordEvent } from './setup';
+import { startNumbersOf } from './identity';
 import { settleSurvivalDay, type SurvivalReport } from './survival';
 
 /**
@@ -70,7 +71,7 @@ export type PhaseEvent =
   | { type: 'disasterLanded'; day: number }
   /** 生存期每一天的结算报告 —— 报告是纯数据，界面对规则一无所知，只负责显示它 */
   | { type: 'survivalSettled'; report: SurvivalReport }
-  /** 撑满 7 天 */
+  /** 活过 7 天 */
   | { type: 'survivalCompleted'; days: number }
   /** 健康归零，这一局停在这里（§12.3 v0.5 修订：硬撑不是免死金牌） */
   | { type: 'survivalEnded'; outcome: 'collapsed'; day: number }
@@ -104,12 +105,23 @@ export function chooseIdentity(store: GameStore, identityId: string): PhaseResul
   if (run.phase !== 'prologue') return reject('这一局已经开过了');
   if (!hasIdentityDef(identityId)) return reject('没有这个身份');
   const identity = getIdentityDef(identityId);
+  /*
+   * ★ §10B.3 的身份熟练度：**开局参数**（现金 / 车载 / 单趟）由等级算出来，
+   * 而等级来自**跨局账本**（`meta.identityLevels`）。
+   *
+   * 这是 `identityLevels` 自 M0 起第一次真的被写读 —— 在此之前它是个空转字段。
+   * 注意这里读的是 `store.save.meta`（跨局），不是 `run`（单局）：
+   * 熟练度按定义就是跨局的，放进 run 会让它随开局重置。
+   */
+  const start = startNumbersOf(store.save.meta, identity.id);
   const events: PhaseEvent[] = [];
 
   store.commit((draft) => {
     const cursor = createCursor(draft.seed);
     draft.identityId = identity.id;
-    draft.cash = identity.startCash;
+    // §10B.3：把这一局用的等级**快照**下来（理由见 `RunState.identityLevel`）
+    draft.identityLevel = start.level;
+    draft.cash = start.startCash;
     draft.day = FIRST_STOCKPILE_DAY;
     draft.phase = 'stockpile_shop';
     draft.actionPoints = ACTION_POINTS_PER_DAY;
@@ -124,12 +136,16 @@ export function chooseIdentity(store: GameStore, identityId: string): PhaseResul
     draft.dayEvent = null;
     draft.shopStocks = rollShopStocks(identity, cursor, FIRST_STOCKPILE_DAY, draft.disasterId);
     draft.seed = cursor.state;
-    draft.log.push(`${dayLabel(FIRST_STOCKPILE_DAY)} · ${identity.name}。${identity.perk}`);
+    draft.log.push(
+      `${dayLabel(FIRST_STOCKPILE_DAY)} · ${identity.name}${
+        start.level > 1 ? ` Lv${start.level}` : ''
+      }。${identity.perk}`
+    );
     events.push({
       type: 'identityChosen',
       identityId: identity.id,
       identityName: identity.name,
-      cash: identity.startCash
+      cash: start.startCash
     });
   });
 
@@ -320,7 +336,7 @@ export function startSurvival(store: GameStore): PhaseResult {
  *
  * 这里有两个出口，**顺序不能反**：
  *   ① 先看这次结算有没有把健康打到 0（`settleAndMaybeEnd` 会接住，直接进 collapsed 结局）；
- *   ② 否则再看是不是撑满了 —— 撑满 7 天就是撑过去了（§12.3）。
+ *   ② 否则再看是不是走完了 —— 活过 7 天就是撑过去了（§12.3）。
  * 反过来的话，"第 7 天倒下"的人会拿到"你撑过去了"的评语。
  */
 export function advanceSurvivalDay(store: GameStore): PhaseResult {

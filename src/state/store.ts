@@ -6,7 +6,7 @@
  *  - 命令函数内部通过 `store.commit(mutator)` 一次性改完再落盘，保证"每个玩家动作 = 一个存档点"。
  */
 import type { RunState, SaveGame } from '../model/types';
-import { createSaveGame, createSaveScheduler, loadSave, touch, type SaveScheduler } from './save';
+import { SAVE_VERSION, createSaveGame, createSaveScheduler, loadSave, touch, type SaveScheduler } from './save';
 import { resolveStorage, type StorageLike } from './storage';
 
 export type StoreListener = () => void;
@@ -64,6 +64,49 @@ export class GameStore {
     this.revision += 1;
     this.scheduler.schedule(this.saveGame);
     this.notify();
+  }
+
+  /**
+   * 改**跨局账本**（`meta`）的写入口。
+   *
+   * ## 为什么它必须与 `commit` 分开（而不是让命令层直接摸 `store.save.meta`）
+   *
+   * `commit` 的契约是"唯一允许的副作用，而且是改 `run`"—— 那是 §1.1 立的分层规矩：
+   * 单局状态走一条路，跨局账本走另一条。混在一起会出现一个**很具体的**问题：
+   * `commit` 之后 `scheduler.schedule` 会把整份存档（含 meta）写下去，
+   * 于是"我到底有没有改 meta"这件事变得无法从调用点看出来 ——
+   * 而那正是 codex.ts 当初不得不手写 `store.persistNow()` 的原因。
+   *
+   * 有了这个入口，"改元数据"是一个**显式的、可搜索的**动作：
+   * 谁在改生涯账本，grep `commitMeta` 就全在眼前。
+   *
+   * ★ 注意它**不 notify**（与 `persistNow` 一致）：meta 的变化全都在
+   * `run` 也变了的那一刻发生（结算、买货），那一次 `commit` 已经通知过界面了。
+   * 额外通知一次会让界面在同一帧里重绘两遍。
+   *
+   * ## ★★ 一处必须写明的分层例外（AGENTS.md 说"唯一允许的副作用是 store.commit()"）
+   *
+   * `systems/` 现在有两处调用它，都是**为了给跨局账本记账**，而且都发生在
+   * 一个已经 `commit` 过的命令里：
+   *   · `systems/shop.ts` 的 `buyCart` —— 记 `everBoughtItemIds`（成就「先见之明」）；
+   *   · `systems/organize.ts` 的 `placeHeld` —— 记 `totalShelved`（成就「仓库管理员」）。
+   *
+   * 为什么这是对的而不是破例：**它们仍然只经由 store 写状态**（没碰 DOM、
+   * 没碰 localStorage、没绕过存档），而那两条规矩（`systems/` 不许碰 DOM、
+   * 只有 `storage.ts` 碰 localStorage）一条都没破。多出来的只是"这次要写的
+   * 是跨局账本而不是单局状态"。
+   *
+   * 如果哪天要再加一处，先问一句：这个数**是不是真的跨局**？
+   * 单局能回答的东西一律走 `run`（那才是 `commit` 的正路）——
+   * 这正是我一开始把 `boughtItemIds` 加进 `RunState` 又删掉的原因：
+   * 成就只问"这辈子买过吗"，所以它本来就不该有一个单局的副本。
+   */
+  commitMeta(mutator: (meta: SaveGame['meta']) => void): void {
+    mutator(this.saveGame.meta);
+    this.saveGame.meta.version = SAVE_VERSION;
+    touch(this.saveGame);
+    this.revision += 1;
+    this.scheduler.schedule(this.saveGame);
   }
 
   /**

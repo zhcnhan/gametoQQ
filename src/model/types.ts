@@ -9,6 +9,49 @@
 
 export type CategoryId = 'food' | 'water' | 'medicine' | 'fuel' | 'warmth' | 'tool' | 'luxury';
 
+/**
+ * 内容的**分层**（§10B.5 第 3 件）：
+ *
+ *   1 = 开局就撞得到（第一次玩就见到）
+ *   2 = 需要一点针对性（专门去买 / 专门去配）
+ *   3 = 稀有（低概率、要运气或者要攒）
+ *   4 = 极稀有（要解锁才拿得到）
+ *
+ * ## 为什么必须有这个字段
+ *
+ * §10B 要把内容从 17 件物资 / 6 条夜间事件扩到**数百种**。
+ * 一次性涌进来会把新玩家淹掉 —— 第一局就想让他看懂 200 件物资，
+ * 结果是他一件也记不住。`tier` 是"渐进放出来"的**唯一手段**：
+ * 有了它，将来任何一处筛选（开局货架 / 事件池 / 解锁阶梯）都只需要读一个数。
+ *
+ * ## ★ 现在的边界（写清楚，免得被误认为已经生效）
+ *
+ * **M3 第 1 步只做"把分层写成数据 + 让校验器盯着它"，还没有任何筛选读它。**
+ * 也就是说：给某条内容标 `tier: 3` **不会**让它不出现在第一期。
+ * 真正开始按 tier 放内容，是内容量上去之后（§10B 第 8 步）才做的事。
+ *
+ * 现在就把字段落下来的理由只有一个，但很硬：**内容量上去之后再补分层，
+ * 就得回头给几百条内容逐条想一遍"它算第几层"** —— 那件事的成本随内容量线性增长，
+ * 而它现在只有几十条。
+ *
+ * ## 为什么是"可选字段 + 构建期必填"
+ *
+ * 类型上可选，是因为内容表将来可以来自 mod（§10B.5「mod 友好的三条」）——
+ * 一个第三方内容包不该因为少了一个字段就编译不过。
+ * 但**本仓库自己的内容必须写**：`scripts/check-content.mjs` 的"可达性"那一条
+ * 会把没写 tier 的条目标成不合格（M2 的 D-16 就是"写了但永远出不来"的那类问题）。
+ * 一道守编译期、一道守构建期，各管各的读者。
+ */
+export type ContentTier = 1 | 2 | 3 | 4;
+
+/** 四层的展示名（图鉴 / 解锁提示共用一份中文，免得两处各写一遍） */
+export const TIER_LABELS: Record<ContentTier, string> = {
+  1: '常见',
+  2: '少见',
+  3: '稀有',
+  4: '罕见'
+};
+
 export interface ItemDef {
   id: string; // 'canned_beans'
   name: string; // '黄豆罐头'
@@ -22,6 +65,20 @@ export interface ItemDef {
   nutrition: Partial<{ food: number; water: number; health: number; comfort: number }>;
   basePrice: number;
   tags: string[]; // 供玩家分区规则引用：'canned','drink','medkit'...
+  /** 内容分层，见 `ContentTier`。本仓库的内容必须写，由 `check-content.mjs` 盯 */
+  tier: ContentTier;
+  /**
+   * 生成时写下的一句「它逼玩家做什么决定」。
+   *
+   * ★ 它**不参与任何玩法**，是**内容评审的留痕**：§10B.6 要求每一批内容
+   * "同一类取舍不许超过 5 条"，而验收这件事需要每条自带那句话才能归类数一遍。
+   * 生成物里它本来就是必填（见 `docs/囤货末世-游戏策划案.md` §10B.7 的提示词），
+   * 所以入库时把它**留着**而不是删掉 —— 删了将来就再也无法回答
+   * "这 57 件物资是不是三十件都在逼同一个决定"。
+   */
+  decision?: string;
+  /** 生成时写下的一句备注（同样是评审留痕，不参与玩法）。入库后保留，理由同 `decision` */
+  note?: string;
 }
 
 export interface DisasterProfile {
@@ -117,6 +174,116 @@ export interface DisasterProfile {
   eventPoolWeights?: Record<string, number>;
   /** 有人来敲门的概率乘数（1.3 = 邻居来得更勤）。读点：`systems/help.ts` 的 `rollHelpRequest` */
   npcVisitFactor?: number;
+
+  // ———————— §10B.3.1 的 L3 影响维度（第 13~16 维） ————————
+  /*
+   * ## 为什么 L3 与 L2 要分开写在这一段里
+   *
+   * L2 那 8 维全是"读一个乘数"——接上去就完事，玩家感受是**生活方式变了**。
+   * L3 这 4 维不一样：它们动的是**玩法本身**（某些东西在这里没用、
+   * 某些地方去不了、评分标准都不一样），所以每一项都要在该系统的**取值口径**上
+   * 想清楚再落，而不是乘一下。§10B.3.1 把这一层的代价标成"中"，
+   * 那一栏指的就是这件事。
+   */
+
+  /**
+   * **品类效率**（维度 13）：同样的东西在这一场更管用 / 更不管用。
+   *
+   * 例：洪水里 `{ warmth: 0.6 }` —— 棉被吸了潮就不顶用；
+   * 大停电里 `{ medicine: 0.8 }` —— 没有电，药能做的事变少了。
+   *
+   * 它和 `priorityCategories` 是**两件不同的事**，而且混用会坏事：
+   *  · `priorityCategories` 回答"**什么最值钱**"（界面标注、顺手位建议）；
+   *  · `categoryEfficiency` 回答"**同样的投入能换回多少**"（消耗与恢复的实际效果）。
+   * 一件东西可以既是最刚需、又打了折 —— 那正是"这一场不好过"的表达。
+   *
+   * 读点：`data/survival.ts` 的 `dailyDrainOf` / 自动补给。默认 1。
+   */
+  categoryEfficiency?: Partial<Record<CategoryId, number>>;
+  /**
+   * **空间限制**（维度 14）：`0.8` = 可用的货架格子只剩八成（低处进水 / 结冰 / 塌了）。
+   *
+   * 读点：`systems/setup.ts` 生成货架时，与 `spoilRate` 一样是**乘在盘面上**的，
+   * 不是乘在数值上 —— 它直接让"整理这件事"变难，这正是 §10B.0 的主轴
+   * （"更大的空间才是奖励"的反面：这一场你**没有**那么大的空间）。
+   * 默认 1。
+   */
+  capacityFactor?: number;
+  /**
+   * **这一场用不了的家具**（按 `Shelf.id`）。
+   *
+   * 与 `capacityFactor` 是两个粒度：那个是"整屋小一圈"，
+   * 这个是"**这一块**没了"（一楼那块泡在水里、阳台的柜子结了冰）。
+   * 后者更能让玩家做出"把东西搬到哪去"的决定。
+   */
+  unusableShelfIds?: readonly string[];
+  /**
+   * **健康风险**（维度 15）：硬撑的代价，每天按这个数扣健康（0~3）。
+   *
+   * 它和"缺货扣健康"的区别是**它不看玩家做错了什么** ——
+   * 屋子在漏、空气有毒、水里带菌，只要住在这儿就在掉血。
+   * 所以它必须小（1 左右）：它要制造"这一场拖不起"的压力，
+   * 不是替玩家把这一局结束掉。读点：`systems/survival.ts` 的日结算。默认 0。
+   */
+  healthRiskPerDay?: number;
+  /**
+   * **分数口径**（维度 16）：这一局的评分看什么。
+   *
+   * 例：`{ emergencyRate: 2 }` —— 这一场里"急诊可达率"比平常更重要。
+   * 读点：`model/score.ts`。键就是那里各分项的 key，权重默认 1。
+   */
+  scoreWeights?: Record<string, number>;
+
+  /**
+   * 内容分层，见 `ContentTier`。
+   *
+   * 灾难的 tier 就是 §10B.3.2 的**解锁阶梯**：
+   *   `1` = 开局就有（寒潮）→ `2` = 撑过一次之后 → `3` = 图鉴点亮 8 场之后
+   *   → `4` = 撑过 4 个家族 / 特定成就之后。
+   * 现在还没有任何代码按它过滤（见 `ContentTier` 的边界说明），
+   * 但**解锁阶梯的口径必须先落在数据上**，否则等 110 场内容进来时
+   * 就没人说得清"哪几场是新玩家一开局就能撞上的"。
+   */
+  tier: ContentTier;
+  /**
+   * §10B.3.2 的**家族**（温度 / 水 / 结构 / 生物 / 社会 / 空气 / 组合）。
+   *
+   * 它回答"这一场的机制内核是什么"，也是"一百多场怎么不写成一百份手写"的
+   * 第一层组织方式：家族决定改哪几个维度，强度档决定改多深，变体决定叙事。
+   * 与 `tier` 一起构成解锁阶梯的两个轴（家族 × 层级）。
+   */
+  family: string;
+  /**
+   * `'L2' | 'L3' | 'L4'` —— 这一场用到了哪一层的机制（见 §10B.3.1 的实施分层）。
+   *
+   * L2 只读"乘数"（屋子坏得更快、睡不安稳、门开得少），L3 开始动**玩法**
+   * （某些东西在这里没用、某些地方去不了），L4 每场一个专属机制。
+   * 它不只是标签：`check-content.mjs` 按它校验"这一场声称的层级，
+   * 维度签名里真的够数"—— 声称 L3 却只动了 4 个维度，是"换皮"最典型的样子。
+   */
+  level: 'L2' | 'L3' | 'L4';
+  /** §10B.3 要求的一句话：**这一场的压力轴是什么**（不是"更冷"，而是"哪条线在吃紧"） */
+  axis: string;
+  /**
+   * ★★ 这一场那条**反直觉的侧面**（§10B.3.1 硬要求，`check-content.mjs` 强制必填）。
+   *
+   * 为什么把它做成必填：一个能从"这场灾难很糟"直接推导出来的效果只是数字；
+   * 一个没人会立刻想到、但想通后觉得"确实如此"的效果才是设计。
+   * 逼生成者每一场都想一次，是不让"一百多场"退化成"十二种 × 八种数值"的第一道闸。
+   */
+  counterIntuitive: string;
+  /** 这一场逼玩家做的决定（2~4 条，互不重复）。与物品的 `decision` 同一个用途：供人归类查重 */
+  decisions?: readonly string[];
+  /** 写明本场用到了哪些维度编号（供"维度签名"查同质化）。它由生成者写，校验器核对 */
+  notes?: string;
+  /**
+   * 独有机制 key（维度 17，`level: 'L4'` 才用）。
+   *
+   * ⚠ **每加一种要有代码**：它不像别的维度那样"读一个乘数"就完事，
+   * 所以校验器只检查它**是不是已知的 key**，未知的直接判不合格 ——
+   * 否则生成物会写出一个引擎根本不认识的名字，而那一场会静默地少一条机制。
+   */
+  specialMechanics?: readonly string[];
 }
 
 export interface DayForecast {
@@ -153,23 +320,42 @@ export interface IdentityDef {
   carryLimit: number;
   perk: string; // '加油站夜班：燃料价格 -20%'
   perkRule: PerkRule;
+  /** 内容分层，见 `ContentTier`。身份的分层就是 §10B.3 的**解锁批次**（开局 2 个 → 随成就解锁） */
+  tier: ContentTier;
+  /** 生成时写下的「它逼玩家做什么决定」（评审留痕，不参与玩法，见 `ItemDef.decision`） */
+  decision?: string;
 }
 
-export interface NpcDef {
-  id: string;
-  name: string;
-  archetype: string; // '楼上王阿姨'
-  requestPool: string[]; // 求援订单模板 id 列表
-}
+/**
+ * ⚠ **NPC 的形状不在这里** —— 它在 `data/npcs.ts` 的 `NpcDef`。
+ *
+ * 这里原来还有一份**已经作废**的副本（`{ id, name, archetype, requestPool }`，
+ * 逐字抄自策划案 §7）。它从阶段 D 起就没有任何代码引用，而 `data/npcs.ts`
+ * 那一份是**唯一在用**的：字段名都不一样（`blurb` 而不是 `archetype`，
+ * 而且没有 `requestPool` —— 求援池挂在订单自己的 `npcId` 上，不在 NPC 身上）。
+ *
+ * 这与求援订单那份作废副本（见下面 `HelpRequestDef` 那条注释）是同一件事，
+ * 而且它刚刚真的咬了一次：`data/registry.ts` 按这份副本给 NPC 表取字段，
+ * 直到 M3 第 2 步的图鉴界面要显示"他是谁"时才被发现 ——
+ * **一份没人用的类型副本可以安静地躺很久，直到某个新读者信了它。**
+ */
 
-export interface HelpRequestDef {
-  // 订单模板
-  id: string;
-  demands: { itemId: string; count: number }[];
-  validUntilDay: number; // 当日有效，不用实时秒表（见 §4A）
-  rewards: { trust?: number; intel?: string; barter?: { itemId: string; count: number }[] };
-  declineTrust: number; // 婉拒的关系变化（负值）
-}
+/**
+ * ⚠ **求援订单的形状不在这里** —— 它在 `data/helpRequests.ts` 的 `HelpRequestDef`。
+ *
+ * 这里原来还有一份**已经作废**的副本（`{ demands: {itemId,count}[]; validUntilDay;
+ * rewards; declineTrust }`，逐字抄自策划案 §7）。它从阶段 D 起就没有任何代码引用，
+ * 而 `systems/help.ts` 一直 import 的是数据表那一份 —— 两边的字段名完全不同
+ * （`demands` 按**品类**开口是后来的拍板：§6.5 写"邻居要的是药，不是某某牌感冒药"）。
+ *
+ * 留着它的害处是具体的：`scripts/check-content.mjs` 的求援订单 schema 是照着
+ * 这份作废副本写的（`validUntilDay` / `rewards.barter` / `declineTrust`），
+ * 于是**校验器在检查一份没人用的形状** —— 生成出来的求援订单会被按
+ * "不存在的字段"判不合格，而真正的表长什么样它根本不知道。
+ *
+ * 这正是开发纪律 §2.8「同一件事只留一个真相来源」那条：
+ * 两份说法不会相安无事，它们会开始互相打架。
+ */
 
 /**
  * 囤货期点位 id。
@@ -222,6 +408,15 @@ export interface ShopDef {
    * "新加这家店和另一家完全重合"——那种店是纯冗余。
    */
   specialty?: string[];
+  /**
+   * 内容分层，见 `ContentTier`。
+   *
+   * 点位的分层就是 §10B.3.2 那种**解锁批次**：`1` = 开局就在地图上；
+   * 更高的层要等"跑腿路线 / 解锁点位"做出来（现在还没有任何代码按它过滤）。
+   */
+  tier: ContentTier;
+  /** 生成时写下的「它逼玩家做什么决定」（评审留痕，不参与玩法，见 `ItemDef.decision`） */
+  decision?: string;
 }
 
 // ============ 运行时状态（model/） ============
@@ -394,6 +589,10 @@ export interface NightEventDef {
   /** 睡前读到的处境，1~2 句 */
   text: string;
   options: NightOption[];
+  /** 内容分层，见 `ContentTier` */
+  tier: ContentTier;
+  /** 生成时写下的「它逼玩家做什么决定」（评审留痕，不参与玩法，见 `ItemDef.decision`） */
+  decision?: string;
 }
 
 /**
@@ -523,6 +722,40 @@ export interface SurvivalState {
    * 快照只出现在玩家已经看完今天发生了什么之后。
    */
   safeStreak: number;
+  /**
+   * 「整理得**一整天**都挑不出毛病」的天数（M3 第 2 步，为成就「一尘不染」新增）。
+   *
+   * 达标 = 当天结算时**归位率 1.00 且临期优先 1.00，而且一件都没缺**。
+   *
+   * ★ 为什么必须是"每天记一笔"而不是"结算时现算一次"：
+   * 归位率与临期优先是**当场按盘面算的**（`computeOrganizeScore` 读的是此刻的货架），
+   * 而玩家在 14 天里可以把货搬来搬去 —— 最后一天摆得完美，不代表前 13 天也完美。
+   * 结算时现算只能回答"你**最后**摆得怎么样"，而这条成就问的是"你**一直**摆得怎么样"。
+   * 两个问题不一样，所以这个数只能在每天的结算里累加（那也正是它唯一被写的地方）。
+   */
+  cleanDays: number;
+  /**
+   * 最低体力（不是"当前体力"）。开局 = 100，每次日结算后取更小值。
+   *
+   * ★ 它存在的理由与 `cleanDays` 同一类：成就「一路从容」问的是
+   * "你**从来没有**累到脱力过吗"，而 `stats.stamina` 只回答"你现在累不累"。
+   * 一个只在最后一天瞥一眼体力的账本，会把"中途连续三天趴在 0 上但最后睡回来了"
+   * 记成"一路从容" —— 那就成了一个自己骗自己的成就。
+   */
+  minStamina: number;
+  /**
+   * 累计**没化解掉的突发事件**次数（M3 第 2 步，为成就「门口那一块」新增）。
+   *
+   * ★ 为什么不能用 `last.emergencyResolved` 代替：那个是**今天**的快照，
+   * 每次结算覆盖上一次。而成就要问的是"整局有没有哪一次没接住" ——
+   * 一个只看最后一天的账本会把"前面三次都受创、最后一次恰好化解了"
+   * 记成"一次都没失手"。**快照回答"现在"，累计回答"历史"。**
+   *
+   * 它与 `unreachablePieces` / `shortagePieces` 同一类：累计值单独记一个，
+   * 而不是每次回扫 `run.log`（日志是给人看的，不是查询用的 —— 这条口径
+   * 在 `hardPressDays` 的注释里已经立过一次）。
+   */
+  emergencyHurtCount: number;
   /**
    * 最近一次结算的增量。
    * 落盘的理由是 §4A「恢复即续玩」：刷新回来必须还能看见"今天掉了哪些点"，
@@ -730,6 +963,10 @@ export interface DayEventDef {
    */
   tags?: readonly string[];
   options: readonly DayOption[];
+  /** 内容分层，见 `ContentTier` */
+  tier: ContentTier;
+  /** 生成时写下的「它逼玩家做什么决定」（评审留痕，不参与玩法，见 `ItemDef.decision`） */
+  decision?: string;
 }
 
 // ============ 突发事件（生存期，§5） ============
@@ -754,6 +991,10 @@ export interface EmergencyDef {
   lost: number;
   /** 这一条要不要消耗掉化解用的那几件（"炉子熄了"要真的烧掉一罐燃料） */
   consumes?: boolean;
+  /** 内容分层，见 `ContentTier` */
+  tier: ContentTier;
+  /** 生成时写下的「它逼玩家做什么决定」（评审留痕，不参与玩法，见 `ItemDef.decision`） */
+  decision?: string;
 }
 
 /**
@@ -808,6 +1049,26 @@ export interface RunState {
    */
   day: number;
   identityId: string;
+  /**
+   * 这一局用的身份**熟练度等级**（§10B.3）。
+   *
+   * ## ★ 为什么把它**快照**进 `run`，而不是每次去 `meta` 现算
+   *
+   * 熟练度本身是跨局的（存在 `MetaProfile.identityLevels`），但**这一局用几级**
+   * 是这一局的属性。现算会有两个具体的坏处：
+   *
+   *  ① **两个读者会算出不同的数**：`buildCartView`（命令层）手里只有 `run`，
+   *     而 `ShopScreen`（界面层）手边有 store。让其中一个绕路去拿 meta，
+   *     就会出现"界面显示一趟能拿 19kg、实际只能拿 18kg"这种对不上的账 ——
+   *     而这个项目已经在别处吃过这种亏（见 `ShopBoughtToday` 与限购那条）；
+   *  ② **它会在局中途变化**：玩家在生存期通关另开一局，`meta` 就变了；
+   *     一个"边玩边变"的等级意味着同一份存档在不同时刻玩出不同结果，
+   *     而 §4A 的承诺是"杀进程损失 = 0"。
+   *
+   * 快照之后：**开局那一刻算一次，此后这一局到死都不变**。旧的存档没有这个字段 →
+   * 补 1（见 `migrateV16ToV17` 与 `normalizeRun`），那正好是它们当时的真实情况。
+   */
+  identityLevel: number;
   disasterId: string;
   cash: number;
   shelves: Shelf[];
@@ -934,10 +1195,10 @@ export interface RunState {
   /**
    * 这一局是怎么结束的。`null` = 还没结束。
    *
-   *  - `'survived'`  = 撑满了 `SURVIVAL_DAYS` 天
+   *  - `'survived'`  = 走完了 `SURVIVAL_DAYS` 天
    *  - `'collapsed'` = 健康归零，没撑住
    *
-   * 必须落盘而不是从 `day` 推：撑满 7 天和"第 7 天倒下"的 `day` 都是 7，
+   * 必须落盘而不是从 `day` 推：活过 7 天和"第 7 天倒下"的 `day` 都是 7，
    * 没有这个字段就分不出两种结局，结算页会给出完全相反的评语。
    */
   outcome: 'survived' | 'collapsed' | null;
@@ -948,7 +1209,7 @@ export interface RunState {
    * 这一局的成果有没有已经记进 `MetaProfile`。`null` = 还没记。
    *
    * ★ 为什么必须有这个字段（三个出口，只允许发一次奖励）：
-   * 结局有**三条**路 —— 撑满 14 天（`advanceSurvivalDay`）、健康归零
+   * 结局有**三条**路 —— 活过 14 天（`advanceSurvivalDay`）、健康归零
    * （`settleAndMaybeEnd`）、以及**读档自愈**（`normalizeRun` 发现 health ≤ 0 补结局）。
    * 结算页每渲染一次就发一次奖励的话，玩家反复刷新结算页就能把图鉴与纪录刷满 ——
    * 那不是上瘾循环，那是记账错误。所以发放时**先写这个字段再发**，
@@ -976,6 +1237,26 @@ export type CodexPage = keyof CodexState;
 export interface MetaProfile {
   // 跨局存档
   version: number;
+  /**
+   * 身份的**熟练度**（§10B.3）。
+   *
+   * ## 它是什么、不是什么（这条边界是 §10B.3 专门划出来的，别混）
+   *
+   * > 成就是**勋章**（不给数值），身份熟练度是**开局参数**（给数值但只在开局生效）。
+   *
+   * 所以这个数**只改开局条件**（开局现金 / 车载 / 单趟手提），
+   * 绝不改单局中的任何公式 —— 否则平衡会随身份等级漂移，探针全部失效
+   * （§12 那三条全周期探针是"好档活 / 乱档倒 / 补救有用"的永久回归，
+   * 它们的前提是"同一份货 + 同一个身份 = 同一个结果"）。
+   *
+   * ## 语义
+   *
+   * `{ 身份 id: 等级 }`，等级 1~3。**没记录 = 1 级**（不是 0 —— 一个从没通关过的
+   * 身份也是"能用"的，它的开局参数就是 `IdentityDef` 里写的那一份）。
+   * 升级条件是"用这个身份走完一次"（见 `systems/identity.ts`）。
+   *
+   * 这是这个字段自 M0 起就存在、却一直到 M3 才有写入方的那一笔账（原 D-16 的一部分）。
+   */
   identityLevels: Record<string, number>;
   codex: CodexState;
   bestSurvivalDays: Record<string, number>; // 每灾难最佳纪录
@@ -989,6 +1270,39 @@ export interface MetaProfile {
    * 一个回答"你现在连着几天了"，一个回答"你最好连着过几天"。
    */
   bestSafeStreak: number;
+  /**
+   * 已经解锁的成就 id（M3 第 2 步，§10B.2）。
+   *
+   * ## 为什么存 id 而不是存 "id → 解锁时间"
+   *
+   * 时间戳在这款游戏里**没有任何读者**：没有排行、没有"最近解锁"列表、
+   * 也没有"每天登录"那类机制。多存一个 `Date.now()` 只会让存档 diff 全是噪音，
+   * 而"查一个成就是不是解锁了"这件事两边都得写一遍。
+   * 与 `CodexState` 三页同一个口径（那里也是纯 id 数组，注释写明了理由）。
+   *
+   * ★ 与图鉴的分工（§10B.1 那条"职责不许重叠"）：
+   * **图鉴记录你见过什么，成就承认你做到了什么。** 所以这个数组里
+   * 装的是"达成"而不是"见过"，两者的 id 空间也是分开的。
+   */
+  achievements: string[];
+  /**
+   * 生涯累计**上架过**的件数（跨局累加）。
+   *
+   * 服务成就「仓库管理员」（§10B.2 的极端类）。它必须跨局累计而不是单局：
+   * 单局上架 300 件在一屋 72 格里**根本做不到**（那正是 D-08 记的空间压力），
+   * 而 §10B.4 的"更大的家"还没做 —— 现在把它写成单局成就，
+   * 等于挂一个**当前内容下永远拿不到**的成就（就是 D-16 那一类错误）。
+   * 所以口径定为"生涯累计"，并在成就描述里写清"累计"两个字。
+   */
+  totalShelved: number;
+  /**
+   * 生涯累计买过的物资 id（跨局合并的去重集合）。
+   *
+   * 它是成就「先见之明」的**输入之一**：那一局买过、而后来又活下来了某场灾难。
+   * 与 `RunState.boughtItemIds` 分开存：那个回答"这一局买过什么"（单局结算要用），
+   * 这个回答"我这辈子买过什么"（成就与将来的解锁要用）。**两个问题不一样。**
+   */
+  everBoughtItemIds: string[];
 }
 
 export interface SaveGame {
