@@ -360,7 +360,26 @@ const TS_IN_MJS = [
     '去掉 `: 类型`'
   ],
   [/\bnew\s+[A-Za-z_$][\w$]*\s*</g, '泛型实例化（`new Set<string>()`）', '去掉 `<...>`'],
-  [/\btype\s+[A-Za-z_$][\w$]*\s*=/g, '`type X = …` 是 TS 语法', '改用注释或 JSDoc']
+  [/\btype\s+[A-Za-z_$][\w$]*\s*=/g, '`type X = …` 是 TS 语法', '改用注释或 JSDoc'],
+  /*
+   * ★ 泛型**类型实参**：`x.reduce<Record<string, number>>(…)` / `.map<Foo>(…)`。
+   *
+   * 这一条是补的，而且是**真的漏了一次**才补的：我在 `make-save.mjs` 里写了
+   * `shelves.reduce<Record<string, number>>(…)`，而上面那六条一条都没抓到 ——
+   * 它们只认 `new X<…>`（实例化），不认"调用一个方法时给它类型实参"。
+   * 结果是 `vite-node` 抛 `'const' declarations must be initialized`，
+   * 报错指向一个字符偏移，看不出是哪一行。
+   *
+   * 判据：`标识符.标识符<` 后面**紧跟**一个大写字母或 `{`（类型实参的样子）。
+   * ⚠ 中间**不许有空格**：`run.day > SURVIVAL_DAYS` 这种比较会被
+   * `\s*<` 误伤（我第一版就是那么写的，它把 `stress.mjs` 里一行普通的
+   * 范围比较报成了泛型）—— **"小于号"与"泛型"的区别就在这里**。
+   */
+  [
+    /\.\w+<(?:\{|[A-Z])/g,
+    '泛型类型实参（`x.reduce<Record<string, number>>(…)`）',
+    '去掉 `<...>`：`.mjs` 是纯 JS，类型靠注释'
+  ]
 ];
 
 const scriptsDir = join(here);

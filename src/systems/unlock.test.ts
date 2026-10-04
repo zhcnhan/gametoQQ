@@ -31,6 +31,7 @@ import {
   lockedRooms,
   nextUnlock,
   survivedRuns,
+  unlockCandidates,
   unlockedIdentities,
   unlockedRoomIds
 } from './unlock';
@@ -127,6 +128,58 @@ describe('★ 房间解锁', () => {
 
   it('认不出的房间 id 不解锁', () => {
     expect(isRoomUnlocked(metaWithRuns(99), 'room_attic')).toBe(false);
+  });
+});
+
+describe('★★ 待解锁清单：**要列全**，不是只给一个', () => {
+  /*
+   * ★ 这一组是用户报回来的：
+   *
+   * > "下一个：储藏间 / 身份『外卖骑手』，这个横幅也不对，
+   * >  只有外卖骑手没提示储藏间"
+   *
+   * 我第一版只返回**最近的一个**，理由是"一次列五个等于一个都不给"。
+   * 那条理由在刚开局时看着成立，但它是错的：**玩家想知道全部还差什么**。
+   * 所以现在 `unlockCandidates()` 给全，`nextUnlock()` 才是"只取一个"。
+   */
+  it('★★ 一个都没活过 → 列出**全部**锁着的东西（身份 + 房间）', () => {
+    const list = unlockCandidates(metaWithRuns(0));
+    const lockedIds = lockedIdentities(metaWithRuns(0)).length;
+    const lockedRoomCount = lockedRooms(metaWithRuns(0)).length;
+    expect(list.length).toBe(lockedIds + lockedRoomCount);
+    // 两类都在
+    expect(list.some((c) => c.kind === 'identity')).toBe(true);
+    expect(list.some((c) => c.kind === 'room')).toBe(true);
+  });
+
+  it('★ 活过一次之后，储藏间**不再出现**在清单里（它已经到手了）', () => {
+    const list = unlockCandidates(metaWithRuns(1));
+    expect(list.some((c) => c.label.includes('储藏间')), '储藏间已经解锁，不该还在清单里').toBe(false);
+  });
+
+  it('★ 按门槛从近到远排（那是玩家现在能追的顺序）', () => {
+    const list = unlockCandidates(metaWithRuns(0));
+    for (let i = 1; i < list.length; i++) {
+      expect(list[i]!.need, `第 ${i} 项的门槛比前一项低`).toBeGreaterThanOrEqual(list[i - 1]!.need);
+    }
+  });
+
+  it('★ 同门槛时房间排前面（它比一个新身份更立刻改变这一局怎么玩）', () => {
+    const list = unlockCandidates(metaWithRuns(0)).filter((c) => c.need === 1);
+    if (list.length >= 2) {
+      expect(list[0]!.kind, '门槛相同的那一批里，房间该排第一').toBe('room');
+    }
+  });
+
+  it('`nextUnlock` 仍然只取一个（给单行提示用）', () => {
+    const one = nextUnlock(metaWithRuns(0));
+    expect(one).not.toBeNull();
+    expect(one!.need).toBe(1);
+  });
+
+  it('全都解锁之后清单是空的', () => {
+    expect(unlockCandidates(metaWithRuns(9))).toEqual([]);
+    expect(nextUnlock(metaWithRuns(9))).toBeNull();
   });
 });
 

@@ -392,17 +392,22 @@ if (import.meta.env.DEV) {
    * 真实规则下的屏幕）。于是"想看结算页长什么样"就得真的囤满 7 天再打 14 天 ——
    * 十几分钟，而走查一轮要看七八屏。那笔账一算，走查就会变成"只看第一屏"。
    *
-   * 三个夹具正好各站在一个关键位置（`npm run make-save` 生成）：
+   * 四个夹具正好各站在一个关键位置（`npm run make-save` 生成）：
    *   · `good`       D-Day，全上架 + 贴好胶带 + 标了顺手位
    *   · `messy`      D-Day，货架全空、一张胶带都没贴
    *   · `100boxes`   囤货期 D-7，100 箱 1000+ 件（整理页的压测位）
+   *   · `big-house`  整理期 D-7，**活过 3 次**（身份与房间全解锁）+ 两间房 7 块家具
+   *
+   * ★ `big-house` 是后加的，理由很具体：多房间与"加家具"都要先把客厅加满
+   * （6 块 = 600 元），而普通档在 D-7 只有几百块、还要留钱囤货 ——
+   * **人工走查根本走不到那一屏**，而走查的意义恰恰是"看那一屏"。
    *
    * 它**读的是仓库里那几个 .txt**，所以走查用的档与 `saveFixtures.test.ts`
    * 验收过的是同一份 —— 不会出现"我走查的那个档和测试里的不是一回事"。
    *
    * ★ 这是**开发期工具**：生产构建里整个 `if (import.meta.env.DEV)` 块都不存在。
    */
-  const load = async (name: 'good' | 'messy' | '100boxes'): Promise<void> => {
+  const load = async (name: 'good' | 'messy' | '100boxes' | 'big-house'): Promise<void> => {
     const text = await (await fetch(`/src/tools/save-${name}.txt`)).text();
     window.localStorage.setItem('tunhuo.save', text.trim());
     window.location.reload();
@@ -422,5 +427,5 @@ if (import.meta.env.DEV) {
     `[囤货末世] 已知欠账 ${debts.length} 笔：${debts.map((d) => d.id).join(' / ')}，详见 src/meta/deferred.ts`
   );
   console.info('[囤货末世] 走测用：__tunhuo.jump(day) 可以跳到任意一天（只在 dev 构建里存在）');
-  console.info('[囤货末世] 走查用：__tunhuo.load("good" | "messy" | "100boxes") 切到测试存档');
+  console.info('[囤货末世] 走查用：__tunhuo.load("good" | "messy" | "100boxes" | "big-house") 切到测试存档');
 }

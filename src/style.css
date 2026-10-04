@@ -2421,10 +2421,70 @@ button:disabled {
  * 而 §10B.2 对未点亮格子那条道理同样适用于它：玩家需要一个可执行的目标。
  * 不上朱红整块：朱红是警告与"你做到了"，而这是一句提示。
  */
+/*
+ * 「再活到最后就能解锁」那一栏。
+ *
+ * ★ 它改过一版：原来只显示**一个**目标，用户说"只有外卖骑手没提示储藏间" ——
+ * 玩家想知道全部还差什么。现在是**列表 + 每项带进度**：
+ * 门槛低的排前面，列表随解锁越来越短（那本身就是进度感）。
+ *
+ * 左边那道朱红竖线保留：它是这一屏唯一一个"你接下来该干什么"的答案。
+ * ⚠ 但**不用朱红写字** —— 朱红是警告与"你做到了"，而这是一句提示。
+ */
 .unlock-next {
+  margin-top: 10px;
   padding-left: 8px;
   border-left: 2px solid var(--vermilion);
+}
+
+.unlock-head {
+  margin: 0 0 6px;
+  font-size: 12px;
   color: var(--ink);
+}
+
+.unlock-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+}
+
+/*
+ * 一行解锁项：名字 / 还差几次 / 一句说明。
+ * 名字与进度同一行（它们要一起读），说明另起一行且更小 ——
+ * 三列挤在一行会在 320px 上折成锯齿。
+ */
+.unlock-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 8px;
+  align-items: baseline;
+  font-size: 12px;
+}
+
+.unlock-name {
+  color: var(--ink);
+}
+
+.unlock-need {
+  font-size: 11px;
+  color: var(--ink-70);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.unlock-hint {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  color: var(--ink-40);
+}
+
+.unlock-more {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--ink-40);
 }
 
 /*

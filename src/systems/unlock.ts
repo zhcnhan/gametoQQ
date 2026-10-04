@@ -113,24 +113,69 @@ export function lockedRooms(meta: MetaProfile): { id: string; label: string; nee
 }
 
 /**
- * 下一个能解锁的东西是什么（界面用它说"你还差几局、差的是什么"）。
+ * 还差几次就能解锁的东西，**按门槛从近到远**。
  *
- * ★ 为什么给"最近的那一个"而不是全部：玩家需要的是一个**可执行的目标**。
- * 一次列出五个待解锁项，等于一条都不给。
+ * ## ★ 为什么是"全列"而不是只给最近的一个
+ *
+ * 我第一版只返回**最近的那一个**，理由是"一次列出五个待解锁项，
+ * 等于一条都不给"。那条理由在**刚开局**（八件东西锁着）时成立，
+ * 但它是错的 —— 用户的反馈是：
+ *
+ * > "下一个：储藏间 / 身份『外卖骑手』，这个横幅也不对，
+ * >  只有外卖骑手没提示储藏间"
+ *
+ * 也就是**玩家想知道全部还差什么**，而不是被喂一个。
+ * 正确的做法不是"藏起来"，而是**排序 + 显示进度**：
+ * 门槛低的排前面（那是你现在能追的），每一项都写清"还差几次"。
+ * 这样刚开局时列表长一点，但随着解锁会越来越短 —— 那本身就是进度感。
+ *
+ * ★ 界面上会限制显示条数（见 `PrologueScreen`），而不是在这里砍数据：
+ * 数据层给全，显示层决定露几条 —— 两者的职责本来就不一样。
  */
-export function nextUnlock(meta: MetaProfile): { label: string; need: number; have: number; hint: string } | null {
+export interface UnlockCandidate {
+  /** 界面上的名字，例：`身份「外卖骑手」` / `「储藏间」` */
+  label: string;
+  /** 要活到最后几次 */
+  need: number;
+  /** 已经活过几次 */
+  have: number;
+  /** 一句话说清它是什么（界面上小字显示） */
+  hint: string;
+  /** 它是哪一类 —— 界面据此分组或排序 */
+  kind: 'identity' | 'room';
+}
+
+export function unlockCandidates(meta: MetaProfile): UnlockCandidate[] {
   const have = survivedRuns(meta);
-  const candidates: { label: string; need: number; hint: string }[] = [];
+  const out: UnlockCandidate[] = [];
 
   for (const def of IDENTITY_DEFS) {
     const need = identityTierNeed(def.tier);
-    if (need > have) candidates.push({ label: `身份「${def.name}」`, need, hint: getIdentityDef(def.id).tagline });
+    if (need <= have) continue;
+    out.push({
+      label: `身份「${def.name}」`,
+      need,
+      have,
+      hint: getIdentityDef(def.id).tagline,
+      kind: 'identity'
+    });
   }
   for (const room of ROOM_DEFS) {
-    if (room.unlockAt > have) candidates.push({ label: `「${room.label}」`, need: room.unlockAt, hint: room.why });
+    if (room.unlockAt <= have) continue;
+    out.push({ label: `「${room.label}」`, need: room.unlockAt, have, hint: room.why, kind: 'room' });
   }
-  if (candidates.length === 0) return null;
-  candidates.sort((a, b) => a.need - b.need);
-  const best = candidates[0]!;
-  return { ...best, have };
+
+  // 门槛低的排前面；同门槛时**房间优先** —— 它比一个新身份更立刻改变这一局怎么玩
+  out.sort((a, b) => a.need - b.need || (a.kind === b.kind ? 0 : a.kind === 'room' ? -1 : 1));
+  return out;
+}
+
+/**
+ * 最近的**一个**待解锁项（给"下一步该干什么"这类单行提示用）。
+ *
+ * ⚠ 它只返回一个 —— 想列全请用 `unlockCandidates`。
+ * 留着它是因为有些地方确实只需要"最该追的那一个"（例：结算页的一句话）。
+ */
+export function nextUnlock(meta: MetaProfile): UnlockCandidate | null {
+  return unlockCandidates(meta)[0] ?? null;
 }

@@ -44,13 +44,31 @@ function fixture(name: string): string {
 }
 
 describe('测试存档', () => {
-  it('三个档都在，而且都是当前版本、都能被 migrate 读回来', () => {
-    for (const name of ['100boxes', 'good', 'messy']) {
+  it('四个档都在，而且都是当前版本、都能被 migrate 读回来', () => {
+    for (const name of ['100boxes', 'good', 'messy', 'big-house']) {
       const back = deserialize(fixture(name));
       expect(back, name).not.toBeNull();
       expect(back?.run, name).not.toBeNull();
       expect(back?.meta.version, name).toBe(SAVE_VERSION);
     }
+  });
+
+  it('★ big-house：两间房都有家具，而且是靠跨局进度解锁的', () => {
+    /*
+     * 它存在的理由很具体：多房间与"加家具"都要先把客厅加满（6 块 = 600 元），
+     * 而普通档在 D-7 只有几百块、还要留钱囤货 —— **人工走查根本走不到那一屏**，
+     * 而走查的意义恰恰是"看那一屏"。
+     */
+    const save = deserialize(fixture('big-house'));
+    expect(save).not.toBeNull();
+    const rooms = save!.run!.shelves.reduce<Record<string, number>>((acc, s) => {
+      acc[s.roomId] = (acc[s.roomId] ?? 0) + 1;
+      return acc;
+    }, {});
+    expect(rooms['room_living'], '客厅该是满的').toBe(6);
+    expect(rooms['room_storage'], '储藏间该有家具').toBeGreaterThan(0);
+    // 跨局进度：活过 3 次 → 所有身份与房间都解锁（否则那一屏是矛盾的）
+    expect(save!.meta.survivedRuns).toBeGreaterThanOrEqual(1);
   });
 
   it('★ 100boxes：100 个箱子、1000 件以上，而且全在待拆队列里（货架空着）', () => {

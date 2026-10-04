@@ -10,7 +10,18 @@ import { CATEGORY_LABELS } from '../data/items';
 import { calendarBars, dayLabel } from '../model/calendar';
 import type { IdentityDef, MetaProfile } from '../model/types';
 import { identityStartOf, unlockHintOf } from '../systems/identity';
-import { lockedIdentities, nextUnlock, unlockedIdentities } from '../systems/unlock';
+import { lockedIdentities, unlockCandidates, unlockedIdentities, survivedRuns } from '../systems/unlock';
+
+/**
+ * 「还差什么」那一栏最多列几条。
+ *
+ * 刚开局时八件东西锁着（5 个身份 + 1 间房 + 更远的），全列出来会把开局页
+ * 撑得很长，而开局页的主角是**三个身份卡**。所以只露最近的三条 + 一句"还有 N 件"。
+ *
+ * ★ 这个数不是"信息量"的取舍，是**版面**的取舍 —— 所以它属于界面层，
+ * 而 `unlockCandidates()` 仍然给全部。
+ */
+const MAX_SHOWN = 3;
 import { iconSvg } from '../fx/icons';
 import type { Screen } from './Router';
 
@@ -150,27 +161,45 @@ export class PrologueScreen implements Screen {
   }
 
   /**
-   * 「下一个解锁目标」那一行。
+   * 「还差什么」那一栏。
    *
-   * ## 为什么只写一个
+   * ## ★ 它改过一版：从"只报一个"改成"列出来 + 显示进度"
    *
-   * 一次列出五个待解锁项，等于一条都不给 —— 玩家需要的是**一个可执行的目标**。
-   * `nextUnlock()` 挑出**门槛最低**的那一个，并说清"你还差几次"。
+   * 第一版只显示最近的那一个（"下一个：……"），理由是"一次列五个等于一个都不给"。
+   * 用户的反馈是：
    *
-   * ★ 这一行是"活到最后一次就解锁"那句话的**回执**：
-   * 在解锁系统做出来之前，界面上写着那句话，而玩家活到最后一次之后
-   * 什么都不会发生 —— 用户报的正是这个。现在它会变成
-   * "再活到最后一次就解锁「储藏间」"，然后真的解锁。
+   * > "下一个：储藏间 / 身份『外卖骑手』，这个横幅也不对，
+   * >  只有外卖骑手没提示储藏间"
+   *
+   * 也就是**玩家想知道全部还差什么**。正确做法不是藏起来，而是
+   * **按门槛排序 + 每一项都写清还差几次**：门槛低的排前面（那是现在能追的），
+   * 而列表随解锁越来越短 —— 那本身就是进度感。
+   *
+   * ★ 这里只显示前 `MAX_SHOWN` 条，其余折成一句"还有 N 件"。
+   * 砍在**显示层**而不是数据层：`unlockCandidates()` 给全，
+   * 将来想做"解锁一览"页不必改数据层。
    */
   private nextUnlockHtml(): string {
-    const next = nextUnlock(this.props.meta);
-    if (!next) return '';
-    const left = Math.max(0, next.need - next.have);
+    const list = unlockCandidates(this.props.meta);
+    if (list.length === 0) return '';
+    const shown = list.slice(0, MAX_SHOWN);
+    const rest = list.length - shown.length;
+    const rows = shown
+      .map((c) => {
+        const left = Math.max(0, c.need - c.have);
+        return `<li class="unlock-row">
+          <span class="unlock-name">${escapeHtml(c.label)}</span>
+          <span class="unlock-need">再活到最后 <b>${left}</b> 次</span>
+          <span class="unlock-hint">${escapeHtml(c.hint)}</span>
+        </li>`;
+      })
+      .join('');
     return `
-      <p class="block-note unlock-next">
-        下一个：${escapeHtml(next.label)} —— 再活到最后 <b>${left}</b> 次。
-        <br><span class="identity-lock-hint">${escapeHtml(next.hint)}</span>
-      </p>
+      <div class="unlock-next">
+        <p class="unlock-head">再活到最后就能解锁（现在活过 <b>${survivedRuns(this.props.meta)}</b> 次）</p>
+        <ul class="unlock-list">${rows}</ul>
+        ${rest > 0 ? `<p class="unlock-more">还有 ${rest} 件更远的。</p>` : ''}
+      </div>
     `;
   }
 

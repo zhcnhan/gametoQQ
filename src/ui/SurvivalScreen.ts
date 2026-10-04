@@ -11,7 +11,6 @@
  * D-Day 是特例：`day === 0` 时灾难刚落地，还没有结算过任何一天，所以那一屏只负责"揭晓 + 盘点"。
  */
 import { SURVIVAL_DAYS, getDisasterDef, outdoorTemp } from '../data/disaster';
-import { dayPriceFactor } from '../data/dayEvents';
 import { findEmergency } from '../data/emergencies';
 import { CATEGORY_LABELS, getItemDef } from '../data/items';
 import { SHELTER_SLEEP_LINE, STAMINA_RECOVER, dailyDrainOf, moodFromPlacement, organizeQuality } from '../data/survival';
@@ -157,7 +156,7 @@ export class SurvivalScreen implements Screen {
         ${emergencyHtml(last)}
         ${coldHouseNote(run)}
         ${last.usedMedicine > 0 || last.usedWarmth > 0 ? `<p class="block-note">${escapeHtml(supplyText(last))}</p>` : ''}
-        ${this.marketHtml(disaster, run)}
+        ${this.marketHtml(run)}
         ${this.stockHtml(disaster)}
       </section>
 
@@ -370,50 +369,55 @@ export class SurvivalScreen implements Screen {
 
   /** "还剩多少 / 够几天" —— 这一节是整屏最实用的信息 */
   /**
-   * ★ 市场那一行（D-17 清偿）。
+   * 市场那一行（D-17 清偿）。
    *
-   * ## 它补的是什么
+   * ## ★ 它改过一版，因为第一版既看不懂又在说废话
    *
-   * 原欠账说的是"物价波动与限购**只活在当天**，玩家回翻日报时查不到
-   * 「D+3 那天物价涨到 1.5 倍」，而那一局的取舍正是被它决定的"。
+   * 第一版长这样：**「有钱也难买到 2.2 倍」**，而且**每天都出现**。
+   * 用户的反馈是"有个奇怪的横幅，有钱也难买到 xx 倍是啥意思，说明白，
+   * 文案不要这么让人看不懂还无说明"。
    *
-   * 实测之后发现要分两半看：
+   * 两条都是真问题，而且第二条更严重：
    *
-   *  · **囤货期那一半已经记了** —— `resolveDayEvent` 写的那行 log 里
-   *    带着 `describeDayEffect` 的摘要（"物价 +10%"就在里面），
-   *    因为那正是玩家做选择的当场；
-   *  · **生存期那一半一个字都没有**，而那才是真正的缺口：
-   *    囤货期事件抬上去的价（`run.shopPriceFactor`）**会一路带到生存期**
-   *    （`basePriceOf` 把它叠在单价上），玩家却再也没见过那个数。
+   *  ① **它每天在报一个玩家改不了的事实。** 生存期**买不了东西**
+   *     （`phase = survival_day`，商店只在囤货期开），所以"现在 2.2 倍"
+   *     对玩家没有任何可操作性 —— 它只是每天印一遍同一句话；
+   *  ② **"有钱也难买到"是形容词，不是数字。** §6.6 那条纪律是
+   *     "数字自己说话"，而我在这里加了四个字的判词，却**没给参照物** ——
+   *     2.2 倍是相对什么？玩家上一次看到原价是 D-7。
    *
-   * ## 为什么显示"现在多少倍"而不是"哪天涨了多少"
+   * ## 现在的口径：只在**真的有变化**时才说，而且说清"相对什么"
    *
-   * 前者是**玩家能拿去用的信息**（"现在买了就是 1.8 倍"），
-   * 后者只是一笔历史账 —— 而生存期本来就买不了东西，
-   * 所以这个数字在这一屏的作用是**解释你手上的存货值多少**。
-   * 这也与 §6.6 的反差层同一个口径：数字自己说话，不写形容词。
+   * 显示条件是 `run.shopPriceFactor !== 1`（囤货期被事件抬过价）
+   * **或**有限购在生效 —— 那时玩家在下一个囤货日会真的多付钱，值得知道。
+   * 一场都没发生过（`shopPriceFactor` 还是 1）就**一个字都不显示**。
    */
-  private marketHtml(disaster: ReturnType<typeof getDisasterDef>, run: RunState): string {
-    const factor = dayPriceFactor(run.day, disaster.id) * run.shopPriceFactor;
-    // 与 §6.6 的对比数字同一个理由：不写"贵／便宜"，只给倍率让玩家自己读
-    const tone = factor >= 1.5 ? ' is-tight' : '';
-    const lines = [
-      `${
-        factor < 1.02
-          ? '灾前价'
-          : factor < 1.3
-            ? '略涨'
-            : factor < 1.8
-              ? '明显涨了'
-              : '有钱也难买到'
-      } ${factor.toFixed(1)} 倍`
-    ];
-    if (run.shopLimits.length > 0) {
-      // 限购是**处境**（§6.2），不是奖励 —— 所以它只说事实，不加评价
-      const total = run.shopLimits.reduce((n, l) => n + l.max, 0);
-      lines.push(`${run.shopLimits.length} 个品类在限购（合计 ${total} 件）`);
+  private marketHtml(run: RunState): string {
+    /*
+     * `shopPriceFactor` 是**囤货期被事件抬上去的**那部分（`applyDayEffect` 里累乘）。
+     * 它换天不清零 —— 所以它非 1 就代表"你之前碰上的那件事还在影响价格"。
+     *
+     * ★ 而 `dayPriceFactor`（这一场的逐日曲线）是**另一回事**：
+     * 它由灾难本身决定，人人如此、天天如此，所以它不该单独成一条横幅。
+     * 这一行要报的是"**比平常还贵**"，参照物就是这一场当天的正常价位。
+     */
+    const eventPrice = run.shopPriceFactor;
+    const hasPriceNews = Math.abs(eventPrice - 1) > 0.001;
+    const limits = run.shopLimits;
+    if (!hasPriceNews && limits.length === 0) return '';
+
+    const parts: string[] = [];
+    if (hasPriceNews) {
+      // 说清"比这一场的平常价"贵/便宜多少，而不是一个没有参照物的倍数
+      const pct = Math.round((eventPrice - 1) * 100);
+      parts.push(`之前那件事的影响还在：比这一场的平常价${pct > 0 ? '贵' : '便宜'} ${Math.abs(pct)}%`);
     }
-    return `<p class="block-note market-line${tone}">${escapeHtml(lines.join(' · '))}</p>`;
+    if (limits.length > 0) {
+      const cats = limits.map((l) => CATEGORY_LABELS[l.category] ?? l.category).join('、');
+      parts.push(`${cats}在限购（每个品类最多 ${limits[0]?.max ?? 0} 件）`);
+    }
+    parts.push('下一天出门时会按这个价结账');
+    return `<p class="block-note market-line">${escapeHtml(parts.join(' · '))}</p>`;
   }
 
   private stockHtml(disaster: ReturnType<typeof getDisasterDef>): string {

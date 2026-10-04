@@ -153,7 +153,7 @@ export class OrganizeScreen {
           <div class="dock-boxes" data-boxes></div>
           <div class="dock-tools">
             <button class="btn" data-action="sort">${iconSvg('sort')}<span>按保质期排</span></button>
-            ${this.addFurnitureHtml()}
+            <span data-add-furniture></span>
             <button class="btn" data-action="go-out"><span>再去采购</span></button>
             <button class="btn btn-primary" data-action="end-day"><span>过一天</span></button>
           </div>
@@ -427,6 +427,19 @@ export class OrganizeScreen {
       boxHost.innerHTML = boxes || '<p class="box-empty-hint">箱子都拆完了。货架归你管。</p>';
       this.bindBoxGestures();
     }
+
+    /*
+     * ★ 「加家具」那一组要**每次重画**，不能写死在 `mount()` 的静态 HTML 里。
+     *
+     * 我第一版就是写死的，结果 `toggle-add` 只改了 `this.addOpen` 而没有 DOM 可改
+     * —— 点一下什么都不会发生。用户报的"加家具那个按钮没用"正是这个。
+     *
+     * 根因是 `renderDock` 的模式：它**只重画有 host 的那几块**
+     * （`[data-hand]` / `[data-boxes]`），静态元素只在 `mount()` 里出现一次。
+     * 所以任何"状态会变"的 dock 内容都必须有自己的 host。
+     */
+    const addHost = this.dockEl.querySelector('[data-add-furniture]');
+    if (addHost) addHost.innerHTML = this.addFurnitureHtml();
 
     // 行动点用完了就不该再给一个"点了没反应"的按钮（§4A 无死按钮）
     const goOut = this.dockEl.querySelector<HTMLButtonElement>('[data-action="go-out"]');

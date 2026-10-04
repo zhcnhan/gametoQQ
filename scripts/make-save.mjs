@@ -27,7 +27,7 @@ import { CATEGORY_ORDER } from '../src/data/items';
 import { createCursor } from '../src/model/rng';
 import { makeStack, setSlotStack } from '../src/model/shelf';
 import { createSaveGame, serialize } from '../src/state/save';
-import { createStartingRun, generateBoxStacks, nextBoxSeq } from '../src/systems/setup';
+import { createStartingRun, addFurniture, generateBoxStacks, nextBoxSeq } from '../src/systems/setup';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, '..', 'src', 'tools');
@@ -65,7 +65,7 @@ function shelveItem(run, itemId, count, stackLimit) {
   return count - left;
 }
 
-function write(name, run) {
+function write(name, run, metaPatch = {}) {
   /*
    * ★ 三处刻意"钉死"的随机/时间，都是为了**可复现**。
    * 实测过程：钉之前连续两次生成哈希不一致，diff 出来只有 `savedAt` 一个字段在变 ——
@@ -78,8 +78,12 @@ function write(name, run) {
    * 这三处在真实游戏里都是对的（设备号要真随机、时间戳要当次的），
    * 但对手工工具来说"字节可复现"更重要：版本控制里存着、diff 干净、
    * 出了差异一眼能看出是**结构变了**而不是噪音变了。
+   *
+   * `metaPatch` 用来摆出"跨局进度"（例：活过 3 次 → 身份与房间全解锁）——
+   * 那些数只存在于 meta 上，不在 `run` 里。
    */
   const save = createSaveGame(run);
+  Object.assign(save.meta, metaPatch);
   save.deviceId = 'dev_fixture';
   save.savedAt = 0;
   const text = serialize(save);
@@ -167,6 +171,56 @@ function freshRun(seed = 20261001) {
   ];
   const kb = write('messy', run);
   console.log(`[make-save] messy     2 箱 / ${kb}KB   位置：D-Day（货架全空、没贴胶带）`);
+}
+
+// ───────── ④ 大房子：两间房、六块家具、活过三次（验"多房间 + 加家具"） ─────────
+{
+  /*
+   * ★ 这一份是给"看多房间到底长什么样"用的。
+   *
+   * 多房间与"加家具"都要先把客厅加满（6 块 = 600 元）才看得见，
+   * 而普通档在 D-7 只有几百块、还要留钱囤货 —— **人工走查根本走不到那一屏**。
+   * 而走查的意义恰恰是"看那一屏"。
+   *
+   * 所以这一份直接把状态摆到位的**之后**：6 块家具（客厅满）+ 1 块（储藏间），
+   * 外加 `survivedRuns = 3`（所有身份与房间都解锁）。
+   * 它还留着 300 元，够再加三块 —— 那样能一路看到"储藏间 3/3 满"。
+   */
+  const run = freshRun();
+  run.identityId = 'group_buyer';
+  run.phase = 'organize';
+  run.day = FIRST_STOCKPILE_DAY;
+  run.cash = 300;
+  run.actionPoints = 3;
+  run.boxesToUnpack = makeBoxes(createCursor(run.seed), 3, run.day);
+
+  /*
+   * 家具用 `addFurniture` 造 —— 与游戏里那条路**同一个函数**。
+   * 手写一个 shelves 数组更快，但那样造出来的档可能是一个
+   * 游戏里到不了的状态（id 撞车、房间超额），而验收会用错的东西做判断。
+   */
+  let shelves = run.shelves;
+  // 客厅还能再放 3 块 → 先填满客厅
+  for (let i = 0; i < 3; i++) shelves = addFurniture(shelves, i === 0 ? 'cabinet' : 'shelf');
+  // 再放 1 块进储藏间（需要它已解锁）
+  shelves = addFurniture(shelves, 'cabinet', { roomId: 'room_storage' });
+  run.shelves = shelves;
+
+  run.zones = [
+    { id: 'zone_all', name: '全收', color: '#000000', autoAccept: { categories: [...CATEGORY_ORDER] } }
+  ];
+  run.shelves = run.shelves.map((s, i) => ({ ...s, zoneId: 'zone_all', handyRank: i === 0 ? 1 : null }));
+
+  const kb = write('big-house', run, { survivedRuns: 3 });
+  const byRoom = run.shelves.reduce((acc, s) => {
+    acc[s.roomId] = (acc[s.roomId] ?? 0) + 1;
+    return acc;
+  }, {});
+  console.log(
+    `[make-save] big-house ${run.shelves.length} 块（${Object.entries(byRoom)
+      .map(([r, n]) => `${r} ${n}`)
+      .join('，')}） / ${kb}KB   位置：整理期 D-7、活过 3 次`
+  );
 }
 
 console.log(`\n[make-save] 写好了 → ${outDir}`);
