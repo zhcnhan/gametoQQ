@@ -55,6 +55,12 @@ export const SHELF_IDS = ['shelf_a', 'shelf_b', 'shelf_c'] as const;
  *  2. **`handyRank` 不会指向被拆掉的那块**：顺手位是开局之后玩家自己标的
  *     （`toggleHandy`），而这里只影响"开局时有哪些家具" ——
  *     被拆掉的块从列表里消失，它上面本来就没有标记。
+ *
+ * DEFERRED(D-32): 这个函数**默认参数是寒潮**，而 `createStartingRun` 调它时
+ * 传的也是硬编码的 `M1_DISASTER_ID`（见下面那行）—— 而寒潮是 L1 教学灾难，
+ * **没写 `capacityFactor` / `unusableShelfIds`**。于是这一整维从来没生效过：
+ * 全表 43 场写了 `capacityFactor`、31 场写了 `unusableShelfIds`，一场都没用上。
+ * 详见 `src/meta/deferred.ts` 的 D-32。
  */
 export function createStartingShelves(
   roomId: string = ROOM_ID,

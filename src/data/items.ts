@@ -213,6 +213,13 @@ export const ITEM_DEFS: readonly ItemDef[] = [
   //  3. **它们的价值只有两条**：点亮图鉴 + 心情（`comfort` 读得到的地方见下）。
   //     心情那一格走的是**整理期的摆放**而不是生存期的消耗 —— 见 `tags` 里的 'keepsake'。
   //
+  //      ★ DEFERRED(D-29): 后半句**没有实现** —— `keepsake` 在全仓**零读取**
+  //      （grep 只出现在 `systems/codex.test.ts` 的一句注释里）。
+  //      `tags` 确实被读（`model/shelf.ts` 的 `zoneListedFor` 按 tag 筛选分区规则），
+  //      但那是**分区规则**在用，不是"摆放回心情"。
+  //      所以奢侈品现在只有"贵 + 占地方 + 点亮图鉴"，它被承诺的那个用处不存在。
+  //      详见 `src/meta/deferred.ts` 的 D-29。
+  //
   // 价格写成"贵得离谱"但其实买不到：`basePrice` 只用于图鉴与结算的估值展示，
   // 商店不卖它们，所以这个数不进任何一次结账。
   {

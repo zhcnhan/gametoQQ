@@ -84,6 +84,12 @@ export const FURNITURE_DEFS: readonly FurnitureDef[] = [
   {
     kind: 'fridge',
     label: '冰箱',
+    /*
+     * DEFERRED(D-31): 冰箱**严格支配**另外两种 —— 同价（`FURNITURE_PRICE` 100）、
+     * 同格（24），而 `spoilFactor` 最低（0.4 < 0.75 < 1）。
+     * 而下面那句 `why` 写的"装别的占地方"**在代码里不存在**（冰箱与货架一样是 24 格）。
+     * 于是"三选一"里有**两个永远不会被选**的决定。详见 `src/meta/deferred.ts` 的 D-31。
+     */
     spoilFactor: 0.4,
     why: '断电之后它仍然是个箱子：装鲜食能多撑一阵，装别的占地方',
     w: 6,
@@ -101,6 +107,13 @@ export const FURNITURE_DEFS: readonly FurnitureDef[] = [
     kind: 'floor',
     label: '地面',
     spoilFactor: 1,
+    /*
+     * DEFERRED(D-30): 这一种**玩家碰不到** —— 唯一的购买入口
+     * `ui/OrganizeScreen.ts` 明确把它滤掉了，全仓没有第二个入口。
+     * 而它是四种家具里**唯一在格数上有取舍的**（12 格、0 元），
+     * 另外三种同价同格、只差 `spoilFactor`（见 D-31）。
+     * 详见 `src/meta/deferred.ts` 的 D-30。
+     */
     why: '不占家具位，但和纸箱一样什么保护都没有（留给"更大的家"用）',
     w: 6,
     h: 2
