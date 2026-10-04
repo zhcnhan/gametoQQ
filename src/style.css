@@ -1021,45 +1021,9 @@ body::before {
   border-radius: 13px;
 }
 
-/* 纸胶带列表：一条一条"贴"在那里的样子（用色块做左侧小样，文字保持墨色可读） */
-.tape-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
 
-/* 纵向排：名字一行、"几架在用 · 收什么"一行。清单必须看得见，
-   否则玩家点"贴到这架"之前不知道这张胶带管不管他的东西 */
-.tape-slot {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 1px;
-  min-height: 50px;
-  padding: 7px 12px;
-  border: 1px solid var(--ink-16);
-  border-radius: 4px;
-  background: var(--card);
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  transform: rotate(-1deg);
-  overflow: hidden;
-}
 
-.tape-slot::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: var(--zone);
-  opacity: 0.24;
-}
 
-.tape-slot > * {
-  position: relative;
-}
 
 .tape-slot-name {
   font-family: 'Songti SC', 'STSong', Georgia, serif;
@@ -1072,19 +1036,7 @@ body::before {
   color: var(--ink-70);
 }
 
-.tape-slot.is-current {
-  box-shadow: inset 0 0 0 2px var(--ink);
-}
 
-.tape-current {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 8px;
-  border: 1.5px solid var(--ink-16);
-  border-radius: 12px;
-  background: var(--card);
-}
 
 .tape-chip {
   padding: 2px 8px 2px 0;
@@ -1129,11 +1081,6 @@ body::before {
   height: 15px;
 }
 
-.zone-empty {
-  margin: 0;
-  font-size: 12px;
-  color: var(--ink-70);
-}
 
 .sheet-actions {
   display: flex;
@@ -2723,40 +2670,8 @@ button:disabled {
   }
 }
 
-/*
- * 抽屉里的"贴到哪几行"选择器。
- *
- * 它是一次改动里唯一新增的交互，所以做得尽量笨：一行一个按钮、点一下切换，
- * 外加"全选 / 全不选"。不做拖拽框选、不做长按多选 —— 一块货架最多 4 行，
- * 花哨的交互在手机上只会更容易误触。
- */
-.row-picker {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
 
-.row-pick {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 40px;
-  padding: 0 10px;
-  border: 1.5px solid var(--ink-16);
-  border-radius: 999px;
-  background: var(--card);
-  color: var(--ink-70);
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
 
-/* 选中的行：墨色实边（不用朱红 —— 选一行不是警告，也不是"你做到了"） */
-.row-pick.is-on {
-  border-color: var(--ink);
-  color: var(--ink);
-  background: var(--paper-2);
-}
 
 /* 这一行现在贴着谁：一小段色条，与货架上的侧色条同一种语言 */
 .row-pick-tape {
@@ -2776,11 +2691,6 @@ button:disabled {
   white-space: nowrap;
 }
 
-.row-quick {
-  display: inline-flex;
-  gap: 4px;
-  margin-left: 6px;
-}
 
 .field-hint {
   display: block;

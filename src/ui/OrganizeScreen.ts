@@ -21,6 +21,8 @@ import {
   applyZone,
   assignZone,
   buildView,
+  createZone,
+  deleteZone,
   editZone,
   inventoryTotals,
   placeHeld,
@@ -33,8 +35,7 @@ import {
   toggleHandy,
   type CommandResult,
   type OrganizeSession,
-  type OrganizeView,
-  type ZoneInput
+  type OrganizeView,
 } from '../systems/organize';
 import { attachLongPress, attachPointerGesture } from './drag';
 import { expiryText, isExpiringSoon, shelfLabel, stackLabel } from './labels';
@@ -204,25 +205,27 @@ export class OrganizeScreen {
       {
         getShelves: () => this.store.run.shelves,
         getZones: () => this.store.run.zones,
-        apply: (shelfId: string, input: ZoneInput) => {
-          const result = applyZone(this.store, shelfId, input);
-          this.consume(result);
-          return result.ok;
-        },
-        assign: (shelfId: string, zoneId: string | null, rows?: number[]) => {
-          const result = assignZone(this.store, shelfId, zoneId, rows);
-          this.consume(result);
-          return result.ok;
-        },
         /*
-         * 从**胶带架**上轻点进来时走这条：只改这张胶带自己。
-         * `editZone` 是纯逻辑层的"改名 / 换色 / 改清单"，不碰任何货架 ——
-         * 正是这里需要的语义（那张胶带可能贴在好几块架子上）。
+         * 抽屉从 2026-10 起是**纯编辑器**：只有三条写入路径
+         * （改一张 / 新建一张 / 删掉一张），而"贴到哪一行"完全归拖拽。
+         * 所以这里不再有 `apply` / `assign` —— 它们那条路已经删了。
          */
-        updateZone: (zoneId: string, input: { name: string; color: string; categories: CategoryId[] }) => {          const result = editZone(this.store, zoneId, input);
+        updateZone: (zoneId: string, input: { name: string; color: string; categories: CategoryId[] }) => {
+          const result = editZone(this.store, zoneId, input);
           this.consume(result);
           return result.ok;
-        }      },
+        },
+        createZone: (input: { name: string; color: string; categories: CategoryId[] }) => {
+          const result = createZone(this.store, input);
+          this.consume(result);
+          return result.ok;
+        },
+        deleteZone: (zoneId: string) => {
+          const result = deleteZone(this.store, zoneId);
+          this.consume(result);
+          return result.ok;
+        }
+      },
       () => this.clearEditHighlight()
     );
 

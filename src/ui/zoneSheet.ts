@@ -13,24 +13,26 @@ import { CATEGORY_LABELS, CATEGORY_ORDER } from '../data/items';
 import { DEFAULT_ZONE_COLOR, ZONE_COLORS, ZONE_COLOR_NAMES } from '../data/palette';
 import { findZone, firstZoneIdOf, rowZoneId } from '../model/shelf';
 import type { CategoryId, Shelf, Zone } from '../model/types';
-import type { ZoneInput } from '../systems/organize';
-import { shelfLabel } from './labels';
 
 export interface ZoneSheetHost {
   getShelves(): Shelf[];
   getZones(): Zone[];
-  /** 返回是否成功（失败时抽屉不关，让玩家看到提示条上的原因） */
-  apply(shelfId: string, input: ZoneInput): boolean;
-  assign(shelfId: string, zoneId: string | null, rows?: number[]): boolean;
   /**
-   * 只改这张胶带**自己**（名字 / 颜色 / 清单），不动"它贴在哪几行"。
+   * 改一张已有胶带**自己**（名字 / 颜色 / 清单），不动"它贴在哪几行"。
    *
-   * ★ 从**胶带架**上轻点进来时用这一条：那时没有"从哪块架子"这回事
-   * （这张胶带可能贴在好几块架子上），所以"保存"只能是这个意思。
-   * 没有它的话，那条路上的保存会拿 `null` 去调 `apply` —— 失败、而抽屉照样关掉，
-   * 玩家看到的是"改了名字但没生效"。
+   * ★ 抽屉从 2026-10 起是**纯编辑器**，所以这是它唯一的写入路径。
+   * 贴到哪一行由**拖拽**决定（见 `OrganizeScreen` 的「胶带架」）。
    */
   updateZone(zoneId: string, input: { name: string; color: string; categories: CategoryId[] }): boolean;
+  /**
+   * 新建一张胶带（只建，不贴 —— 贴要靠拖）。
+   *
+   * ⚠ 它**不能**顺手贴到某一行上：抽屉里没有行选择器了，
+   * 而"替玩家猜一个落点"正是上一个版本出问题的地方（贴到 0 行 / 贴到过期的那几行）。
+   */
+  createZone(input: { name: string; color: string; categories: CategoryId[] }): boolean;
+  /** 整张删掉（只允许用在"没贴在哪儿"的胶带上，UI 会按这个条件才显示按钮） */
+  deleteZone(zoneId: string): boolean;
 }
 
 export class ZoneSheet {
@@ -69,14 +71,6 @@ export class ZoneSheet {
    * ⚠ 一块也没贴过的架子，这个默认就等于全选 —— 新架子的体验没变。
    */
   private rows: number[] = [];
-  /**
-   * 这次打开是**冲着哪一张胶带**来的（`null` = 没有特别指定）。
-   *
-   * ★ 从胶带架上轻点一张胶带时给这个值，它让"已有胶带"那一列的正确条目高亮 ——
-   * 否则抽屉里没有任何东西告诉你"我正在改的是哪一张"。
-   */
-  private focusZoneId: string | null = null;
-
   constructor(root: HTMLElement, host: ZoneSheetHost, onClose?: () => void) {
     this.root = root;
     this.host = host;
@@ -119,28 +113,33 @@ export class ZoneSheet {
   /**
    * 打开抽屉。
    *
-   * @param shelfId 从哪块架子进来（`null` = **从胶带架上轻点进来的**）
-   * @param rows 预选哪几行
-   * @param focusZoneId ★ 直接编辑**这张已有的胶带**（不管它贴在哪几行上）
+   * @param shelfId 从哪块架子进来（`null` = **从胶带架进来的**）
+   * @param rows 从哪一行进来（只用来**认领要编辑的那张胶带**，不再当"选中要贴的行"）
+   * @param focusZoneId ★ 直接指定编辑**这张已有的胶带**（从胶带架轻点某一张时）
    *
-   * ## `shelfId` 为什么可以是 `null`
+   * ## 三条入口，一致的语义
    *
-   * 胶带架上轻点一张胶带，玩家想改的是**那张胶带本身**（名字/颜色/清单），
-   * 而它可能贴在好几块架子上 —— "从哪一块进"没有答案。
-   * 所以那两个"看这一架"的区域（当前贴着什么、贴到哪几行）在 `shelfId` 为空时
-   * 整块不渲染，只留编辑那张胶带的部分。
+   * 抽屉现在是**纯编辑器**（见 `render` 的注释），所以打开时只做一件事：
+   * **定下"我在改哪张胶带"**（`editingZone`）。
+   *
+   *  · 从某一行进来 → 那一行贴着的胶带；
+   *  · 从胶带架轻点某一张 → 那一张（它可能贴在好几块架子上）；
+   *  · 从「＋」/ 剪刀进来 → `null`，保存时新建。
+   *
+   * ⚠ `rows` 现在**只用来定位**，不再决定"保存时贴到哪几行" ——
+   * 那个决定已经交给拖拽了。这个参数保留是因为"从哪一行点进来的"
+   * 仍然是"我要改哪一张"最自然的线索。
    */
   open(shelfId: string | null, rows?: number[], focusZoneId?: string): void {
     this.shelfId = shelfId;
     const shelf = shelfId === null ? null : (this.host.getShelves().find((s) => s.id === shelfId) ?? null);
     /*
-     * ★ 打开时选的"这一行"是**那一行自己的胶带**，不是"整架的第一张"。
-     * 从某一行点进抽屉时（`rows` 只给了一行），输入框要预填**那一行**贴着的东西 ——
-     * 一块架子上有两张胶带时，用整架的视角预填会预填错那一张。
+     * ★ 打开时认领的是**那一行自己的胶带**，不是"整架的第一张"。
+     * 从某一行点进来时，要编辑的是**那一行**贴着的东西 ——
+     * 一块架子上有两张胶带时，用整架的视角会认领错那一张。
      */
     const focusRow = rows && rows.length === 1 ? rows[0] : undefined;
-    this.focusZoneId = focusZoneId ?? null;
-    const zone =
+    this.editingZone =
       focusZoneId !== undefined
         ? findZone(this.host.getZones(), focusZoneId)
         : shelf === null
@@ -149,31 +148,20 @@ export class ZoneSheet {
               this.host.getZones(),
               focusRow !== undefined ? rowZoneId(shelf, focusRow) : firstZoneIdOf(shelf)
             );
-    // 这架已经贴着胶带 → 输入框就是"这张胶带的编辑器"（预填它现在的名字、颜色与清单）
+    const zone = this.editingZone;
     this.name = zone?.name ?? '';
     this.color = zone?.color ?? this.pickFreeColor();
     this.categories = [...(zone?.autoAccept?.categories ?? [])];
     /*
-     * 选中的行：外部指定优先；否则**只选还没贴过胶带的那些行**。
-     * ★ 这个默认是走测之后改的（理由见 `rows` 字段的注释）：
-     * 默认全选会把玩家已经分好的类无声冲掉，而"多一次点击"远比那个便宜。
-     * 如果**每一行都贴过了**，才退回全选 —— 那时"想改哪几行"没有更好的猜法，
-     * 而且此时全选不会破坏任何东西（它们本来就有胶带）。
+     * `rows` 不再被界面使用（抽屉里已经没有行选择器了），清空它 ——
+     * 留着会让人以为"它还参与判定"，而那正是上一个版本出问题的地方。
      */
-    const bare = Array.from({ length: shelf?.h ?? 0 }, (_, r) => r).filter(
-      (r) => rowZoneId(shelf!, r) === null
-    );
-    this.rows =
-      rows && rows.length > 0
-        ? rows.filter((r) => r >= 0 && r < (shelf?.h ?? 0))
-        : bare.length > 0
-          ? bare
-          : Array.from({ length: shelf?.h ?? 0 }, (_, r) => r);
+    this.rows = [];
     this.root.hidden = false;
     this.render();
     const input = this.root.querySelector<HTMLInputElement>('input[data-zone-name]');
     if (input && !zone) {
-      // 没贴胶带时顺手聚焦，少点一次（不 hard-focus，手机上弹不弹键盘交给系统）
+      // 新建时顺手聚焦，少点一次（不 hard-focus，手机上弹不弹键盘交给系统）
       window.setTimeout(() => input.focus({ preventScroll: true }), 60);
     }
   }
@@ -219,9 +207,23 @@ export class ZoneSheet {
     const target = e.target;
     if (!(target instanceof HTMLElement)) return;
     const hit = target.closest<HTMLElement>('[data-zone-act]');
-    if (!hit || !this.shelfId) return;
+    /*
+     * ★★ 这里**只判 `hit`，不判 `this.shelfId`**（2026-10 修）。
+     *
+     * 原来写的是 `if (!hit || !this.shelfId) return;` —— 而 2026-10 之后
+     * 抽屉可以从**胶带架**打开（那时 `shelfId` 是 `null`，因为"从哪块架子进"
+     * 对一张跨架子的胶带没有答案）。于是从那条路进来时
+     * **抽屉里每一个按钮都失效**：收起、颜色、品类胶囊、保存，全都点不动。
+     *
+     * 用户的原话："这个东西那个栏位还收不回去（也就是选颜色和名字那个
+     * 无法点收回好像跟什么东西冲突卡住了）" —— 不是冲突，是这个 guard
+     * 把整块点击处理丢掉了。
+     *
+     * ⚠ 那条 guard 在"抽屉只从货架打开"的年代是对的（没有 shelfId 就不该有抽屉）。
+     * 现在抽屉有**两种打开方式**，所以判据变成"抽屉开着没有" —— 那是 `isOpen`。
+     */
+    if (!hit || !this.isOpen) return;
     const act = hit.dataset['zoneAct'];
-    const shelfId = this.shelfId;
 
     switch (act) {
       case 'close':
@@ -238,75 +240,35 @@ export class ZoneSheet {
         return;
       }
       case 'save': {
-        const editing = this.currentZone();
         /*
-         * ★ `rows` 每次都要带上 —— 它是"这次贴哪几行"。
+         * ★★ 抽屉现在是**纯粹的编辑器**（2026-10 用户拍板）。
          *
-         * 改一张已有的胶带时（`editing`）也带：那张胶带本来就贴在若干行上，
-         * 而玩家在抽屉里看到的名字/颜色/清单是**整张胶带**的，
-         * 所以"保存"的意思是"这张胶带现在也贴到选中的这些行上"。
+         * > "有了这个就不需要那个贴标签按钮了"
+         *
+         * 有了"从胶带架拖到某一行"之后，抽屉里再放一个"贴到选中行"按钮
+         * 就是**两条路做同一件事**，而且它们会打架：
+         *  · 拖拽那条路的落点由手指决定，玩家看得见；
+         *  · 抽屉那条路的落点是"上一次选中的行"，而那个选择在拖拽之后可能已经过期 ——
+         *    用户实测到的"显示还是放到这 0 行，按钮点不下去"，就是从这条入口进来时
+         *    `rows` 是空的，而 `syncRowSummary` 按 §4A 把按钮禁用了。
+         *    禁用本身没错，错的是这条路**不该有那个按钮**。
+         *
+         * 所以：**贴到哪一行只由拖拽决定**；抽屉只管这张胶带自己（名字/颜色/清单）。
+         * 这同时消掉了"保存会不会顺带改位置"那个说不清的中间态。
          */
-        const input: ZoneInput = editing
-          ? {
+        const editing = this.editingZone;
+        const done = editing
+          ? this.host.updateZone(editing.id, {
               name: this.name,
               color: this.color,
-              categories: this.categories,
-              zoneId: editing.id,
-              rows: this.rows
-            }
-          : { name: this.name, color: this.color, categories: this.categories, rows: this.rows };
-        /*
-         * ★ 两条路分开（见 `ZoneSheetHost.updateZone` 的注释）：
-         *  · 有货架上下文（从某一行点进来）→ 走 `apply`，它同时决定"贴到哪几行"；
-         *  · 没有（从胶带架轻点进来）→ 只改这张胶带自身，不碰它贴在哪儿。
-         *    这时界面上根本没有行选择器，`this.rows` 是"不知道"，
-         *    拿它去 `apply` 只会把胶带贴到玩家没看见的地方。
-         */
-        const done =
-          shelfId === null
-            ? editing !== null
-              ? this.host.updateZone(editing.id, {
-                  name: this.name,
-                  color: this.color,
-                  categories: this.categories
-                })
-              : false
-            : this.host.apply(shelfId, input);
+              categories: this.categories
+            })
+          : this.host.createZone({
+              name: this.name,
+              color: this.color,
+              categories: this.categories
+            });
         if (done) this.close();
-        return;
-      }
-      case 'row': {
-        /*
-         * 切换某一行选没选中。
-         *
-         * ★ 只切选中态、**不重建 DOM** —— 与改色、改清单同一个坑：
-         * 重建会把输入框的焦点与手机上的键盘顶掉。
-         */
-        const row = Number(hit.dataset['row']);
-        if (!Number.isInteger(row)) return;
-        this.rows = this.rows.includes(row)
-          ? this.rows.filter((r) => r !== row)
-          : [...this.rows, row].sort((a, b) => a - b);
-        hit.classList.toggle('is-on', this.rows.includes(row));
-        this.syncRowSummary();
-        return;
-      }
-      case 'rows-all': {
-        const shelf = this.host.getShelves().find((s) => s.id === shelfId);
-        if (!shelf) return;
-        this.rows = Array.from({ length: shelf.h }, (_, r) => r);
-        this.root.querySelectorAll<HTMLElement>('[data-zone-act="row"]').forEach((el) => {
-          el.classList.add('is-on');
-        });
-        this.syncRowSummary();
-        return;
-      }
-      case 'rows-none': {
-        this.rows = [];
-        this.root.querySelectorAll<HTMLElement>('[data-zone-act="row"]').forEach((el) => {
-          el.classList.remove('is-on');
-        });
-        this.syncRowSummary();
         return;
       }
       case 'cat': {
@@ -319,28 +281,16 @@ export class ZoneSheet {
         this.syncCategoryChips();
         return;
       }
-      case 'assign': {
-        const zoneId = hit.dataset['zoneId'];
-        if (!zoneId) return;
-        if (this.host.assign(shelfId, zoneId, this.rows)) this.close();
-        return;
-      }
-      case 'detach': {
-        const zone = this.currentZone();
+      case 'delete': {
+        const zone = this.editingZone;
         if (!zone) return;
-        /*
-         * ★ 撕下的范围 = **选中的那几行**，不是"这一整架"。
-         * 一块架子上有两张胶带时，"从这架撕下"是一句会误导的话 ——
-         * 所以说法改成按行数，而且数的是**行**（粒度变了）。
-         */
-        const others = this.usageCount(zone.id) - this.rows.length;
-        const rowText = this.rows.length === 1 ? '这一行' : `这 ${this.rows.length} 行`;
+        const used = this.usageCount(zone.id);
         const message =
-          others > 0
-            ? `从${rowText}撕下「${zone.name}」？另外 ${others} 行还贴着它。`
-            : `从${rowText}撕下「${zone.name}」？没有别处用它了，这张胶带会一起撕掉。`;
+          used > 0
+            ? `把「${zone.name}」整张撕掉？它现在贴在 ${used} 行上，那些行会变成没贴胶带。`
+            : `删掉「${zone.name}」？`;
         if (!window.confirm(message)) return;
-        if (this.host.assign(shelfId, null, this.rows)) this.close();
+        if (this.host.deleteZone(zone.id)) this.close();
         return;
       }
       default:
@@ -349,29 +299,31 @@ export class ZoneSheet {
   }
 
   /**
-   * 抽屉里那张胶带（按**当前选中的行**取）。
+   * 这次在编辑的**那一张**胶带（`null` = 正在新建一张，还没存）。
    *
-   * ★ 取第一张选中的行的胶带，而不是整架的第一张 ——
-   * 一块架子上有两张胶带时（每张占一行），"这架贴的是什么"没有唯一答案，
-   * 而玩家点开抽屉时心里想的是**他刚才点的那一行**。
+   * ## 它为什么是一个字段，而不是每次现算
+   *
+   * 原来叫 `currentZone()`，按"**当前选中的行**"取。那在"抽屉用来分配"的年代
+   * 是对的，但 2026-10 之后抽屉是**纯编辑器**（见 `case 'save'`），而"选中哪几行"
+   * 这件事已经从抽屉里拿掉了 —— 于是现算的判据（`this.rows`）变成空的，
+   * 表现就是用户看到的"显示还是放到这 0 行"。
+   *
+   * 现在改成**打开时定一次**：谁把我打开的，我就编辑谁。
+   *  · 从某一行点进来 → 编辑那一行贴着的胶带；
+   *  · 从胶带架轻点某一张 → 编辑那一张（它可能贴在好几块架子上）；
+   *  · 从「＋」或剪刀进来 → `null`，保存时新建一张。
    */
-  private currentZone(): Zone | null {
-    if (!this.shelfId) return null;
-    const shelf = this.host.getShelves().find((s) => s.id === this.shelfId);
-    if (!shelf) return null;
-    const row = this.rows.length > 0 ? Math.min(...this.rows) : undefined;
-    return findZone(
-      this.host.getZones(),
-      row !== undefined ? rowZoneId(shelf, row) : firstZoneIdOf(shelf)
-    );
-  }
+  private editingZone: Zone | null = null;
 
-  /** 一张胶带的清单，说人话 */
+  /**
+   * 一张胶带的清单，说人话。
+   *
+   * ★ §12 v0.8：空清单**不再**等于"归位率恒满"。它现在的准确说法是
+   * "收什么没写" —— 贴了胶带但没写清单，归位率仍然是 0（与"没贴胶带"一样）。
+   * 这里不许再写"什么都收"：那句话在数值上已经不成立了。
+   */
   private ruleText(zone: Zone): string {
     const cats = zone.autoAccept?.categories ?? [];
-    // ★ §12 v0.8：空清单不再等于"归位率恒满"。它现在的准确说法是"收什么没写"——
-    // 贴了胶带但没写清单，归位率仍然是 0（与"没贴胶带"一样）。
-    // 这里不许再写"什么都收"：那句话在数值上已经不成立了
     if (cats.length === 0) return '还没写清单';
     return cats.map((c) => CATEGORY_LABELS[c]).join('/');
   }
@@ -403,165 +355,85 @@ export class ZoneSheet {
   }
 
   /**
-   * 选中的行数变了之后，把"当前"那一块的说法改掉。
+   * 名字空着时禁用保存 —— §4A：不许有点了没反应的按钮。
    *
-   * ★ 它**不重建 DOM**（与改色、改清单同一个坑：重建会顶掉输入框焦点）。
-   * 行选择器自己是靠 `classList.toggle('is-on')` 直接改的，所以这里只管文字。
-   *
-   * ⚠ 一行都没选时要说清"贴不了"，而不是留一块让人以为还能保存的界面 ——
-   * 命令层会 `reject('没选中要贴的行')`，而界面上先说出来更省一次点击。
+   * ★ 判据从"选了几行"换成了"**名字写没写**"（2026-10）：
+   * 抽屉不再管"贴到哪几行"，而 `editZone` / `applyZone` 都会
+   * `reject('给它起个名字')`。界面上先把这件事说出来，省一次点击。
    */
-  private syncRowSummary(): void {
-    const note = this.root.querySelector<HTMLElement>('[data-row-summary]');
-    if (note) {
-      note.textContent =
-        this.rows.length === 0
-          ? '一行都没选。先在上面点几行，再贴胶带。'
-          : `选中的行还没贴胶带。没清单就算不出这些行的归位率。`;
-    }
-    // 保存按钮在"一行都没选"时禁用 —— §4A：不许有点了没反应的按钮
+  private syncSaveButton(): void {
     const save = this.root.querySelector<HTMLButtonElement>('button[data-zone-act="save"]');
-    if (save) {
-      const none = this.rows.length === 0;
-      save.disabled = none;
-      save.title = none ? '先选几行' : '';
-    }
+    if (!save) return;
+    const blank = this.name.trim().length === 0;
+    save.disabled = blank;
+    save.title = blank ? '先给它起个名字' : '';
   }
 
+  /**
+   * 渲染抽屉。
+   *
+   * ★★ 2026-10 起它是**纯粹的编辑器**：只有名字、颜色、清单，加一个保存/删除。
+   *
+   * 被删掉的三块（以及为什么）：
+   *  · **行选择器**（"贴到哪几行" + 全选/全不选）—— 用户说"有了这个就不需要那个
+   *    贴标签按钮了"。贴到哪一行现在**只由拖拽决定**，落点看得见；而抽屉里
+   *    那条路上的落点是"上一次选中的行"，拖完之后就过期了 ——
+   *    用户实测到的"显示还是放到这 0 行，而那个按钮点不下去"就是这个过期状态
+   *    （`rows` 空了 → `syncRowSummary` 按 §4A 禁用按钮。禁用没错，错的是不该有它）；
+   *  · **"已有胶带"列表**（点一下贴到选中的行）—— 同上，那是第二条分配路。
+   *    要换一张贴在别处，去架子上拖；
+   *  · **"撕下来"按钮** —— 撕的动作在剪刀上（拖到行上撕一行、拖到整块卡上清一架）。
+   *
+   * 留下的是"这张胶带收什么"这一格 —— 那是**全游戏唯一一处玩家给自己的整理立规矩的地方**，
+   * 它必须一眼看懂、一次点完（7 个品类胶囊，不做下拉、不做滚动列表）。
+   */
   private render(): void {
     const shelves = this.host.getShelves();
     const index = this.shelfId ? shelves.findIndex((s) => s.id === this.shelfId) : -1;
     const shelf = index >= 0 ? (shelves[index] as Shelf) : null;
     /*
-     * ★ `shelf === null` 不再是"出错，关掉"：
-     * 从**胶带架**上轻点一张胶带进来时，本来就没有"从哪块架子"这回事
-     * （那张胶带可能贴在好几块架子上）。那种情况下只渲染**编辑这张胶带**那一半，
-     * 与货架有关的两块（"这架贴了几行""贴到哪几行"）整块不画。
-     *
-     * ⚠ 但"shelfId 有值却找不到那块架子"仍然要关掉 —— 那是**真的出错**
-     * （架子被拆了 / 存档坏了），继续画一个指向不存在货架的界面会让人看不懂。
+     * `shelfId` 有值却找不到那块架子 = **真的出错**（架子被拆了 / 存档坏了），
+     * 关掉抽屉。而 `shelfId` 为 `null` 是正常情况（从胶带架进来），不关。
      */
     if (this.shelfId && !shelf) {
       this.close();
       return;
     }
-    const zones = this.host.getZones();
-    /*
-     * 抽屉里那一段"当前"以**选中的第一行**为准。
-     * ⚠ 但 `tapeList` 里那个"这架已贴"的标记要按**行**算：
-     * 一块架子有两张胶带时，"这架已贴「主食」"是假话（只有两行贴着它）。
-     */
-    const focusRow = this.rows.length > 0 ? Math.min(...this.rows) : undefined;
-    const current =
-      shelf === null
-        ? null
-        : findZone(zones, focusRow !== undefined ? rowZoneId(shelf, focusRow) : firstZoneIdOf(shelf));
-
-    /*
-     * 行的选择器。
-     *
-     * ★ 它是这次改动**唯一新增的交互**，所以做得尽量笨：
-     * 一行一个按钮，点一下贴上/取下；外加"全选 / 全不选"两个快捷。
-     * 不做拖拽框选、不做长按多选 —— 一块货架最多 4 行，两个按钮就够了，
-     * 而更花哨的交互在手机上更容易误触。
-     */
-    const rowButtons = shelf
-      ? Array.from({ length: shelf.h }, (_, row) => {
-          const on = this.rows.includes(row);
-          const zone = findZone(zones, rowZoneId(shelf, row));
-          return `<button class="row-pick${on ? ' is-on' : ''}" data-zone-act="row" data-row="${row}"
-        style="--zone:${zone?.color ?? 'transparent'}"
-        aria-pressed="${on ? 'true' : 'false'}"
-        title="${zone ? `第 ${row + 1} 行现在贴着「${escapeHtml(zone.name)}」` : `第 ${row + 1} 行还没贴`}">
-        <span class="row-pick-tape"></span><span class="row-pick-num">第 ${row + 1} 行</span>
-        ${zone ? `<span class="row-pick-zone">${escapeHtml(zone.name)}</span>` : ''}
-      </button>`;
-        }).join('')
-      : '';
+    const zone = this.editingZone;
+    const used = zone ? this.usageCount(zone.id) : 0;
 
     const swatches = ZONE_COLORS.map((color) => {
       const active = color === this.color ? ' is-active' : '';
       return `<button class="swatch${active}" data-zone-act="color" data-color="${color}" style="--swatch:${color}" aria-label="${ZONE_COLOR_NAMES[ZONE_COLORS.indexOf(color)] ?? ''}"></button>`;
     }).join('');
 
-    // 7 个品类胶囊。这是全游戏唯一一处"玩家给自己的整理立规矩"的地方，
-    // 所以它必须一眼看懂、一次点完 —— 不做成需要展开的下拉或需要滚动的列表。
     const chips = CATEGORY_ORDER.map((cat) => {
       const on = this.categories.includes(cat);
       return `<button class="cat-chip${on ? ' is-on' : ''}" data-zone-act="cat" data-cat="${cat}" aria-pressed="${on ? 'true' : 'false'}">${CATEGORY_LABELS[cat]}</button>`;
     }).join('');
 
-    const tapeList = zones.length
-      ? zones
-          .map((zone) => {
-            const used = this.usageCount(zone.id);
-            const isCurrent = current?.id === zone.id || (this.focusZoneId !== null && this.focusZoneId === zone.id);
-            // ★ "这里贴了几行"而不是"这架已贴"—— 一块架子可以同时贴两张胶带
-            const hereRows = shelf
-              ? Array.from({ length: shelf.h }, (_, row) => row).filter(
-                  (row) => rowZoneId(shelf, row) === zone.id
-                ).length
-              : 0;
-            const word =
-              hereRows > 0
-                ? `这架贴了 ${hereRows} 行 · 共 ${used} 行`
-                : used > 1
-                  ? `${used} 行在用`
-                  : used === 1
-                    ? '贴着 1 行'
-                    : '还没贴在哪儿';
-            // 清单必须展示出来：玩家点"贴到这架"之前，得先看得见这张胶带收什么
-            return `<button class="tape-slot${isCurrent ? ' is-current' : ''}" data-zone-act="assign" data-zone-id="${zone.id}" style="--zone:${zone.color}">
-              <span class="tape-slot-name">${escapeHtml(zone.name)}</span>
-              <span class="tape-slot-meta">${word} · ${escapeHtml(this.ruleText(zone))}</span>
-            </button>`;
-          })
-          .join('')
-      : '<p class="zone-empty">还没撕过胶带。给它起个名字，贴到选中的行上就行。</p>';
-
-    const currentBlock =
-      shelf === null
-        ? ''
-        : current
-          ? `<div class="tape-current" style="--zone:${current.color}">
-           <span class="tape-chip">${escapeHtml(current.name)}</span>
-           <span class="tape-current-meta">这一行贴着它 · 全屋 ${this.usageCount(current.id)} 行在用 · ${escapeHtml(this.ruleText(current))}</span>
-           <button class="mini mini-danger" data-zone-act="detach">撕下来</button>
-         </div>`
-          : `<p class="zone-empty" data-row-summary>选中的行还没贴胶带。没清单就算不出这些行的归位率。</p>`;
+    /*
+     * 这一张现在贴在几行上、收什么 —— 它是**信息**，不是操作。
+     * 玩家改名字之前该看得见"这张影响几行、收哪几类"，
+     * 而"改了之后贴在哪"由上一条（拖拽）决定。
+     */
+    const where =
+      !zone
+        ? `<p class="block-note">保存之后，到上面那条「胶带」栏里把它拖到某一行上，才算贴上。</p>`
+        : used === 0
+          ? `<p class="block-note">这张胶带现在**没贴在哪儿** —— 从上面那条「胶带」栏里拖到某一行上就行。</p>`
+          : `<p class="block-note">现在贴在 <b>${used}</b> 行上（收 ${escapeHtml(this.ruleText(zone))}），那些行会一起跟着改。</p>`;
 
     this.root.innerHTML = `
       <div class="drawer-blocker" data-zone-act="close"></div>
       <div class="drawer-body">
         <header class="drawer-head">
-          <h3>${shelf ? `给 ${shelfLabel(shelf, index)} 贴胶带` : '改这张胶带'}</h3>
+          <h3>${zone ? `改「${escapeHtml(zone.name)}」` : '新胶带'}</h3>
           <button class="mini" data-zone-act="close">收起</button>
         </header>
-        ${currentBlock}
-        ${
-          shelf
-            ? `<div class="field">
-                 <span class="field-label">贴到哪几行？
-                   <em class="field-hint">一行一段胶带，同一段可以贴多行</em>
-                   <span class="row-quick">
-                     <button class="mini" data-zone-act="rows-all">全选</button>
-                     <button class="mini" data-zone-act="rows-none">全不选</button>
-                   </span>
-                 </span>
-                 <div class="row-picker">${rowButtons}</div>
-               </div>`
-            : `<p class="block-note">这张胶带贴在哪儿，到货架上拖就行 —— 从上面那条「胶带」栏里把它拖到某一行上。</p>`
-        }
-        ${
-          shelf
-            ? `<div class="field">
-                 <span>已有胶带（点一下贴到选中的行）</span>
-                 <div class="tape-list">${tapeList}</div>
-               </div>`
-            : ''
-        }
+        ${where}
         <div class="field">
-          <span>${current ? '改这段胶带（改名 / 换色 / 改清单，贴着它的行一起变）' : '撕一段新胶带'}</span>
+          <span>名字与颜色</span>
           <div class="tape-new">
             <input type="text" maxlength="8" placeholder="写上名字，比如 救命层" data-zone-name value="${escapeHtml(this.name)}" />
             <div class="swatches">${swatches}</div>
@@ -570,19 +442,16 @@ export class ZoneSheet {
               <div class="cat-row">${chips}</div>
               <p class="cat-note" data-cat-note>${escapeHtml(this.categoryNote())}</p>
             </div>
-            <button class="btn btn-primary" data-zone-act="save">${current ? '改这段胶带' : this.rows.length === 1 ? '贴到这一行' : `贴到这 ${this.rows.length} 行`}</button>
+            <div class="tape-actions">
+              <button class="btn btn-primary" data-zone-act="save">${zone ? '保存' : '建这张胶带'}</button>
+              ${zone && used === 0 ? '<button class="mini mini-danger" data-zone-act="delete">删掉</button>' : ''}
+            </div>
           </div>
         </div>
       </div>
     `;
-    /*
-     * ★ 渲染完之后对一次状态：`syncRowSummary` 那个函数负责"一行都没选时
-     * 禁用保存按钮"这一条（§4A 不许有点了没反应的按钮）。
-     * 它平时是在玩家点行时被调用的，而**首次渲染**这条路不经过点击 ——
-     * 不在这里补一次的话，"打开抽屉时本来就一行没选"那个状态会漏掉
-     * （那个状态现在到不了：`open()` 默认全选；但它是一个将来会被踩到的坑）。
-     */
-    this.syncRowSummary();
+    // 名字空着时禁用保存 —— §4A：不许有点了没反应的按钮
+    this.syncSaveButton();
   }
 }
 

@@ -43,6 +43,10 @@ import {
 } from '../model/shelf';
 import { createShelf, dropStack, makeStack } from '../model/shelf';
 import type { Shelf, Zone } from '../model/types';
+import { assignZone, createZone } from './organize';
+import { createStartingRun } from './setup';
+import { GameStore } from '../state/store';
+import { createMetaProfile } from '../state/save';
 
 const RED = ZONE_COLORS[0] as string;
 const BLUE = ZONE_COLORS[3] as string;
@@ -270,6 +274,60 @@ describe('★★ 「按保质期排」按组排，不跨组搬货', () => {
     const before = shelfTwoGroups();
     const after = fefoSorted(before);
     expect(after.zoneIds).toEqual(before.zoneIds);
+  });
+});
+
+describe('★★ 新建一张胶带：只建，不替玩家猜落点', () => {
+  /*
+   * ★ 这条是 2026-10 用户反馈换来的。抽屉改成"纯编辑器"之后，
+   * 它里面**没有行选择器**了（"有了这个就不需要那个贴标签按钮了"）——
+   * 所以"新建"这个动作拿不到任何落点信息。
+   *
+   * 而上一版正是在这里出问题：抽屉顺手用"上一次选中的行"去贴，
+   * 于是用户看到"显示还是放到这 0 行，而那个按钮点不下去"。
+   * 所以这里钉住：**建完就是"还没贴在哪儿"**（`usageCount === 0`），
+   * 贴要靠拖。
+   */
+  function storeWithZones(): GameStore {
+    const run = createStartingRun(7);
+    run.zones = [];
+    run.shelves = [createShelf('shelf_a', 'room_living', 'shelf', 6, 4)];
+    return new GameStore(
+      { meta: createMetaProfile(), run, savedAt: 0, syncVersion: 0, deviceId: 'dev_fixture' },
+      { schedule: () => undefined, flush: () => undefined, dispose: () => undefined, pending: false }
+    );
+  }
+
+  it('★★ 建出来的胶带**没有任何一行**指着它', () => {
+    const store = storeWithZones();
+    const r = createZone(store, { name: '主食层', color: ZONE_COLORS[0] as string, categories: ['food'] });
+    expect(r.ok).toBe(true);
+    expect(store.run.zones).toHaveLength(1);
+    const zone = store.run.zones[0]!;
+    expect(zone.name).toBe('主食层');
+    // 关键：没有任何一行指向它
+    for (const shelf of store.run.shelves) {
+      for (let row = 0; row < shelf.h; row++) expect(rowZoneId(shelf, row)).not.toBe(zone.id);
+    }
+  });
+
+  it('★ 名字空着 / 太长 / 与已有的重名 → 都被拒（界面按钮据此禁用）', () => {
+    const store = storeWithZones();
+    expect(createZone(store, { name: '   ', color: ZONE_COLORS[0] as string, categories: [] }).ok).toBe(false);
+    expect(createZone(store, { name: '一二三四五六七八九', color: ZONE_COLORS[0] as string, categories: [] }).ok).toBe(false);
+    expect(createZone(store, { name: '主食层', color: ZONE_COLORS[0] as string, categories: [] }).ok).toBe(true);
+    const dup = createZone(store, { name: '主食层', color: ZONE_COLORS[1] as string, categories: [] });
+    expect(dup.ok, '同名会让"贴着哪张"在界面上分不清（行只存 id，玩家按名字记）').toBe(false);
+    expect(store.run.zones).toHaveLength(1);
+  });
+
+  it('★ 建完之后把它贴到一行上 —— 这是"建"与"贴"分开的完整路径', () => {
+    const store = storeWithZones();
+    createZone(store, { name: '主食层', color: ZONE_COLORS[0] as string, categories: ['food'] });
+    const id = store.run.zones[0]!.id;
+    const r = assignZone(store, 'shelf_a', id, [1]);
+    expect(r.ok).toBe(true);
+    expect(rowZoneId(store.run.shelves[0]!, 1)).toBe(id);
   });
 });
 

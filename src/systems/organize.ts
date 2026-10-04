@@ -64,6 +64,14 @@ export type OrganizeEvent =
   | { type: 'sorted'; changedShelves: number }
   | { type: 'tidy'; shelfId: string }
   | { type: 'zoneUpdated'; shelfId: string }
+  /**
+   * 新建了一张胶带（**还没贴在哪儿**）。
+   *
+   * ★ 它与 `zoneUpdated` 分开，因为玩家看到的后果不同：
+   * 前者是"手里多了一张新胶带"（架上多一个 chip），后者是"某张胶带变了样"。
+   * 合并的话，界面无法用同一条事件决定要不要提示"拖它到某一行上"。
+   */
+  | { type: 'zoneCreated'; name: string }
   /** 撕下一张胶带（affected = 一起被取下的货架数，供提示文案用） */
   | { type: 'zoneRemoved'; shelfId: string; name: string; affected?: number }
   /** 顺手位被标记 / 取消（§5 的"门口那一块"，全屋唯一） */
@@ -1017,6 +1025,51 @@ export function editZone(
     }
   });
   return ok([{ type: 'zoneUpdated', shelfId: '' }]);
+}
+
+/**
+ * 新建一张胶带（**只建，不贴**）。
+ *
+ * ## 为什么它必须与"贴"分开
+ *
+ * 玩家建一张胶带的路径现在是"**从胶带架上把「＋」拖到某一行**"——
+ * 那个动作同时完成"建"与"贴"。而抽屉里的保存是**另一条**路：
+ * 玩家在里面写名字、挑颜色、勾清单，然后按保存。
+ *
+ * 那时**没有任何落点信息**（抽屉里已经没有行选择器了）。如果这个命令
+ * 顺手替玩家猜一个落点，就会出现上一个版本那个 bug 的同类现象：
+ * 显示"贴到 0 行" / 贴到上一次选中的、已经过期的行。
+ *
+ * ★ 所以：**建完就是"还没贴在哪儿"**（`usageCount === 0`），
+ * 界面上那条"从上面那条「胶带」栏里拖到某一行上才算贴上"就是它的出路。
+ */
+export function createZone(
+  store: GameStore,
+  input: { name: string; color: string; categories: CategoryId[] }
+): CommandResult {
+  const run = store.run;
+  const name = input.name.trim();
+  if (name.length === 0) return reject('给它起个名字');
+  if (name.length > 8) return reject('名字最多 8 个字（手机上一行放得下）');
+  /*
+   * 同名不同一张会让"贴着哪张"在界面上分不清（行只存 zoneId，
+   * 而玩家是**按名字**记的），所以这里也拦一下。`applyZone` 的同名分支
+   * 是"复用那一张"，而这里是"新建"，语义不同 —— 不能直接借。
+   */
+  if (run.zones.some((z) => z.name === name)) return reject('已经有同名的胶带了');
+
+  const stamp = `${Date.now().toString(36)}${Math.floor(run.zones.length).toString(36)}`;
+  const zone: Zone = {
+    id: `z_${stamp}`,
+    name,
+    color: input.color,
+    // 只建不贴：没有任何一行指向它
+    autoAccept: { categories: [...input.categories] }
+  };
+  store.commit((draft) => {
+    draft.zones = [...draft.zones, zone];
+  });
+  return ok([{ type: 'zoneCreated', name: zone.name }]);
 }
 
 /** 显式剪掉一张胶带（UI 的"撕下最后一行"已能自动回收，这个留给脚本/M1 用） */
