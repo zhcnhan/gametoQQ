@@ -62,7 +62,7 @@ const contentDir = join(root, 'content');
  * 本项目吃过"写了但没生效"的亏太多次了。
  */
 const FIELDS = {
-  item: ['id', 'name', 'category', 'icon', 'unitWeight', 'slotSize', 'stackLimit', 'perishable', 'shelfLifeDays', 'nutrition', 'basePrice', 'tags', 'tier', 'decision', 'note'],
+  item: ['id', 'name', 'category', 'icon', 'unitWeight', 'stackLimit', 'perishable', 'shelfLifeDays', 'nutrition', 'basePrice', 'tags', 'tier', 'decision', 'note'],
   identity: ['id', 'name', 'tagline', 'startCash', 'vehicleCapacity', 'carryLimit', 'perk', 'perkRule', 'tier', 'decision'],
   nightEvent: ['id', 'text', 'options', 'tier', 'decision', 'when'],
   dayEvent: ['id', 'text', 'onlyShops', 'tags', 'options', 'tier', 'decision'],

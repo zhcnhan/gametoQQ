@@ -130,8 +130,7 @@ const SCHEMAS = {
       name: 'string（中文名，2~6 字最佳）',
       category: `'${CATEGORIES.join("' | '")}'`,
       icon: 'string（图标键，**必须与 id 不同名**也要能认出来）',
-      unitWeight: 'number（kg/件，0.05~8）',
-      slotSize: 'number（1=小件 / 2=大瓶 / 4=整袋）',
+      unitWeight: 'number（kg/件，0.05~8）',
       stackLimit: 'number（单槽堆叠上限，1~20）',
       perishable: 'boolean',
       nutrition: 'Partial<{food,water,health,comfort}>（0~3）',
@@ -140,7 +139,7 @@ const SCHEMAS = {
       tier: 'number 1~4（1=开局可见，4=稀有）'
     },
     conditional: [{ when: (o) => o.perishable === true, need: 'shelfLifeDays', desc: 'number（天，3~2000）' }],
-    ranges: { unitWeight: [0.05, 8], stackLimit: [1, 20], basePrice: [1, 400], slotSize: [1, 8], tier: [1, 4] }
+    ranges: { unitWeight: [0.05, 8], stackLimit: [1, 20], basePrice: [1, 400], tier: [1, 4] }
   },
   nightEvent: {
     label: '夜间事件',

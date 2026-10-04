@@ -58,7 +58,19 @@ export interface ItemDef {
   category: CategoryId;
   icon: string; // emoji 或 svg key
   unitWeight: number; // kg/件
-  slotSize: number; // 占用槽位数（1=小件, 2=大瓶, 4=整袋米）
+  /*
+   * ★ `slotSize` 在这里**被删掉了**（2026-10，清偿 D-07）。
+   *
+   * 它原来是"占用槽位数（1=小件 / 2=大瓶 / 4=整袋米）"，而**没有任何代码读它** ——
+   * 槽位矩阵实际是"一格一栈"，所以大米（写过 4）和电池占同样一格。
+   * 而 121 条数据全都老老实实写着 1 / 2 / 4：那是**纯装饰**，
+   * 比"没写"更坏 —— 下一个人会以为空间是有区别的。
+   *
+   * D-07 自己给的两条路是"要么让它真的吃格子，要么删掉"。选了删，
+   * 而"让它吃格子"（一袋米占四格）**登记成了 M4 的候选** ——
+   * 那件事要同时动放置 / 合并 / 拖动 / 容量 / 存档五处，属于
+   * §10.1A "整理本身要有更多决定" 那一条的正题，不是 M3 的补丁。
+   */
   stackLimit: number; // 单槽堆叠上限
   perishable: boolean;
   shelfLifeDays?: number; // 保质期（perishable=true 必填）
