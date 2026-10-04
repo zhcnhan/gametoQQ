@@ -2034,7 +2034,8 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
           }
         }
       ],
-      tags: ["people", "supply"]
+      tags: ["people", "supply"],
+      onlyShops: ["supermarket", "market", "wholesale", "hardware"]
     }
   },
   {
@@ -2066,7 +2067,8 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
           }
         }
       ],
-      tags: ["neighbor", "people"]
+      tags: ["neighbor", "people"],
+      onlyShops: ["supermarket", "market", "wholesale", "community_store"]
     }
   },
   {
@@ -2097,7 +2099,8 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
           }
         }
       ],
-      tags: ["neighbor", "water"]
+      tags: ["neighbor", "water"],
+      onlyShops: ["community_store", "gas_station", "market"]
     }
   },
   {
@@ -2129,7 +2132,8 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
           }
         }
       ],
-      tags: ["supply"]
+      tags: ["supply"],
+      onlyShops: ["supermarket", "market", "wholesale", "community_store"]
     }
   },
   {
@@ -2158,7 +2162,8 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
           }
         }
       ],
-      tags: ["neighbor", "people"]
+      tags: ["neighbor", "people"],
+      onlyShops: ["supermarket", "market", "wholesale", "hardware"]
     }
   },
   {
@@ -2190,7 +2195,8 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
           }
         }
       ],
-      tags: ["water"]
+      tags: ["water"],
+      onlyShops: ["supermarket", "market", "community_store", "gas_station"]
     }
   },
   {
@@ -2221,7 +2227,8 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
           }
         }
       ],
-      tags: ["supply", "tool"]
+      tags: ["supply", "tool"],
+      onlyShops: ["hardware", "weekend_flea"]
     }
   },
   {
@@ -2249,7 +2256,8 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
           }
         }
       ],
-      tags: ["neighbor", "warmth"]
+      tags: ["neighbor", "warmth"],
+      onlyShops: ["community_store", "weekend_flea"]
     }
   },
   {
@@ -2281,7 +2289,8 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
           }
         }
       ],
-      tags: ["neighbor", "market", "people"]
+      tags: ["neighbor", "market", "people"],
+      onlyShops: ["community_store", "market"]
     }
   },
   // ═══ 生成内容 白天-04 止 ═══

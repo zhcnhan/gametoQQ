@@ -323,25 +323,57 @@ export function autoPlace(
  * 数值全都对，只是你之前做过的那个决定不见了。
  * 单测里有一条专门盯着它（`shelf.test.ts` 的"排序不动货架属性"）。
  */
+/**
+ * 「帮我按保质期排」——**按胶带分组**排，而不是整块架子一起排。
+ *
+ * ## ★★ 这条是走测反馈改的（2026-10）
+ *
+ * 用户的原话：
+ *
+ * > "这个他只能做到同架升序，**做不到一行分组排序**哦"
+ *
+ * 他说得对，而且这比"排序不够好"严重：原来它把**整块架子**上的堆按到期日
+ * 一股脑重排，于是**货会从自己那一行被搬到别的行** ——
+ * 而"哪一行放什么"正是玩家自己立的规矩。按一次按钮就把分类冲掉，
+ * 那这个按钮是**破坏性的**，玩家只能不用它。
+ *
+ * 现在按 `fefoGroups` 分组：每一组（同一张胶带的多行 + 没贴胶带的行各自成一组）
+ * 在自己的**格子范围内**按到期日升序排。货物的归属不变，只是组内换了位置 ——
+ * 与 `fefoRate` 的口径（M3 已改成按组统计）也对齐了。
+ *
+ * ★ 排序**不动胶带**：`zoneIds` 原样带走。行级分区是玩家立的规矩。
+ */
 export function fefoSorted(shelf: Shelf): Shelf {
-  const stacks = readingOrder(shelf)
-    .map((pos) => getStack(shelf, pos))
-    .filter((s): s is ItemStack => s !== null)
-    .sort((a, b) => {
-      const d = fefoKey(a) - fefoKey(b);
-      if (d !== 0) return d;
-      return a.itemId.localeCompare(b.itemId);
-    });
   let next = createShelf(shelf.id, shelf.roomId, shelf.kind, shelf.w, shelf.h);
   next.handyRank = shelf.handyRank;
-  // ★ 排序**不动胶带**：行级分区是玩家立的规矩，不该被"帮我按保质期排"抹掉
   next.zoneIds = [...shelf.zoneIds];
-  const order = readingOrder(next);
-  for (let i = 0; i < stacks.length; i++) {
-    const pos = order[i];
-    const stack = stacks[i];
-    if (!pos || !stack) break;
-    next = setSlotStack(next, pos, stack);
+
+  for (const group of fefoGroups(shelf)) {
+    /*
+     * 这一组的格子（按行序、行内按列序 = 与 `readingOrder` 同一顺序），
+     * 以及这一组现在装着的东西。
+     */
+    const cells: SlotPos[] = [];
+    for (const row of [...group.rows].sort((a, b) => a - b)) {
+      for (let col = 0; col < shelf.w; col++) cells.push({ row, col });
+    }
+    const stacks = cells
+      .map((pos) => getStack(shelf, pos))
+      .filter((s): s is ItemStack => s !== null)
+      .sort((a, b) => {
+        const d = fefoKey(a) - fefoKey(b);
+        if (d !== 0) return d;
+        return a.itemId.localeCompare(b.itemId);
+      });
+
+    // 先清空这一组的格子，再按排好的顺序填回去 —— 组与组之间互不越界
+    for (const pos of cells) next = setSlotStack(next, pos, null);
+    for (let i = 0; i < stacks.length; i++) {
+      const pos = cells[i];
+      const stack = stacks[i];
+      if (!pos || !stack) break;
+      next = setSlotStack(next, pos, stack);
+    }
   }
   return next;
 }

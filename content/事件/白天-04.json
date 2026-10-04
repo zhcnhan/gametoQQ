@@ -34,6 +34,12 @@
       "tags": [
         "people",
         "supply"
+      ],
+      "onlyShops": [
+        "supermarket",
+        "market",
+        "wholesale",
+        "hardware"
       ]
     },
     {
@@ -66,6 +72,12 @@
       "tags": [
         "neighbor",
         "people"
+      ],
+      "onlyShops": [
+        "supermarket",
+        "market",
+        "wholesale",
+        "community_store"
       ]
     },
     {
@@ -97,6 +109,11 @@
       "tags": [
         "neighbor",
         "water"
+      ],
+      "onlyShops": [
+        "community_store",
+        "gas_station",
+        "market"
       ]
     },
     {
@@ -128,6 +145,12 @@
       ],
       "tags": [
         "supply"
+      ],
+      "onlyShops": [
+        "supermarket",
+        "market",
+        "wholesale",
+        "community_store"
       ]
     },
     {
@@ -157,6 +180,12 @@
       "tags": [
         "neighbor",
         "people"
+      ],
+      "onlyShops": [
+        "supermarket",
+        "market",
+        "wholesale",
+        "hardware"
       ]
     },
     {
@@ -188,6 +217,12 @@
       ],
       "tags": [
         "water"
+      ],
+      "onlyShops": [
+        "supermarket",
+        "market",
+        "community_store",
+        "gas_station"
       ]
     },
     {
@@ -219,6 +254,10 @@
       "tags": [
         "supply",
         "tool"
+      ],
+      "onlyShops": [
+        "hardware",
+        "weekend_flea"
       ]
     },
     {
@@ -247,6 +286,10 @@
       "tags": [
         "neighbor",
         "warmth"
+      ],
+      "onlyShops": [
+        "community_store",
+        "weekend_flea"
       ]
     },
     {
@@ -280,6 +323,10 @@
         "neighbor",
         "market",
         "people"
+      ],
+      "onlyShops": [
+        "community_store",
+        "market"
       ]
     }
   ]

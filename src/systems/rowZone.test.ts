@@ -31,7 +31,9 @@ import { getItemDef } from '../data/items';
 import {
   fefoGroups,
   fefoRate,
+  fefoSorted,
   findZone,
+  getStack,
   isGroupFEFO,
   onlyZoneIdOf,
   placementRate,
@@ -211,6 +213,63 @@ describe('★★ 临期优先：分母变成"按胶带分组"', () => {
     const s = createShelf('s1', 'room_living', 'shelf', 6, 4);
     // 一件货都没有 → 没有非空组 → 0（沿用 M1 那条"全空给 0"的修正）
     expect(fefoRate([s])).toBe(0);
+  });
+});
+
+describe('★★ 「按保质期排」按组排，不跨组搬货', () => {
+  /*
+   * ★ 这一组是走测反馈换来的。用户的原话：
+   *
+   * > "这个他只能做到同架升序，**做不到一行分组排序**哦"
+   *
+   * 而原来的 `fefoSorted` 比"排序不够好"严重得多：它把**整块架子**上的堆
+   * 一起重排，于是货会从自己那一行被搬到别的行 —— 按一次按钮就把玩家
+   * 分好的类冲掉。那让这个按钮变成**破坏性的**。
+   */
+  function shelfTwoGroups(): Shelf {
+    let s = createShelf('s1', 'room_living', 'shelf', 6, 4);
+    // 第 0~1 行贴"主食"（一组），第 2~3 行没贴（各自成组）
+    s.zoneIds = ['z_food', 'z_food', null, null];
+    // 主食那组：第 0 行放晚到期的、第 1 行放早到期的（乱的）
+    s = dropStack(s, { row: 0, col: 0 }, makeStack('canned_beans', 1, 30)) as Shelf;
+    s = dropStack(s, { row: 1, col: 0 }, makeStack('canned_beans', 1, 5)) as Shelf;
+    // 没贴的那组也放一件
+    s = dropStack(s, { row: 2, col: 0 }, makeStack('battery', 1, null)) as Shelf;
+    return s;
+  }
+
+  it('★★ 排完之后每件货**还在它自己那一组里**（不跨组搬）', () => {
+    const before = shelfTwoGroups();
+    const after = fefoSorted(before);
+    const groupOf = (shelf: Shelf, row: number) => rowZoneId(shelf, row) ?? '(没贴)';
+    // 逐格比对：原来在第 0/1 行的东西，排完还得在 0/1 行（组内换位置可以）
+    for (let row = 0; row < before.h; row++) {
+      for (let col = 0; col < before.w; col++) {
+        const was = getStack(before, { row, col });
+        if (!was) continue;
+        // 在 after 里找这件东西现在在哪
+        let nowAt: string | null = null;
+        for (let r = 0; r < after.h; r++) {
+          for (let c = 0; c < after.w; c++) {
+            const now = getStack(after, { row: r, col: c });
+            if (now && now.itemId === was.itemId) nowAt = groupOf(after, r);
+          }
+        }
+        expect(nowAt, `${was.itemId} 从「${groupOf(before, row)}」跑到了别处`).toBe(groupOf(before, row));
+      }
+    }
+  });
+
+  it('★ 主食那一组内部真的排好了（早到期的挪到前面）', () => {
+    const after = fefoSorted(shelfTwoGroups());
+    const g = fefoGroups(after).find((x) => x.zoneId === 'z_food')!;
+    expect(isGroupFEFO(after, g.rows), '组内该按到期日升序').toBe(true);
+  });
+
+  it('★ 排序不动胶带（`zoneIds` 原样带走）', () => {
+    const before = shelfTwoGroups();
+    const after = fefoSorted(before);
+    expect(after.zoneIds).toEqual(before.zoneIds);
   });
 });
 

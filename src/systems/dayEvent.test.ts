@@ -103,8 +103,19 @@ describe('白天事件的抽签', () => {
   });
 
   it('★ 黑市商人只在五金店后巷 —— onlyShops 之外的店门权重是 0，抽不到他', () => {
-    const inHardware = Array.from({ length: 200 }, (_, i) => rollDayEvent(createCursor(i), 'hardware'));
-    const inPharmacy = Array.from({ length: 200 }, (_, i) => rollDayEvent(createCursor(i), 'pharmacy'));
+    /*
+     * ★ 取样量从 200 抬到 4000（2026-10，给 26 条事件补上 `onlyShops` 之后）。
+     *
+     * 补完归属之后 hardware 的池子变小了，而 `d_black_market` 是个低频条目 ——
+     * 实测出现率约 **1.1%**（220 / 20000），200 次抽样的期望只有 2.2 次，
+     * 于是"expected [...] to include 'd_black_market'"随机红。
+     *
+     * 这与 `eventRepeat.test.ts` 那条突发覆盖率的毛病**是同一类**：
+     * 断言本身没错（黑市确实只在五金店），错的是**取样量配不上要检出的频率**。
+     * 4000 次对 1.1% 的期望是 44 次，足够稳。
+     */
+    const inHardware = Array.from({ length: 4000 }, (_, i) => rollDayEvent(createCursor(i), 'hardware'));
+    const inPharmacy = Array.from({ length: 4000 }, (_, i) => rollDayEvent(createCursor(i), 'pharmacy'));
     expect(inHardware).toContain('d_black_market');
     expect(inPharmacy).not.toContain('d_black_market');
   });

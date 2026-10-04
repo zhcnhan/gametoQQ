@@ -125,25 +125,36 @@ export class ShopScreen implements Screen {
 
   private renderMain(): void {
     const run = this.store.run;
-    // 白天事件优先：它发生在**门口**，所以这一屏先只讲那件事，货架等处理完再画。
-    // 与夜间事件同一个两段式 —— 玩家必须看得见后果，也需要一条"不参与"的路。
+    /*
+     * ★★ 门口那件事现在是**一张卡片**，不再独占整屏 —— 货架照常画在下面。
+     *
+     * ## 用户的原话（2026-10 走测）
+     *
+     * > "有的时候事件会导致不能进商店，耽误我买东西……本来行动点就宝贵，
+     * >  调整一下，事件发生也不影响正常采购"
+     *
+     * 原来是 `if (event) { 画事件; return; }` —— 事件把货架整个顶掉了，
+     * 玩家必须处理完再重新进一次店。而行动点是这一局最贵的资源
+     * （§6.2 的三约束之一），"重进一次"等于白扣一点。
+     *
+     * ⚠ 这不是"把事件做小一点"，是**改掉一个错误的假设**：
+     * 原来那句注释写的是"它发生在门口，所以这一屏先只讲那件事" ——
+     * 而"门口那件事"与"进店买东西"本来就是**可以同时成立**的两件事。
+     * 两段式（先看事件、再看后果）仍然保留，只是不再占用整屏。
+     */
     const event = run.dayEvent;
-    if (event && run.currentShopId) {
-      const def = findDayEvent(event.defId);
-      if (def) {
-        this.mainEl.innerHTML = this.dayEventHtml(def, event.choice, event.applied);
-        return;
-      }
-    }
-    this.mainEl.innerHTML = run.currentShopId ? this.goodsHtml(run.currentShopId) : this.shopListHtml();
+    const banner =
+      event && run.currentShopId && findDayEvent(event.defId)
+        ? this.dayEventHtml(findDayEvent(event.defId), event.choice, event.applied)
+        : '';
+    this.mainEl.innerHTML = banner + (run.currentShopId ? this.goodsHtml(run.currentShopId) : this.shopListHtml());
   }
 
   /**
-   * 门口那件事。两段式与夜间一致：先只给选项（不看货架），
-   * 选完再看后果 —— 然后把出口交给「换一家」或底部那条"回家整理"。
+   * 门口那件事（**卡片**）。
    *
-   * 数值摘要读的是**实际生效值**（`event.applied`），不是选项声明的数：
-   * 兜里只有 25 元的人点了"递包烟"，屏幕上必须写 25。
+   * 两段式与夜间一致：先给选项，选完再看后果。
+   * 但它不再独占整屏 —— 见 `renderMain` 的注释。
    */
   private dayEventHtml(def: ReturnType<typeof findDayEvent>, choice: number | null, applied: DayEffectApplied | null): string {
     if (!def) return '';
@@ -151,7 +162,8 @@ export class ShopScreen implements Screen {
     const option = decided ? def.options[choice as number] : null;
     const summary = applied ? describeDayEffect(applied) : [];
     return `
-      <section class="block">
+      <section class="block event-card">
+        <p class="event-card-tag">门口那件事</p>
         <p class="night-text">${escapeHtml(def.text)}</p>
         ${
           decided && option && applied
