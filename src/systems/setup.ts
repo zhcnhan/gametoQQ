@@ -8,10 +8,11 @@
  */
 import { BOX_DEFS, type BoxDef } from '../data/boxes';
 import { FIRST_STOCKPILE_DAY, M1_DISASTER_ID, disasterModifiersOf } from '../data/disaster';
+import { furnitureDefOf } from '../data/furniture';
 import { getItemDef } from '../data/items';
 import { EMPTY_SURVIVAL_SNAPSHOT, NEVER_TRADED } from '../data/survival';
 import { createCursor, nextFloat, nextInt, pick, randomSeed, shuffle, type RngCursor } from '../model/rng';
-import { createShelf, makeStack, ROOM_ID, SHELF_H, SHELF_W } from '../model/shelf';
+import { createShelf, makeStack, nextShelfId, ROOM_ID, SHELF_H, SHELF_W } from '../model/shelf';
 import type { EventHistory, ItemStack, RunState, Shelf, UnpackBox } from '../model/types';
 
 export const STARTING_SHELF_COUNT = 3;
@@ -76,6 +77,58 @@ export function boxDefAt(index: number): BoxDef {
   const def = BOX_DEFS[index];
   if (!def) throw new Error(`没有第 ${index + 1} 号箱型的定义`);
   return def;
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  加一块家具（§10.2.4 的"新货架 / 新家具类型"）
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * ## 为什么是"纯函数"而不是一个命令
+ *
+ * §10.2.4 里"新货架"和"新家具类型"是**解锁物**（元进程的奖励），
+ * 而"怎么解锁"（进度阶梯）与"房间能放几块"（`rooms` 变成数据）都属于**第 7 步**。
+ * 所以这里只做**机制**：给我一份货架、一种家具，还你一份多了它的货架。
+ *
+ * 这样切的好处是"谁来调用它"可以晚定 —— 商店买、成就发给、开局配置，
+ * 三条路都能接在同一个函数上，而不必先写完元进程才能动手。
+ *
+ * ## 三条硬约束
+ *
+ *  1. **id 必须唯一**：用递增后缀而不是随机（id 进存档，随机 id 会让
+ *     "同一份操作两次得到不同存档"）。重名会让 `findShelf` 拿到错的那一块 ——
+ *     而那种错**不会报错**，只会让东西放到别处；
+ *  2. **房间要存在**：`roomId` 指向一间还没有的房间 = 一块玩家永远看不见的家具
+ *     （整理页按房间分组渲染）。所以认不出就退回 `ROOM_ID`，与
+ *     `furnitureDefOf` 认不出 kind 时退回普通货架是同一条纪律；
+ *  3. **`handyRank` 一律 null**：顺手位是**全屋唯一**的（§12.3 v0.7.1 玩家拍板），
+ *     新家具**不许**自己抢那个位置。买了冰箱就把"门口那一块"顶掉，
+ *     会让玩家在毫无察觉的情况下丢掉应急可达率。
+ *
+ * @param shelves 现在的全部家具
+ * @param kind 要加的家具种类（认不出 → 普通货架）
+ * @param opts.roomId 放进哪间房（默认 `ROOM_ID`；将来 `rooms` 变数据后由调用方给）
+ * @param opts.spoilFactor 灾难的空间限制（维度 14）—— 与开局那三块用同一把尺子
+ * @returns **新的**数组（不改入参，配合原子存档）
+ */
+export function addFurniture(
+  shelves: readonly Shelf[],
+  kind: Shelf['kind'],
+  opts: { roomId?: string; spoilFactor?: number; ids?: readonly string[] } = {}
+): Shelf[] {
+  const roomId = opts.roomId ?? ROOM_ID;
+  const def = furnitureDefOf(kind);
+  const cap = Math.max(0.5, Math.min(1, opts.spoilFactor ?? 1));
+  const usableH = Math.max(1, Math.round(def.h * cap));
+
+  // id：优先用调用方给的池子（`SHELF_IDS` 那种固定名单），否则按现有块数递增
+  const pool = opts.ids ?? [];
+  const used = new Set(shelves.map((s) => s.id));
+  const id = pool.find((x) => !used.has(x)) ?? nextShelfId(def.kind);
+  // 池子用尽且懒得给更多时，仍然要保证不重名 —— 这是上面第 1 条约束
+  const finalId = used.has(id) ? nextShelfId(def.kind) : id;
+
+  return [...shelves, createShelf(finalId, roomId, def.kind, def.w, usableH, null)];
 }
 
 /** 批次到期日：保质期 ±12% 抖动。不易腐返回 null（= 永不到期，FEFO 时排最后） */
