@@ -13,6 +13,7 @@ import {
   makeStack,
   moveStack,
   normalizeStack,
+  onlyZoneIdOf,
   placementRate,
   readingOrder,
   stackCount,
@@ -182,7 +183,7 @@ describe('FEFO', () => {
 
     const sorted = fefoSorted(s);
     expect(sorted.handyRank).toBe(1);
-    expect(sorted.zoneId).toBe('z_food');
+    expect(onlyZoneIdOf(sorted)).toBe('z_food');
     expect(firstBatchExpiry(getStack(sorted, { row: 0, col: 0 }) as ItemStack)).toBe(20);
   });
 });
@@ -197,7 +198,7 @@ describe('归位率与整理评分', () => {
     let loose = shelf(2, 1, 'loose');
     let food = shelf(2, 1, 'food');
     loose = dropStack(loose, { row: 0, col: 0 }, makeStack('battery', 1, null)) as Shelf;
-    food.zoneId = 'z_food';
+    food.zoneIds = food.zoneIds.map(() => 'z_food');
     food = dropStack(food, { row: 0, col: 0 }, makeStack('canned_beans', 1, 500)) as Shelf;
     food = dropStack(food, { row: 0, col: 1 }, makeStack('battery', 1, null)) as Shelf;
     // 3 堆里只有罐头归位
@@ -206,7 +207,7 @@ describe('归位率与整理评分', () => {
 
   it('★ §12 v0.8：空清单的胶带不再算归位（"贴一张空胶带"这个 loophole 已修）', () => {
     let s = shelf(2, 1, 'free');
-    s.zoneId = 'z_free';
+    s.zoneIds = s.zoneIds.map(() => 'z_free');
     s = dropStack(s, { row: 0, col: 0 }, makeStack('toolbox', 1, null)) as Shelf;
     // 老口径：没写清单 = 什么都收 → 归位率恒满 → 最优解退化成"贴一张空胶带"
     // 新口径：归位率量的是"你有没有按自己写的清单放"，没清单就无从谈起
@@ -215,11 +216,11 @@ describe('归位率与整理评分', () => {
 
   it('★ §12 v0.8：明确清单与空清单的差别，就是 100% 与 0% 的差别', () => {
     let listed = shelf(2, 1, 'listed');
-    listed.zoneId = 'z_food';
+    listed.zoneIds = listed.zoneIds.map(() => 'z_food');
     listed = dropStack(listed, { row: 0, col: 0 }, makeStack('canned_beans', 1, null)) as Shelf;
 
     let open = shelf(2, 1, 'open');
-    open.zoneId = 'z_free';
+    open.zoneIds = open.zoneIds.map(() => 'z_free');
     open = dropStack(open, { row: 0, col: 0 }, makeStack('canned_beans', 1, null)) as Shelf;
 
     expect(placementRate([listed], zones)).toBe(1);

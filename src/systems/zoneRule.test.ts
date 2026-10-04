@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'vitest';
 import { getItemDef } from '../data/items';
 import { ZONE_COLORS } from '../data/palette';
-import { isOffZone, makeStack, placementRate, setSlotStack, shelfIsEmpty } from '../model/shelf';
+import { isOffZone, makeStack, onlyZoneIdOf, placementRate, setSlotStack, shelfIsEmpty } from '../model/shelf';
 import type { SlotPos, Zone } from '../model/types';
 import { createSaveGame } from '../state/save';
 import { GameStore } from '../state/store';
@@ -99,7 +99,7 @@ describe('归位率 = 你有没有按自己写的清单放', () => {
     seedItem(store, 'shelf_b', P0, 'canned_beans');
     seedItem(store, 'shelf_c', P0, 'bandage'); // 只有这块放错
 
-    expect(store.run.shelves.filter((s) => s.zoneId !== null)).toHaveLength(3);
+    expect(store.run.shelves.filter((s) => onlyZoneIdOf(s) !== null)).toHaveLength(3);
     expect(rate(store)).toBeCloseTo(2 / 3, 5);
   });
 });
@@ -179,7 +179,7 @@ describe('清单属于胶带本身，不属于"这一次操作"', () => {
     expect(store.run.zones).toHaveLength(1);
     expect(store.run.zones[0]?.autoAccept).toEqual({ categories: ['food'] }); // 清单保住
     expect(store.run.zones[0]?.color).toBe(RED); // 颜色以先贴的那张为准（M0 既有行为）
-    expect(store.run.shelves.find((s) => s.id === 'shelf_b')?.zoneId).toBe(store.run.zones[0]?.id);
+    expect(onlyZoneIdOf(store.run.shelves.find((s) => s.id === 'shelf_b')!)).toBe(store.run.zones[0]?.id);
   });
 
   it('改清单只有一条路：显式带 zoneId 编辑这张胶带', () => {

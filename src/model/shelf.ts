@@ -34,13 +34,17 @@ export function createShelf(
     slots.push(row);
   }
   // handyRank 开局一律 null：门口是哪块，由玩家在整理页自己指认（§5）
-  return { id, roomId, kind, w, h, slots, zoneId, handyRank: null };
+  // zoneIds 与 slots 同长：**一行一个位置**（粒度是行，见 `Shelf.zoneIds` 的注释）
+  const zoneIds: (string | null)[] = Array.from({ length: h }, () => zoneId);
+  return { id, roomId, kind, w, h, slots, zoneIds, handyRank: null };
 }
 
 export function cloneShelf(shelf: Shelf): Shelf {
   return {
     ...shelf,
-    slots: shelf.slots.map((row) => row.map((slot) => cloneSlot(slot)))
+    slots: shelf.slots.map((row) => row.map((slot) => cloneSlot(slot))),
+    // 数组也要拷：否则"给这一行贴胶带"会改到原对象（原子存档要求返回新对象）
+    zoneIds: [...shelf.zoneIds]
   };
 }
 
@@ -328,8 +332,10 @@ export function fefoSorted(shelf: Shelf): Shelf {
       if (d !== 0) return d;
       return a.itemId.localeCompare(b.itemId);
     });
-  let next = createShelf(shelf.id, shelf.roomId, shelf.kind, shelf.w, shelf.h, shelf.zoneId);
+  let next = createShelf(shelf.id, shelf.roomId, shelf.kind, shelf.w, shelf.h);
   next.handyRank = shelf.handyRank;
+  // ★ 排序**不动胶带**：行级分区是玩家立的规矩，不该被"帮我按保质期排"抹掉
+  next.zoneIds = [...shelf.zoneIds];
   const order = readingOrder(next);
   for (let i = 0; i < stacks.length; i++) {
     const pos = order[i];
@@ -354,6 +360,71 @@ export function isShelfFEFO(shelf: Shelf): boolean {
   return true;
 }
 
+/**
+ * **这一行**是否按到期日升序。
+ *
+ * ★ 胶带细到行之后（用户拍板 2026-10），"排好序"这件事也该细到行 ——
+ * 因为玩家立规矩的单位就是行：一块货架上"主食那两行要按到期日排、
+ * 最上面那行随便堆"是完全合理的意图，而按**整架**判定会把它判成没排好。
+ */
+export function isRowFEFO(shelf: Shelf, row: number): boolean {
+  const keys: number[] = [];
+  for (let col = 0; col < shelf.w; col++) {
+    const stack = getStack(shelf, { row, col });
+    if (stack) keys.push(fefoKey(stack));
+  }
+  for (let i = 1; i < keys.length; i++) {
+    if ((keys[i - 1] as number) > (keys[i] as number)) return false;
+  }
+  return true;
+}
+
+/**
+ * 按**胶带**分组的 FEFO：每一组（同一张胶带的那些行 + 没贴胶带的行各自成组）
+ * 都要按到期日升序。
+ *
+ * ## 为什么分组算，而不是"每行都排好"
+ *
+ * 同一张胶带贴在**两块货架**上时（用户明确要的"可以给多行使用"），
+ * 那两块上属于它的行构成**一个**整理单位 —— 玩家把主食分两块架子放是常态，
+ * 而他写的那张"主食"清单说的是"这些格子里的东西按到期日排"。
+ * 逐行各排各的会允许"第 1 行 3 号到期、第 2 行 1 号到期"，
+ * 而那个组合在取用上确实是错的（FEFO 的意义就是先拿快到期的）。
+ *
+ * ## 没贴胶带的行也算一组
+ *
+ * 它们不是"免检"：一堆没过期日排序的散货，`fefo` 那一项拿不到分。
+ * 所以"没贴胶带"不会让这一项白送 —— 与归位率那边"没写清单就是 0"不同，
+ * 这里量的是**顺序**，而顺序对没贴胶带的堆同样有意义。
+ */
+export function fefoGroups(shelf: Shelf): { zoneId: string | null; rows: number[] }[] {
+  const byZone = new Map<string, number[]>();
+  for (let row = 0; row < shelf.h; row++) {
+    const id = rowZoneId(shelf, row);
+    const key = id ?? '';
+    const list = byZone.get(key) ?? [];
+    list.push(row);
+    byZone.set(key, list);
+  }
+  return [...byZone.entries()].map(([key, rows]) => ({ zoneId: key === '' ? null : key, rows }));
+}
+
+/** 一个分组（同一张胶带的多行）是否整体按到期日升序 */
+export function isGroupFEFO(shelf: Shelf, rows: readonly number[]): boolean {
+  const keys: number[] = [];
+  // 按行号升序读，行内按列 —— 与 `readingOrder` 同一顺序
+  for (const row of [...rows].sort((a, b) => a - b)) {
+    for (let col = 0; col < shelf.w; col++) {
+      const stack = getStack(shelf, { row, col });
+      if (stack) keys.push(fefoKey(stack));
+    }
+  }
+  for (let i = 1; i < keys.length; i++) {
+    if ((keys[i - 1] as number) > (keys[i] as number)) return false;
+  }
+  return true;
+}
+
 export function shelfIsEmpty(shelf: Shelf): boolean {
   return readingOrder(shelf).every((pos) => getStack(shelf, pos) === null);
 }
@@ -365,6 +436,86 @@ export function countStacks(shelf: Shelf): number {
 export function shelfFillRate(shelf: Shelf): number {
   const total = shelf.w * shelf.h;
   return total === 0 ? 0 : countStacks(shelf) / total;
+}
+
+// ———————— 分区（胶带）：粒度是**一行** ————————
+
+/**
+ * 这一行属于哪张胶带（`null` = 没贴）。
+ *
+ * ★ **所有读"行分区"的地方都必须走这里**，不许直接写 `shelf.zoneIds[row]`。
+ * 理由与 `disasterModifiersOf` 是同一个：数组可以被手改档、可以被旧代码写短、
+ * 行号可以越界 —— 而 `zoneIds[7]` 在只有 4 行的货架上返回 `undefined`，
+ * `undefined` 与 `null` 在 `findZone` 里**表现相同**（都当成没贴），
+ * 所以那种错**不会报错**，只会静默地当没贴。
+ *
+ * 越界一律当"没贴"（`null`）—— 而不是抛：这一行读在渲染路径上。
+ */
+export function rowZoneId(shelf: Shelf, row: number): string | null {
+  const v = shelf.zoneIds[row];
+  return typeof v === 'string' && v.length > 0 ? v : null;
+}
+
+/**
+ * 给一行贴上 / 撕下胶带。返回**新的** `zoneIds` 数组（不改入参）。
+ *
+ * ★ 长度按 `shelf.h` 补齐：老档的 `zoneIds` 可能比行数短（迁移补的），
+ * 而"写第 3 行"时数组必须真的有 3 个位置 —— 否则写入会被 JS 静默丢掉。
+ */
+export function setRowZoneId(shelf: Shelf, row: number, zoneId: string | null): (string | null)[] {
+  const next = [...shelf.zoneIds];
+  while (next.length < shelf.h) next.push(null);
+  if (row >= 0 && row < shelf.h) next[row] = zoneId;
+  return next;
+}
+
+/** 这块货架用到了哪几张胶带（去重，按行序） */
+export function zoneIdsOf(shelf: Shelf): string[] {
+  const out: string[] = [];
+  for (let row = 0; row < shelf.h; row++) {
+    const id = rowZoneId(shelf, row);
+    if (id && !out.includes(id)) out.push(id);
+  }
+  return out;
+}
+
+/** 这块货架有没有贴过胶带 */
+export function hasAnyZone(shelf: Shelf): boolean {
+  return zoneIdsOf(shelf).length > 0;
+}
+
+/**
+ * 这块货架**第一张**用到的胶带 id（一行都没贴返回 `null`）。
+ *
+ * ★ 抽屉在"没指定看哪一行"时用它取"当前那张"。一块货架可以贴两张胶带，
+ * 所以"这架贴着的是什么"在一般情况下**没有唯一答案** ——
+ * 这个函数是那个问题的降级答案，用在"玩家没告诉我们看哪一行"的时候。
+ */
+export function firstZoneIdOf(shelf: Shelf): string | null {
+  for (let row = 0; row < shelf.h; row++) {
+    const id = rowZoneId(shelf, row);
+    if (id) return id;
+  }
+  return null;
+}
+
+/**
+ * **整块货架贴着同一张胶带**时返回它的 id，否则 `null`。
+ *
+ * ★ 它是"这一架有没有被当成一个整体"这个问题的答案，有两个真实用途：
+ *
+ *  ① **界面措辞**：整块一张时可以说"这架贴着「主食」"；一行一张时只能说
+ *     "这架贴了 2 行"—— 说错了就是假话，而玩家会照那句话去理解自己的货架；
+ *  ② **测试**：老的用例全是"整块贴一张"的语义，这个函数让它们**保义**地
+ *     迁到行级结构上（而不是把断言放松成 `toContain`）。
+ *
+ * ⚠ 注意它**不是**"第一张"：一行都没贴与贴了两张都返回 `null`。
+ * 想要"随便给我一张"请用 `firstZoneIdOf`。两个问题不同，别混。
+ */
+export function onlyZoneIdOf(shelf: Shelf): string | null {
+  const ids = new Set<string | null>();
+  for (let row = 0; row < shelf.h; row++) ids.add(rowZoneId(shelf, row));
+  return ids.size === 1 ? ([...ids][0] ?? null) : null;
 }
 
 // ———————— 分区 / 归位率 / FEFO 率（整理品质三个可量化维度中的两个） ————————
@@ -478,12 +629,26 @@ export function placementRate(
   let total = 0;
   let ok = 0;
   for (const shelf of shelves) {
-    const zone = findZone(zones, shelf.zoneId);
-    for (const pos of readingOrder(shelf)) {
-      const stack = getStack(shelf, pos);
-      if (!stack) continue;
-      total += 1;
-      if (zoneListedFor(zone, getItemDef(stack.itemId))) ok += 1;
+    /*
+     * ★ 一行一张胶带（用户拍板 2026-10）。
+     *
+     * 这里原来是 `findZone(zones, shelf.zoneId)` —— **一块货架一个 zone**。
+     * 现在每一行各查各的：同一块架子上，"主食那两行"可以算归位、
+     * "最上面那行"不算。这就是"归位率的分母细到行"的落地。
+     *
+     * ⚠ 一个刻意的后果：**贴胶带贴得越细，能拿到的分越多** ——
+     * 只贴一行也能把那一行的堆算进分子。会不会让最优解退化成
+     * "每行都贴一张"？会，而那正是"想清楚每一行放什么"这个动作本身，
+     * 不是 loophole（与 v0.8 修掉的"贴一张空胶带"不同：空清单不接收任何东西）。
+     */
+    for (let row = 0; row < shelf.h; row++) {
+      const zone = findZone(zones, rowZoneId(shelf, row));
+      for (let col = 0; col < shelf.w; col++) {
+        const stack = getStack(shelf, { row, col });
+        if (!stack) continue;
+        total += 1;
+        if (zoneListedFor(zone, getItemDef(stack.itemId))) ok += 1;
+      }
     }
   }
   // 纸箱里的每一堆都是"还没被安置"的，它们算分母、不算分子
@@ -530,28 +695,54 @@ export function countOnHandy(shelves: readonly Shelf[], category: CategoryId): n
 }
 
 /**
- * FEFO 率 = 非空货架中已按到期日升序的比例（同一套尺子，不许含糊）。
+ * FEFO 率 = **按胶带分组**之后，已按到期日升序的组数 ÷ 非空的组数。
  *
- * ★ 货架全空时返回 **0**，不是 1（M1 手测后修正）。
+ * ★ 口径跟着胶带一起细到行（用户拍板 2026-10）。
+ *
+ * 原来的口径是"非空**货架**里排好的比例"，而胶带细到行之后，
+ * 玩家立规矩的单位变成了**行**：一块货架上"主食那两行按到期日排、
+ * 最上面那行随手堆"是合理意图，按整架判会把它判成没排好。
+ * 所以现在按 `fefoGroups` 分组统计（同一张胶带的多行 = 一组，
+ * 没贴胶带的行各自成一组）。
+ *
+ * ★ 分组**全空**时返回 **0**，不是 1（M1 手测后修正，这条没变）。
  *
  * 这里跟 `placementRate` 的"空房间宽容规则"刻意相反，理由是两个指标问的问题不一样：
  *   · 归位率问"你摆好了多少" —— 手上真的没货时给 1（开局第一秒不该是 0%）；
- *   · FEFO 率问"你排好了多少" —— 一块货架都没用上是**还没开始排**，不是"全都排好了"。
+ *   · FEFO 率问"你排好了多少" —— 一组格子都没用上是**还没开始排**，不是"全都排好了"。
  *
  * 原来返回 1 的后果被玩家当场抓到：**囤了 17 箱一口没拆、货架全空，临期优先却显示 100%**。
  * 它同时还是"整理质量"的输入之一（见 data/survival.ts 的 organizeQuality），
  * 所以这个 1 会直接漏进生存期的体力结算里 —— 不整理的人反而拿到满分的排架成绩。
+ *
+ * ⚠ 一个刻意的后果：**一块货架现在会贡献多个组**（贴了两张胶带就是两组）。
+ * 分母因此从"几块货架"变成"几组格子" —— 贴胶带贴得越细，这一项的分母越大。
+ * 那是对的：分得更细的人，本来就该在更细的尺度上被衡量。
  */
 export function fefoRate(shelves: readonly Shelf[]): number {
-  const nonEmpty = shelves.filter((s) => !shelfIsEmpty(s));
-  if (nonEmpty.length === 0) return 0;
-  const ok = nonEmpty.filter((s) => isShelfFEFO(s)).length;
-  return ok / nonEmpty.length;
+  let total = 0;
+  let ok = 0;
+  for (const shelf of shelves) {
+    for (const group of fefoGroups(shelf)) {
+      // 这一组里一件东西都没有 → 不算分母（空组不是"排好了"，也不是"没排"）
+      const hasAny = group.rows.some((row) => {
+        for (let col = 0; col < shelf.w; col++) if (getStack(shelf, { row, col })) return true;
+        return false;
+      });
+      if (!hasAny) continue;
+      total += 1;
+      if (isGroupFEFO(shelf, group.rows)) ok += 1;
+    }
+  }
+  return total === 0 ? 0 : ok / total;
 }
 
 export interface ShelfView {
   shelf: Shelf;
-  zone: Zone | null;
+  /** 这块货架**用到了哪些**胶带（一行一张，所以可能不止一张） */
+  zoneIds: string[];
+  /** 每一行的胶带与颜色（界面按行上色，顺序 = 行序） */
+  rowZones: (Zone | null)[];
   fefoOk: boolean;
   stacks: number;
 }
@@ -559,8 +750,9 @@ export interface ShelfView {
 export function shelfViews(shelves: readonly Shelf[], zones: readonly Zone[]): ShelfView[] {
   return shelves.map((shelf) => ({
     shelf,
-    zone: findZone(zones, shelf.zoneId),
-    fefoOk: isShelfFEFO(shelf),
+    zoneIds: zoneIdsOf(shelf),
+    rowZones: Array.from({ length: shelf.h }, (_, row) => findZone(zones, rowZoneId(shelf, row))),
+    fefoOk: fefoGroups(shelf).every((g) => isGroupFEFO(shelf, g.rows)),
     stacks: countStacks(shelf)
   }));
 }

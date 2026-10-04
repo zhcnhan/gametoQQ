@@ -135,7 +135,7 @@ function storeAtDDay(seed = 20261001, days = SURVIVAL_DAYS + 1, tidy = false): G
     // 那条曲线由"没标顺手位"那条专门用例负责（见全周期探针那一组）
     run.shelves = run.shelves.map((s, i) => ({
       ...s,
-      zoneId: 'zone_all',
+      zoneIds: s.zoneIds.map(() => 'zone_all'),
       handyRank: i === 0 ? 1 : null
     }));
   }
@@ -227,7 +227,7 @@ describe('取用：先归位，再 FEFO', () => {
     run.zones = [zone];
     const shelfA = run.shelves[0];
     if (!shelfA) throw new Error('缺货架');
-    run.shelves[0] = { ...shelfA, zoneId: 'zone_1' };
+    run.shelves[0] = { ...shelfA, zoneIds: shelfA.zoneIds.map(() => 'zone_1') };
 
     put(run, 'shelf_a', { row: 0, col: 0 }, 'canned_beans', 2, 90); // 归位，晚到期
     put(run, 'shelf_b', { row: 0, col: 0 }, 'canned_beans', 2, 10); // 没归位，早到期
@@ -242,7 +242,7 @@ describe('取用：先归位，再 FEFO', () => {
     run.zones = [zone];
     const shelfA = run.shelves[0];
     if (!shelfA) throw new Error('缺货架');
-    run.shelves[0] = { ...shelfA, zoneId: 'zone_1' }; // 这张胶带只收医疗
+    run.shelves[0] = { ...shelfA, zoneIds: shelfA.zoneIds.map(() => 'zone_1') }; // 这张胶带只收医疗
 
     put(run, 'shelf_a', { row: 0, col: 0 }, 'canned_beans', 2, 90); // 在"药柜"里，不算归位
     put(run, 'shelf_b', { row: 0, col: 0 }, 'canned_beans', 2, 10);
@@ -391,7 +391,7 @@ describe('每日结算：把整理变成数字', () => {
       autoAccept: { categories: [category] as ('food' | 'water' | 'fuel')[] }
     });
     tidy.zones = [makeZone('z1', '口粮', 'food'), makeZone('z2', '饮水', 'water'), makeZone('z3', '燃料', 'fuel')];
-    tidy.shelves = tidy.shelves.map((shelf, index) => ({ ...shelf, zoneId: ['z1', 'z2', 'z3'][index] ?? null }));
+    tidy.shelves = tidy.shelves.map((shelf, index) => ({ ...shelf, zoneIds: shelf.zoneIds.map(() => ['z1', 'z2', 'z3'][index] ?? null) }));
 
     settleSurvivalDay(tidy);
     settleSurvivalDay(messy);
@@ -483,7 +483,7 @@ describe('M1 平衡改造：整理质量真的会变成体力，撑不住真的�
     tidy.zones = [
       { id: 'zone_all', name: '全收', color: '#000000', autoAccept: { categories: ['food', 'water', 'fuel'] } }
     ];
-    tidy.shelves = tidy.shelves.map((s) => (s.id === 'shelf_a' ? { ...s, zoneId: 'zone_all' } : s));
+    tidy.shelves = tidy.shelves.map((s) => (s.id === 'shelf_a' ? { ...s, zoneIds: s.zoneIds.map(() => 'zone_all') } : s));
 
     const messyReport = settleSurvivalDay(messy);
     const tidyReport = settleSurvivalDay(tidy);
@@ -507,7 +507,7 @@ describe('M1 平衡改造：整理质量真的会变成体力，撑不住真的�
     plain.stats = { health: 90, mood: 60, stamina: 50, shelter: 80 };
     // 贴一张空胶带（"我不分类"）—— 老口径下这会让归位率恒满
     plain.zones = [{ id: 'zone_all', name: '全收', color: '#000000' }];
-    plain.shelves = plain.shelves.map((s) => (s.id === 'shelf_a' ? { ...s, zoneId: 'zone_all' } : s));
+    plain.shelves = plain.shelves.map((s) => (s.id === 'shelf_a' ? { ...s, zoneIds: s.zoneIds.map(() => 'zone_all') } : s));
 
     const boxed = bareRun();
     boxed.boxesToUnpack = [
@@ -696,7 +696,7 @@ function shelveEverything(run: RunState, handy = true): void {
   run.zones = [{ id: 'zone_all', name: '全收', color: '#000000', autoAccept: { categories: [...CATEGORY_ORDER] } }];
   // 顺手位**全屋唯一**（§12.3 v0.7.1）：标第一块。急救品因此也落在它上面 ——
   // 这正是"整理好的档"该有的样子，也是应急可达率有意义的唯一前提
-  run.shelves = run.shelves.map((s, i) => ({ ...s, zoneId: 'zone_all', handyRank: handy && i === 0 ? 1 : null }));
+  run.shelves = run.shelves.map((s, i) => ({ ...s, zoneIds: s.zoneIds.map(() => 'zone_all'), handyRank: handy && i === 0 ? 1 : null }));
 }
 
 /** 一键 FEFO（等价于整理页那颗按钮） */

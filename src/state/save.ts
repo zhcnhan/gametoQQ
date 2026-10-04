@@ -75,7 +75,7 @@ export const STORAGE_KEY = 'tunhuo.save';
  *        （这一局用的等级，开局时从 `meta.identityLevels` **快照**下来）。
  *        老档补 **1**，那正好是它们当时的真实情况（那时还没有等级这回事）。
  */
-export const SAVE_VERSION = 18;
+export const SAVE_VERSION = 19;
 /** 落盘节流上限（提示词 0：debounce ≤ 300ms） */
 export const SAVE_DEBOUNCE_MS = 250;
 
@@ -178,6 +178,7 @@ export function migrate(raw: unknown): SaveGame | null {
   if (declared < 16) save = migrateV15ToV16(save);
   if (declared < 17) save = migrateV16ToV17(save);
   if (declared < 18) save = migrateV17ToV18(save);
+  if (declared < 19) save = migrateV18ToV19(save);
   return normalizeRun(save);
 }
 
@@ -229,6 +230,33 @@ export function migrateV17ToV18(save: SaveGame): SaveGame {
   if (typeof save.meta.survivedRuns !== 'number' || !Number.isFinite(save.meta.survivedRuns)) {
     save.meta.survivedRuns = 0;
   }
+  save.meta.version = SAVE_VERSION;
+  return save;
+}
+
+/**
+ * v18 → v19：胶带的粒度从「整块货架」细到「一行」（用户拍板 2026-10）。
+ *
+ * ## 这次迁移**故意什么都不做**，而这是一个需要解释的选择
+ *
+ * 结构变了（`Shelf.zoneId: string | null` → `Shelf.zoneIds: (string | null)[]`），
+ * 版本号必须抬 —— 但把老档搬过去的那段逻辑**不在这个函数里**，
+ * 而在 `normalizeShelves`。
+ *
+ * 为什么：那段逻辑要处理**四种坏法**（不是数组、长度不符、指向已删的胶带、
+ * 以及"这是老档所以整块都该是那一张"），而这四种**在每一次读档时都该被拦住** ——
+ * 一次手改档或一次云备份合并都可能造出它们，不只是 v18 → v19 这一次。
+ * 写在 `migrate` 里只保护"版本号小于 19"的那一次；写在 `normalizeShelves` 里
+ * 保护**每一次读档**。后者才是这条自愈该在的位置。
+ *
+ * ★ 所以 `migrate` 与 `normalize` 的分工在这里很典型：
+ *  · `migrate` 管"版本之间**语义**变了"（例：v17→v18 补一个计数），
+ *    它只在跨版本那一次跑；
+ *  · `normalize` 管"这份数据**现在**是不是合法形状"，每次都跑。
+ *  这次的改动**只是形状变了**（老档的那张胶带本来贴的就是整块 = 每一行都是它），
+ *  所以它属于后者。
+ */
+export function migrateV18ToV19(save: SaveGame): SaveGame {
   save.meta.version = SAVE_VERSION;
   return save;
 }
@@ -1013,6 +1041,50 @@ function normalizeShelves(run: RunState): void {
     } else {
       shelf.handyRank = null;
     }
+
+    /*
+     * ★ 胶带粒度是**一行**（v19，用户拍板 2026-10）：`zoneIds` 必须与行数同长。
+     *
+     * 四种坏法全部在这里拦住，而且**都不抛异常**（这一行跑在"打开游戏"的路径上）：
+     *
+     *  ① 没有可用的 `zoneIds` → 按 v18 及更早的 `zoneId` 补齐：
+     *     **老档的那一张胶带贴的是整块货架**，所以它的每一行都该是它 ——
+     *     这是"迁移一条语义"该有的做法：新结构在旧数据上要复现旧行为，
+     *     否则一次更新会把所有人写好的分区清空；
+     *  ② 长度与 `h` 不符 → 补齐。⚠ 短的那种**不平均分配**，
+     *     而是把已有的按行序保留、缺的补 `null`：多出来的行 = 没贴，
+     *     那比"凭空给每一行都贴一张"更保守（后者会改掉玩家的归位率）；
+     *  ③ 指向的胶带**已经不在 `zones` 里**（胶带被删过）→ 置 `null`。
+     *     留着的话 `findZone` 返回 null、行为上等于没贴，但存档里会留一堆
+     *     来历不明的 id —— 而 `recycleIfOrphan` 的判据是"还有没有行在用"，
+     *     那些死 id 会让它**以为有人在用**，于是胶带永远回收不掉；
+     *  ④ ★ **`zoneIds` 全空但 `zoneId` 有值** → 用 `zoneId` 补。
+     *
+     * ## ★★ 第 ④ 条是补出来的，而且它抓到了一个真的坏档
+     *
+     * 我原来只写"`zoneIds` 是数组就用它"，而**生成夹具的脚本**
+     * （以及任何"先 `createShelf`、再补一个 `zoneId`"的代码）会同时留下
+     * `zoneIds: [null,null,null,null]` 与 `zoneId: 'zone_all'` ——
+     * 于是读档时优先信了那个全空的数组，**那张胶带变成孤儿**：
+     * 存档里有 1 张胶带，而每块架子每一行都显示"还没贴"。
+     *
+     * 是 `scripts/_probe-migrate.ts` 把 `good` 档打出来才看见的
+     * （模型层、迁移层、测试全绿，因为这个坏档**自身是自洽的**）。
+     * 判据改成"数组里**真的有东西**才算数"，四个 null 等于没有。
+     */
+    const known = new Set(run.zones.map((z) => z.id));
+    const legacy = (shelf as { zoneId?: unknown }).zoneId;
+    const rawIds = (shelf as { zoneIds?: unknown }).zoneIds;
+    const modern = Array.isArray(rawIds) && rawIds.some((v) => typeof v === 'string' && v.length > 0);
+    const source: unknown[] = modern
+      ? (rawIds as unknown[])
+      : Array.from({ length: shelf.h }, () => legacy);
+    shelf.zoneIds = Array.from({ length: shelf.h }, (_, row) => {
+      const v = source[row];
+      return typeof v === 'string' && known.has(v) ? v : null;
+    });
+    // 老字段清掉：留着它会让下一个读代码的人以为"还能整块贴"
+    delete (shelf as { zoneId?: unknown }).zoneId;
   }
   ranked
     .sort((a, b) => (a.handyRank ?? 0) - (b.handyRank ?? 0))

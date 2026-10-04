@@ -118,7 +118,8 @@ describe('求援订单：交付与婉拒', () => {
     give(tidy.run, 'bandage', 3);
     tidy.run.zones = [{ id: 'z_med', name: '药', color: '#000000', autoAccept: { categories: ['medicine'] } }];
     tidy.run.shelves = tidy.run.shelves.map((s) =>
-      s.id === tidy.run.shelves[0]?.id ? { ...s, zoneId: 'z_med' } : s
+      // ★ 整块贴一张 = 每一行都是它（v19 之后粒度是一行，见 `Shelf.zoneIds`）
+      s.id === tidy.run.shelves[0]?.id ? { ...s, zoneIds: s.zoneIds.map(() => 'z_med') } : s
     );
 
     // ② 上了架、但一张清单都没写（归位率 0、临期优先 1）
@@ -145,7 +146,7 @@ describe('求援订单：交付与婉拒', () => {
     give(open.run, 'bandage', 3);
     open.run.zones = [{ id: 'z_med', name: '药', color: '#000000' }]; // 空清单
     open.run.shelves = open.run.shelves.map((s) =>
-      s.id === open.run.shelves[0]?.id ? { ...s, zoneId: 'z_med' } : s
+      s.id === open.run.shelves[0]?.id ? { ...s, zoneIds: s.zoneIds.map(() => 'z_med') } : s
     );
 
     const bare = storeAtDoor();

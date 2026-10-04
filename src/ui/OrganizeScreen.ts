@@ -10,7 +10,7 @@ import { initAudio, isMuted, playSfx, setMuted } from '../fx/audio';
 import { iconSvg, itemIconSvg } from '../fx/icons';
 import { showToast, spawnCrushGhost, spawnSfxWord, spawnTidyTag } from '../fx/popup';
 import { dayLabel } from '../model/calendar';
-import { getStack, isOffZone, stackCount } from '../model/shelf';
+import { findZone, getStack, isOffZone, rowZoneId, stackCount, zoneIdsOf } from '../model/shelf';
 import type { ItemStack, Shelf, SlotPos, Zone } from '../model/types';
 import type { GameStore } from '../state/store';
 import { roomForNewFurniture, roomsOf, type RoomView } from '../systems/home';
@@ -180,8 +180,8 @@ export class OrganizeScreen {
           this.consume(result);
           return result.ok;
         },
-        assign: (shelfId: string, zoneId: string | null) => {
-          const result = assignZone(this.store, shelfId, zoneId);
+        assign: (shelfId: string, zoneId: string | null, rows?: number[]) => {
+          const result = assignZone(this.store, shelfId, zoneId, rows);
           this.consume(result);
           return result.ok;
         }
@@ -340,22 +340,60 @@ export class OrganizeScreen {
   }
 
   private shelfHtml(shelf: Shelf, index: number, view: OrganizeView): string {
-    const zone = view.zones.find((z) => z.id === shelf.zoneId) ?? null;
     const tidy = view.tidyShelfIds.includes(shelf.id);
-    const cells: string[] = [];
+    /*
+     * ★ 一方胶带只贴**一行**（用户拍板 2026-10）。
+     *
+     * 所以颜色不再是"整块货架一个色"，而是**一行一个色** ——
+     * 一块架子上可以同时出现两三种颜色，那就是玩家自己立的规矩分布。
+     *
+     * 渲染上做成"一层行的包裹"，每层带自己的 `--zone`：
+     *  · 层左侧 4px 的色条 = 这一行贴了什么（肉眼一扫就看得出）；
+     *  · 颜色再传给层里的格子（`.slot` 的边框），所以贴了胶带的行
+     *    有一圈同色描边，**涂色**这件事在格子上也看得见。
+     *
+     * 为什么不用 `color-mix` 铺底色：格子里本来就有一枚图标 + 到期日 + 墨点，
+     * 再铺一层底会让 320px 上的小格子糊成一片（§5A 的层次口径）。
+     * 描边 + 侧色条表达得一样清楚，而且**不占格子的视觉容量**。
+     */
+    const rows: string[] = [];
     for (let row = 0; row < shelf.h; row++) {
+      const zone = findZone(view.zones, rowZoneId(shelf, row));
+      const cells: string[] = [];
       for (let col = 0; col < shelf.w; col++) {
         const stack = getStack(shelf, { row, col });
         cells.push(this.slotHtml(shelf.id, { row, col }, stack, zone));
       }
+      rows.push(`
+        <div class="shelf-row${zone ? ' is-taped' : ''}" data-shelf-row data-shelf="${shelf.id}" data-row="${row}"
+             style="--zone:${zone?.color ?? 'transparent'}"
+             title="${zone ? `第 ${row + 1} 行：${escapeHtml(zone.name)}` : `第 ${row + 1} 行：还没贴`}">
+          <span class="row-tape" aria-hidden="true"></span>
+          <span class="row-cells" style="--cols:${shelf.w}">${cells.join('')}</span>
+        </div>
+      `);
     }
+    /*
+     * 抬头那一行只报"这一架用到哪几张胶带"：
+     * 一块架子可能贴了两三张（每张占一行），所以名字要能列得下。
+     * 一张都没贴时仍然是"还没贴"。
+     */
+    const zoneNames = zoneIdsOf(shelf)
+      .map((id) => view.zones.find((z) => z.id === id))
+      .filter((z): z is Zone => Boolean(z));
+    const tapeLabel =
+      zoneNames.length === 0
+        ? '<em class="zone-name is-none">还没贴</em>'
+        : zoneNames
+            .map((z) => `<em class="zone-name" style="--zone:${z.color}">${escapeHtml(z.name)}</em>`)
+            .join('');
     return `
-      <section class="shelf-card" data-shelf-card="${shelf.id}" style="--zone:${zone?.color ?? 'transparent'}">
+      <section class="shelf-card" data-shelf-card="${shelf.id}">
         <div class="shelf-head">
-          <span class="zone-tape"></span>
-          <h2 class="shelf-title" data-shelf-title data-shelf="${shelf.id}" data-action="edit-zone" title="点一下给这架贴胶带">
+          <span class="zone-tape" style="--zone:${zoneNames[0]?.color ?? 'transparent'}"></span>
+          <h2 class="shelf-title" data-shelf-title data-shelf="${shelf.id}" data-action="edit-zone" title="点一下给某几行贴胶带">
             ${shelfLabel(shelf, index)}
-            <em class="zone-name${zone ? '' : ' is-none'}">${zone ? escapeHtml(zone.name) : '还没贴'}</em>
+            ${tapeLabel}
           </h2>
           ${tidy ? '<span class="tidy-badge">整整齐齐</span>' : ''}
           <button class="tape-btn${shelf.handyRank !== null ? ' is-handy' : ''}"
@@ -363,11 +401,11 @@ export class OrganizeScreen {
                   title="${shelf.handyRank !== null ? '门口就是这块。再点一下撤下，可以换别的架' : '把这块标成门口的顺手位（全屋只有这一块）'}">
             ${shelf.handyRank !== null ? '门口这块' : '顺手位'}
           </button>
-          <button class="tape-btn" data-action="edit-zone" data-shelf="${shelf.id}" aria-label="给这架贴胶带">
+          <button class="tape-btn" data-action="edit-zone" data-shelf="${shelf.id}" aria-label="给某几行贴胶带">
             ${iconSvg('tag')}<span>贴标签</span>
           </button>
         </div>
-        <div class="shelf-grid" style="--cols:${shelf.w}">${cells.join('')}</div>
+        <div class="shelf-rows">${rows.join('')}</div>
       </section>
     `;
   }
@@ -651,9 +689,18 @@ export class OrganizeScreen {
       case 'explain':
         showToast(this.fxLayer, hit.dataset['explain'] ?? '', 'ink');
         return;
-      case 'edit-zone':
-        if (shelfId) this.openZoneDrawer(shelfId);
+      case 'edit-zone': {
+        /*
+         * ★ 从**哪一行**点进来的，就预选哪一行。
+         *
+         * 一行一段胶带之后，"给这架贴胶带"没有唯一答案 —— 玩家点的是
+         * 第 2 行的那条色条，他想改的就是第 2 行。从抬头点进来时
+         * （没有 `data-row`）才默认整块（`rows` 传 `undefined`，由抽屉自己全选）。
+         */
+        const rowAttr = hit.dataset['row'];
+        if (shelfId) this.openZoneDrawer(shelfId, rowAttr === undefined ? undefined : [Number(rowAttr)]);
         return;
+      }
       case 'toggle-handy':
         if (shelfId) this.consume(toggleHandy(this.store, shelfId));
         return;
@@ -1061,10 +1108,17 @@ export class OrganizeScreen {
    * 打开胶带抽屉。刻意做两件事：把目标货架滚到房间区顶部（抽屉只占下半屏，
    * 货架必须露在上面）、给它加虚线高亮 —— 分区是空间概念，编辑时必须看得见那块区域。
    */
-  private openZoneDrawer(shelfId: string): void {
-    if (this.sheet.isOpen && this.sheet.currentShelfId === shelfId) return;
+  private openZoneDrawer(shelfId: string, rows?: number[]): void {
+    /*
+     * ★ "同一个货架"不再等于"同一次编辑"：从第 1 行点进来与从第 3 行点进来
+     * 要看的是不同的胶带。所以还开着的时候，只在**行也一样**时才跳过重开 ——
+     * 否则玩家点了另一行，抽屉里却还是上一行的内容（而那一行看起来"点了没反应"）。
+     */
+    const sameRows =
+      (this.sheet.currentRows.join(',') ?? '') === (rows ?? []).join(',');
+    if (this.sheet.isOpen && this.sheet.currentShelfId === shelfId && sameRows) return;
     this.clearEditHighlight();
-    this.sheet.open(shelfId);
+    this.sheet.open(shelfId, rows);
     const card = this.roomEl.querySelector<HTMLElement>(`[data-shelf-card="${shelfId}"]`);
     if (card) {
       card.scrollIntoView({ block: 'start' });

@@ -20,6 +20,8 @@ import {
   isShelfFEFO,
   readingOrder,
   roomInSlot,
+  rowZoneId,
+  setRowZoneId,
   setSlotStack,
   shelfIsEmpty,
   splitStack,
@@ -734,17 +736,31 @@ export interface ZoneInput {
    */
   categories?: CategoryId[];
   /**
-   * 显式指定"我在改这张已有的胶带"（改名 + 改色 + 改清单，其他贴着它的货架一起变）。
-   * 不传则是"给这架写一段胶带"：同名复用，没有同名才新建。
+   * 显式指定"我在改这张已有的胶带"（改名 + 改色 + 改清单，**所有贴着它的行**一起变）。
+   * 不传则是"给这几行写一段胶带"：同名复用，没有同名才新建。
    * 两种语义必须由 ui 明确区分，命令层不猜 —— 否则"改这张的名字"和"换一张新的"分不开。
    */
   zoneId?: string;
+  /**
+   * 要贴哪几行。
+   *
+   * ★ 胶带的粒度是**一行**（用户拍板 2026-10），而且"可以给多行使用"——
+   * 所以这里收一个数组，一次贴多行。
+   *
+   * ⚠ **不传 = 整块货架的每一行**。保留这个默认值有两个具体理由：
+   *  ① 老界面/老测试调它时不必改；
+   *  ② "把这一架都贴成主食区"本来就是一个常见意图，
+   *     而它现在只是"选中所有行"的一个特例 —— 不必单独一条命令。
+   */
+  rows?: number[];
 }
 
 export function applyZone(store: GameStore, shelfId: string, input: ZoneInput): CommandResult {
   const run = store.run;
   const shelfIndex = run.shelves.findIndex((s) => s.id === shelfId);
   if (shelfIndex < 0) return reject('货架不存在');
+  const shelf = run.shelves[shelfIndex];
+  if (!shelf) return reject('货架不存在');
   const name = input.name.trim();
   if (!name) return reject('胶带得有个名字');
   const color = input.color || DEFAULT_ZONE_COLOR;
@@ -752,41 +768,56 @@ export function applyZone(store: GameStore, shelfId: string, input: ZoneInput): 
   const editId = input.zoneId;
   if (editId && !findZone(run.zones, editId)) return reject('没有这张胶带');
 
-  store.commit((draft) => {
-    const shelf = draft.shelves[shelfIndex];
-    if (!shelf) return;
+  /*
+   * 要贴的行：默认整块，越界的一律丢掉。
+   * ★ 越界行**丢掉而不是夹取** —— 夹取会把"第 9 行"悄悄变成"第 3 行"，
+   * 于是玩家看到胶带贴到了一行他没选的地方。
+   */
+  const rows = (input.rows ?? Array.from({ length: shelf.h }, (_, r) => r)).filter(
+    (r) => Number.isInteger(r) && r >= 0 && r < shelf.h
+  );
+  if (rows.length === 0) return reject('没选中要贴的行');
 
-    // ① 明确在编辑某张胶带 → 改名 + 改色 + 改清单，id 不变，其他贴着它的货架一起跟着变
+  store.commit((draft) => {
+    const target = draft.shelves[shelfIndex];
+    if (!target) return;
+
+    // ① 明确在编辑某张胶带 → 改名 + 改色 + 改清单，id 不变，所有贴着它的行一起跟着变
     if (editId) {
-      const target = draft.zones.find((z) => z.id === editId);
-      if (target) {
-        target.name = name;
-        target.color = color;
-        writeZoneRule(target, categories);
+      const zone = draft.zones.find((z) => z.id === editId);
+      if (zone) {
+        zone.name = name;
+        zone.color = color;
+        writeZoneRule(zone, categories);
       }
       return;
     }
 
     // ② 同名胶带已存在 → 复用同一张（绝不造重名分区）。
     //    注意：**这里绝不改写它的清单** —— 清单属于胶带本身，
-    //    否则"把另一块架子也贴成主食区"会把主食区的清单按当前输入框的状态清掉。
+    //    否则"把另外两行也贴成主食区"会把主食区的清单按当前输入框的状态清掉。
     //    改清单只有一条路：上面的 ①（抽屉里点"改这段胶带"）。
     const sameName = draft.zones.find((z) => z.name === name);
     if (sameName) {
-      const previous = shelf.zoneId;
-      shelf.zoneId = sameName.id;
-      if (previous && previous !== sameName.id) recycleIfOrphan(draft, previous);
+      const previous = rows.map((r) => rowZoneId(target, r));
+      for (const row of rows) target.zoneIds = setRowZoneId(target, row, sameName.id);
+      // 换过去之后，那些**再没有任何一行用**的旧胶带要回收
+      for (const id of new Set(previous)) {
+        if (id && id !== sameName.id) recycleIfOrphan(draft, id);
+      }
       return;
     }
 
-    // ③ 写一段新的：先把这架腾空（旧胶带若成孤儿就回收），再贴新的
-    const previous = shelf.zoneId;
-    shelf.zoneId = null;
-    if (previous) recycleIfOrphan(draft, previous);
+    // ③ 写一段新的：先给这几行腾空（旧胶带若成孤儿就回收），再贴新的
+    const previous = rows.map((r) => rowZoneId(target, r));
+    for (const row of rows) target.zoneIds = setRowZoneId(target, row, null);
+    for (const id of new Set(previous)) {
+      if (id) recycleIfOrphan(draft, id);
+    }
     const zone: Zone = { id: nextZoneId(draft.zones), name, color };
     writeZoneRule(zone, categories);
     draft.zones.push(zone);
-    shelf.zoneId = zone.id;
+    for (const row of rows) target.zoneIds = setRowZoneId(target, row, zone.id);
   });
 
   return ok([{ type: 'zoneUpdated', shelfId }]);
@@ -906,21 +937,38 @@ export function addFurnitureCommand(
 }
 
 /** 把胶带贴到货架上；zoneId = null 表示"撕下"（这张胶带没人用了就自己消失） */
-export function assignZone(store: GameStore, shelfId: string, zoneId: string | null): CommandResult {
+export function assignZone(
+  store: GameStore,
+  shelfId: string,
+  zoneId: string | null,
+  rows?: number[]
+): CommandResult {
   const run = store.run;
   const shelfIndex = run.shelves.findIndex((s) => s.id === shelfId);
   if (shelfIndex < 0) return reject('货架不存在');
   const shelfNow = run.shelves[shelfIndex];
-  const previousZone = shelfNow ? findZone(run.zones, shelfNow.zoneId) : null;
+  if (!shelfNow) return reject('货架不存在');
   if (zoneId !== null && !findZone(run.zones, zoneId)) return reject('没有这张胶带');
+
+  // 同 `applyZone`：不传 = 整块；越界丢掉（不夹取）
+  const targets = (rows ?? Array.from({ length: shelfNow.h }, (_, r) => r)).filter(
+    (r) => Number.isInteger(r) && r >= 0 && r < shelfNow.h
+  );
+  if (targets.length === 0) return reject('没选中要贴的行');
+
+  const previousZoneIds = [...new Set(targets.map((r) => rowZoneId(shelfNow, r)))].filter(
+    (id): id is string => id !== null
+  );
+  const previousZone = previousZoneIds.length === 1 ? findZone(run.zones, previousZoneIds[0]!) : null;
 
   store.commit((draft) => {
     const shelf = draft.shelves[shelfIndex];
     if (!shelf) return;
-    const previous = shelf.zoneId;
-    shelf.zoneId = zoneId;
-    // 取下/换贴之后，如果旧胶带没有任何货架在用，就把它收走
-    if (previous && previous !== zoneId) recycleIfOrphan(draft, previous);
+    for (const row of targets) shelf.zoneIds = setRowZoneId(shelf, row, zoneId);
+    // 取下/换贴之后，那些**再没有任何一行在用**的旧胶带要收走
+    for (const id of previousZoneIds) {
+      if (id !== zoneId) recycleIfOrphan(draft, id);
+    }
   });
 
   const events: OrganizeEvent[] = [{ type: 'zoneUpdated', shelfId }];
@@ -928,24 +976,33 @@ export function assignZone(store: GameStore, shelfId: string, zoneId: string | n
   return ok(events);
 }
 
-/** 显式剪掉一张胶带（UI 的"撕下最后一块"已能自动回收，这个留给脚本/M1 用） */
+/** 显式剪掉一张胶带（UI 的"撕下最后一行"已能自动回收，这个留给脚本/M1 用） */
 export function deleteZone(store: GameStore, zoneId: string): CommandResult {
   const run = store.run;
   const zone = findZone(run.zones, zoneId);
   if (!zone) return reject('没有这张胶带');
-  const affected = run.shelves.filter((s) => s.zoneId === zoneId).length;
+  // 现在数的是**行**，不是货架 —— 一张胶带可以贴在好几块架子上、每块只贴一行
+  const affected = run.shelves.reduce(
+    (n, s) => n + Array.from({ length: s.h }, (_, r) => rowZoneId(s, r)).filter((id) => id === zoneId).length,
+    0
+  );
   store.commit((draft) => {
     draft.zones = draft.zones.filter((z) => z.id !== zoneId);
     for (const shelf of draft.shelves) {
-      if (shelf.zoneId === zoneId) shelf.zoneId = null;
+      for (let row = 0; row < shelf.h; row++) {
+        if (rowZoneId(shelf, row) === zoneId) shelf.zoneIds = setRowZoneId(shelf, row, null);
+      }
     }
   });
   return ok([{ type: 'zoneRemoved', shelfId: '', name: zone.name, affected }]);
 }
 
-/** 这张胶带还有货架在用吗？没有就收走（撕下最后一块货架 = 胶带消失） */
+/** 这张胶带还有**任何一行**在用吗？没有就收走（撕下最后一行 = 胶带消失） */
 function recycleIfOrphan(run: RunState, zoneId: string): void {
-  if (run.shelves.some((s) => s.zoneId === zoneId)) return;
+  const stillUsed = run.shelves.some((s) =>
+    Array.from({ length: s.h }, (_, r) => rowZoneId(s, r)).includes(zoneId)
+  );
+  if (stillUsed) return;
   run.zones = run.zones.filter((z) => z.id !== zoneId);
 }
 

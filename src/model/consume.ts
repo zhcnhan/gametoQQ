@@ -42,6 +42,7 @@ import {
   firstBatchExpiry,
   getStack,
   readingOrder,
+  rowZoneId,
   setSlotStack,
   splitStack,
   stackCount,
@@ -122,11 +123,16 @@ export function consumeCategory(
   for (let i = 0; i < shelves.length; i++) {
     const shelf = shelves[i];
     if (!shelf) continue;
-    const zone = findZone(zones, shelf.zoneId);
     for (const pos of readingOrder(shelf)) {
       const stack = getStack(shelf, pos);
       if (!stack) continue;
       if (getItemDef(stack.itemId).category !== category) continue;
+      /*
+       * ★ 分区粒度是**一行**（用户拍板 2026-10）：取用的排序也按这一行问。
+       * 原来这里是整架的 `shelf.zoneId` —— 一块架子上"主食那两行"和
+       * "最上面那行随手堆"会拿到同一个 rank，而它们显然是两回事。
+       */
+      const zone = findZone(zones, rowZoneId(shelf, pos.row));
       candidates.push({
         rank: zoneAccepts(zone, getItemDef(stack.itemId)) ? RANK_IN_PLACE : RANK_SHELF,
         shelfIndex: i,

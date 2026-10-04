@@ -369,14 +369,15 @@ if (import.meta.env.DEV) {
       if (opts.zone === 'none') {
         draft.zones = [];
         draft.shelves.forEach((s) => {
-          s.zoneId = null;
+          // 一行的粒度：整块清空 = 每一行都置 null
+          s.zoneIds = Array.from({ length: s.h }, () => null);
         });
       } else if (opts.zone === 'all') {
         draft.zones = [
           { id: 'zone_all', name: '全收', color: '#000000', autoAccept: { categories: [...CATEGORY_ORDER] } }
         ];
         draft.shelves.forEach((s) => {
-          s.zoneId = 'zone_all';
+          s.zoneIds = Array.from({ length: s.h }, () => 'zone_all');
         });
       }
     });
@@ -398,6 +399,7 @@ if (import.meta.env.DEV) {
    *   · `100boxes`   囤货期 D-7，100 箱 1000+ 件（整理页的压测位）
    *   · `big-house`  整理期 D-7，**活过 3 次**（身份与房间全解锁）+ 两间房 7 块家具
    *   · `empty-room` 整理期 D-7，**活过 1 次**（储藏间刚解锁但**还空着**）
+   *   · `rows`       整理期 D-7，**三张胶带按行贴**（看行级颜色：一块架上三种状态）
    *
    * ★ `big-house` / `empty-room` 是后加的，理由很具体：多房间与"加家具"都要先
    * 把客厅加满（6 块 = 600 元），而普通档在 D-7 只有几百块、还要留钱囤货 ——
@@ -410,7 +412,9 @@ if (import.meta.env.DEV) {
    *
    * ★ 这是**开发期工具**：生产构建里整个 `if (import.meta.env.DEV)` 块都不存在。
    */
-  const load = async (name: 'good' | 'messy' | '100boxes' | 'big-house' | 'empty-room'): Promise<void> => {
+  const load = async (
+    name: 'good' | 'messy' | '100boxes' | 'big-house' | 'empty-room' | 'rows'
+  ): Promise<void> => {
     const text = await (await fetch(`/src/tools/save-${name}.txt`)).text();
     window.localStorage.setItem('tunhuo.save', text.trim());
     window.location.reload();
@@ -430,5 +434,7 @@ if (import.meta.env.DEV) {
     `[囤货末世] 已知欠账 ${debts.length} 笔：${debts.map((d) => d.id).join(' / ')}，详见 src/meta/deferred.ts`
   );
   console.info('[囤货末世] 走测用：__tunhuo.jump(day) 可以跳到任意一天（只在 dev 构建里存在）');
-  console.info('[囤货末世] 走查用：__tunhuo.load("good" | "messy" | "100boxes" | "big-house" | "empty-room") 切到测试存档');
+  console.info(
+    '[囤货末世] 走查用：__tunhuo.load("good" | "messy" | "100boxes" | "big-house" | "empty-room" | "rows") 切到测试存档'
+  );
 }

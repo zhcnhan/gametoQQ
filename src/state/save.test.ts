@@ -11,6 +11,7 @@ import {
   writeSave
 } from './save';
 import { createStartingRun } from '../systems/setup';
+import { onlyZoneIdOf } from '../model/shelf';
 import { SURVIVAL_DAYS } from '../data/disaster';
 import { EMPTY_SURVIVAL_SNAPSHOT } from '../data/survival';
 import { bootstrapStore } from './store';
@@ -114,7 +115,17 @@ describe('存档 schema 与迁移', () => {
     const migrated = migrate(v2);
     expect(migrated?.meta.version).toBe(SAVE_VERSION);
     expect(migrated?.run?.zones[0]).toEqual({ id: 'zone_1', name: '主食区', color: '#c8372d' });
-    expect(migrated?.run?.shelves[0]?.zoneId).toBe('zone_1'); // 胶带还在货架上，只是不带规则了
+    /*
+     * ★ 胶带还在货架上，只是不带规则了。
+     *
+     * ⚠ 这一条断言的**形状**在 v19 改过一次，而夹具**没改** —— 那是故意的：
+     * 上面那个 `zoneId: 'zone_1'` 是**老档的样子**，而这条用例测的正是
+     * "老档能不能被读进来"。把夹具换成 `zoneIds` 就等于把被测的东西删掉，
+     * 这条测试会退化成永远通过的假测试。
+     * 所以改的是**断言那一侧**：v18 及更早的"整块贴一张"，
+     * 读档之后应当变成"每一行都是那一张"。
+     */
+    expect(onlyZoneIdOf(migrated!.run!.shelves[0]!)).toBe('zone_1');
   });
 
   it('v3（M0 单页整理）→ v4：day 归位到最后一天、身份与现金落地、囤货期字段补齐', () => {

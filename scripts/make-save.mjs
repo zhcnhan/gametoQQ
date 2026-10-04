@@ -249,4 +249,50 @@ function freshRun(seed = 20261001) {
   console.log(`[make-save] empty-room ${run.shelves.length} 块（客厅满 3/6、储藏间空 0/3） / ${kb}KB   位置：整理期 D-7、活过 1 次`);
 }
 
+// ───────── ⑥ 行级胶带：一块货架贴两种颜色（用户拍板 2026-10 的验收位） ─────────
+{
+  /*
+   * ★ 这一份是为了**一眼看到行级胶带**。
+   *
+   * 用户的要求是"给一行使用、可以给多行使用、并且给贴胶带的这一行上色"——
+   * 而这三件事在老档里**一个都看不出来**（它们全是"整块贴一张"，
+   * 所以每一行颜色相同，看起来与改之前一模一样）。
+   * 一份"每行颜色都一样"的档验不了这个功能，所以补这一份。
+   *
+   * 它摆的是"同一个架上三种情况"：贴主食的两行、贴随便的一行、没贴的一行 ——
+   * 一眼就能看出颜色是**跟着行**走的。
+   */
+  const run = freshRun();
+  run.identityId = 'group_buyer';
+  run.phase = 'organize';
+  run.day = FIRST_STOCKPILE_DAY;
+  run.cash = 900;
+  run.actionPoints = 3;
+  run.boxesToUnpack = makeBoxes(createCursor(run.seed), 12, run.day);
+
+  run.zones = [
+    { id: 'zone_food', name: '主食', color: '#C8372D', autoAccept: { categories: ['food', 'water'] } },
+    { id: 'zone_tool', name: '工具', color: '#4A6FA5', autoAccept: { categories: ['tool', 'fuel'] } },
+    { id: 'zone_open', name: '随便', color: '#6B8E5A' }
+  ];
+  /*
+   * 逐行贴：shelf_a 的第 0~1 行主食、第 2 行工具、第 3 行没贴 ——
+   * 一块架子上同时出现三种状态，验收时最好看。
+   */
+  const plan = {
+    shelf_a: ['zone_food', 'zone_food', 'zone_tool', null],
+    shelf_b: ['zone_food', 'zone_open', 'zone_open', null],
+    shelf_c: ['zone_tool', 'zone_tool', null, null]
+  };
+  run.shelves = run.shelves.map((s) => {
+    const rows = plan[s.id];
+    return rows ? { ...s, zoneIds: rows } : s;
+  });
+
+  const kb = write('rows', run);
+  console.log(
+    `[make-save] rows      ${run.shelves.length} 块家具 / 3 张胶带按行贴 / ${kb}KB   位置：整理期 D-7（看行级颜色）`
+  );
+}
+
 console.log(`\n[make-save] 写好了 → ${outDir}`);

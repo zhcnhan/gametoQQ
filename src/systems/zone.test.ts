@@ -1,15 +1,35 @@
 import { describe, expect, it } from 'vitest';
 import { ZONE_COLORS } from '../data/palette';
 import { getItemDef } from '../data/items';
-import { getStack, placementRate } from '../model/shelf';
+import { getStack, placementRate, rowZoneId } from '../model/shelf';
 import { createSaveGame } from '../state/save';
 import { GameStore } from '../state/store';
 import { applyZone, assignZone, createOrganizeSession, deleteZone, placeHeld, takeFromBox } from './organize';
 import { createStartingRun } from './setup';
 
 /**
- * 分区 = 纸胶带：一张胶带（名字 + 颜色）可以贴到任意多块货架上；
- * 同名即同一张；撕下最后一块货架 = 这张胶带自己消失。
+ * ★ 粒度从「一块货架」变成「一行」（用户拍板 2026-10）。
+ *
+ * 老用例里满篇是 `shelf.zoneId`，而现在一行一个。为了不让这些用例
+ * 退化成"逐行写四遍"，这里给两个读法：
+ *
+ *  · `rowZones(shelf)` —— 这块货架每一行的胶带 id（没贴是 null）；
+ *  · `onlyZone(shelf)` —— **整块贴着同一张**时返回它的 id，否则 null。
+ *    它正是老 `zoneId` 的语义（`applyZone` 不给 `rows` 时默认整块），
+ *    所以用它改那些用例是**保义**的，不是把断言放松了。
+ */
+function rowZones(shelf: { h: number } & Parameters<typeof rowZoneId>[0]): (string | null)[] {
+  return Array.from({ length: shelf.h }, (_, row) => rowZoneId(shelf, row));
+}
+
+function onlyZone(shelf: { h: number } & Parameters<typeof rowZoneId>[0]): string | null {
+  const ids = new Set(rowZones(shelf));
+  return ids.size === 1 ? ([...ids][0] ?? null) : null;
+}
+
+/**
+ * 分区 = 纸胶带：一张胶带（名字 + 颜色）可以贴到任意多**行**上；
+ * 同名即同一张；撕下最后一行 = 这张胶带自己消失。
  */
 function setup(seed = 20261001) {
   const run = createStartingRun(seed);
@@ -53,7 +73,7 @@ describe('胶带（分区）行为能力', () => {
     const res = applyZone(store, 'shelf_a', { name: '主食区', color: ZONE_COLORS[0]!, categories });
     expect(res.ok).toBe(true);
     expect(store.run.zones.length).toBe(1);
-    expect(store.run.shelves[0]!.zoneId).toBe(store.run.zones[0]!.id);
+    expect(onlyZone(store.run.shelves[0]!)).toBe(store.run.zones[0]!.id);
     expect(placementRate(store.run.shelves, store.run.zones)).toBe(1);
   });
 
@@ -75,7 +95,7 @@ describe('胶带（分区）行为能力', () => {
     expect(store.run.zones[0]!.name).toBe('主食区');
     // 颜色以先贴的那张为准，两架保持一致（否则同一张胶带两个色，玩家会懵）
     expect(store.run.zones[0]!.color).toBe(ZONE_COLORS[0]!);
-    expect(store.run.shelves[0]!.zoneId).toBe(store.run.shelves[1]!.zoneId);
+    expect(onlyZone(store.run.shelves[0]!)).toBe(onlyZone(store.run.shelves[1]!));
   });
 
   it('③ 点已有胶带就贴到这架（不新建）', () => {
@@ -84,7 +104,7 @@ describe('胶带（分区）行为能力', () => {
     const zoneId = store.run.zones[0]!.id;
     expect(assignZone(store, 'shelf_b', zoneId).ok).toBe(true);
     expect(store.run.zones.length).toBe(1);
-    expect(store.run.shelves[1]!.zoneId).toBe(zoneId);
+    expect(onlyZone(store.run.shelves[1]!)).toBe(zoneId);
   });
 
   it('④ 撕下 → 这架变"还没贴"；没人用这张胶带了，它自己消失', () => {
@@ -102,7 +122,7 @@ describe('胶带（分区）行为能力', () => {
     const res = assignZone(store, 'shelf_a', null);
     expect(res.ok).toBe(true);
     expect(store.run.zones.length).toBe(0); // 孤儿胶带自动回收
-    expect(store.run.shelves[0]!.zoneId).toBeNull();
+    expect(onlyZone(store.run.shelves[0]!)).toBeNull();
     expect(placementRate(store.run.shelves, store.run.zones)).toBe(0);
     const ev = res.events.find((e) => e.type === 'zoneRemoved');
     expect(ev && 'name' in ev ? ev.name : '').toBe('主食区');
@@ -115,8 +135,8 @@ describe('胶带（分区）行为能力', () => {
     assignZone(store, 'shelf_a', null);
 
     expect(store.run.zones.length).toBe(1);
-    expect(store.run.shelves[0]!.zoneId).toBeNull();
-    expect(store.run.shelves[1]!.zoneId).toBe(store.run.zones[0]!.id);
+    expect(onlyZone(store.run.shelves[0]!)).toBeNull();
+    expect(onlyZone(store.run.shelves[1]!)).toBe(store.run.zones[0]!.id);
   });
 
   it('⑥ 直接换贴另一张 → 旧胶带若成孤儿同样被回收', () => {
@@ -128,7 +148,7 @@ describe('胶带（分区）行为能力', () => {
 
     expect(store.run.zones.length).toBe(1);
     expect(store.run.zones[0]!.name).toBe('饮水区');
-    expect(store.run.shelves[0]!.zoneId).toBe(store.run.shelves[1]!.zoneId);
+    expect(onlyZone(store.run.shelves[0]!)).toBe(onlyZone(store.run.shelves[1]!));
   });
 
   it('⑦ 改这张胶带的名字/颜色（带 zoneId）→ 不换 id，其他贴着它的架子一起变', () => {
@@ -142,7 +162,7 @@ describe('胶带（分区）行为能力', () => {
     expect(store.run.zones[0]!.id).toBe(id);
     expect(store.run.zones[0]!.name).toBe('救命层');
     expect(store.run.zones[0]!.color).toBe(ZONE_COLORS[3]!);
-    expect(store.run.shelves[1]!.zoneId).toBe(id); // 另一架自动跟着改名
+    expect(onlyZone(store.run.shelves[1]!)).toBe(id); // 另一架自动跟着改名
   });
 
   it('⑦b 不带 zoneId 写另一个名字 → 这是"换一张"：旧的没人用就回收', () => {
@@ -151,7 +171,7 @@ describe('胶带（分区）行为能力', () => {
     applyZone(store, 'shelf_a', { name: '救命层', color: ZONE_COLORS[3]! });
 
     expect(store.run.zones.map((z) => z.name)).toEqual(['救命层']);
-    expect(store.run.shelves[0]!.zoneId).toBe(store.run.zones[0]!.id);
+    expect(onlyZone(store.run.shelves[0]!)).toBe(store.run.zones[0]!.id);
 
     // 但若"主食区"还贴在别的架子上，就不能回收
     const { store: store2 } = setup();
@@ -159,7 +179,7 @@ describe('胶带（分区）行为能力', () => {
     applyZone(store2, 'shelf_b', { name: '主食区', color: ZONE_COLORS[0]! });
     applyZone(store2, 'shelf_a', { name: '救命层', color: ZONE_COLORS[3]! });
     expect(store2.run.zones.map((z) => z.name).sort()).toEqual(['主食区', '救命层']);
-    expect(store2.run.shelves[1]!.zoneId).toBe(store2.run.zones.find((z) => z.name === '主食区')!.id);
+    expect(onlyZone(store2.run.shelves[1]!)).toBe(store2.run.zones.find((z) => z.name === '主食区')!.id);
   });
 
   it('⑧ 空名字被拒；新贴的胶带不带 autoAccept 规则（M0 不评判对错）', () => {

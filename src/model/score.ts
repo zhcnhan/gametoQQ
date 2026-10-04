@@ -13,12 +13,13 @@ import { countCategory } from './consume';
 import {
   countOnHandy,
   countStacks,
+  fefoGroups,
   fefoRate,
   findZone,
   getStack,
-  isShelfFEFO,
+  isGroupFEFO,
   placementRate,
-  readingOrder,
+  rowZoneId,
   zoneListedFor
 } from './shelf';
 import type { CategoryId, DisasterProfile, Shelf, UnpackBox, Zone } from './types';
@@ -99,20 +100,33 @@ export function weightedScore(
 }
 
 /**
- * 单架是否"整整齐齐"：按到期日排好，且架上每件物资都被它所属分区**明确接收**。
+ * 单架是否"整整齐齐"：**每一行都属于某张会接收它的清单，而且每一组都排好了序**。
+ *
+ * ## 口径跟着胶带细到行（用户拍板 2026-10）
+ *
+ * 原来是"整架一个 zone + 整架排好序"。现在一块货架可以有几张胶带，
+ * 所以判定变成**逐行**：某一行没贴胶带、或贴的那张清单不接收它上面的东西，
+ * 这一架就不算整整齐齐。
+ *
+ * ★ 一条关键的后果：**一块货架只要有一行没贴，它就永远拿不到这个徽章**。
+ * 那是对的 —— 徽章说的是"这一架我完全管好了"，而一行没立规矩就不是完全管好。
+ * 想拿徽章就把它贴满（那是玩家自己的选择，不是系统的要求）。
  *
  * "明确接收"用的是 `zoneListedFor`（§12 v0.8 归位率修复），与归位率同一把尺子：
- * 一块贴了空清单的货架既不算归位、也不该拿到"整整齐齐"的徽章 ——
+ * 贴了空清单的行既不算归位、也不该拿到"整整齐齐"的徽章 ——
  * 两处判定只要不一致，玩家就会看到"归位率 0% 但整整齐齐"这种自相矛盾的屏幕。
  */
 export function isShelfTidy(shelf: Shelf, zones: readonly Zone[]): boolean {
-  if (!isShelfFEFO(shelf)) return false;
-  const zone = findZone(zones, shelf.zoneId);
-  if (!zone) return false;
-  for (const pos of readingOrder(shelf)) {
-    const stack = getStack(shelf, pos);
-    if (!stack) continue;
-    if (!zoneListedFor(zone, getItemDef(stack.itemId))) return false;
+  // 每一组（同一张胶带的多行 + 没贴胶带的行）都要排好序
+  if (!fefoGroups(shelf).every((g) => isGroupFEFO(shelf, g.rows))) return false;
+  for (let row = 0; row < shelf.h; row++) {
+    const zone = findZone(zones, rowZoneId(shelf, row));
+    if (!zone) return false;
+    for (let col = 0; col < shelf.w; col++) {
+      const stack = getStack(shelf, { row, col });
+      if (!stack) continue;
+      if (!zoneListedFor(zone, getItemDef(stack.itemId))) return false;
+    }
   }
   return true;
 }

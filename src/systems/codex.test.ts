@@ -275,8 +275,8 @@ describe('跨局结算：只发一次奖', () => {
   });
 });
 
-describe('存档 v13~v18：M2~M3 新字段的迁移与自愈', () => {
-  it('当前版本是 v18（M3 第 7 步加了"活到最后的累计次数"—— 解锁系统的唯一输入）', () => {
+describe('存档 v13~v19：M2~M3 新字段的迁移与自愈', () => {
+  it('当前版本是 v19（M3 第 7 步之后：胶带粒度细到「一行」）', () => {
     /*
      * ★ 这条断言是**故意的**：它是"改 schema 必须 +1 版本"那条规矩的报警器。
      *
@@ -285,7 +285,7 @@ describe('存档 v13~v18：M2~M3 新字段的迁移与自愈', () => {
      * 而你抬了版本号却忘了写迁移，这条会红并让你想起"迁移写了没有"。
      * 两个方向都有人守，所以它是这套自愈体系里的一个必要齿轮。
      */
-    expect(SAVE_VERSION).toBe(18);
+    expect(SAVE_VERSION).toBe(19);
   });
 
   it('★★ v17 老档：`survivedRuns` 补 0，而且**不从纪录反推**', () => {
@@ -319,6 +319,62 @@ describe('存档 v13~v18：M2~M3 新字段的迁移与自愈', () => {
     const meta = { ...createMetaProfile(), survivedRuns: 3 } as never;
     const back = deserialize(serialize({ meta, run: null, savedAt: 1, syncVersion: 1, deviceId: 'd' }));
     expect(back?.meta.survivedRuns).toBe(3);
+  });
+
+  it('★★ v18 老档的"整块胶带" → 每一行都是那一张（v19 的行级迁移）', () => {
+    /*
+     * 这条守的是"迁移一条**语义**"，而不只是"迁移一个形状"。
+     *
+     * v18 及更早的 `Shelf.zoneId` 是**一块货架贴一张**，所以搬进
+     * `zoneIds` 之后，那一张必须出现在**每一行**上。搞成"只给第 0 行"
+     * 或者"全丢掉"的话，一次更新会把所有人写好的分区清空 ——
+     * 而那种坏法**不会报错**（界面只是显示"还没贴"）。
+     */
+    const run = createStartingRun(20261008) as unknown as Record<string, unknown>;
+    const shelves = run['shelves'] as Record<string, unknown>[];
+    // 手工退回 v18 的形状：删掉 zoneIds，换成标量 zoneId
+    for (const s of shelves) {
+      delete s['zoneIds'];
+      s['zoneId'] = 'zone_legacy';
+    }
+    run['zones'] = [{ id: 'zone_legacy', name: '老的', color: '#000000' }];
+    const back = deserialize(
+      serialize({ meta: { version: 18 } as never, run: run as never, savedAt: 1, syncVersion: 1, deviceId: 'd' })
+    );
+    expect(back?.run, '这份档要能读回来').not.toBeNull();
+    for (const s of back!.run!.shelves) {
+      expect(s.zoneIds, `${s.id} 的 zoneIds 长度该等于行数`).toHaveLength(s.h);
+      for (let row = 0; row < s.h; row++) {
+        expect(s.zoneIds[row], `${s.id} 第 ${row} 行该继承那张老胶带`).toBe('zone_legacy');
+      }
+    }
+  });
+
+  it('★★ `zoneIds` 全空但 `zoneId` 有值 → 仍然按老胶带补（抓过一个真的坏档）', () => {
+    /*
+     * ★ 这条是补出来的，因为**它抓到了一个真的坏档**。
+     *
+     * "先 `createShelf`、再补一个 `zoneId`"的代码会同时留下
+     * `zoneIds: [null,null,null,null]` 与 `zoneId: 'zone_x'`。
+     * 我原来的判据是"`zoneIds` 是数组就用它" → 于是优先信了那个全空的数组，
+     * **那张胶带变成孤儿**：存档里有 1 张胶带，而每块架子每一行都显示"还没贴"。
+     *
+     * 那个坏档**自身是自洽的** —— 模型层、迁移层、测试全绿，
+     * 是我把 `good` 档逐行打出来（`scripts/_probe-migrate.ts`）才看见的。
+     * 判据因此改成"数组里**真的有东西**才算数"。
+     */
+    const run = createStartingRun(20261008) as unknown as Record<string, unknown>;
+    const shelves = run['shelves'] as Record<string, unknown>[];
+    for (const s of shelves) {
+      // 两个字段同时在，而数组是全空的
+      s['zoneIds'] = Array.from({ length: s['h'] as number }, () => null);
+      s['zoneId'] = 'zone_legacy';
+    }
+    run['zones'] = [{ id: 'zone_legacy', name: '老的', color: '#000000' }];
+    const back = deserialize(
+      serialize({ meta: { version: 18 } as never, run: run as never, savedAt: 1, syncVersion: 1, deviceId: 'd' })
+    );
+    expect(back!.run!.shelves[0]!.zoneIds[0], '全空的数组不该压过标量 zoneId').toBe('zone_legacy');
   });
 
   it('★ v14 老档：手里那件补空（不反推 —— 老档根本没记录过这件事）', () => {

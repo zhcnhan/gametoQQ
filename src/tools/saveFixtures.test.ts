@@ -16,6 +16,7 @@
  * 重新生成：`npm run make-save`（种子固定，产出可复现）
  */
 import { describe, expect, it } from 'vitest';
+import { onlyZoneIdOf } from '../model/shelf';
 import { SAVE_VERSION, deserialize } from '../state/save';
 import { householdTotals } from '../systems/organize';
 
@@ -45,11 +46,33 @@ function fixture(name: string): string {
 
 describe('测试存档', () => {
   it('四个档都在，而且都是当前版本、都能被 migrate 读回来', () => {
-    for (const name of ['100boxes', 'good', 'messy', 'big-house']) {
+    for (const name of ['100boxes', 'good', 'messy', 'big-house', 'empty-room', 'rows']) {
       const back = deserialize(fixture(name));
       expect(back, name).not.toBeNull();
       expect(back?.run, name).not.toBeNull();
       expect(back?.meta.version, name).toBe(SAVE_VERSION);
+    }
+  });
+
+  it('★ rows：一块货架上真的贴着**不同的**胶带（行级颜色的验收位）', () => {
+    /*
+     * ★ 这份夹具是给"一眼看到行级胶带"用的，所以它必须真的**每一行不同** ——
+     * 一份"每行颜色都一样"的档在屏幕上看不出与改之前有什么区别，
+     * 那就等于没有验收位。
+     */
+    const save = deserialize(fixture('rows'));
+    const shelves = save?.run?.shelves ?? [];
+    const rowsOf = (s: (typeof shelves)[number]) =>
+      Array.from({ length: s.h }, (_, r) => s.zoneIds[r] ?? null);
+    // 至少有一块货架的相邻两行是**不同**的胶带
+    const mixed = shelves.filter((s) => new Set(rowsOf(s)).size > 1);
+    expect(mixed.length, '至少要有一块架子贴了不止一种胶带').toBeGreaterThan(0);
+    // 而且要有"没贴"的行（第三种状态）
+    expect(rowsOf(mixed[0]!).some((id) => id === null)).toBe(true);
+    // 三张胶带都真的被用到（否则夹具里会有孤儿胶带）
+    const used = new Set(shelves.flatMap(rowsOf).filter((id): id is string => id !== null));
+    for (const z of save?.run?.zones ?? []) {
+      expect(used.has(z.id), `胶带「${z.name}」没有任何一行在用`).toBe(true);
     }
   });
 
@@ -127,7 +150,7 @@ describe('测试存档', () => {
     expect(onShelves).toBe(0);
     // 一件胶带都没贴 —— 归位率必然是 0
     expect(run?.zones).toHaveLength(0);
-    expect(run?.shelves.every((s) => s.zoneId === null)).toBe(true);
+    expect(run?.shelves.every((s) => onlyZoneIdOf(s) === null)).toBe(true);
   });
 
   it('生成器是种子化的：同一份档读两次结果一致（可复现）', () => {

@@ -11,7 +11,7 @@
  */
 import { CATEGORY_LABELS, CATEGORY_ORDER } from '../data/items';
 import { DEFAULT_ZONE_COLOR, ZONE_COLORS, ZONE_COLOR_NAMES } from '../data/palette';
-import { findZone } from '../model/shelf';
+import { findZone, firstZoneIdOf, rowZoneId } from '../model/shelf';
 import type { CategoryId, Shelf, Zone } from '../model/types';
 import type { ZoneInput } from '../systems/organize';
 import { shelfLabel } from './labels';
@@ -21,7 +21,7 @@ export interface ZoneSheetHost {
   getZones(): Zone[];
   /** 返回是否成功（失败时抽屉不关，让玩家看到提示条上的原因） */
   apply(shelfId: string, input: ZoneInput): boolean;
-  assign(shelfId: string, zoneId: string | null): boolean;
+  assign(shelfId: string, zoneId: string | null, rows?: number[]): boolean;
 }
 
 export class ZoneSheet {
@@ -39,6 +39,21 @@ export class ZoneSheet {
    * 现在空清单的胶带归位率是 0 —— 胶带本身不给分，清单才给分。
    */
   private categories: CategoryId[] = [];
+  /**
+   * 这次要贴**哪几行**（用户拍板 2026-10：胶带的粒度是一行，而且可以贴多行）。
+   *
+   * ★ 默认**全选**，而不是"不选任何一行"。理由：
+   *  · 打开抽屉的常见意图有两种 —— "给整块架子立规矩"（老习惯）与
+   *    "只给这两行"；默认全选让第一种仍然是一次点击，
+   *    而第二种只多点几下（点掉不要的）；
+   *  · 反过来默认全不选的话，第一种意图会变成"点 4 下才能贴"，
+   *    而那正是老玩家最常做的事。
+   *
+   * ⚠ 这个选择会**改变"整块架子"的语义**：老版一次点击 = 整架一张胶带；
+   * 新版一次点击 = 每一行各贴一张**同名**胶带（也就是仍然一张胶带贴在多行上）。
+   * 玩家看到的名字与颜色都一样，所以观感没变。
+   */
+  private rows: number[] = [];
 
   constructor(root: HTMLElement, host: ZoneSheetHost, onClose?: () => void) {
     this.root = root;
@@ -61,14 +76,42 @@ export class ZoneSheet {
     return this.shelfId;
   }
 
-  open(shelfId: string): void {
+  /**
+   * 现在选中的行（升序）。
+   *
+   * ★ `OrganizeScreen` 用它判断"这次点进来与上次是不是同一件事"：
+   * 同一个货架的第 1 行与第 3 行**不是**同一次编辑，而只看 `shelfId`
+   * 会把第二次点击当成重复、直接 return —— 表现是"点了另一行没反应"。
+   */
+  get currentRows(): number[] {
+    return [...this.rows];
+  }
+
+  open(shelfId: string, rows?: number[]): void {
     this.shelfId = shelfId;
     const shelf = this.host.getShelves().find((s) => s.id === shelfId) ?? null;
-    const zone = shelf ? findZone(this.host.getZones(), shelf.zoneId) : null;
+    /*
+     * ★ 打开时选的"这一行"是**那一行自己的胶带**，不是"整架的第一张"。
+     * 从某一行点进抽屉时（`rows` 只给了一行），输入框要预填**那一行**贴着的东西 ——
+     * 一块架子上有两张胶带时，用整架的视角预填会预填错那一张。
+     */
+    const focusRow = rows && rows.length === 1 ? rows[0] : undefined;
+    const zone =
+      shelf === null
+        ? null
+        : findZone(
+            this.host.getZones(),
+            focusRow !== undefined ? rowZoneId(shelf, focusRow) : firstZoneIdOf(shelf)
+          );
     // 这架已经贴着胶带 → 输入框就是"这张胶带的编辑器"（预填它现在的名字、颜色与清单）
     this.name = zone?.name ?? '';
     this.color = zone?.color ?? this.pickFreeColor();
     this.categories = [...(zone?.autoAccept?.categories ?? [])];
+    // 选中的行：外部指定优先，否则整块
+    this.rows =
+      rows && rows.length > 0
+        ? rows.filter((r) => r >= 0 && r < (shelf?.h ?? 0))
+        : Array.from({ length: shelf?.h ?? 0 }, (_, r) => r);
     this.root.hidden = false;
     this.render();
     const input = this.root.querySelector<HTMLInputElement>('input[data-zone-name]');
@@ -99,8 +142,13 @@ export class ZoneSheet {
     return ZONE_COLORS.find((c) => !used.has(c)) ?? DEFAULT_ZONE_COLOR;
   }
 
+  /** 这张胶带现在贴在**几行**上（原来是"几块货架"—— 粒度变了，这个数也要跟着变） */
   private usageCount(zoneId: string): number {
-    return this.host.getShelves().filter((s) => s.zoneId === zoneId).length;
+    let n = 0;
+    for (const shelf of this.host.getShelves()) {
+      for (let row = 0; row < shelf.h; row++) if (rowZoneId(shelf, row) === zoneId) n += 1;
+    }
+    return n;
   }
 
   private onClick(e: MouseEvent): void {
@@ -127,11 +175,57 @@ export class ZoneSheet {
       }
       case 'save': {
         const editing = this.currentZone();
-        // 已贴胶带 → 改这张（改名/改色/改清单，其他贴着它的货架一起变）；没贴 → 写一段新的
+        /*
+         * ★ `rows` 每次都要带上 —— 它是"这次贴哪几行"。
+         *
+         * 改一张已有的胶带时（`editing`）也带：那张胶带本来就贴在若干行上，
+         * 而玩家在抽屉里看到的名字/颜色/清单是**整张胶带**的，
+         * 所以"保存"的意思是"这张胶带现在也贴到选中的这些行上"。
+         */
         const input: ZoneInput = editing
-          ? { name: this.name, color: this.color, categories: this.categories, zoneId: editing.id }
-          : { name: this.name, color: this.color, categories: this.categories };
+          ? {
+              name: this.name,
+              color: this.color,
+              categories: this.categories,
+              zoneId: editing.id,
+              rows: this.rows
+            }
+          : { name: this.name, color: this.color, categories: this.categories, rows: this.rows };
         if (this.host.apply(shelfId, input)) this.close();
+        return;
+      }
+      case 'row': {
+        /*
+         * 切换某一行选没选中。
+         *
+         * ★ 只切选中态、**不重建 DOM** —— 与改色、改清单同一个坑：
+         * 重建会把输入框的焦点与手机上的键盘顶掉。
+         */
+        const row = Number(hit.dataset['row']);
+        if (!Number.isInteger(row)) return;
+        this.rows = this.rows.includes(row)
+          ? this.rows.filter((r) => r !== row)
+          : [...this.rows, row].sort((a, b) => a - b);
+        hit.classList.toggle('is-on', this.rows.includes(row));
+        this.syncRowSummary();
+        return;
+      }
+      case 'rows-all': {
+        const shelf = this.host.getShelves().find((s) => s.id === shelfId);
+        if (!shelf) return;
+        this.rows = Array.from({ length: shelf.h }, (_, r) => r);
+        this.root.querySelectorAll<HTMLElement>('[data-zone-act="row"]').forEach((el) => {
+          el.classList.add('is-on');
+        });
+        this.syncRowSummary();
+        return;
+      }
+      case 'rows-none': {
+        this.rows = [];
+        this.root.querySelectorAll<HTMLElement>('[data-zone-act="row"]').forEach((el) => {
+          el.classList.remove('is-on');
+        });
+        this.syncRowSummary();
         return;
       }
       case 'cat': {
@@ -147,19 +241,25 @@ export class ZoneSheet {
       case 'assign': {
         const zoneId = hit.dataset['zoneId'];
         if (!zoneId) return;
-        if (this.host.assign(shelfId, zoneId)) this.close();
+        if (this.host.assign(shelfId, zoneId, this.rows)) this.close();
         return;
       }
       case 'detach': {
         const zone = this.currentZone();
         if (!zone) return;
-        const others = this.usageCount(zone.id) - 1;
+        /*
+         * ★ 撕下的范围 = **选中的那几行**，不是"这一整架"。
+         * 一块架子上有两张胶带时，"从这架撕下"是一句会误导的话 ——
+         * 所以说法改成按行数，而且数的是**行**（粒度变了）。
+         */
+        const others = this.usageCount(zone.id) - this.rows.length;
+        const rowText = this.rows.length === 1 ? '这一行' : `这 ${this.rows.length} 行`;
         const message =
           others > 0
-            ? `从这架撕下「${zone.name}」？另外 ${others} 块货架还贴着它。`
-            : `从这架撕下「${zone.name}」？没有别的货架在用它，这张胶带会一起撕掉。`;
+            ? `从${rowText}撕下「${zone.name}」？另外 ${others} 行还贴着它。`
+            : `从${rowText}撕下「${zone.name}」？没有别处用它了，这张胶带会一起撕掉。`;
         if (!window.confirm(message)) return;
-        if (this.host.assign(shelfId, null)) this.close();
+        if (this.host.assign(shelfId, null, this.rows)) this.close();
         return;
       }
       default:
@@ -167,10 +267,22 @@ export class ZoneSheet {
     }
   }
 
+  /**
+   * 抽屉里那张胶带（按**当前选中的行**取）。
+   *
+   * ★ 取第一张选中的行的胶带，而不是整架的第一张 ——
+   * 一块架子上有两张胶带时（每张占一行），"这架贴的是什么"没有唯一答案，
+   * 而玩家点开抽屉时心里想的是**他刚才点的那一行**。
+   */
   private currentZone(): Zone | null {
     if (!this.shelfId) return null;
     const shelf = this.host.getShelves().find((s) => s.id === this.shelfId);
-    return shelf ? findZone(this.host.getZones(), shelf.zoneId) : null;
+    if (!shelf) return null;
+    const row = this.rows.length > 0 ? Math.min(...this.rows) : undefined;
+    return findZone(
+      this.host.getZones(),
+      row !== undefined ? rowZoneId(shelf, row) : firstZoneIdOf(shelf)
+    );
   }
 
   /** 一张胶带的清单，说人话 */
@@ -209,6 +321,32 @@ export class ZoneSheet {
     if (note) note.textContent = this.categoryNote();
   }
 
+  /**
+   * 选中的行数变了之后，把"当前"那一块的说法改掉。
+   *
+   * ★ 它**不重建 DOM**（与改色、改清单同一个坑：重建会顶掉输入框焦点）。
+   * 行选择器自己是靠 `classList.toggle('is-on')` 直接改的，所以这里只管文字。
+   *
+   * ⚠ 一行都没选时要说清"贴不了"，而不是留一块让人以为还能保存的界面 ——
+   * 命令层会 `reject('没选中要贴的行')`，而界面上先说出来更省一次点击。
+   */
+  private syncRowSummary(): void {
+    const note = this.root.querySelector<HTMLElement>('[data-row-summary]');
+    if (note) {
+      note.textContent =
+        this.rows.length === 0
+          ? '一行都没选。先在上面点几行，再贴胶带。'
+          : `选中的行还没贴胶带。没清单就算不出这些行的归位率。`;
+    }
+    // 保存按钮在"一行都没选"时禁用 —— §4A：不许有点了没反应的按钮
+    const save = this.root.querySelector<HTMLButtonElement>('button[data-zone-act="save"]');
+    if (save) {
+      const none = this.rows.length === 0;
+      save.disabled = none;
+      save.title = none ? '先选几行' : '';
+    }
+  }
+
   private render(): void {
     if (!this.shelfId) return;
     const shelves = this.host.getShelves();
@@ -219,7 +357,36 @@ export class ZoneSheet {
       return;
     }
     const zones = this.host.getZones();
-    const current = findZone(zones, shelf.zoneId);
+    /*
+     * 抽屉里那一段"当前"以**选中的第一行**为准。
+     * ⚠ 但 `tapeList` 里那个"这架已贴"的标记要按**行**算：
+     * 一块架子有两张胶带时，"这架已贴「主食」"是假话（只有两行贴着它）。
+     */
+    const focusRow = this.rows.length > 0 ? Math.min(...this.rows) : undefined;
+    const current = findZone(
+      zones,
+      focusRow !== undefined ? rowZoneId(shelf, focusRow) : firstZoneIdOf(shelf)
+    );
+
+    /*
+     * 行的选择器。
+     *
+     * ★ 它是这次改动**唯一新增的交互**，所以做得尽量笨：
+     * 一行一个按钮，点一下贴上/取下；外加"全选 / 全不选"两个快捷。
+     * 不做拖拽框选、不做长按多选 —— 一块货架最多 4 行，两个按钮就够了，
+     * 而更花哨的交互在手机上更容易误触。
+     */
+    const rowButtons = Array.from({ length: shelf.h }, (_, row) => {
+      const on = this.rows.includes(row);
+      const zone = findZone(zones, rowZoneId(shelf, row));
+      return `<button class="row-pick${on ? ' is-on' : ''}" data-zone-act="row" data-row="${row}"
+        style="--zone:${zone?.color ?? 'transparent'}"
+        aria-pressed="${on ? 'true' : 'false'}"
+        title="${zone ? `第 ${row + 1} 行现在贴着「${escapeHtml(zone.name)}」` : `第 ${row + 1} 行还没贴`}">
+        <span class="row-pick-tape"></span><span class="row-pick-num">第 ${row + 1} 行</span>
+        ${zone ? `<span class="row-pick-zone">${escapeHtml(zone.name)}</span>` : ''}
+      </button>`;
+    }).join('');
 
     const swatches = ZONE_COLORS.map((color) => {
       const active = color === this.color ? ' is-active' : '';
@@ -238,8 +405,16 @@ export class ZoneSheet {
           .map((zone) => {
             const used = this.usageCount(zone.id);
             const isCurrent = current?.id === zone.id;
-            const here = shelves.some((s) => s.id === this.shelfId && s.zoneId === zone.id);
-            const word = here ? (used > 1 ? `这架已贴 · 共 ${used} 架` : '这架已贴') : used > 1 ? `${used} 架在用` : '贴着 1 架';
+            // ★ "这里贴了几行"而不是"这架已贴"—— 一块架子可以同时贴两张胶带
+            const hereRows = Array.from({ length: shelf.h }, (_, row) => row).filter(
+              (row) => rowZoneId(shelf, row) === zone.id
+            ).length;
+            const word =
+              hereRows > 0
+                ? `这架贴了 ${hereRows} 行 · 共 ${used} 行`
+                : used > 1
+                  ? `${used} 行在用`
+                  : '贴着 1 行';
             // 清单必须展示出来：玩家点"贴到这架"之前，得先看得见这张胶带收什么
             return `<button class="tape-slot${isCurrent ? ' is-current' : ''}" data-zone-act="assign" data-zone-id="${zone.id}" style="--zone:${zone.color}">
               <span class="tape-slot-name">${escapeHtml(zone.name)}</span>
@@ -247,15 +422,15 @@ export class ZoneSheet {
             </button>`;
           })
           .join('')
-      : '<p class="zone-empty">还没撕过胶带。给它起个名字，贴到货架上就行。</p>';
+      : '<p class="zone-empty">还没撕过胶带。给它起个名字，贴到选中的行上就行。</p>';
 
     const currentBlock = current
       ? `<div class="tape-current" style="--zone:${current.color}">
            <span class="tape-chip">${escapeHtml(current.name)}</span>
-           <span class="tape-current-meta">这架贴着它 · ${this.usageCount(current.id)} 架在用 · ${escapeHtml(this.ruleText(current))}</span>
+           <span class="tape-current-meta">这一行贴着它 · 全屋 ${this.usageCount(current.id)} 行在用 · ${escapeHtml(this.ruleText(current))}</span>
            <button class="mini mini-danger" data-zone-act="detach">撕下来</button>
          </div>`
-      : `<p class="zone-empty">这架还没贴胶带。没清单就算不出这架的归位率。</p>`;
+      : `<p class="zone-empty" data-row-summary>选中的行还没贴胶带。没清单就算不出这些行的归位率。</p>`;
 
     this.root.innerHTML = `
       <div class="drawer-blocker" data-zone-act="close"></div>
@@ -266,11 +441,21 @@ export class ZoneSheet {
         </header>
         ${currentBlock}
         <div class="field">
-          <span>已有胶带（点一下贴到这架）</span>
+          <span class="field-label">贴到哪几行？
+            <em class="field-hint">一行一段胶带，同一段可以贴多行</em>
+            <span class="row-quick">
+              <button class="mini" data-zone-act="rows-all">全选</button>
+              <button class="mini" data-zone-act="rows-none">全不选</button>
+            </span>
+          </span>
+          <div class="row-picker">${rowButtons}</div>
+        </div>
+        <div class="field">
+          <span>已有胶带（点一下贴到选中的行）</span>
           <div class="tape-list">${tapeList}</div>
         </div>
         <div class="field">
-          <span>${current ? '改这段胶带（改名 / 换色 / 改清单，贴着它的架子一起变）' : '撕一段新胶带'}</span>
+          <span>${current ? '改这段胶带（改名 / 换色 / 改清单，贴着它的行一起变）' : '撕一段新胶带'}</span>
           <div class="tape-new">
             <input type="text" maxlength="8" placeholder="写上名字，比如 救命层" data-zone-name value="${escapeHtml(this.name)}" />
             <div class="swatches">${swatches}</div>
@@ -279,11 +464,19 @@ export class ZoneSheet {
               <div class="cat-row">${chips}</div>
               <p class="cat-note" data-cat-note>${escapeHtml(this.categoryNote())}</p>
             </div>
-            <button class="btn btn-primary" data-zone-act="save">${current ? '改这段胶带' : '贴到这架'}</button>
+            <button class="btn btn-primary" data-zone-act="save">${current ? '改这段胶带' : this.rows.length === 1 ? '贴到这一行' : `贴到这 ${this.rows.length} 行`}</button>
           </div>
         </div>
       </div>
     `;
+    /*
+     * ★ 渲染完之后对一次状态：`syncRowSummary` 那个函数负责"一行都没选时
+     * 禁用保存按钮"这一条（§4A 不许有点了没反应的按钮）。
+     * 它平时是在玩家点行时被调用的，而**首次渲染**这条路不经过点击 ——
+     * 不在这里补一次的话，"打开抽屉时本来就一行没选"那个状态会漏掉
+     * （那个状态现在到不了：`open()` 默认全选；但它是一个将来会被踩到的坑）。
+     */
+    this.syncRowSummary();
   }
 }
 
