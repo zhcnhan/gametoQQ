@@ -1,0 +1,286 @@
+{
+  "kind": "dayEvent",
+  "batch": "白天-04",
+  "batchNote": "本批 9 条，把白天事件从 51 条补到 60 条（**进入目标 60~100 的下界**）。\n\n★ 前 3 批已经把三个老点位（超市/药店/五金店）与六个新点位各自写了戏，\n所以这一批换一个维度：写**点位之外的白天** —— 路上、楼下、回家路上、\n以及\"今天不出门\"这件事本身。\n\n★ 三条硬约束（`check-content` 强制）：\n  ① 每个选项**净收益必须为正**（只有代价的选项不许有）；\n  ② `stockCut` / `limit` 不能单独构成一个选项（限购与缺货是处境，不是奖励）；\n  ③ label ≤ 8 字。",
+  "entries": [
+    {
+      "id": "d_road_blocked",
+      "text": "前面路口堆着一人高的碎砖，是昨晚那声响留下的。绕路要多走二十分钟。",
+      "tier": 1,
+      "decision": "绕路（费时间费体力），还是从砖堆上翻过去（省时间但有风险）",
+      "options": [
+        {
+          "label": "绕路走",
+          "outcome": "你多走了两条街。路上顺手捡了一块还算完整的木板，塞进车里。",
+          "effect": {
+            "stamina": -4,
+            "mood": 2,
+            "grab": {
+              "category": "tool",
+              "count": 1
+            }
+          }
+        },
+        {
+          "label": "翻过去",
+          "outcome": "你手脚并用爬了过去，裤子上划了道口子。省下的时间够你多跑一家店。",
+          "effect": {
+            "stamina": -2,
+            "mood": 3,
+            "cash": 6
+          }
+        }
+      ],
+      "tags": [
+        "people",
+        "supply"
+      ]
+    },
+    {
+      "id": "d_old_man_trolley",
+      "text": "楼下那位老人正在往手推车上绑纸箱，绳子松了两次。",
+      "tier": 1,
+      "decision": "搭把手（费几分钟），还是赶自己的路",
+      "options": [
+        {
+          "label": "搭把手",
+          "outcome": "你替他把绳子重新绕了两圈。他从兜里摸出两个鸡蛋塞给你。",
+          "effect": {
+            "stamina": -2,
+            "mood": 4,
+            "grab": {
+              "category": "food",
+              "count": 2
+            }
+          }
+        },
+        {
+          "label": "赶自己的路",
+          "outcome": "你从他身边走过去。回头看时他还在那儿弄。",
+          "effect": {
+            "stamina": 2,
+            "mood": -1
+          }
+        }
+      ],
+      "tags": [
+        "neighbor",
+        "people"
+      ]
+    },
+    {
+      "id": "d_bus_shelter_note",
+      "text": "公交站牌的背面贴着一张手写的纸：\"三楼有热水，自己带壶\"。",
+      "tier": 2,
+      "decision": "照着去（省水钱但要花时间），还是当没看见",
+      "options": [
+        {
+          "label": "上去看看",
+          "outcome": "真的有一壶热水，还有半袋别人留下的挂面。你灌满了自己的瓶子。",
+          "effect": {
+            "stamina": -3,
+            "mood": 3,
+            "grab": {
+              "category": "water",
+              "count": 3
+            }
+          }
+        },
+        {
+          "label": "当没看见",
+          "outcome": "你继续往前走，心里记下了那栋楼的门牌号。",
+          "effect": {
+            "mood": 2
+          }
+        }
+      ],
+      "tags": [
+        "neighbor",
+        "water"
+      ]
+    },
+    {
+      "id": "d_stay_home_list",
+      "text": "今天风大，你决定不出门，把昨天写的那张清单又看了一遍。",
+      "tier": 1,
+      "decision": "在家把货重新归一遍（整理但不进货），还是硬出门跑一趟",
+      "options": [
+        {
+          "label": "在家归一遍",
+          "outcome": "你把两格换了个位置，顺手清掉一堆没用的包装。屋子看着大了一圈。",
+          "effect": {
+            "stamina": -3,
+            "mood": 8
+          }
+        },
+        {
+          "label": "还是出门",
+          "outcome": "风把门吹得咣当响。你在外面跑了一圈，带回来点东西。",
+          "effect": {
+            "stamina": -4,
+            "mood": 1,
+            "grab": {
+              "category": "food",
+              "count": 2
+            }
+          }
+        }
+      ],
+      "tags": [
+        "supply"
+      ]
+    },
+    {
+      "id": "d_parking_swap",
+      "text": "楼下有人在挪车，说要把车位让给一辆拉货的面包车。",
+      "tier": 2,
+      "decision": "帮着推一把（费体力，但认识了拉货的人），还是回屋",
+      "options": [
+        {
+          "label": "帮着推一把",
+          "outcome": "车停进去之后，司机记了你的楼号，说以后有货可以捎你一段。",
+          "effect": {
+            "stamina": -5,
+            "mood": 4,
+            "cash": 20
+          }
+        },
+        {
+          "label": "回屋",
+          "outcome": "你站在窗边看他们把车停好。外面冷，屋里还行。",
+          "effect": {
+            "stamina": 2,
+            "mood": 4
+          }
+        }
+      ],
+      "tags": [
+        "neighbor",
+        "people"
+      ]
+    },
+    {
+      "id": "d_rain_shelter",
+      "text": "突然下起雨来，你抱着东西站在一家关门的店门口。屋檐很短。",
+      "tier": 1,
+      "decision": "冒雨跑回去（淋湿但快），还是等雨停（费时间但东西不湿）",
+      "options": [
+        {
+          "label": "冒雨跑",
+          "outcome": "跑到家时外套能拧出水来，但怀里那袋东西是干的 —— 你一直捂着它。",
+          "effect": {
+            "stamina": -3,
+            "mood": 5,
+            "grab": {
+              "category": "food",
+              "count": 1
+            }
+          }
+        },
+        {
+          "label": "等雨停",
+          "outcome": "雨下了四十分钟。你在檐下把袋子垫在脚上，等它小下去才走。",
+          "effect": {
+            "mood": 4,
+            "stamina": 1
+          }
+        }
+      ],
+      "tags": [
+        "water"
+      ]
+    },
+    {
+      "id": "d_scrap_collector",
+      "text": "一个收废品的推着车从巷子里出来，车上堆着铁皮和旧电线。",
+      "tier": 2,
+      "decision": "拿钱换点能用的小东西，还是让他过去",
+      "options": [
+        {
+          "label": "挑几样",
+          "outcome": "你花了几块钱，挑了一段绳子和两个还算结实的铁盒，都拿上了。",
+          "effect": {
+            "cash": -10,
+            "mood": 2,
+            "grab": {
+              "category": "tool",
+              "count": 3
+            }
+          }
+        },
+        {
+          "label": "让他过去",
+          "outcome": "他推着车走远了，轮子在地上刮出很长的声音。",
+          "effect": {
+            "mood": 2
+          }
+        }
+      ],
+      "tags": [
+        "supply",
+        "tool"
+      ]
+    },
+    {
+      "id": "d_laundry_line",
+      "text": "楼下的晾衣绳上挂满了别人家的衣服，其中一床被子已经晾了两天。",
+      "tier": 1,
+      "decision": "趁天好把自己那床也拿下去晒（占地方但晚上睡得干爽），还是算了",
+      "options": [
+        {
+          "label": "抱下去晒",
+          "outcome": "你占了半个绳位。被子在太阳下鼓起来，收的时候带着一股熨过的味道。",
+          "effect": {
+            "stamina": -4,
+            "mood": 7
+          }
+        },
+        {
+          "label": "算了",
+          "outcome": "你把被子翻了个面，拍了拍，重新铺回床上。",
+          "effect": {
+            "stamina": 2,
+            "mood": 1
+          }
+        }
+      ],
+      "tags": [
+        "neighbor",
+        "warmth"
+      ]
+    },
+    {
+      "id": "d_late_payment",
+      "text": "前几天欠了楼下小店一笔钱。今天路过，老板正在算账。",
+      "tier": 2,
+      "decision": "现在把钱还了（现金少一截，但人情在），还是先拖着",
+      "options": [
+        {
+          "label": "现在还了",
+          "outcome": "老板数了数，说你还挺讲究，从柜台底下摸出一包东西塞给你。",
+          "effect": {
+            "cash": -30,
+            "mood": 5,
+            "grab": {
+              "category": "food",
+              "count": 3
+            }
+          }
+        },
+        {
+          "label": "先拖着",
+          "outcome": "你从门口走过去，他抬头看了你一眼，没说话。",
+          "effect": {
+            "mood": 1,
+            "stamina": 1
+          }
+        }
+      ],
+      "tags": [
+        "neighbor",
+        "market",
+        "people"
+      ]
+    }
+  ]
+}

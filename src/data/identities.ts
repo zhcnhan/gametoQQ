@@ -134,7 +134,41 @@ export const IDENTITY_DEFS: readonly IdentityDef[] = [
     tier: 2,
     decision: "保暖最便宜但手提小，这局要把'冷'这件事用钱解决"
   },
-  // ═══ 生成内容 身份 止 ═══
+  // ═══ 生成内容 身份 止 ═══,
+  // ═══ 生成内容 身份-02 起（scripts/merge-content.mjs 插入，别手改这一段） ═══
+{
+    id: "fuel_depot_guard",
+    name: "燃料库夜间门卫",
+    tagline: "在油库值了六年夜班，哪根阀门什么脾气你都清楚",
+    startCash: 640,
+    vehicleCapacity: 68,
+    carryLimit: 26,
+    perk: "知道后门在哪：燃料便宜 35%",
+    perkRule: {
+      kind: "categoryDiscount",
+      categories: ["fuel"],
+      rate: 0.35
+    },
+    tier: 4,
+    decision: "燃料便宜三成半、车也大，但手上现金是所有人里最少的 —— 前三天你会很紧"
+  },
+{
+    id: "hospital_pharmacist",
+    name: "医院药房",
+    tagline: "在药房窗口后面站了十年，看一眼就知道该拿哪一格",
+    startCash: 660,
+    vehicleCapacity: 38,
+    carryLimit: 10,
+    perk: "认得每一盒：医疗品便宜 35%",
+    perkRule: {
+      kind: "categoryDiscount",
+      categories: ["medicine"],
+      rate: 0.35
+    },
+    tier: 4,
+    decision: "药最便宜，但车载与手提都是最低那一档 —— 你能把药价压到地上，却搬不回多少"
+  },
+  // ═══ 生成内容 身份-02 止 ═══
 ];
 
 const IDENTITY_BY_ID: ReadonlyMap<string, IdentityDef> = new Map(IDENTITY_DEFS.map((d) => [d.id, d]));

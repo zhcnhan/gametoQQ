@@ -517,6 +517,40 @@ function checkEntry(file, kind, obj, index) {
      * 一句话：**净变化必须为正**，且不能是"改商店"（那是处境不是奖励）。
      */
     const PLAYER_FACING = ['cash', 'health', 'mood', 'stamina', 'shelter', 'grab', 'boxDefId'];
+    /*
+     * ★★ 效果字段白名单 —— 这一层是 2026-10 补的，因为**同一个错我犯了两次**。
+     *
+     * 白天与夜间是**两套不同的效果类型**，而它们只差几个字段：
+     *
+     *   `DayOptionEffect`  cash / priceUp / stockCut / limit / grab / boxDefId / stamina / mood / visitLost
+     *   `NightEffect`      cash / health / mood / stamina / shelter / boxDefId
+     *
+     * 于是凭印象写就会把 `shelter` 写进白天事件（我第 2 轮写了一次 `health`、
+     * 第 5 轮写了四次 `shelter`/`health`）。而**唯一的防线是 `tsc`** ——
+     * 那意味着必须先 `merge-content` 入库才看得见，而那时表已经被写脏了。
+     *
+     * 这一层补上之后，**入库前**就会报"白天事件没有 shelter 这个字段"。
+     * 报错信息里同时给出两边各有哪些字段 —— 因为这两套的差别正是坑本身。
+     */
+    const EFFECT_FIELDS_BY_KIND = {
+      dayEvent: ['cash', 'priceUp', 'stockCut', 'limit', 'grab', 'boxDefId', 'stamina', 'mood', 'visitLost'],
+      nightEvent: ['cash', 'health', 'mood', 'stamina', 'shelter', 'boxDefId']
+    };
+    const allowedEffects = EFFECT_FIELDS_BY_KIND[kind] ?? [];
+    for (const [oi, opt] of opts.entries()) {
+      for (const key of Object.keys(opt?.effect ?? {})) {
+        if (!allowedEffects.includes(key)) {
+          const other = kind === 'dayEvent' ? EFFECT_FIELDS_BY_KIND.nightEvent : EFFECT_FIELDS_BY_KIND.dayEvent;
+          fail(
+            file,
+            id,
+            `选项[${oi}]「${opt?.label ?? '?'}」的 effect.${key} 在${kind === 'dayEvent' ? '白天' : '夜间'}事件里不存在。\n` +
+              `      ${kind === 'dayEvent' ? '白天' : '夜间'}有：${allowedEffects.join(' / ')}\n` +
+              `      ${other.includes(key) ? `「${key}」是${kind === 'dayEvent' ? '夜间' : '白天'}事件才有的字段 —— 两套类型只差几个字段，最容易混的就是它` : '两边都没有这个字段'}`
+          );
+        }
+      }
+    }
     for (const [oi, opt] of opts.entries()) {
       const eff = opt?.effect ?? {};
       const hits = PLAYER_FACING.filter((k) => eff[k] !== undefined);

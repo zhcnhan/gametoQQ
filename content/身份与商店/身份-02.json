@@ -1,0 +1,39 @@
+{
+  "kind": "identity",
+  "batch": "身份-02",
+  "batchNote": "本批 2 条，把身份从 8 条补到 10 条（进入目标 10~16 的下界）。\n\n★ 加这两条的直接理由：**tier 4 原来是 0 个身份** —— 而 116 场灾难里有 8 场是 tier 4。\n那条解锁阶梯的**最高一层在身份这侧是空的**：玩家辛苦解锁到第四层，能看到的新身份一个都没有。\n\n★ 两条都放在 tier 4，折扣率拉到 0.35（现有最高是退休教师的 0.3），\n代价压在别处 —— 现金最少、手提最低。这是 tier 4 该有的形状：\n**某一项明显更强，另一项明显更差**，而不是全面更强。\n\n坐标（相对现有 8 条）：\n  · 夜班门卫 startCash 640（现有最低 680）/ 车载 68（高）/ 手提 26（高）\n  · 医院药房   startCash 660（次低）/ 车载 38（最低）/ 手提 10（最低）\n\n★ 天赋仍然只用 `categoryDiscount` 一种 kind。想过加新 kind（例：\"车载 +20%\"），\n但那会让这一批从\"加内容\"变成\"加机制\"，而 §10.2.6 把内容与机制分得很清楚。\n燃料库夜间门卫这一条已经把\"折扣 0.35 + 现金最少\"这个取舍写满了，不必再动引擎。",
+  "entries": [
+    {
+      "id": "fuel_depot_guard",
+      "name": "燃料库夜间门卫",
+      "tagline": "在油库值了六年夜班，哪根阀门什么脾气你都清楚",
+      "startCash": 640,
+      "vehicleCapacity": 68,
+      "carryLimit": 26,
+      "perk": "知道后门在哪：燃料便宜 35%",
+      "perkRule": {
+        "kind": "categoryDiscount",
+        "categories": ["fuel"],
+        "rate": 0.35
+      },
+      "tier": 4,
+      "decision": "燃料便宜三成半、车也大，但手上现金是所有人里最少的 —— 前三天你会很紧"
+    },
+    {
+      "id": "hospital_pharmacist",
+      "name": "医院药房",
+      "tagline": "在药房窗口后面站了十年，看一眼就知道该拿哪一格",
+      "startCash": 660,
+      "vehicleCapacity": 38,
+      "carryLimit": 10,
+      "perk": "认得每一盒：医疗品便宜 35%",
+      "perkRule": {
+        "kind": "categoryDiscount",
+        "categories": ["medicine"],
+        "rate": 0.35
+      },
+      "tier": 4,
+      "decision": "药最便宜，但车载与手提都是最低那一档 —— 你能把药价压到地上，却搬不回多少"
+    }
+  ]
+}

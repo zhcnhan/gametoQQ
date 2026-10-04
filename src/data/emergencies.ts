@@ -587,7 +587,89 @@ export const EMERGENCY_DEFS: readonly EmergencyDef[] = [
     tier: 3,
     decision: "怕热的东西有没有避开暖气片与南窗"
   },
-  // ═══ 生成内容 突发-02 止 ═══
+  // ═══ 生成内容 突发-02 止 ═══,
+  // ═══ 生成内容 突发-03 起（scripts/merge-content.mjs 插入，别手改这一段） ═══
+{
+    id: "e_porch_theft",
+    text: "门口那箱昨天拆了一半的东西不见了。地上留着拖过的印子。",
+    category: "food",
+    needOnHandy: 2,
+    lost: 2,
+    consumes: false,
+    tier: 2,
+    decision: "东西放在门口过夜 —— 你的秩序经不经得起别人动过"
+  },
+{
+    id: "e_borrowed_never_back",
+    text: "你想起上个月借出去的那两件，借的人再没提起过。",
+    category: "tool",
+    needOnHandy: 2,
+    lost: 1,
+    consumes: false,
+    tier: 1,
+    decision: "借出去的东西算不算还在你的账上"
+  },
+{
+    id: "e_misplaced_stash",
+    text: "你确定有一包东西放在某个地方，但翻了三处都没有。",
+    category: "medicine",
+    needOnHandy: 2,
+    lost: 1,
+    consumes: false,
+    tier: 2,
+    decision: "有没有固定的位置，还是每次都靠记性"
+  },
+{
+    id: "e_door_jammed",
+    text: "门框受潮涨了，钥匙能转但推不开。你从里面顶了两下也没用。",
+    category: "tool",
+    needOnHandy: 2,
+    lost: 2,
+    consumes: false,
+    tier: 3,
+    decision: "屋子本身出问题的时候，你手上有没有能修的东西"
+  },
+{
+    id: "e_floor_soft",
+    text: "靠墙那块地板踩上去发软，边缘有点翘。下面大概是受潮了。",
+    category: "tool",
+    needOnHandy: 3,
+    lost: 2,
+    consumes: false,
+    tier: 3,
+    decision: "受潮的地面会不会被注意到，取决于你有没有留出通道"
+  },
+{
+    id: "e_vent_blocked",
+    text: "通风口被堆上去的东西挡住了一半，屋里的空气一整天都是闷的。",
+    category: "fuel",
+    needOnHandy: 2,
+    lost: 1,
+    consumes: false,
+    tier: 2,
+    decision: "为了多放两件而堵住通风，值不值"
+  },
+{
+    id: "e_mystery_box",
+    text: "有人在你门口放了一个纸箱，没有署名。拎起来有点沉。",
+    category: "luxury",
+    needOnHandy: 1,
+    lost: 1,
+    consumes: false,
+    tier: 3,
+    decision: "来路不明的东西要不要收 —— 它占地方，也可能有别的问题"
+  },
+{
+    id: "e_followed_cat",
+    text: "一只猫跟着你上了楼，蹲在门口不走，毛上沾着灰。",
+    category: "food",
+    needOnHandy: 1,
+    lost: 1,
+    consumes: false,
+    tier: 2,
+    decision: "多一张嘴意味着每天要多分出去一点 —— 而它会待在屋里"
+  },
+  // ═══ 生成内容 突发-03 止 ═══
 ];
 
 const EMERGENCY_BY_ID: ReadonlyMap<string, EmergencyDef> = new Map(EMERGENCY_DEFS.map((d) => [d.id, d]));
