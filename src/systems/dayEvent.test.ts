@@ -41,26 +41,37 @@ function startedStore(seed = 20261001, identityId = 'group_buyer') {
 }
 
 describe('物价波动：它补的是 D-03 留下的那个空洞', () => {
-  it('逐日上行：灾前便宜，灾难越近越贵', () => {
-    // 囤货期开头是"灾前促销"，D-3 回到原价，D-Day 起跳
-    expect(dayPriceFactor(-7)).toBeLessThan(1);
-    expect(dayPriceFactor(-3)).toBe(1);
-    expect(dayPriceFactor(-2)).toBeGreaterThan(1);
-    expect(dayPriceFactor(0)).toBeGreaterThan(dayPriceFactor(-1));
-    expect(dayPriceFactor(14)).toBeGreaterThan(dayPriceFactor(7));
-    // 单调不减：物价不会自己回落 —— 这是这个函数唯一的默认方向
+  /*
+   * ★ 这一组用例在 D-19 清偿时**改过口径**，值得说明改了什么：
+   *
+   * 原来 `dayPriceFactor(day)` 读的是 `data/dayEvents.ts` 里一张写死的
+   * 22 行表（只覆盖寒潮）。现在它**按灾难**算了，所以每条都要带上灾难 id；
+   * 而"单调不减"那条断言也不再成立 —— 一个**衰减型**的灾难
+   * （"极地涡旋"那种 0.9 → 0.5）本来就该一路降价。
+   */
+  const COLD = 'cold_snap';
+
+  it('囤货期：灾前便宜，越接近灾难越贵（这一段 116 场共用同一把尺子）', () => {
+    expect(dayPriceFactor(-7, COLD)).toBeLessThan(1);
+    expect(dayPriceFactor(-3, COLD)).toBe(1);
+    expect(dayPriceFactor(-2, COLD)).toBeGreaterThan(1);
+    // 单调不减：囤货期**灾难还没来**，面对的是同一件事（消息在传、东西在涨）
     let prev = 0;
-    for (let day = -7; day <= 14; day++) {
-      const f = dayPriceFactor(day);
-      expect(f).toBeGreaterThanOrEqual(prev);
+    for (let day = -7; day <= -1; day++) {
+      const f = dayPriceFactor(day, COLD);
+      expect(f, `D${day}`).toBeGreaterThanOrEqual(prev);
       prev = f;
     }
   });
 
+  it('D-Day 起跳：降临那天一定比前一天贵（这是一局里最陡的一次涨价）', () => {
+    expect(dayPriceFactor(0, COLD)).toBeGreaterThan(dayPriceFactor(-1, COLD));
+  });
+
   it('日历覆盖不到的日子夹到最近的一档，不返回 0 或 NaN', () => {
-    expect(dayPriceFactor(-99)).toBe(dayPriceFactor(-7));
-    expect(dayPriceFactor(99)).toBe(dayPriceFactor(14));
-    expect(Number.isFinite(dayPriceFactor(1000))).toBe(true);
+    expect(dayPriceFactor(-99, COLD)).toBe(dayPriceFactor(-7, COLD));
+    expect(dayPriceFactor(999, COLD)).toBe(dayPriceFactor(14, COLD));
+    expect(Number.isFinite(dayPriceFactor(1000, COLD))).toBe(true);
   });
 
   it('★ 当天单价里烘进了当天的物价倍率 —— 界面与结账读的是同一个数', () => {

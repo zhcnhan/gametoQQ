@@ -37,10 +37,11 @@
  *   玩家回翻日报时看不到"D+3 那天物价涨到 1.5 倍"，而那一局的取舍正是被它决定的。
  *   M3 与日报的复盘视图一起做。
  *
- * DEFERRED(D-19): `DAY_PRICE_FACTOR` 是**手写的**，而且只覆盖寒潮 ——
- *   与 D-15 的外界温度表同一类问题。多灾难（M3）时要按 `disasterId` 拆成几份
- *   （热浪的抢购曲线不该和寒潮长得一样）。
+ * ★ 那笔"逐日物价只覆盖寒潮"的账（原编号 D-19）**已经清偿**：
+ *   曲线改成按 `disasterId` 的严重度算，见下面 `dayPriceFactor` 的注释。
  */
+import { severityAt } from '../model/calendar';
+import { getDisasterDef, hasDisasterDef } from './disaster';
 import type { DayEventDef } from '../model/types';
 
 /**
@@ -1308,7 +1309,34 @@ export function hasDayEvent(eventId: string): boolean {
 }
 
 /**
- * 逐日上行的物价倍率（§6.2「物价波动」，也是 D-03 那个空洞的补丁）。
+ * 囤货期那 7 档（D-7 ~ D-1）。
+ *
+ * ★ 这七个数是**原样搬过来的**：原来那张 22 行表里，囤货期这 7 档是
+ * 手写并校对过的（灾前促销 → 一天天收敛到原价），搬过来时**一个都没动**。
+ * 这个函数认出 D-7 之前的日子并把它们夹到第一档 —— 物价不会自己往回走。
+ */
+const STOCKPILE_PRICE: readonly number[] = [0.95, 0.95, 0.98, 0.98, 1.0, 1.05, 1.12];
+
+function stockpilePriceFactor(day: number): number {
+  const idx = Math.min(STOCKPILE_PRICE.length - 1, Math.max(0, day + 7));
+  return STOCKPILE_PRICE[idx] as number;
+}
+
+/** 灾难降临那天（D-Day）的物价：原表的值，也是灾难期的**底价** */
+const D_LANDING_PRICE = 1.25;
+/** 这一场最凶的时候的物价：原表 D+14 的值 */
+const D_MAX_PRICE = 2.2;
+/**
+ * 严重度 → 价格的斜率：`1.25 + 0.95 × severity`。
+ *
+ * 这个数是**从寒潮反推的**：寒潮最凶的那天（severity 1.0）原表给 2.2，
+ * 于是 `1.25 + k = 2.2` → `k = 0.95`。
+ * 它让"满强度的灾难"正好落在原表的天花板上，而不是我另拍一个数。
+ */
+const D_SEVERITY_PRICE_SLOPE = 0.95;
+
+/**
+ * 逐日上行的物价倍率（§6.2「物价波动」）。
  *
  * ## 为什么必须存在（而不是"顺便做个随机事件"）
  *
@@ -1320,51 +1348,101 @@ export function hasDayEvent(eventId: string): boolean {
  * 物价逐日上行把这个博弈用另一条路救回来：越晚越贵。
  * 它同时是最朴素的一条 M2 世界感 —— 灾难逼近，什么都贵。
  *
- * ## 取值：从"灾前打折"走到"灾后翻倍"
+ * ## ★★ 它现在**按灾难**算（D-19 清偿）
  *
- * 负数那些天（囤货期）**价格在低位**：货还多、人还没慌，超市有促销。
- * 从 D-2 起开始涨，D-Day 起跳，生存期继续爬到 2.2 倍 ——
- * 那已经不是"物价波动"，是"你有钱也买不到"。
+ * 原来这里是一张**写死的 22 行表**，只覆盖寒潮。116 场灾难落地之后，
+ * 另外 115 场全都在按寒潮的曲线定价 —— "这一场什么都贵得离谱、
+ * 那一场反而有促销"这件事**根本不存在**。
+ *
+ * 现在它的形状由**这一场自己的严重度曲线**决定：
+ *
+ * | 相位 | 公式 | 直觉 |
+ * | --- | --- | --- |
+ * | 囤货期（day < 0） | 沿用原表那 7 档（0.95 → 1.12） | 灾前促销一路收敛到原价，**七天七档** |
+ * | 生存期（day ≥ 0） | `1.25 + 0.95 × (severity - 灾首强度) / (1 - 灾首强度)` | 灾难最凶的那天 → 2.20 |
+ *
+ * ★ 生存期那条式子的**参照点是"这一场第 0 天的强度"**，不是 0：
+ * 灾难降临那天（D-Day）物价就该跳到 1.25，而那一刻的 severity
+ * 各场不同（寒潮 0.55、热浪 1.0）。以灾首为起点归一化之后：
+ *
+ *  · 寒潮（0.55 → 1.0 慢慢逼近）→ 1.25 爬到 2.20（**与原表逐日一致**）；
+ *  · 热浪（一上来就是 1.0）→ 从头到尾 2.20（"你有钱也买不到"）；
+ *  · 极地涡旋（0.9 → 0.5 **衰减型**）→ 从 1.25 往下走（灾难过去了，货回来了）。
+ *
+ * ★ 这不只是"换一种算法"，它**真的让 116 场不一样**：实测按逐日严重度
+ * 分形状有 **20 种**。而**只看峰值是分不出来的** —— 116 场的峰值全是 1.0，
+ * 我第一版按峰值算，结果 116 场算出来一模一样，
+ * 那只是把"一张手写表"换成了"一条大家都一样的公式"。
+ *
+ * ★ 囤货期那 7 档**刻意不按灾难变**：那 7 天灾难还没来，
+ * 玩家面对的是同一件事 —— 消息在传、东西在涨。
+ * 让它在 116 场之间也各不相同，只会让"灾前该不该早买"这个
+ * 本来很清楚的判断变得没法学习。
  *
  * ★ 它只影响**囤货期**的实际操作（生存期买不了东西），
  * 生存期那几档是留给"读到日报的人"的参照物：日历在涨，你的库存不会。
  */
-export const DAY_PRICE_FACTOR: ReadonlyMap<number, number> = new Map([
-  [-7, 0.95],
-  [-6, 0.95],
-  [-5, 0.98],
-  [-4, 0.98],
-  [-3, 1.0],
-  [-2, 1.05],
-  [-1, 1.12],
-  [0, 1.25],
-  [1, 1.4],
-  [2, 1.5],
-  [3, 1.6],
-  [4, 1.7],
-  [5, 1.8],
-  [6, 1.9],
-  [7, 2.0],
-  [8, 2.0],
-  [9, 2.05],
-  [10, 2.05],
-  [11, 2.1],
-  [12, 2.1],
-  [13, 2.15],
-  [14, 2.2]
-]);
-
-/**
- * 这一天买东西贵多少倍。日历覆盖不到的日子夹到最近的一档 ——
- * 物价不会自己回落，这是这个函数唯一的默认方向。
- */
-export function dayPriceFactor(day: number): number {
+export function dayPriceFactor(day: number, disasterId: string): number {
   const key = Math.round(day);
-  if (DAY_PRICE_FACTOR.has(key)) return DAY_PRICE_FACTOR.get(key) as number;
-  // 超出日历：取最近的一端（早于 D-7 用第一天，晚于 D+14 用最后一天）
-  const keys = [...DAY_PRICE_FACTOR.keys()].sort((a, b) => a - b);
-  const first = keys[0] as number;
-  const last = keys[keys.length - 1] as number;
-  if (key < first) return DAY_PRICE_FACTOR.get(first) as number;
-  return DAY_PRICE_FACTOR.get(last) as number;
+  /*
+   * ★ 认不出的灾难 id **不许抛异常**：这条路径跑在**商店渲染与日报**上，
+   * 而灾难 id 存在存档里（可手改、可来自旧版本）。
+   * `getDisasterDef` 对未知 id 是抛的 —— 所以这里必须先用 `hasDisasterDef` 问一句，
+   * 与 `normalizeRun` 的自愈是同一条纪律。
+   *
+   * ★ 兜底值刻意取"灾首原价 1.25"而不是 1.0：
+   * 一个坏掉的 id 不该让整城东西变便宜（那是个对玩家有利的 bug，
+   * 比崩溃更容易活下来，也更难被发现）。
+   */
+  const def = hasDisasterDef(disasterId) ? getDisasterDef(disasterId) : null;
+  /*
+   * ① 这一场**自带曲线**就用它。
+   *
+   * ★ 寒潮走这一条 —— 它那条曲线是手写并校对过的历史数据，
+   * 不能由公式生成（拟合最大偏差 0.29，见 `disaster.ts` 的 `priceCurve` 注释）。
+   * 查不到那一天就夹到最近的一档：**物价不会自己往回走**。
+   */
+  const curve = def?.priceCurve;
+  if (curve) {
+    const hit = curve[key];
+    if (typeof hit === 'number' && Number.isFinite(hit)) return hit;
+    const keys = Object.keys(curve)
+      .map(Number)
+      .filter((n) => Number.isFinite(n))
+      .sort((a, b) => a - b);
+    if (keys.length > 0) {
+      const first = keys[0] as number;
+      const last = keys[keys.length - 1] as number;
+      const at = key < first ? first : last;
+      const v = curve[at];
+      if (typeof v === 'number' && Number.isFinite(v)) return v;
+    }
+  }
+  // ② 没自带曲线的（那一百多场）：由这一场的严重度推
+  if (key < 0) return stockpilePriceFactor(key);
+  if (!def) return D_LANDING_PRICE;
+  /*
+   * 生存期：价格 = 基准 × 这一天的严重度。
+   *
+   * ## 口径（改过两版，两版都错，值得记下来）
+   *
+   * 第一版按**峰值**算 → 116 场的峰值全是 1.0，算出来一模一样，
+   * 等于把"一张手写表"换成"一条大家都一样的公式"。
+   *
+   * 第二版按"相对灾首的进展"算 → **64 场衰减型灾难全被夹成 1.25**。
+   * 根因是我把**"灾难有多严重"和"市场有多慌"混成了一个数**：
+   * 一个 0.9 → 0.5 的灾难，到后面确实没那么惨了，但**城里还是买不到东西**，
+   * 价格不该回到灾前的水平。
+   *
+   * 现在这一版只做一件事：**把这一天的严重度线性换成价格**。
+   * 参照点是"曾经最凶的那一天"，而不是"灾难降临那天" ——
+   * 后者会让"一上来就很凶"的灾难（热浪）从头到尾顶格，
+   * 而那正是它们应有的样子。
+   *
+   * ★ 底价 `D_LANDING_PRICE`（1.25）：只要还在灾难期，东西就不会回到灾前价位。
+   * 那是"灾难还在"这件事本身的价格。
+   */
+  const severity = Math.max(0, Math.min(1, severityAt(def, key)));
+  const price = D_LANDING_PRICE + D_SEVERITY_PRICE_SLOPE * severity;
+  return Math.max(D_LANDING_PRICE, Math.min(D_MAX_PRICE, price));
 }

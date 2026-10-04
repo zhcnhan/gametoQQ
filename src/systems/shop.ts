@@ -106,8 +106,13 @@ export function priceOf(item: ItemDef, shop: ShopDef, identity: IdentityDef): nu
  * 事件带来的涨价（`run.shopPriceFactor`）不走这里：它在事件发生**之后**才存在，
  * 所以由 `basePriceOf()` 叠一次。两份倍率各管一段，账在 `basePriceOf` 上合。
  */
-export function rollShopStocks(identity: IdentityDef, cursor: RngCursor, day: number, disasterId?: string): ShopDayStock[] {
-  const factor = dayPriceFactor(day);
+export function rollShopStocks(identity: IdentityDef, cursor: RngCursor, day: number, disasterId: string): ShopDayStock[] {
+  /*
+   * ★ 逐日物价倍率**必须带灾难 id**（D-19 清偿）：它现在是按这一场自己的
+   * 严重度曲线算的，不再是那张只覆盖寒潮的全局表。
+   * `disasterId` 是必填参数 —— 忘了传会是编译错误，而不是静默用错曲线。
+   */
+  const factor = dayPriceFactor(day, disasterId);
   /*
    * §10B.3.1 的 L2 维度：**商店供应**与**物价加成**。
    *

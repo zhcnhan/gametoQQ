@@ -355,7 +355,8 @@ if (import.meta.env.DEV) {
       draft.night = null;
       if (day < 0) {
         draft.phase = 'stockpile_shop';
-        draft.shopStocks = rollShopStocks(identity, createCursor(draft.seed), day);
+        // 走测钩子也要带上这一场的灾难 id —— 物价曲线是按灾难算的（D-19）
+        draft.shopStocks = rollShopStocks(identity, createCursor(draft.seed), day, draft.disasterId);
         draft.seed = createCursor(draft.seed).state;
       } else {
         draft.phase = 'survival_day';
