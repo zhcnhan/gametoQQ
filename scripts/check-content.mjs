@@ -37,6 +37,14 @@ const notes = [];
 const fail = (file, where, message) => problems.push({ file, where, message });
 const note = (message) => notes.push(message);
 
+/**
+ * `--fresh`：按"这是一批还没入库的新内容"来审（id 与现有表冲突 → 不合格）。
+ *
+ * 默认**不**这样判，因为最常用的动作是"把已经入库的那批再校验一遍"，
+ * 而那种情况下 id 当然已经存在（见下面那段注释）。
+ */
+const FRESH = process.argv.slice(2).includes('--fresh');
+
 // ——————————————————————————————————————————————————————————————
 // 1. 从源码里读出各内容表（脚本跑在 tsconfig 之外，所以用正则粗读）
 // ——————————————————————————————————————————————————————————————
@@ -48,24 +56,43 @@ const note = (message) => notes.push(message);
  * 而引入 `typescript` 的编程接口会让它变重。代价是它读不出运行期才拼出来的 id ——
  * 而这套数据表本来就是纯字面量（§10B.5 要求"内容表纯数据、无副作用"）。
  */
-function readIds(relPath, pattern) {
+/**
+ * 从一张已编译的数据表里收集 id。
+ *
+ * ★ **引号必须两种都认**，这一条是踩出来的：
+ *
+ * 手写的那部分用单引号（`id: 'canned_beans'`，项目的 TS 风格），
+ * 而 `merge-content.mjs` 从 JSON 生成的那段用**双引号**（`id: "canned_fish"`，
+ * JSON 风格原样搬过来）。原来这里的正则只写了 `'([^']+)'`，于是：
+ *
+ *   · 生成的 40 件物资**一件都不在这个集合里**；
+ *   · 凡是引用它们的批次（`shop-01.json` 的 40 条 offers）全被判"引用了不存在的物资"。
+ *
+ * 而报出来的话术是"引用了不存在的物资" —— 它会把人带去查**内容**，
+ * 而真正错的是**这个正则**。这类"诊断指向错误的方向"比不报更贵：
+ * 照着它改，会去改一份本来正确的内容。
+ *
+ * ⚠ 修这个 bug 时想清楚一件事：**"不在集合里"不等于"不存在"**。
+ * 集合少了一半，症状是"内容被判错"，而不是"工具报自己坏了"。
+ */
+function readIds(relPath) {
   const abs = join(src, relPath);
   if (!existsSync(abs)) return [];
   const text = readFileSync(abs, 'utf8');
   const ids = [];
-  for (const m of text.matchAll(pattern)) ids.push(m[1]);
+  for (const m of text.matchAll(/^\s*id:\s*['"]([^'"]+)['"]/gm)) ids.push(m[1]);
   return ids;
 }
 
-const ITEM_IDS = readIds('data/items.ts', /^\s*id:\s*'([^']+)'/gm);
-const BOX_IDS = readIds('data/boxes.ts', /^\s*id:\s*'([^']+)'/gm);
-const DISASTER_IDS = readIds('data/disaster.ts', /^\s*id:\s*'([^']+)'/gm);
-const NIGHT_IDS = readIds('data/nightEvents.ts', /^\s*id:\s*'([^']+)'/gm);
-const DAY_IDS = readIds('data/dayEvents.ts', /^\s*id:\s*'([^']+)'/gm);
-const EMERGENCY_IDS = readIds('data/emergencies.ts', /^\s*id:\s*'([^']+)'/gm);
-const HELP_IDS = readIds('data/helpRequests.ts', /^\s*id:\s*'([^']+)'/gm);
-const IDENTITY_IDS = readIds('data/identities.ts', /^\s*id:\s*'([^']+)'/gm);
-const SHOP_IDS = readIds('data/shops.ts', /^\s*id:\s*'([^']+)'/gm);
+const ITEM_IDS = readIds('data/items.ts');
+const BOX_IDS = readIds('data/boxes.ts');
+const DISASTER_IDS = readIds('data/disaster.ts');
+const NIGHT_IDS = readIds('data/nightEvents.ts');
+const DAY_IDS = readIds('data/dayEvents.ts');
+const EMERGENCY_IDS = readIds('data/emergencies.ts');
+const HELP_IDS = readIds('data/helpRequests.ts');
+const IDENTITY_IDS = readIds('data/identities.ts');
+const SHOP_IDS = readIds('data/shops.ts');
 
 const CATEGORIES = ['food', 'water', 'medicine', 'fuel', 'warmth', 'tool', 'luxury'];
 
@@ -496,7 +523,18 @@ function checkBatch(file, data) {
       // 只记第一次出现的位置，否则报出来的"第几条"会指向后一次（指错位置比不报更糟）
       if (seen.has(id)) fail(file, id, `批内重复 id（第 ${seen.get(id) + 1} 条与第 ${i + 1} 条）`);
       else seen.set(id, i);
-      // 与现有表冲突
+      /*
+       * 与现有表冲突 —— **只在"这是新批次"时才该判不合格**。
+       *
+       * ★ 这一条原来是无条件判的，于是产生了一个很别扭的后果：
+       * **已经入库的那批内容，再也不能被重新校验了**（它当然"已存在"）。
+       * 而"重新校验一次看看有没有坏"正是最常用的动作，也是入库前最后一次自查。
+       * 一条会让常见正确操作失败的工具，最后会被人绕过 —— 那比没有检查更糟。
+       *
+       * 所以分成两种：
+       *   · 默认（`--fresh` 未给）：已存在**只提示**，不算不合格；
+       *   · `--fresh`（专门用来审"新交来的一批"）：按冲突判不合格。
+       */
       const existing = {
         item: ITEM_IDS,
         nightEvent: NIGHT_IDS,
@@ -507,7 +545,10 @@ function checkBatch(file, data) {
         helpRequest: HELP_IDS,
         shop: SHOP_IDS
       }[kind];
-      if (existing?.includes(id)) fail(file, id, `与现有内容表冲突（该 id 已存在）`);
+      if (existing?.includes(id)) {
+        if (FRESH) fail(file, id, `与现有内容表冲突（该 id 已存在）`);
+        else notes.push(`${file} · ${id}：这个 id 已经在表里了（按"重新校验已入库的批次"处理）`);
+      }
     }
   }
   return entries.map((e) => e?.id).filter((x) => typeof x === 'string');

@@ -897,7 +897,395 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
       tags: ["panic", "supply"]
     }
   },
-  // ═══ 生成内容 day-01 止 ═══
+  // ═══ 生成内容 day-01 止 ═══,
+  // ═══ 生成内容 day-02 起（scripts/merge-content.mjs 插入，别手改这一段） ═══
+  {
+    weight: 1.0,
+    def:   {
+      id: "d_levee_shift",
+      text: "居委会的人上门，说夜里堤上要人值守，一户出一个。",
+      tier: 2,
+      decision: "自己去值守（耗时间体力），出钱请人替，还是不去",
+      options: [
+        {
+          label: "去值守",
+          outcome: "堤上守到后半夜。回来睡了半天，楼道里见了点头。",
+          effect: {
+            stamina: -4,
+            mood: 5
+          }
+        },
+        {
+          label: "出钱请人",
+          outcome: "你托人换了班，{spentCash}。顺手在镇上带了箱粮油回来。",
+          effect: {
+            cash: -60,
+            boxDefId: "box_staple"
+          },
+          requireFullCash: true
+        },
+        {
+          label: "不去",
+          outcome: "你没去。第二天楼道里没人跟你打招呼。",
+          effect: {
+            stamina: 3,
+            mood: 1
+          }
+        }
+      ],
+      tags: ["neighbor", "water"]
+    }
+  },
+  {
+    weight: 1.0,
+    def:   {
+      id: "d_elevator_down",
+      text: "楼里电梯停了，检修牌挂在门口。家住十几层。",
+      tier: 1,
+      decision: "自己扛一趟上楼，花钱请人搬，还是只拿最轻的",
+      options: [
+        {
+          label: "自己扛",
+          outcome: "两趟。米和水都拿进了门，腿是软的。",
+          effect: {
+            grab: {
+              category: "food",
+              count: 2
+            },
+            stamina: -6
+          }
+        },
+        {
+          label: "请人搬",
+          outcome: "两个人分两趟，把米和水都拿到了门口，{spentCash}。",
+          effect: {
+            cash: -50,
+            boxDefId: "box_staple"
+          },
+          requireFullCash: true
+        },
+        {
+          label: "只拿最轻的",
+          outcome: "你拎着两袋挂面上了楼。剩下的还堆在楼下。",
+          effect: {
+            stamina: -1,
+            mood: 2
+          }
+        }
+      ],
+      tags: ["supply"]
+    }
+  },
+  {
+    weight: 1.0,
+    def:   {
+      id: "d_repair_crew",
+      text: "楼下贴了通知：施工队明天进场，上午断水两小时。",
+      tier: 1,
+      decision: "按时间去接水，把东西挪开，还是去外面待着",
+      options: [
+        {
+          label: "照表接水",
+          outcome: "两个塑料桶都塞满了，一共四桶水。水龙头再开时已经浑了。",
+          effect: {
+            grab: {
+              category: "water",
+              count: 2
+            },
+            stamina: -2
+          }
+        },
+        {
+          label: "挪开东西",
+          outcome: "厨房地面的箱子全搬到了客厅，底下一层还翻出两袋没拆的挂面。",
+          effect: {
+            stamina: -3,
+            grab: {
+              category: "food",
+              count: 2
+            }
+          }
+        },
+        {
+          label: "去外面待着",
+          outcome: "你去了趟超市，回来水管已经修好。",
+          effect: {
+            mood: 2,
+            stamina: 2
+          }
+        }
+      ],
+      tags: ["supply", "water"]
+    }
+  },
+  {
+    weight: 1.0,
+    def:   {
+      id: "d_rumor_wave",
+      text: "业主群里有人说，下个月开始限供，配给要减半。",
+      tier: 2,
+      decision: "跟着群里去抢，自己跑一趟核实，还是当没看见",
+      options: [
+        {
+          label: "跟着抢",
+          outcome: "超市九点就空了。你抢到三袋米。",
+          effect: {
+            grab: {
+              category: "food",
+              count: 3
+            },
+            stamina: -4
+          }
+        },
+        {
+          label: "去核实",
+          outcome: "你去了趟粮站，门口的告示还是老样子。",
+          effect: {
+            mood: 3,
+            stamina: -1
+          }
+        },
+        {
+          label: "当没看见",
+          outcome: "你把群消息设成了免打扰。",
+          effect: {
+            mood: 2,
+            stamina: 2
+          }
+        }
+      ],
+      tags: ["panic", "supply"]
+    }
+  },
+  {
+    weight: 1.0,
+    def:   {
+      id: "d_neighbor_dispute",
+      text: "楼道里两家在吵，为的是谁家接了公共插座的电。",
+      tier: 1,
+      decision: "帮一边说话，居中劝和，还是关上门不管",
+      options: [
+        {
+          label: "帮一边",
+          outcome: "你说了句公道话。另一家瞪了你一眼。",
+          effect: {
+            mood: 2,
+            stamina: 1
+          }
+        },
+        {
+          label: "劝和",
+          outcome: "你把两家拉开，各说了一半。",
+          effect: {
+            mood: 4,
+            stamina: -1
+          }
+        },
+        {
+          label: "关门",
+          outcome: "门合上了。吵声隔了一层，还是听得见。",
+          effect: {
+            stamina: 3,
+            mood: 1
+          }
+        }
+      ],
+      tags: ["neighbor", "people"]
+    }
+  },
+  {
+    weight: 1.0,
+    def:   {
+      id: "d_claim_denied",
+      text: "手机进来一条短信：理赔申请不在赔付范围，请知悉。",
+      tier: 2,
+      decision: "打电话去争，认了，还是找邻居问问",
+      options: [
+        {
+          label: "打电话争",
+          outcome: "打了四十分钟，对方把申请退回了重审。",
+          effect: {
+            mood: 4,
+            stamina: -2
+          }
+        },
+        {
+          label: "认了",
+          outcome: "你把短信划掉了，这事翻篇。",
+          effect: {
+            mood: 2,
+            stamina: 2
+          }
+        },
+        {
+          label: "问邻居",
+          outcome: "楼下老王说他家上个月也这么被退过。",
+          effect: {
+            mood: 3,
+            stamina: -1
+          }
+        }
+      ],
+      tags: ["neighbor"]
+    }
+  },
+  {
+    weight: 1.0,
+    def:   {
+      id: "d_watch_patrol",
+      text: "小区门口设了卡，进出要登记，拎工具的人要开包看。",
+      tier: 2,
+      decision: "配合登记，绕开卡口，还是出人轮值",
+      options: [
+        {
+          label: "配合登记",
+          outcome: "本子写了两行。包打开，是你自己家的扳手。",
+          effect: {
+            mood: 2,
+            stamina: 1
+          }
+        },
+        {
+          label: "绕开卡口",
+          outcome: "你从侧门进了，多走了十分钟。",
+          effect: {
+            stamina: -2,
+            mood: 3
+          }
+        },
+        {
+          label: "出人轮值",
+          outcome: "你报了明天的班，队里记了你一功。",
+          effect: {
+            mood: 3,
+            stamina: -1
+          }
+        }
+      ],
+      tags: ["people", "panic"]
+    }
+  },
+  {
+    weight: 1.0,
+    def:   {
+      id: "d_long_queue",
+      text: "街口排了两支队，一队粮油，一队药。今天只够排一次。",
+      tier: 1,
+      decision: "排粮，排药，还是干脆走人",
+      options: [
+        {
+          label: "排粮",
+          outcome: "队挪得慢。傍晚你拎回两袋主食。",
+          effect: {
+            grab: {
+              category: "food",
+              count: 2
+            },
+            stamina: -4
+          }
+        },
+        {
+          label: "排药",
+          outcome: "药店的号发到一百开外。你拿到两盒消炎药。",
+          effect: {
+            grab: {
+              category: "medicine",
+              count: 2
+            },
+            stamina: -5
+          }
+        },
+        {
+          label: "走人",
+          outcome: "两条队都没排，你抄近路回了家。",
+          effect: {
+            mood: 3,
+            stamina: 2
+          }
+        }
+      ],
+      tags: ["queue", "supply"]
+    }
+  },
+  {
+    weight: 1.0,
+    def:   {
+      id: "d_loan_shark",
+      text: "有人敲门递名片，说急用钱可以押东西，三天不计息。",
+      tier: 2,
+      decision: "借一笔补货，押东西换钱，还是不借",
+      options: [
+        {
+          label: "借一笔",
+          outcome: "条子写好，钱点到手。你当天补了一趟货。",
+          effect: {
+            boxDefId: "box_staple",
+            mood: -4
+          }
+        },
+        {
+          label: "押东西换钱",
+          outcome: "一箱罐头搬下楼，他数了两百给你。",
+          effect: {
+            cash: 200,
+            mood: -3
+          }
+        },
+        {
+          label: "不借",
+          outcome: "你把名片还了回去，门关上。",
+          effect: {
+            mood: 3,
+            stamina: 1
+          }
+        }
+      ],
+      tags: ["market", "panic"]
+    }
+  },
+  {
+    weight: 1.0,
+    def:   {
+      id: "d_charity_tent",
+      text: "广场支了个棚，写着免费领物资。队伍排出去两条街。",
+      tier: 1,
+      decision: "排队去挤，等人少了再去，还是不去",
+      options: [
+        {
+          label: "排队去挤",
+          outcome: "挤了四十分钟，领到两袋挂面和一瓶水。",
+          effect: {
+            grab: {
+              category: "food",
+              count: 2
+            },
+            stamina: -5
+          }
+        },
+        {
+          label: "等会儿再去",
+          outcome: "下午人少了，棚里只剩几包纸巾，你也拿了一份。",
+          effect: {
+            grab: {
+              category: "food",
+              count: 1
+            },
+            mood: 1
+          }
+        },
+        {
+          label: "不去",
+          outcome: "你路过看了一眼就回家了。",
+          effect: {
+            mood: 2,
+            stamina: 2
+          }
+        }
+      ],
+      tags: ["people", "queue", "supply"]
+    }
+  },
+  // ═══ 生成内容 day-02 止 ═══
 ];
 
 export const DAY_EVENT_DEFS: readonly DayEventDef[] = WEIGHTED.map((w) => w.def);

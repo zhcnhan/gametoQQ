@@ -1,0 +1,175 @@
+{
+  "kind": "disaster",
+  "batch": "disaster-15",
+  "batchNote": "本批 1 场，家族=社会。已把「排长队」「高利贷」「慈善点」三条整条移出（降为事件，时间被队伍吃掉、延后的账、人潮与拥挤这三轴交给事件层）。保留的一场：征用把压力放到「按规矩被抽走」（越整齐越吃亏）。最弱的一场：征用（它的核心是「官方按件清点、散装藏起来的反而留下」，而引擎里没有独立的登记清点口径，目前只能靠 npcVisitFactor 与 shopSupplyFactor 间接表达）。",
+  "entries": [
+    {
+      "id": "requisition",
+      "name": "征用",
+      "family": "社会",
+      "level": "L3",
+      "tier": 3,
+      "axis": "官方征用物资，私人囤积被抽走",
+      "temperatures": {
+        "-7": 12,
+        "-4": 11,
+        "-1": 10,
+        "0": 9,
+        "3": 8,
+        "7": 8,
+        "11": 9,
+        "14": 10
+      },
+      "spoilRate": 1.3,
+      "dailyDrain": {
+        "fuel": 1
+      },
+      "priorityCategories": [
+        "fuel",
+        "water",
+        "luxury"
+      ],
+      "windowScene": "requisition-notice",
+      "shelterDecayPerDay": -1.5,
+      "restEfficiency": 0.7,
+      "carryFactor": 0.7,
+      "shopSupplyFactor": 0.55,
+      "closedShopIds": [
+        "hardware",
+        "wholesale"
+      ],
+      "priceSurcharge": 0.4,
+      "eventPoolWeights": {
+        "supply": 4,
+        "limit": 2
+      },
+      "npcVisitFactor": 1.5,
+      "categoryEfficiency": {
+        "food": 0.8
+      },
+      "healthRiskPerDay": 0.5,
+      "scoreWeights": {
+        "placement": 2
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "12°C。公告说要统一征用部分物资。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "11°C。居委会开始登记各家的大件。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "11°C。有人把油和工具挪到了楼上。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "10°C。征用的清单贴出来，写得很细。"
+        },
+        {
+          "day": -3,
+          "severity": 0.45,
+          "hint": "10°C。上门的人清点了冰箱和储物间。"
+        },
+        {
+          "day": -2,
+          "severity": 0.6,
+          "hint": "9°C。有人报少了数量，被对了一遍。"
+        },
+        {
+          "day": -1,
+          "severity": 0.78,
+          "hint": "9°C。第一批被拉走，是整箱的燃料。"
+        },
+        {
+          "day": 0,
+          "severity": 0.88,
+          "hint": "9°C。今天起按栋征用，挨家挨户登记。"
+        },
+        {
+          "day": 1,
+          "severity": 0.92,
+          "hint": "8°C。大件工具被列进清单，拉走了几件。"
+        },
+        {
+          "day": 2,
+          "severity": 0.95,
+          "hint": "8°C。散装的粮食留下了，整袋的被收了。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "8°C。有人把东西拆开，装进了不同的柜子。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "8°C。上门的人说下周还要清一次。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "8°C。批发站被征用，货不往零售走了。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "8°C。有人拿到一张收据，说以后补偿。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "8°C。楼里安静，没人愿意开门。"
+        },
+        {
+          "day": 8,
+          "severity": 0.98,
+          "hint": "9°C。清单加了一项，是桶装水。"
+        },
+        {
+          "day": 9,
+          "severity": 0.96,
+          "hint": "9°C。有人把燃料分装在饮料瓶里。"
+        },
+        {
+          "day": 10,
+          "severity": 0.94,
+          "hint": "9°C。被征走的货装了两车，走了。"
+        },
+        {
+          "day": 11,
+          "severity": 0.9,
+          "hint": "10°C。补偿的事没人再提。"
+        },
+        {
+          "day": 12,
+          "severity": 0.86,
+          "hint": "10°C。征用的频率低了，说是够了。"
+        },
+        {
+          "day": 13,
+          "severity": 0.82,
+          "hint": "11°C。剩下没被抽走的，反倒够撑一阵。"
+        },
+        {
+          "day": 14,
+          "severity": 0.72,
+          "hint": "11°C。今天没人上门。撑到今天就算过去了。"
+        }
+      ],
+      "counterIntuitive": "被抽走的东西里，最先走的不是吃的，是「看得见的整件」：登记的人按件清点，散装、拆开、藏起来的反而留下了，于是这一场里囤得越整齐越吃亏。",
+      "decisions": [
+        "登记要报数量，是如实报还是少报",
+        "大件的油和工具最容易被抽走，要不要提前拆散",
+        "上门的人来得更勤，配合还是想办法周旋"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/9（含 closedShopIds）/10/11/12/13/15/16，共 14 个。主打维度 12（npcVisitFactor 1.5：上门的人来得最勤）+ 9（shopSupplyFactor 0.55 + 关掉五金与批发：大宗货先被抽走）。与骚乱不撞：骚乱是混乱里被抢；本场有秩序、有清单、有登记，被拿走是「按规矩」的。与出城潮不撞：出城潮是人走空了没人来；本场是人不断地找上门。"
+    }
+  ]
+}

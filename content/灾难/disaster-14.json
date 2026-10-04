@@ -1,0 +1,341 @@
+{
+  "kind": "disaster",
+  "batch": "disaster-14",
+  "batchNote": "本批 2 场，家族=社会。已把「邻里纠纷」「保险拒赔」「治安巡逻」三条整条移出（降为事件，楼内人情账、事后兜底、自治设卡这三轴交给事件层）。保留的两场各自换轴：出城潮放到帮手消失（NPC 全族最低）、罢工放到清洁与物流停摆（卫生先出问题）。最弱的一场：罢工（它的痛点「垃圾与污水」只能整体压在 healthRiskPerDay 上，玩家做什么都在掉血，区分度不如其它场干净）。",
+  "entries": [
+    {
+      "id": "exodus_wave",
+      "name": "出城潮",
+      "family": "社会",
+      "level": "L3",
+      "tier": 3,
+      "axis": "邻居都走了，帮手也没了",
+      "temperatures": {
+        "-7": 15,
+        "-4": 14,
+        "-1": 13,
+        "0": 12,
+        "3": 11,
+        "7": 11,
+        "11": 12,
+        "14": 13
+      },
+      "spoilRate": 1.5,
+      "dailyDrain": {
+        "fuel": 2
+      },
+      "priorityCategories": [
+        "fuel",
+        "water",
+        "tool"
+      ],
+      "windowScene": "moving-vans",
+      "shelterDecayPerDay": -2,
+      "restEfficiency": 0.7,
+      "carryFactor": 0.65,
+      "actionPointDelta": -1,
+      "shopSupplyFactor": 0.7,
+      "closedShopIds": [
+        "gas_station",
+        "market"
+      ],
+      "priceSurcharge": 0.4,
+      "eventPoolWeights": {
+        "people": 3,
+        "supply": 2
+      },
+      "npcVisitFactor": 0.2,
+      "categoryEfficiency": {
+        "tool": 1.2
+      },
+      "healthRiskPerDay": 0.5,
+      "scoreWeights": {
+        "emergency": 2
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "15°C。楼下开始有人往车上搬行李。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "14°C。群里说往南边去的人越来越多。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "14°C。加油站排起了队，油枪不够用。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "13°C。对门那户天没亮就走了，灯黑着。"
+        },
+        {
+          "day": -3,
+          "severity": 0.45,
+          "hint": "13°C。幼儿园空了，老师也走了大半。"
+        },
+        {
+          "day": -2,
+          "severity": 0.6,
+          "hint": "12°C。小区里停了半数的车，车位空出来。"
+        },
+        {
+          "day": -1,
+          "severity": 0.75,
+          "hint": "12°C。剩下的人互相留了电话，说有事喊。"
+        },
+        {
+          "day": 0,
+          "severity": 0.85,
+          "hint": "12°C。半夜又走了一车人，车灯照了很远。"
+        },
+        {
+          "day": 1,
+          "severity": 0.9,
+          "hint": "11°C。五金店的师傅走了，东西坏了没人修。"
+        },
+        {
+          "day": 2,
+          "severity": 0.95,
+          "hint": "11°C。加油站白天关了半天门。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "11°C。楼道里积了快递，没人送了。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "11°C。剩下的几户把能帮的活排了个班。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "11°C。有人搬不动大件，站在楼梯口发愁。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "10°C。有户人家走后没锁门，被人搬空。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "10°C。工具成了硬通货，借出去要打欠条。"
+        },
+        {
+          "day": 8,
+          "severity": 0.98,
+          "hint": "10°C。有人想走但车没油了，只能留下。"
+        },
+        {
+          "day": 9,
+          "severity": 0.96,
+          "hint": "11°C。留下的几户拼着用一台发电机。"
+        },
+        {
+          "day": 10,
+          "severity": 0.94,
+          "hint": "11°C。街上比前几天安静，店关了一半。"
+        },
+        {
+          "day": 11,
+          "severity": 0.9,
+          "hint": "11°C。有人说南边也不好过，走的想回。"
+        },
+        {
+          "day": 12,
+          "severity": 0.86,
+          "hint": "12°C。开始有人回来了，车位又满了些。"
+        },
+        {
+          "day": 13,
+          "severity": 0.82,
+          "hint": "12°C。回来的邻居带了消息，也带回了些货。"
+        },
+        {
+          "day": 14,
+          "severity": 0.74,
+          "hint": "13°C。楼里的人比前几天多了。撑到今天就算过去了。"
+        }
+      ],
+      "counterIntuitive": "这一场最缺的资源是「帮你搭把手的人」：东西还在、店也半开着，但你一个人搬不动、修不了、也守不住，于是人手比物资先见底。",
+      "decisions": [
+        "邻居走了，重活没人帮，是花钱雇人还是把活拆小了慢慢干",
+        "油站关了，剩下的油要留给出城的车还是留给自己用",
+        "留下的人少了，抢东西的也少了，要不要趁这时候多出门一趟"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/13/15/16，共 15 个。主打维度 12（npcVisitFactor 0.2 全族最低：人都走了，没人再来）+ 13（categoryEfficiency 工具 1.2：帮手没了，全靠自己手上的工具）。与骚乱不撞：骚乱人扎堆、来得更勤；本场正好相反，人一走空，压力变成「没人搭手」。与封控不撞：封控是你出不去，本场是别人都出去了。"
+    },
+    {
+      "id": "strike_halt",
+      "name": "罢工",
+      "family": "社会",
+      "level": "L3",
+      "tier": 2,
+      "axis": "物流与清洁停摆，垃圾和水先出问题",
+      "temperatures": {
+        "-7": 13,
+        "-4": 12,
+        "-1": 11,
+        "0": 10,
+        "3": 9,
+        "7": 9,
+        "11": 10,
+        "14": 11
+      },
+      "spoilRate": 1.6,
+      "dailyDrain": {
+        "water": 1
+      },
+      "priorityCategories": [
+        "water",
+        "warmth",
+        "luxury"
+      ],
+      "windowScene": "piled-trash",
+      "shelterDecayPerDay": -2,
+      "restEfficiency": 0.65,
+      "carryFactor": 0.7,
+      "shopSupplyFactor": 0.6,
+      "closedShopIds": [
+        "community_store",
+        "market"
+      ],
+      "priceSurcharge": 0.35,
+      "eventPoolWeights": {
+        "supply": 3,
+        "queue": 2
+      },
+      "npcVisitFactor": 0.6,
+      "healthRiskPerDay": 2,
+      "scoreWeights": {
+        "fefo": 2
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "13°C。收垃圾的车今天没来，垃圾堆着。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "12°C。物流园的人没到齐，货停在路边。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "12°C。楼下的垃圾箱满了，往外溢。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "11°C。快递和外卖都停了，说送不了。"
+        },
+        {
+          "day": -3,
+          "severity": 0.45,
+          "hint": "11°C。送水的车没来，说在协调。"
+        },
+        {
+          "day": -2,
+          "severity": 0.6,
+          "hint": "10°C。垃圾堆了两天，味道散开了。"
+        },
+        {
+          "day": -1,
+          "severity": 0.75,
+          "hint": "10°C。公告说清洁还要停几天。"
+        },
+        {
+          "day": 0,
+          "severity": 0.85,
+          "hint": "10°C。周边三条街的垃圾都没人运。"
+        },
+        {
+          "day": 1,
+          "severity": 0.9,
+          "hint": "9°C。楼道的垃圾桶溢了，有人自己往远搬。"
+        },
+        {
+          "day": 2,
+          "severity": 0.95,
+          "hint": "9°C。送水的车来了一趟，只够几户。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "9°C。有人把垃圾往空地上倒，没人管。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "9°C。下水道返了味，楼上楼下都闻得到。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "9°C。桶装水的价格涨了，还得抢。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "9°C。有人开始烧垃圾，烟飘了半条街。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "9°C。清洁恢复了半天，只清了主要街道。"
+        },
+        {
+          "day": 8,
+          "severity": 0.97,
+          "hint": "10°C。送煤的车绕了远路，还要加钱。"
+        },
+        {
+          "day": 9,
+          "severity": 0.95,
+          "hint": "10°C。有户人家自己把垃圾运到了城外。"
+        },
+        {
+          "day": 10,
+          "severity": 0.92,
+          "hint": "10°C。楼道里敢开窗的人少了。"
+        },
+        {
+          "day": 11,
+          "severity": 0.9,
+          "hint": "11°C。送水的班次恢复了一半。"
+        },
+        {
+          "day": 12,
+          "severity": 0.86,
+          "hint": "11°C。物流的车开始进城，货慢慢有了。"
+        },
+        {
+          "day": 13,
+          "severity": 0.82,
+          "hint": "12°C。收垃圾的车回来了，清了一整天。"
+        },
+        {
+          "day": 14,
+          "severity": 0.74,
+          "hint": "12°C。楼下清干净了。撑到今天就算过去了。"
+        }
+      ],
+      "counterIntuitive": "这一场最难的不是补货，是「扔不出去」：垃圾停运之后，家里堆的废料反过来成了卫生隐患，你囤得越多、产生的垃圾越多，越先出问题。",
+      "decisions": [
+        "垃圾没人收，攒着还是想办法自己运出去",
+        "送水车停了，桶装水的余量要按天重算",
+        "取暖的送货停了，钱要不要挪去买能烧的散煤"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/9（含 closedShopIds）/10/11/12/15/16，共 13 个。主打维度 15（healthRiskPerDay 2：垃圾与污水带来的卫生风险，不看玩家做什么）+ 2（spoilRate 1.6：没有清运，鲜食与垃圾一起坏）。与骚乱不撞：骚乱是人和供给的混乱；本场没人闹事，城市在正常地「停摆」，压力来自清洁与物流的停。"
+    }
+  ]
+}
