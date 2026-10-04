@@ -1,0 +1,732 @@
+{
+  "kind": "item",
+  "batch": "物资-03",
+  "batchNote": "本批 34 件，把物资从 87 补到 121（进入目标 120~200 的下界）。\n\n★ 与前两批的**目标不同**：\n  · 物资-01（40 件）是\"够用就行\"的第一批；\n  · 物资-02（30 件）补的是**分布**（当时主食 34 件而医疗只有 2 件）；\n  · 这一批补的是**总数**与**档位** —— `tier 4` 原来是 **0 件**，\n    而 116 场灾难里有 8 场是 tier 4，那条解锁阶梯的最高一层在物资这侧是空的。\n\n所以这一批往高层倾斜：tier 3 从 8 → 23、tier 4 从 0 → 9。\n**tier 4 的形状是\"买得起但要腾地方\"**：重、占格、贵，值在别处（耐放 / 顶饿 / 省心）。\n\n品类分布：food +6 / water +6 / medicine +5 / fuel +4 / warmth +4 / tool +5 / luxury +4\n档位分布：tier1 +4 / tier2 +7 / tier3 +14 / tier4 +9\n\n★ 图标键**先机械预验过**：65 个候选走生成器 + 与已入库图标签名对比，\n当场换掉 5 个撞图的（`bottle-iodine` / `bag-surgical-mask` / `bag-down-bag` /\n`box-fuel-tablet` / `box-firstaid-kit`）。这一步在第 II 批抓出过 2 个，所以不能省。",
+  "entries": [
+    {
+      "id": "mre_ration",
+      "name": "自热口粮",
+      "category": "food",
+      "icon": "box-mre-ration",
+      "unitWeight": 0.8,
+      "slotSize": 2,
+      "stackLimit": 1,
+      "perishable": true,
+      "shelfLifeDays": 1095,
+      "nutrition": {
+        "food": 2,
+        "comfort": 1
+      },
+      "basePrice": 78,
+      "tags": [
+        "food",
+        "dry",
+        "treat"
+      ],
+      "tier": 4,
+      "decision": "不用火不用水、拆开就热 —— 两格换一包，而它买的是\"最坏那天也能吃上热的\"",
+      "note": "tier 4 里最贵的一件主食；它的价值不在热量，在\"不依赖任何条件\""
+    },
+    {
+      "id": "pork_luncheon",
+      "name": "午餐肉",
+      "category": "food",
+      "icon": "can-pork-luncheon",
+      "unitWeight": 0.35,
+      "slotSize": 1,
+      "stackLimit": 6,
+      "perishable": true,
+      "shelfLifeDays": 1095,
+      "nutrition": {
+        "food": 2,
+        "comfort": 1
+      },
+      "basePrice": 28,
+      "tags": [
+        "canned",
+        "food",
+        "treat"
+      ],
+      "tier": 3,
+      "decision": "罐头里最下饭的那种，比黄豆罐头贵一倍 —— 为口味花这笔钱值不值",
+      "note": "三年保质期 + 好吃，是\"耐放\"与\"享受\"的交点"
+    },
+    {
+      "id": "beef_stew_can",
+      "name": "红烧肉罐头",
+      "category": "food",
+      "icon": "can-beef-stew",
+      "unitWeight": 0.5,
+      "slotSize": 1,
+      "stackLimit": 4,
+      "perishable": true,
+      "shelfLifeDays": 1095,
+      "nutrition": {
+        "food": 3,
+        "comfort": 2
+      },
+      "basePrice": 62,
+      "tags": [
+        "canned",
+        "food",
+        "keepsake"
+      ],
+      "tier": 4,
+      "decision": "一件顶三件的热量，代价是一格只放四罐 —— 而且你会舍不得开",
+      "note": "寒潮里不用加热就能吃的硬菜；\"舍不得开\"本身就是它的代价"
+    },
+    {
+      "id": "peanut_bag",
+      "name": "花生",
+      "category": "food",
+      "icon": "bag-peanut",
+      "unitWeight": 1.2,
+      "slotSize": 2,
+      "stackLimit": 1,
+      "perishable": true,
+      "shelfLifeDays": 300,
+      "nutrition": {
+        "food": 2
+      },
+      "basePrice": 18,
+      "tags": [
+        "food",
+        "dry",
+        "heavy"
+      ],
+      "tier": 1,
+      "decision": "热量高又便宜，但两格一袋、而且怕潮 —— 主粮里最\"娇\"的那一袋",
+      "note": "油料作物：热量密度高，储存条件差"
+    },
+    {
+      "id": "rock_sugar",
+      "name": "冰糖",
+      "category": "food",
+      "icon": "bag-rock-sugar",
+      "unitWeight": 1.5,
+      "slotSize": 2,
+      "stackLimit": 1,
+      "perishable": false,
+      "nutrition": {
+        "food": 1,
+        "comfort": 1
+      },
+      "basePrice": 14,
+      "tags": [
+        "food",
+        "dry"
+      ],
+      "tier": 3,
+      "decision": "不腐、能顶一阵、还能压药苦 —— 但它几乎不含别的营养",
+      "note": "唯一一件\"不腐 + 给心情\"的粮"
+    },
+    {
+      "id": "dried_mushroom",
+      "name": "干香菇",
+      "category": "food",
+      "icon": "bag-dried-mushroom",
+      "unitWeight": 0.25,
+      "slotSize": 1,
+      "stackLimit": 3,
+      "perishable": true,
+      "shelfLifeDays": 720,
+      "nutrition": {
+        "food": 1,
+        "comfort": 2
+      },
+      "basePrice": 32,
+      "tags": [
+        "food",
+        "dry",
+        "treat"
+      ],
+      "tier": 3,
+      "decision": "一格能放三袋，泡开就是一碗汤 —— 它买的是\"还有点像在过日子\"",
+      "note": "轻、耐放、提味；tier 3 里最省地方的一件"
+    },
+    {
+      "id": "water_tote_big",
+      "name": "大桶装水",
+      "category": "water",
+      "icon": "bottle-water-tote",
+      "unitWeight": 7.5,
+      "slotSize": 4,
+      "stackLimit": 1,
+      "perishable": true,
+      "shelfLifeDays": 365,
+      "nutrition": {
+        "water": 3
+      },
+      "basePrice": 26,
+      "tags": [
+        "water",
+        "heavy"
+      ],
+      "tier": 3,
+      "decision": "一格换一大桶，单价最低 —— 但 7.5 公斤，拎上楼要歇两次",
+      "note": "全表最重的一件；它的代价是\"必须有人搭把手\""
+    },
+    {
+      "id": "water_bag_soft",
+      "name": "软体水袋",
+      "category": "water",
+      "icon": "bag-water-bag",
+      "unitWeight": 0.3,
+      "slotSize": 1,
+      "stackLimit": 2,
+      "perishable": true,
+      "shelfLifeDays": 30,
+      "nutrition": {
+        "water": 3
+      },
+      "basePrice": 12,
+      "tags": [
+        "water",
+        "light"
+      ],
+      "tier": 2,
+      "decision": "空的时候几乎不占地方，代价是**只有 30 天** —— 它是装水的，不是存水的",
+      "note": "与前一件正好相反：轻、省地方、但存不住"
+    },
+    {
+      "id": "coconut_water_carton",
+      "name": "椰子水",
+      "category": "water",
+      "icon": "carton-coconut-water",
+      "unitWeight": 0.35,
+      "slotSize": 1,
+      "stackLimit": 6,
+      "perishable": true,
+      "shelfLifeDays": 365,
+      "nutrition": {
+        "water": 2,
+        "comfort": 1
+      },
+      "basePrice": 16,
+      "tags": [
+        "drink",
+        "water",
+        "treat"
+      ],
+      "tier": 2,
+      "decision": "同样解渴，但它带一点甜 —— 比矿泉水贵，比矿泉水让人愿意喝",
+      "note": "\"愿意喝\"在缺水那几天是有意义的"
+    },
+    {
+      "id": "alkaline_water",
+      "name": "碱性水",
+      "category": "water",
+      "icon": "bottle-alkaline",
+      "unitWeight": 0.55,
+      "slotSize": 2,
+      "stackLimit": 2,
+      "perishable": true,
+      "shelfLifeDays": 540,
+      "nutrition": {
+        "water": 3
+      },
+      "basePrice": 34,
+      "tags": [
+        "water",
+        "drink"
+      ],
+      "tier": 4,
+      "decision": "保质期最长的一种水，代价是它的瓶身最厚、一格只放两瓶",
+      "note": "tier 4 的饮水：买的是\"放三年也不用管\""
+    },
+    {
+      "id": "deep_well_bottle",
+      "name": "深井水",
+      "category": "water",
+      "icon": "bottle-deep-well",
+      "unitWeight": 0.6,
+      "slotSize": 2,
+      "stackLimit": 2,
+      "perishable": true,
+      "shelfLifeDays": 180,
+      "nutrition": {
+        "water": 3
+      },
+      "basePrice": 8,
+      "tags": [
+        "water",
+        "heavy"
+      ],
+      "tier": 1,
+      "decision": "最便宜的水，但保质期只有半年 —— 它逼你**轮换着喝**",
+      "note": "唯一一件要求\"先买的先用\"的水"
+    },
+    {
+      "id": "sport_drink",
+      "name": "运动饮料",
+      "category": "water",
+      "icon": "bottle-sport-drink",
+      "unitWeight": 0.5,
+      "slotSize": 2,
+      "stackLimit": 2,
+      "perishable": true,
+      "shelfLifeDays": 270,
+      "nutrition": {
+        "water": 2,
+        "health": 1
+      },
+      "basePrice": 22,
+      "tags": [
+        "drink",
+        "water",
+        "medkit"
+      ],
+      "tier": 3,
+      "decision": "它同时补水和补盐 —— 与口服补液盐抢同一件事，但更好喝、更占地方",
+      "note": "与 `ors_powder` 是一对：一个省地方，一个好入口"
+    },
+    {
+      "id": "firstaid_case",
+      "name": "急救包",
+      "category": "medicine",
+      "icon": "box-firstaid-case",
+      "unitWeight": 1.4,
+      "slotSize": 2,
+      "stackLimit": 1,
+      "perishable": true,
+      "shelfLifeDays": 900,
+      "nutrition": {
+        "health": 3
+      },
+      "basePrice": 145,
+      "tags": [
+        "medkit",
+        "medicine"
+      ],
+      "tier": 4,
+      "decision": "两格换一个\"什么都有一点\"的盒子 —— 单件最贵，但一次把急救那一格配齐",
+      "note": "tier 4 的医疗：买的是\"不用挑\""
+    },
+    {
+      "id": "vitamin_bottle",
+      "name": "维生素片",
+      "category": "medicine",
+      "icon": "bottle-vitamin",
+      "unitWeight": 0.15,
+      "slotSize": 1,
+      "stackLimit": 2,
+      "perishable": true,
+      "shelfLifeDays": 730,
+      "nutrition": {
+        "health": 1,
+        "comfort": 1
+      },
+      "basePrice": 46,
+      "tags": [
+        "medkit",
+        "medicine"
+      ],
+      "tier": 3,
+      "decision": "吃不出立刻的效果，但连着吃能让\"总觉得不对劲\"那阵子轻一点",
+      "note": "它治的不是病，是长期吃得不好的那种亏空"
+    },
+    {
+      "id": "glucose_bag",
+      "name": "葡萄糖",
+      "category": "medicine",
+      "icon": "bag-glucose",
+      "unitWeight": 0.3,
+      "slotSize": 1,
+      "stackLimit": 3,
+      "perishable": true,
+      "shelfLifeDays": 600,
+      "nutrition": {
+        "health": 2,
+        "food": 1
+      },
+      "basePrice": 24,
+      "tags": [
+        "medkit",
+        "medicine",
+        "food"
+      ],
+      "tier": 3,
+      "decision": "它既是药也是粮 —— 归到药那格，真饿的那天你会想起它",
+      "note": "与补液盐同一个\"归类本身就是决定\"的类型"
+    },
+    {
+      "id": "splint_board",
+      "name": "夹板",
+      "category": "medicine",
+      "icon": "box-splint",
+      "unitWeight": 0.9,
+      "slotSize": 2,
+      "stackLimit": 1,
+      "perishable": false,
+      "nutrition": {
+        "health": 3
+      },
+      "basePrice": 52,
+      "tags": [
+        "medkit"
+      ],
+      "tier": 3,
+      "decision": "平时完全用不上，而它针对的是那种\"不处理就废了\"的伤",
+      "note": "纯保险件，与尼龙绳同一类"
+    },
+    {
+      "id": "iodine_tincture",
+      "name": "碘伏",
+      "category": "medicine",
+      "icon": "bottle-iodine-tincture",
+      "unitWeight": 0.25,
+      "slotSize": 1,
+      "stackLimit": 2,
+      "perishable": false,
+      "nutrition": {
+        "health": 2
+      },
+      "basePrice": 18,
+      "tags": [
+        "medkit",
+        "medicine"
+      ],
+      "tier": 2,
+      "decision": "比医用酒精温和、不能当引火物 —— 同一件事的两种解法，你选哪种",
+      "note": "与 `alcohol_bottle` 是一对"
+    },
+    {
+      "id": "hexamine_tablet",
+      "name": "固体燃料块",
+      "category": "fuel",
+      "icon": "box-hexamine-tablet",
+      "unitWeight": 0.2,
+      "slotSize": 1,
+      "stackLimit": 6,
+      "perishable": false,
+      "nutrition": {},
+      "basePrice": 22,
+      "tags": [
+        "fuel",
+        "light"
+      ],
+      "tier": 3,
+      "decision": "一格能放六块，每块烧一顿 —— 它不取暖，只让你\"能烧开一壶水\"",
+      "note": "把燃料拆成\"每顿一份\"，与整罐燃料是完全不同的用法"
+    },
+    {
+      "id": "industrial_alcohol",
+      "name": "工业酒精",
+      "category": "fuel",
+      "icon": "bottle-industrial-alcohol",
+      "unitWeight": 2.2,
+      "slotSize": 2,
+      "stackLimit": 1,
+      "perishable": false,
+      "nutrition": {},
+      "basePrice": 24,
+      "tags": [
+        "fuel",
+        "flammable"
+      ],
+      "tier": 2,
+      "decision": "比医用酒精便宜一半、量还大 —— 但它不能碰伤口（这一点你会记错）",
+      "note": "与 `alcohol_bottle` 长得像、用得像，只差一个字"
+    },
+    {
+      "id": "wax_block",
+      "name": "蜡块",
+      "category": "fuel",
+      "icon": "box-wax-block",
+      "unitWeight": 1.1,
+      "slotSize": 2,
+      "stackLimit": 1,
+      "perishable": false,
+      "nutrition": {},
+      "basePrice": 20,
+      "tags": [
+        "fuel",
+        "light"
+      ],
+      "tier": 2,
+      "decision": "烧得极慢、几乎不冒烟，代价是热得极少 —— 它是\"长明灯\"不是炉子",
+      "note": "蜡烛的加强版：更久、更亮、也更沉"
+    },
+    {
+      "id": "kindling_wood",
+      "name": "引火木条",
+      "category": "fuel",
+      "icon": "box-kindling-wood",
+      "unitWeight": 0.6,
+      "slotSize": 1,
+      "stackLimit": 4,
+      "perishable": false,
+      "nutrition": {},
+      "basePrice": 10,
+      "tags": [
+        "fuel",
+        "flammable"
+      ],
+      "tier": 1,
+      "decision": "比自己劈柴省事得多，但一格只放四把 —— 而它烧得很快",
+      "note": "省的是时间与体力，不是钱"
+    },
+    {
+      "id": "electric_blanket",
+      "name": "电热毯",
+      "category": "warmth",
+      "icon": "box-electric-blanket",
+      "unitWeight": 1.6,
+      "slotSize": 2,
+      "stackLimit": 1,
+      "perishable": false,
+      "nutrition": {
+        "comfort": 2
+      },
+      "basePrice": 110,
+      "tags": [
+        "warmth",
+        "power"
+      ],
+      "tier": 4,
+      "decision": "最省燃料的暖法 —— 但它吃电，而电要用充电宝换",
+      "note": "tier 4 的保暖：把\"取暖\"从燃料问题变成电力问题"
+    },
+    {
+      "id": "down_sleeping_bag",
+      "name": "羽绒睡袋",
+      "category": "warmth",
+      "icon": "bag-sleeping-down",
+      "unitWeight": 1.4,
+      "slotSize": 4,
+      "stackLimit": 1,
+      "perishable": false,
+      "nutrition": {
+        "comfort": 3
+      },
+      "basePrice": 160,
+      "tags": [
+        "warmth",
+        "soft",
+        "heavy"
+      ],
+      "tier": 4,
+      "decision": "一件顶两床被子，代价是**整格** —— 而且它只能装一个人",
+      "note": "单人向的终极保暖；屋里两个人就露馅了"
+    },
+    {
+      "id": "heated_mat",
+      "name": "电热垫",
+      "category": "warmth",
+      "icon": "bag-heated-mat",
+      "unitWeight": 0.7,
+      "slotSize": 1,
+      "stackLimit": 2,
+      "perishable": false,
+      "nutrition": {
+        "comfort": 1
+      },
+      "basePrice": 58,
+      "tags": [
+        "warmth",
+        "power"
+      ],
+      "tier": 3,
+      "decision": "只暖一小块地方，但那一块正好是你坐的位置",
+      "note": "与电热毯同一类，小得多也便宜得多"
+    },
+    {
+      "id": "felt_insoles",
+      "name": "毡鞋垫",
+      "category": "warmth",
+      "icon": "bag-felt-insoles",
+      "unitWeight": 0.1,
+      "slotSize": 1,
+      "stackLimit": 4,
+      "perishable": false,
+      "nutrition": {
+        "comfort": 1
+      },
+      "basePrice": 6,
+      "tags": [
+        "warmth",
+        "soft",
+        "light"
+      ],
+      "tier": 1,
+      "decision": "最便宜的保暖：几块钱一双，但它只暖脚 —— 而脚暖了人就暖了一半",
+      "note": "全表最便宜的一件；性价比最高，效果最小"
+    },
+    {
+      "id": "camp_stove",
+      "name": "折叠炉",
+      "category": "tool",
+      "icon": "box-camp-stove",
+      "unitWeight": 1.2,
+      "slotSize": 2,
+      "stackLimit": 1,
+      "perishable": false,
+      "nutrition": {},
+      "basePrice": 130,
+      "tags": [
+        "tool",
+        "fuel"
+      ],
+      "tier": 4,
+      "decision": "有了它，燃料烧得更省 —— 但它本身占两格，而且要配燃料才成立",
+      "note": "tier 4 的工具：它放大的是别的东西的价值"
+    },
+    {
+      "id": "water_filter",
+      "name": "滤水器",
+      "category": "tool",
+      "icon": "box-water-filter",
+      "unitWeight": 0.8,
+      "slotSize": 1,
+      "stackLimit": 1,
+      "perishable": false,
+      "nutrition": {},
+      "basePrice": 165,
+      "tags": [
+        "tool",
+        "water"
+      ],
+      "tier": 4,
+      "decision": "一格换\"任何水都能喝\" —— 但它不产水，你仍然得先找到水",
+      "note": "tier 4 里最贵的一件；它改的是水的**来源**，不是数量"
+    },
+    {
+      "id": "solar_panel",
+      "name": "太阳能板",
+      "category": "tool",
+      "icon": "box-solar-panel",
+      "unitWeight": 2.4,
+      "slotSize": 4,
+      "stackLimit": 1,
+      "perishable": false,
+      "nutrition": {},
+      "basePrice": 210,
+      "tags": [
+        "tool",
+        "power",
+        "heavy"
+      ],
+      "tier": 4,
+      "decision": "整格换\"白天有电\" —— 而它只在晴天有用，阴天它只是一块板",
+      "note": "全表最贵；它的价值完全取决于天气，而天气不在你手里"
+    },
+    {
+      "id": "air_pump",
+      "name": "打气筒",
+      "category": "tool",
+      "icon": "box-air-pump",
+      "unitWeight": 0.6,
+      "slotSize": 1,
+      "stackLimit": 1,
+      "perishable": false,
+      "nutrition": {},
+      "basePrice": 40,
+      "tags": [
+        "tool"
+      ],
+      "tier": 2,
+      "decision": "车胎瘪了那天它是唯一能救你的东西，别的日子它只是一根管子",
+      "note": "与尼龙绳同一类的纯保险件"
+    },
+    {
+      "id": "folding_shovel",
+      "name": "折叠铲",
+      "category": "tool",
+      "icon": "bag-folding-shovel",
+      "unitWeight": 1.5,
+      "slotSize": 2,
+      "stackLimit": 1,
+      "perishable": false,
+      "nutrition": {},
+      "basePrice": 86,
+      "tags": [
+        "tool",
+        "heavy"
+      ],
+      "tier": 3,
+      "decision": "能挖能撬能当锤子，但两格 —— 而你上一次用它是什么时候",
+      "note": "一件\"什么都能干一点\"的重货"
+    },
+    {
+      "id": "cocoa_powder",
+      "name": "可可粉",
+      "category": "luxury",
+      "icon": "jar-cocoa-powder",
+      "unitWeight": 0.4,
+      "slotSize": 1,
+      "stackLimit": 1,
+      "perishable": true,
+      "shelfLifeDays": 600,
+      "nutrition": {},
+      "basePrice": 52,
+      "tags": [
+        "treat",
+        "luxury"
+      ],
+      "tier": 3,
+      "decision": "一整罐换很多个晚上的一杯热的 —— 它不顶饿，但它让晚上像晚上",
+      "note": "奢侈品里最耐放的一件"
+    },
+    {
+      "id": "fried_nuts",
+      "name": "炒货",
+      "category": "luxury",
+      "icon": "bag-fried-nuts",
+      "unitWeight": 0.5,
+      "slotSize": 1,
+      "stackLimit": 2,
+      "perishable": true,
+      "shelfLifeDays": 180,
+      "nutrition": {},
+      "basePrice": 38,
+      "tags": [
+        "treat",
+        "luxury"
+      ],
+      "tier": 2,
+      "decision": "一边翻清单一边吃，一袋很快就没了 —— 而它一点都不顶饱",
+      "note": "享受与\"手上有事做\"的交点"
+    },
+    {
+      "id": "cola_case",
+      "name": "一箱汽水",
+      "category": "luxury",
+      "icon": "box-cola-case",
+      "unitWeight": 5.5,
+      "slotSize": 4,
+      "stackLimit": 1,
+      "perishable": true,
+      "shelfLifeDays": 270,
+      "nutrition": {},
+      "basePrice": 96,
+      "tags": [
+        "treat",
+        "luxury",
+        "heavy"
+      ],
+      "tier": 3,
+      "decision": "整格换一瓶一瓶的甜 —— 而它解渴这件事会让你更想喝",
+      "note": "奢侈品里唯一\"占满一格\"的一件，代价很具体"
+    },
+    {
+      "id": "jam_jar",
+      "name": "果酱",
+      "category": "luxury",
+      "icon": "jar-jam",
+      "unitWeight": 0.6,
+      "slotSize": 1,
+      "stackLimit": 1,
+      "perishable": true,
+      "shelfLifeDays": 540,
+      "nutrition": {},
+      "basePrice": 44,
+      "tags": [
+        "treat",
+        "luxury"
+      ],
+      "tier": 3,
+      "decision": "抹在什么上都能吃下去 —— 而它需要你先有\"什么\"",
+      "note": "它放大的是主食的接受度，不是自己的"
+    }
+  ]
+}

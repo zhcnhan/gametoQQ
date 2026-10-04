@@ -94,12 +94,24 @@ describe('测试存档', () => {
     expect(save!.meta.survivedRuns).toBeGreaterThanOrEqual(1);
   });
 
-  it('★ 100boxes：100 个箱子、1000 件以上，而且全在待拆队列里（货架空着）', () => {
+  it('★ 100boxes：100 个箱子、900 件以上，而且全在待拆队列里（货架空着）', () => {
     const run = deserialize(fixture('100boxes'))?.run;
     expect(run).toBeDefined();
     expect(run?.boxesToUnpack).toHaveLength(100);
     const pieces = householdTotals(run!).pieces;
-    expect(pieces).toBeGreaterThan(1000);
+    /*
+     * ★ 门槛从 1000 降到 900（2026-10，第 VI 轮加完物资之后）。
+     *
+     * 这份夹具**件数会随物资表漂**：箱内内容是 `generateBoxStacks` 按
+     * `shuffle(cursor, def.pool)` 抽的，而池子是**按品类从 `ITEM_DEFS` 现算**的。
+     * 加 34 件物资 → 池子变长 → 同一个种子洗出来的结果不同 →
+     * 实测件数 1067 → **975**。
+     *
+     * ⚠ 这与 `survival.test.ts` 的 `bareRun` 是**同一个坑的两种表现**
+     * （那边修的是探针，这边是夹具）。夹具的用途是"整理页的压测位"，
+     * 所以门槛该按**用途**定（几百件就够压），而不是钉一个会被内容量带走的数。
+     */
+    expect(pieces).toBeGreaterThan(900);
     // "一百箱未拆"的意思就是：一件都没上架
     const onShelves = run!.shelves.reduce(
       (n, s) => n + s.slots.reduce((m, row) => m + row.filter((slot) => slot.stack).length, 0),
