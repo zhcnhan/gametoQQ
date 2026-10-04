@@ -16,6 +16,10 @@
  * 重新生成：`npm run make-save`（种子固定，产出可复现）
  */
 import { describe, expect, it } from 'vitest';
+import { SURVIVAL_DAYS, getDisasterDef } from '../data/disaster';
+import { getItemDef } from '../data/items';
+import { dailyDrainOf } from '../data/survival';
+import { emergencyCategories, isShelfTidy, computeOrganizeScore, toPercent } from '../model/score';
 import { onlyZoneIdOf } from '../model/shelf';
 import { SAVE_VERSION, deserialize } from '../state/save';
 import { householdTotals } from '../systems/organize';
@@ -168,5 +172,117 @@ describe('测试存档', () => {
   it('生成器是种子化的：同一份档读两次结果一致（可复现）', () => {
     expect(fixture('100boxes')).toBe(fixture('100boxes'));
     expect(fixture('100boxes').length).toBeGreaterThan(1000);
+  });
+});
+
+/**
+ * ★★ 完美档（`scripts/_make-perfect.ts` 产出）。
+ *
+ * ## 为什么这一组必须**量**而不是"看着整齐"
+ *
+ * "完美"在这套代码里不是形容词，是一组**可算的量**（归位率 / 临期优先 /
+ * 应急可达率 / 待拆箱数 / 整整齐齐徽章）。一个"看起来摆得很整齐"的档
+ * 完全可能归位率是 0 —— 例如把牛奶（品类是 **water** 不是 food）
+ * 放进"主食"那一段：屏幕上看着天经地义，而归位率的分母里它是一堆错放的货。
+ *
+ * 所以这一组把五个量**逐个算出来**，而不是检查"它是不是非空"。
+ */
+describe('★★ 完美档', () => {
+  const PERFECT = ['perfect', 'perfect-survival'] as const;
+
+  it('两份都在、都是当前版本', () => {
+    for (const name of PERFECT) {
+      const back = deserialize(fixture(name));
+      expect(back?.run, name).not.toBeNull();
+      expect(back?.meta.version, name).toBe(SAVE_VERSION);
+    }
+  });
+
+  it('★★ 归位率 / 临期优先 / 应急可达率 **全是满分**', () => {
+    for (const name of PERFECT) {
+      const run = deserialize(fixture(name))!.run!;
+      const score = computeOrganizeScore(run.shelves, run.zones, run.boxesToUnpack, getDisasterDef(run.disasterId));
+      expect(toPercent(score.placement), `${name} 归位率`).toBe(100);
+      expect(toPercent(score.fefo), `${name} 临期优先`).toBe(100);
+      expect(toPercent(score.emergency), `${name} 应急可达率`).toBe(100);
+      expect(score.weighted, `${name} 加权总分`).toBeCloseTo(1, 5);
+    }
+  });
+
+  it('★★ 没有待拆箱（纸箱会进归位率的分母，留着就不是满分）', () => {
+    for (const name of PERFECT) {
+      expect(deserialize(fixture(name))!.run!.boxesToUnpack, name).toHaveLength(0);
+    }
+  });
+
+  it('★★ 有一块货架真的拿到了「整整齐齐」（每一行都贴了胶带，行内都在清单上）', () => {
+    for (const name of PERFECT) {
+      const run = deserialize(fixture(name))!.run!;
+      const tidy = run.shelves.filter((s) => isShelfTidy(s, run.zones));
+      expect(tidy.length, `${name} 该有至少一块整整齐齐`).toBeGreaterThan(0);
+      /*
+       * ★ 而它**不是靠"全部贴满"作弊来的**：另外几块刻意留了空行不贴 ——
+       * 徽章问的是"你有没有把**某一块**完全管好"，不是"全部都要"。
+       * 所以这里同时钉住"不是每块都 tidy"，否则那一行的意义就没了。
+       */
+      expect(tidy.length, `${name} 不该每块都是`).toBeLessThan(run.shelves.length);
+    }
+  });
+
+  it('★★ 够活满 14 天：三个刚需品类各 >= 28 件（寒潮日耗 2+2+2）', () => {
+    const run = deserialize(fixture('perfect-survival'))!.run!;
+    const need = dailyDrainOf(getDisasterDef(run.disasterId));
+    for (const line of need) {
+      let have = 0;
+      for (const s of run.shelves) {
+        for (const row of s.slots) {
+          for (const slot of row) {
+            if (!slot.stack) continue;
+            if (getItemDef(slot.stack.itemId).category !== line.category) continue;
+            have += slot.stack.batches.reduce((k, b) => k + b.count, 0);
+          }
+        }
+      }
+      expect(have, `${line.category} 该够 ${line.need * SURVIVAL_DAYS} 件`).toBeGreaterThanOrEqual(
+        line.need * SURVIVAL_DAYS
+      );
+    }
+  });
+
+  it('★ 两份的**盘面一模一样**（差别只在 phase / day）', () => {
+    /*
+     * ★ 这一条钉的是一个具体的坑：`addFurniture` 的 id 来自**模块级递增计数器**
+     * （`model/shelf.ts` 的 `nextShelfId`），所以"在同一个进程里造两次盘面"
+     * 会得到两组不同的 id（`shelf_1`/`shelf_2` vs `shelf_3`/`shelf_4`），
+     * 而铺货是按 id 写的 —— 第二份会报"没有 shelf_2"。
+     * 生成器因此改成"造一次、落两档"，这条用例守住那个决定。
+     */
+    const a = deserialize(fixture('perfect'))!.run!;
+    const b = deserialize(fixture('perfect-survival'))!.run!;
+    expect(b.shelves).toEqual(a.shelves);
+    expect(b.zones).toEqual(a.zones);
+    expect(a.phase).toBe('organize');
+    expect(b.phase).toBe('survival_day');
+    expect(b.day).toBe(0);
+  });
+
+  it('★ 顺手位标在**应急品类最全**的那一块上（不是随便一块）', () => {
+    for (const name of PERFECT) {
+      const run = deserialize(fixture(name))!.run!;
+      const handy = run.shelves.filter((s) => s.handyRank !== null);
+      expect(handy.length, `${name} 顺手位该正好一块`).toBe(1);
+      const categories = new Set<string>();
+      for (const s of handy) {
+        for (const row of s.slots) {
+          for (const slot of row) {
+            if (slot.stack) categories.add(getItemDef(slot.stack.itemId).category);
+          }
+        }
+      }
+      // 寒潮的应急品类 = 燃料 ∪ 保暖 ∪ 医疗
+      for (const want of emergencyCategories(getDisasterDef(run.disasterId))) {
+        expect([...categories], `${name} 顺手位上该有 ${want}`).toContain(want);
+      }
+    }
   });
 });

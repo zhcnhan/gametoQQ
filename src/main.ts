@@ -413,7 +413,16 @@ if (import.meta.env.DEV) {
    * ★ 这是**开发期工具**：生产构建里整个 `if (import.meta.env.DEV)` 块都不存在。
    */
   const load = async (
-    name: 'good' | 'messy' | '100boxes' | 'big-house' | 'empty-room' | 'rows' | 'shop-tour'
+    name:
+      | 'good'
+      | 'messy'
+      | '100boxes'
+      | 'big-house'
+      | 'empty-room'
+      | 'rows'
+      | 'shop-tour'
+      | 'perfect'
+      | 'perfect-survival'
   ): Promise<void> => {
     const text = await (await fetch(`/src/tools/save-${name}.txt`)).text();
     window.localStorage.setItem('tunhuo.save', text.trim());
@@ -435,6 +444,6 @@ if (import.meta.env.DEV) {
   );
   console.info('[囤货末世] 走测用：__tunhuo.jump(day) 可以跳到任意一天（只在 dev 构建里存在）');
   console.info(
-    '[囤货末世] 走查用：__tunhuo.load("good" | "messy" | "100boxes" | "big-house" | "empty-room" | "rows" | "shop-tour") 切到测试存档'
+    '[囤货末世] 走查用：__tunhuo.load("perfect" | "perfect-survival" | "good" | "messy" | "100boxes" | "big-house" | "empty-room" | "rows" | "shop-tour") 切到测试存档'
   );
 }
