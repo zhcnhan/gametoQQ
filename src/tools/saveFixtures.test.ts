@@ -46,7 +46,7 @@ function fixture(name: string): string {
 
 describe('测试存档', () => {
   it('四个档都在，而且都是当前版本、都能被 migrate 读回来', () => {
-    for (const name of ['100boxes', 'good', 'messy', 'big-house', 'empty-room', 'rows']) {
+    for (const name of ['100boxes', 'good', 'messy', 'big-house', 'empty-room', 'rows', 'shop-tour']) {
       const back = deserialize(fixture(name));
       expect(back, name).not.toBeNull();
       expect(back?.run, name).not.toBeNull();

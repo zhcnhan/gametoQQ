@@ -477,7 +477,22 @@ function checkEntry(file, kind, obj, index) {
      */
     const offers = Array.isArray(obj.offers) ? obj.offers : [];
     if (offers.length < 3) fail(file, id, `offers 至少 3 条，实际 ${offers.length}（太少的店没有存在感）`);
-    if (offers.length > 14) fail(file, id, `offers 最多 14 条，实际 ${offers.length}（§10B.6 的数值区间）`);
+    /*
+     * ★★ 上限从 14 抬到 20（2026-10），而这是一次**容量算出来**的调整，不是放宽标准。
+     *
+     * 起因：新增的常驻用例要求"每一件物资都至少有一家店在卖"，而
+     * 物资 **121** 件、9 家 × 14 = **126** 个坑位 —— 再去掉"每家至少 3 条"的
+     * 24 个下限，可用坑位只剩 102，**装不下**。算下来的缺口是 2 个坑。
+     *
+     * 所以不是"内容写坏了"，是**这个上限从来没跟物资数一起算过**：
+     * 它在 §10B.6 里是一个内容评审的数值区间，用来防"一家店什么都卖"。
+     * 而 121 件物资分给 9 家店，平均就是 13.4 条 —— 14 这个数在物资变多之后
+     * 必然卡住。抬到 20 仍然能防住"什么都卖"（那要靠人来评审），
+     * 而容量够了。
+     *
+     * ⚠ 下层 3 条不放宽：那是"这家店得有东西可买"，与容量无关。
+     */
+    if (offers.length > 20) fail(file, id, `offers 最多 20 条，实际 ${offers.length}（§10B.6 的数值区间，2026-10 由 14 抬到 20）`);
     for (const [oi, o] of offers.entries()) {
       if (!KNOWN.item.has(o?.itemId)) {
         fail(file, id, `offers[${oi}] 引用了不存在的物资 '${o?.itemId}'`);

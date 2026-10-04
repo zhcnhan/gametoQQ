@@ -295,4 +295,28 @@ function freshRun(seed = 20261001) {
   );
 }
 
+// ───────── ⑦ 看商店：钱多、点位全开（第 VI 轮重排之后的点位库存） ─────────
+{
+  /*
+   * ★ 这一份是为了**逛商店**。
+   *
+   * 第 VI 轮把 9 个点位的库存整个重排了一遍（让每一件物资都至少有一家店在卖，
+   * 同时把"矿泉水在 7 家卖"那类重复压下去）。那件事的效果只有在**站在店里**
+   * 才看得出来 —— 而且要看的是"这家有什么别人没有的"。
+   *
+   * 现金给到 2000：那够把最贵的几件买一遍（太阳能板 210、滤水器 165、
+   * 急救包 145、羽绒睡袋 160），否则"买不起"会挡住验收。
+   * 行动点给满，不然一天只够跑几家。
+   */
+  const run = freshRun();
+  run.identityId = 'group_buyer';
+  run.phase = 'stockpile_shop';
+  run.day = FIRST_STOCKPILE_DAY;
+  run.cash = 2000;
+  run.actionPoints = 6;
+  run.boxesToUnpack = makeBoxes(createCursor(run.seed), 6, run.day);
+  const kb = write('shop-tour', run);
+  console.log(`[make-save] shop-tour 现金 2000 / 行动点 6 / ${kb}KB   位置：囤货期 D-7（逛 9 个点位）`);
+}
+
 console.log(`\n[make-save] 写好了 → ${outDir}`);

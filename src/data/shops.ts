@@ -41,7 +41,19 @@ export const SHOP_DEFS: readonly ShopDef[] = [
       { itemId: 'flour', stock: 4 },
       { itemId: 'mineral_water', stock: 10 },
       { itemId: 'milk', stock: 5 },
-      { itemId: 'battery', stock: 6 }
+      { itemId: 'battery', stock: 6 },
+      { itemId: 'potato_bag', stock: 4 },
+      { itemId: 'sugar_bag', stock: 4 },
+      { itemId: 'salt_bag', stock: 4 },
+      { itemId: 'cooking_oil', stock: 4 },
+      { itemId: 'milk_powder', stock: 4 },
+      { itemId: 'chocolate_bar', stock: 4 },
+      { itemId: 'water_big', stock: 4 },
+      { itemId: 'water_case', stock: 4 },
+      { itemId: 'cola_bottle', stock: 4 },
+      { itemId: 'soda_can', stock: 4 },
+      { itemId: 'peanut_bag', stock: 4 },
+      { itemId: 'deep_well_bottle', stock: 4 },
     ],
     tier: 1
   },
@@ -53,7 +65,7 @@ export const SHOP_DEFS: readonly ShopDef[] = [
     offers: [
       { itemId: 'bandage', stock: 10 },
       { itemId: 'cold_medicine', stock: 6 },
-      { itemId: 'mineral_water', stock: 4 }
+      { itemId: 'mineral_water', stock: 4 },
     ],
     tier: 1
   },
@@ -66,8 +78,20 @@ export const SHOP_DEFS: readonly ShopDef[] = [
       { itemId: 'fuel_can', stock: 5 },
       { itemId: 'toolbox', stock: 2 },
       { itemId: 'quilt', stock: 4 },
+      { itemId: 'camp_stove', stock: 4 },
+      { itemId: 'water_filter', stock: 4 },
+      { itemId: 'solar_panel', stock: 4 },
+      { itemId: 'multi_tool', stock: 4 },
+      { itemId: 'powerbank', stock: 4 },
+      { itemId: 'radio_set', stock: 4 },
+      { itemId: 'folding_shovel', stock: 4 },
+      { itemId: 'rope', stock: 4 },
+      { itemId: 'hand_crank_light', stock: 4 },
+      { itemId: 'tarp', stock: 4 },
+      { itemId: 'air_pump', stock: 4 },
+      { itemId: 'duct_tape', stock: 4 },
       { itemId: 'battery', stock: 8 },
-      { itemId: 'bandage', stock: 3 }
+      { itemId: 'bandage', stock: 3 },
     ],
     tier: 1
   },
@@ -80,40 +104,36 @@ export const SHOP_DEFS: readonly ShopDef[] = [
     actionCost: 2,
     offers: [
       {
-        itemId: "rice_bag",
-        stock: 5
-      },
-      {
-        itemId: "flour",
-        stock: 6
-      },
-      {
-        itemId: "mineral_water",
-        stock: 8
-      },
-      {
-        itemId: "instant_noodles",
-        stock: 10
-      },
-      {
-        itemId: "milk",
+        itemId: "mre_ration",
         stock: 4
       },
       {
-        itemId: "canned_beans",
-        stock: 6
+        itemId: "beef_stew_can",
+        stock: 4
       },
       {
-        itemId: "vermicelli",
-        stock: 8
+        itemId: "pork_luncheon",
+        stock: 4
+      },
+      {
+        itemId: "rock_sugar",
+        stock: 4
+      },
+      {
+        itemId: "dried_mushroom",
+        stock: 4
+      },
+      {
+        itemId: "energy_bar",
+        stock: 4
+      },
+      {
+        itemId: "cornmeal_bag",
+        stock: 4
       },
       {
         itemId: "instant_rice",
         stock: 5
-      },
-      {
-        itemId: "ham_sausage",
-        stock: 8
       },
       {
         itemId: "vacuum_egg",
@@ -124,16 +144,44 @@ export const SHOP_DEFS: readonly ShopDef[] = [
         stock: 5
       },
       {
-        itemId: "frozen_dumpling",
-        stock: 5
+        itemId: "kimchi_jar",
+        stock: 4
       },
       {
-        itemId: "fresh_bread",
-        stock: 8
+        itemId: "peanut_butter",
+        stock: 4
       },
       {
-        itemId: "egg_tray",
-        stock: 5
+        itemId: "honey_jar",
+        stock: 4
+      },
+      {
+        itemId: "baby_formula",
+        stock: 4
+      },
+      {
+        itemId: "canned_corned_beef",
+        stock: 4
+      },
+      {
+        itemId: "canned_fish",
+        stock: 4
+      },
+      {
+        itemId: "canned_peach",
+        stock: 4
+      },
+      {
+        itemId: "canned_vegetable",
+        stock: 4
+      },
+      {
+        itemId: "canned_congee",
+        stock: 4
+      },
+      {
+        itemId: "compressed_biscuit",
+        stock: 4
       }
     ],
     specialty: ["food", "grain"],
@@ -148,44 +196,48 @@ export const SHOP_DEFS: readonly ShopDef[] = [
     actionCost: 2,
     offers: [
       {
-        itemId: "rice_bag",
-        stock: 12
+        itemId: "alkaline_water",
+        stock: 4
       },
       {
-        itemId: "flour",
-        stock: 10
+        itemId: "water_tote_big",
+        stock: 4
       },
       {
-        itemId: "mineral_water",
-        stock: 15
+        itemId: "sport_drink",
+        stock: 4
       },
       {
-        itemId: "canned_corned_beef",
-        stock: 5
+        itemId: "juice_box",
+        stock: 4
       },
       {
-        itemId: "canned_fish",
-        stock: 5
+        itemId: "coconut_water",
+        stock: 4
       },
       {
-        itemId: "canned_peach",
-        stock: 5
+        itemId: "electrolyte_powder",
+        stock: 4
       },
       {
-        itemId: "canned_vegetable",
-        stock: 8
+        itemId: "tea_tin",
+        stock: 4
       },
       {
-        itemId: "canned_congee",
-        stock: 8
+        itemId: "orange_drink",
+        stock: 4
       },
       {
-        itemId: "compressed_biscuit",
-        stock: 5
+        itemId: "water_pouch",
+        stock: 4
       },
       {
-        itemId: "energy_bar",
-        stock: 8
+        itemId: "water_bag_soft",
+        stock: 4
+      },
+      {
+        itemId: "coconut_water_carton",
+        stock: 4
       },
       {
         itemId: "oatmeal_bag",
@@ -200,8 +252,28 @@ export const SHOP_DEFS: readonly ShopDef[] = [
         stock: 5
       },
       {
-        itemId: "cornmeal_bag",
-        stock: 8
+        itemId: "vermicelli",
+        stock: 4
+      },
+      {
+        itemId: "ham_sausage",
+        stock: 4
+      },
+      {
+        itemId: "frozen_dumpling",
+        stock: 4
+      },
+      {
+        itemId: "fresh_bread",
+        stock: 4
+      },
+      {
+        itemId: "egg_tray",
+        stock: 4
+      },
+      {
+        itemId: "cabbage",
+        stock: 4
       }
     ],
     specialty: ["grain", "food"],
@@ -215,6 +287,54 @@ export const SHOP_DEFS: readonly ShopDef[] = [
     priceFactor: 1.05,
     offers: [
       {
+        itemId: "chocolate_gift",
+        stock: 4
+      },
+      {
+        itemId: "cocoa_powder",
+        stock: 4
+      },
+      {
+        itemId: "cola_case",
+        stock: 4
+      },
+      {
+        itemId: "jam_jar",
+        stock: 4
+      },
+      {
+        itemId: "instant_coffee",
+        stock: 4
+      },
+      {
+        itemId: "dried_fruit",
+        stock: 4
+      },
+      {
+        itemId: "fried_nuts",
+        stock: 4
+      },
+      {
+        itemId: "cocoa_tin",
+        stock: 2
+      },
+      {
+        itemId: "cigarettes",
+        stock: 3
+      },
+      {
+        itemId: "coffee_beans",
+        stock: 4
+      },
+      {
+        itemId: "picture_book",
+        stock: 4
+      },
+      {
+        itemId: "hot_water_bag_gift",
+        stock: 4
+      },
+      {
         itemId: "instant_noodles",
         stock: 6
       },
@@ -227,16 +347,8 @@ export const SHOP_DEFS: readonly ShopDef[] = [
         stock: 4
       },
       {
-        itemId: "cigarettes",
-        stock: 3
-      },
-      {
         itemId: "canned_beans",
         stock: 5
-      },
-      {
-        itemId: "cocoa_tin",
-        stock: 2
       },
       {
         itemId: "cabbage",
@@ -253,22 +365,6 @@ export const SHOP_DEFS: readonly ShopDef[] = [
       {
         itemId: "peanut_butter",
         stock: 5
-      },
-      {
-        itemId: "honey_jar",
-        stock: 3
-      },
-      {
-        itemId: "sugar_bag",
-        stock: 8
-      },
-      {
-        itemId: "salt_bag",
-        stock: 8
-      },
-      {
-        itemId: "cooking_oil",
-        stock: 5
       }
     ],
     specialty: ["treat", "drink"],
@@ -281,6 +377,58 @@ export const SHOP_DEFS: readonly ShopDef[] = [
     blurb: "一间门面两张床。医生兼着卖药，能聊两句病情。",
     priceFactor: 1.3,
     offers: [
+      {
+        itemId: "firstaid_case",
+        stock: 4
+      },
+      {
+        itemId: "antibiotic",
+        stock: 4
+      },
+      {
+        itemId: "vitamin_bottle",
+        stock: 4
+      },
+      {
+        itemId: "glucose_bag",
+        stock: 4
+      },
+      {
+        itemId: "splint_board",
+        stock: 4
+      },
+      {
+        itemId: "alcohol_bottle",
+        stock: 4
+      },
+      {
+        itemId: "ors_powder",
+        stock: 4
+      },
+      {
+        itemId: "cough_syrup",
+        stock: 4
+      },
+      {
+        itemId: "burn_cream",
+        stock: 4
+      },
+      {
+        itemId: "throat_honey",
+        stock: 4
+      },
+      {
+        itemId: "iodine_tincture",
+        stock: 4
+      },
+      {
+        itemId: "gauze_roll",
+        stock: 4
+      },
+      {
+        itemId: "painkiller",
+        stock: 4
+      },
       {
         itemId: "cold_medicine",
         stock: 8
@@ -308,10 +456,6 @@ export const SHOP_DEFS: readonly ShopDef[] = [
       {
         itemId: "orange_drink",
         stock: 8
-      },
-      {
-        itemId: "water_pouch",
-        stock: 5
       }
     ],
     specialty: ["medicine", "medkit"],
@@ -324,6 +468,50 @@ export const SHOP_DEFS: readonly ShopDef[] = [
     blurb: "二十四小时亮着灯。半夜能买到电池和烟，白天反而贵。",
     priceFactor: 1.4,
     offers: [
+      {
+        itemId: "gasoline_can",
+        stock: 4
+      },
+      {
+        itemId: "spirit_lamp",
+        stock: 4
+      },
+      {
+        itemId: "hexamine_tablet",
+        stock: 4
+      },
+      {
+        itemId: "lamp_oil",
+        stock: 4
+      },
+      {
+        itemId: "fire_starter",
+        stock: 4
+      },
+      {
+        itemId: "firewood",
+        stock: 4
+      },
+      {
+        itemId: "industrial_alcohol",
+        stock: 4
+      },
+      {
+        itemId: "wax_block",
+        stock: 4
+      },
+      {
+        itemId: "candle_pack",
+        stock: 4
+      },
+      {
+        itemId: "charcoal_bag",
+        stock: 4
+      },
+      {
+        itemId: "kindling_wood",
+        stock: 4
+      },
       {
         itemId: "fuel_can",
         stock: 4
@@ -359,26 +547,6 @@ export const SHOP_DEFS: readonly ShopDef[] = [
       {
         itemId: "chocolate_bar",
         stock: 5
-      },
-      {
-        itemId: "water_big",
-        stock: 5
-      },
-      {
-        itemId: "water_case",
-        stock: 5
-      },
-      {
-        itemId: "cola_bottle",
-        stock: 8
-      },
-      {
-        itemId: "juice_box",
-        stock: 8
-      },
-      {
-        itemId: "soda_can",
-        stock: 8
       }
     ],
     specialty: ["power", "treat"],
@@ -392,6 +560,42 @@ export const SHOP_DEFS: readonly ShopDef[] = [
     priceFactor: 0.75,
     actionCost: 2,
     offers: [
+      {
+        itemId: "electric_blanket",
+        stock: 4
+      },
+      {
+        itemId: "down_sleeping_bag",
+        stock: 4
+      },
+      {
+        itemId: "down_jacket",
+        stock: 4
+      },
+      {
+        itemId: "heated_mat",
+        stock: 4
+      },
+      {
+        itemId: "long_johns",
+        stock: 4
+      },
+      {
+        itemId: "hot_water_bottle",
+        stock: 4
+      },
+      {
+        itemId: "heat_pack",
+        stock: 4
+      },
+      {
+        itemId: "wool_blanket",
+        stock: 4
+      },
+      {
+        itemId: "felt_insoles",
+        stock: 4
+      },
       {
         itemId: "quilt",
         stock: 4
