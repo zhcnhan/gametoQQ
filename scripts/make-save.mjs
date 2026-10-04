@@ -223,4 +223,30 @@ function freshRun(seed = 20261001) {
   );
 }
 
+// ───────── ⑤ 空房间：储藏间刚解锁、还没放东西（用户报的那一屏） ─────────
+{
+  /*
+   * ★ 这一份是为了**复现用户看到的那一屏**：
+   *
+   * > "储藏间现在就是一个横条上面写着 0/3 呢，啥用没有啊。就一个分格线"
+   *
+   * 那是"活过 1 次、储藏间刚解锁、还没往里放东西"的状态 —— 而它在
+   * 三个老档里**一个都复现不出来**（`big-house` 的储藏间已经有一块了）。
+   * 一个复现不出来的状态就没法验收、也没法写测试，所以补这一份。
+   *
+   * `survivedRuns = 1`：刚好解锁储藏间，而 tier 3 的身份还锁着 ——
+   * 顺带能看到"解锁清单里还剩什么"。
+   */
+  const run = freshRun();
+  run.identityId = 'group_buyer';
+  run.phase = 'organize';
+  run.day = FIRST_STOCKPILE_DAY;
+  run.cash = 900; // 够加 9 块家具 —— 这一屏的下一步动作要当场做得了
+  run.actionPoints = 3;
+  run.boxesToUnpack = makeBoxes(createCursor(run.seed), 5, run.day);
+
+  const kb = write('empty-room', run, { survivedRuns: 1 });
+  console.log(`[make-save] empty-room ${run.shelves.length} 块（客厅满 3/6、储藏间空 0/3） / ${kb}KB   位置：整理期 D-7、活过 1 次`);
+}
+
 console.log(`\n[make-save] 写好了 → ${outDir}`);

@@ -2515,6 +2515,37 @@ button:disabled {
   font-variant-numeric: tabular-nums;
 }
 
+/* 这间满了：上朱红 —— "去解锁新房间"是这一屏唯一该催的事（§10.2.4） */
+.room-count.is-full {
+  color: var(--vermilion);
+  font-weight: 600;
+}
+
+/*
+ * 空房间的说明。
+ *
+ * ★ 用户的原话是"储藏间现在就是一个横条上面写着 0/3 呢，啥用没有啊。
+ *   就一个分格线" —— 他说得对：一个空房间原来只画一条线加一个计数，
+ *   而"它是干什么的 / 它值多少 / 怎么把东西放进去"一条都没说。
+ *
+ * 所以这一块**不是占位符，是说明**：它得把"你刚用一次通关换来的东西是什么"讲清楚。
+ * 用虚线框（而不是实线）表示"这里还是空的" —— 与图鉴里那些
+ * "未点亮但有轮廓"的格子同一套视觉语言（§10B.2）。
+ */
+.room-empty {
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-70);
+  border: 1.5px dashed var(--ink-16);
+  border-radius: var(--radius-sm);
+}
+
+.room-empty b {
+  color: var(--ink);
+}
+
 /*
  * 「加家具」那一组（§10.2.4 第 6 步 B 的入口）。
  *

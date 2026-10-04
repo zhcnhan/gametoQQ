@@ -13,7 +13,7 @@ import { dayLabel } from '../model/calendar';
 import { getStack, isOffZone, stackCount } from '../model/shelf';
 import type { ItemStack, Shelf, SlotPos, Zone } from '../model/types';
 import type { GameStore } from '../state/store';
-import { roomForNewFurniture, roomsOf } from '../systems/home';
+import { roomForNewFurniture, roomsOf, type RoomView } from '../systems/home';
 import {
   FURNITURE_PRICE,
   addFurnitureCommand,
@@ -263,6 +263,43 @@ export class OrganizeScreen {
     `;
   }
 
+  /**
+   * 空房间那一格。
+   *
+   * ## ★ 用户的一句话点出了真问题
+   *
+   * > "储藏间现在就是一个横条上面写着 0/3 呢，啥用没有啊。就一个分格线"
+   *
+   * 他说得对。一个空房间原来只画一条分隔线加一个计数，那**三条信息一条都没有**：
+   *
+   *  ① 这间房**是干什么的**（玩家刚解锁它，还不知道它能放什么）；
+   *  ② 它**值多少**（"能放 3 块"是他刚刚花一次通关换来的东西，值得说清）；
+   *  ③ 怎么**把东西放进去**（下一步动作）。
+   *
+   * 而"解锁一间空房"本身在设计上是对的（§10.2.4：新那间空着、能放三块）——
+   * 错的只是**它没说话**。所以这里不是把空房藏起来，而是让它把该说的话说完。
+   *
+   * ★ 家具**进哪一间**由 `roomForNewFurniture()` 决定（先填满旧的那间），
+   * 所以这里的文案不能说"点下面就会放进这间" —— 那在客厅没满时是**假话**。
+   * 它只说"这间还能放 N 块"，把去哪间留给下面那个按钮。
+   */
+  private emptyRoomHtml(room: RoomView): string {
+    /*
+     * ★ 每一句都包一层 `<span>`，而不是让文字裸在 `<p>` 里。
+     *
+     * 这不只是洁癖：裸文本在假 DOM 里**既不是子元素、也不进 `textContent`**
+     * （假解析器只建模标签，见 `fakeDom.ts` 的 `parseHtml`），
+     * 于是"这一屏到底说了什么"在测试里**读不到**。
+     * 包一层之后 `querySelectorAll` 能取到，测试才钉得住这段文案。
+     */
+    return `
+      <p class="room-empty">
+        <span class="room-empty-lead">这间还空着。</span>
+        <span class="room-empty-body">它最多能放 ${room.capacity} 块家具 —— 加家具的按钮在下面，东西放不下的时候它就是那份额外的空间。</span>
+      </p>
+    `;
+  }
+
   private renderRoom(view: OrganizeView): void {
     const scrollTop = this.roomEl.scrollTop;
     /*
@@ -282,12 +319,16 @@ export class OrganizeScreen {
     } else {
       this.roomEl.innerHTML = rooms
         .map((room) => {
-          const cards = room.shelves
-            .map((shelf) => this.shelfHtml(shelf, view.shelves.indexOf(shelf), view))
-            .join('');
+          const cards =
+            room.shelves.length > 0
+              ? room.shelves
+                  .map((shelf) => this.shelfHtml(shelf, view.shelves.indexOf(shelf), view))
+                  .join('')
+              : this.emptyRoomHtml(room);
+          const full = room.used >= room.capacity ? ' is-full' : '';
           return `
             <section class="room-group">
-              <h2 class="room-title">${escapeHtml(room.label)}<span class="room-count">${room.used}/${room.capacity}</span></h2>
+              <h2 class="room-title"><span class="room-label">${escapeHtml(room.label)}</span><span class="room-count${full}">${room.used}/${room.capacity}</span></h2>
               ${cards}
             </section>
           `;
