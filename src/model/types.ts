@@ -503,15 +503,28 @@ export interface Zone {
  * `handyRank`（"门口那一块"，全屋唯一）依赖"只有一个门"这个前提，
  * 多房间下它的语义必须重新定义。这是 D-22 里最容易被漏掉的一条。
  */
+/**
+ * 家具种类。
+ *
+ * ★ **这张表的权威在 `data/furniture.ts`**（名字、腐坏乘数、尺寸、为什么值得占地方）。
+ * 这里只留类型：`data/` 层的表要 import 它，反过来不行（分层纪律）。
+ * 加一种家具要改两处，而 `registry.test.ts` 会核对两边一致 ——
+ * 只有一边改了会在测试里红，不会静默漏掉。
+ */
+export type FurnitureKind = 'shelf' | 'fridge' | 'cabinet' | 'floor';
+
 export interface Shelf {
   id: string;
   roomId: string;
   /**
-   * DEFERRED(D-02): `kind` 目前**只被文案读**（"冰箱 C"、"放回 冰箱 原位"），
-   * 没有任何玩法逻辑依赖它。§8 写的「冰箱 1 个（腐坏减速）」要等阶段 C 才有落点，
-   * 而它真正有意义还要等到 M3 出现热浪这种"会让食物烂掉"的灾难。
+   * 这块家具**是什么**。
+   *
+   * ★ 它在 M3 第 6 步之前**只被文案读**（"冰箱 C"、"放回 冰箱 原位"）——
+   * §8 写的「冰箱 1 个（腐坏减速）」一直没有落点，玩家把它换成三块普通货架
+   * 也不影响任何数值（D-02）。**现在它真的有效果了**：
+   * 腐坏结算按 `kind` 各算各的虚拟天，见 `model/spoil.ts` 与 `data/furniture.ts`。
    */
-  kind: 'shelf' | 'fridge' | 'cabinet' | 'floor';
+  kind: FurnitureKind;
   w: number;
   h: number; // 格子矩阵
   slots: Slot[][]; // [row][col]

@@ -43,7 +43,7 @@ import { dayLabel, severityAt } from '../model/calendar';
 import { consumeCategory } from '../model/consume';
 import { countOnHandy } from '../model/shelf';
 import { computeOrganizeScore } from '../model/score';
-import { spoilEverything, virtualDay } from '../model/spoil';
+import { spoilEverything } from '../model/spoil';
 import { EMERGENCY_DEFS, emergencyNoneWeight } from '../data/emergencies';
 import { disasterModifiersOf, getDisasterDef } from '../data/disaster';
 import { CATEGORY_LABELS, getItemDef } from '../data/items';
@@ -235,11 +235,9 @@ function round2(value: number): number {
 export function settleSurvivalDay(run: RunState, cursor?: RngCursor): SurvivalReport {
   const disaster = getDisasterDef(run.disasterId);
   const severity = severityAt(disaster, run.day);
-  // 腐坏按"虚拟天"推进：寒潮 spoilRate=0.5 时它跑得比真实天慢（等于全屋成了冷库）
-  const vDay = virtualDay(run.day, disaster.spoilRate);
-
-  // ① 腐坏：货架 + 还没拆的纸箱一起算（纸箱不是冰箱）
-  const sweep = spoilEverything(run.shelves, run.boxesToUnpack, vDay);
+  // 腐坏：**每个容器各算各的虚拟天**（灾难的 spoilRate × 家具的 spoilFactor）。
+  // 冰箱 / 柜子在这里第一次真的起作用 —— 见 model/spoil.ts 与 data/furniture.ts
+  const sweep = spoilEverything(run.shelves, run.boxesToUnpack, run.day, disaster.spoilRate);
   run.shelves = sweep.shelves;
   run.boxesToUnpack = sweep.boxes;
   run.survival.spoiled += sweep.total;

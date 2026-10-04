@@ -154,12 +154,22 @@ describe('已拍板的设计决定：不许被"顺手修好"', () => {
     expect(source).toContain('spoilRate: 0.5');
   });
 
-  it('"寒潮 = 冷库 → M1 无腐坏"这笔账还在册，且未清偿', () => {
+  it('"寒潮 = 冷库"这笔账已清偿，但清偿理由必须写明白（多灾难落地了）', () => {
     const item = findDeferred('D-03');
     expect(item).not.toBeNull();
-    expect(item?.status).toBe('open');
-    // 它必须指名道姓地解释清楚，否则后来者只会看到一串数字
-    expect(item?.impact).toContain('装饰');
+    expect(item?.status).toBe('done');
+    /*
+     * ★ 这条断言的口径在清偿时改过一次，值得说明为什么不是"删掉这条用例"：
+     *
+     * 它原来查的是 `item.impact` 里有没有「装饰」—— 那守的是"**这笔账没被悄悄关掉**"。
+     * 而账一旦真的清偿，`impact` 就该描述**清偿过程**，不该再留着"装饰"那句话。
+     *
+     * 所以现在守的是"**清偿理由里说清了当初卡在哪**"：`resolvedIn` 必须提到
+     * 当初的清偿条件（多灾难）。这才防得住"三个月后有人看到一条 done 的欠账，
+     * 以为它本来就是小事"。
+     */
+    expect(item?.resolvedIn ?? '').toContain('多灾难');
+    // 而"寒潮是冷库"这条设计本身继续被上一条用例钉着（字面量 0.5）
   });
 
   it('M1 验收清单第 3 条已改口径清偿，且留档说明换成了什么', () => {
@@ -170,8 +180,19 @@ describe('已拍板的设计决定：不许被"顺手修好"', () => {
     expect(item?.impact).toContain('体力');
   });
 
-  it('冰箱的"没效果"是被记录的，不是被忽略的', () => {
-    expect(findDeferred('D-02')?.status).toBe('open');
+  it('冰箱的"没效果"已清偿，而且清偿说明里留了"它在寒潮里依然是零收益"这一条', () => {
+    /*
+     * 这条原来只查 `D-02.status === 'open'`（"这件事是被记录的，不是被忽略的"）。
+     * 冰箱真的有效果之后，那个断言就没有意义了 —— 但**它守的东西还得守**：
+     * 后来者最容易犯的错是"既然冰箱有用，那寒潮里也该有用吧"，
+     * 然后去把寒潮的 `spoilRate` 调高，好让冰箱"物有所值"。
+     *
+     * 所以改成：清偿说明里必须写明"寒潮里收益是 0，那是设计"。
+     * 真正的机制验证在 `model/spoil.test.ts`（按家具比值）。
+     */
+    const item = findDeferred('D-02');
+    expect(item?.status).toBe('done');
+    expect(item?.impact ?? '').toContain('随灾难变');
   });
 });
 

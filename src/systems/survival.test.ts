@@ -164,7 +164,7 @@ describe('腐坏：它是灾难的属性，不是物资的属性', () => {
     expect(disaster.spoilRate).toBe(0.5);
 
     for (let day = 1; day <= SURVIVAL_DAYS; day++) {
-      const sweep = spoilEverything(run.shelves, run.boxesToUnpack, virtualDay(day, disaster.spoilRate));
+      const sweep = spoilEverything(run.shelves, run.boxesToUnpack, day, disaster.spoilRate);
       expect(sweep.total).toBe(0);
     }
   });
@@ -173,7 +173,7 @@ describe('腐坏：它是灾难的属性，不是物资的属性', () => {
     const run = bareRun();
     put(run, 'shelf_a', { row: 0, col: 0 }, 'milk', 3, 14);
     // D+5 时虚拟天已经跑到 15 > 14
-    const sweep = spoilEverything(run.shelves, run.boxesToUnpack, virtualDay(5, 3));
+    const sweep = spoilEverything(run.shelves, run.boxesToUnpack, 5, 3);
     expect(sweep.total).toBe(3);
     expect(sweep.losses[0]?.itemId).toBe('milk');
     expect(sweep.shelves[0]?.slots[0]?.[0]?.stack).toBeNull();
@@ -182,7 +182,7 @@ describe('腐坏：它是灾难的属性，不是物资的属性', () => {
   it('纸箱里的东西也会坏（纸箱不是冰箱，否则没人有理由拆箱）', () => {
     const run = bareRun();
     run.boxesToUnpack = [{ id: 'box_1', defId: 'box_staple', items: [makeStack('milk', 3, 10)] }];
-    const sweep = spoilEverything(run.shelves, run.boxesToUnpack, 12);
+    const sweep = spoilEverything(run.shelves, run.boxesToUnpack, 12, 1);
     expect(sweep.total).toBe(3);
     expect(sweep.boxes[0]?.items).toEqual([]);
   });
@@ -202,7 +202,7 @@ describe('腐坏：它是灾难的属性，不是物资的属性', () => {
     });
     run.shelves[0] = stacked;
 
-    const sweep = spoilEverything(run.shelves, run.boxesToUnpack, 20);
+    const sweep = spoilEverything(run.shelves, run.boxesToUnpack, 20, 1);
     expect(sweep.total).toBe(2);
     const left = sweep.shelves[0]?.slots[0]?.[0]?.stack;
     expect(left?.batches).toEqual([{ expiresAtDay: 50, count: 3 }]);

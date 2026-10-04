@@ -59,43 +59,37 @@ export interface DeferredItem {
 
 export const DEFERRED_ITEMS: readonly DeferredItem[] = [
   {
-    id: 'D-01',
-    kind: 'code',
-    title: '腐坏机制未实现：`ItemBatch.expiresAtDay` 没有消费者',
-    impact:
-      '已清偿。阶段 C 补上了消费者：`model/spoil.ts` 按 `DisasterProfile.spoilRate` 把日历天' +
-      '换算成虚拟天，每日结算里真的会清掉过期批次（货架与未拆纸箱一起算）。' +
-      '注意机制通了 ≠ M1 会坏东西，见 D-03。',
-    plan: '阶段 C',
-    markedIn: [],
-    status: 'done',
-    resolvedIn: 'M1 阶段 C —— 新增 model/spoil.ts，按 DisasterProfile.spoilRate 换算虚拟天做腐坏结算'
-  },
-  {
     id: 'D-02',
     kind: 'code',
     title: '冰箱（`Shelf.kind === "fridge"`）没有任何玩法效果',
     impact:
-      '§8 写的「冰箱 1 个（腐坏减速）」未实现 —— 它现在是一块**名字不同的货架**，' +
-      '玩家换成三块普通货架也完全不影响任何数值。即使阶段 C 把腐坏做出来，' +
-      '在寒潮这个"天然冷库"的灾难下它依然没有存在感。',
-    plan: '阶段 C 落到字段；真正产生价值要等 M3 的多灾难（热浪 / 洪水）',
-    markedIn: ['model/types.ts', 'systems/setup.ts'],
-    status: 'open'
+      '已清偿（M3 第 6 步）。原来是"全屋一个虚拟天"、而那个数由**灾难的 spoilRate** 算出 ——' +
+      '所以"这一件放在冰箱里还是纸箱里"**在架构上就问不出来**。' +
+      '不是忘了接，是**没地方接**。现在每个容器各算各的：' +
+      '`vDay = virtualDay(day, 灾难.spoilRate × 家具.spoilFactor)`，' +
+      '冰箱 0.4 / 柜子 0.75 / 普通货架与纸箱 1（"纸箱不是冰箱"这句话在代码里就是这个 1）。' +
+      '★ 它的价值**随灾难变**：寒潮里全屋本来就是冷库，冰箱收益是 0 —— 那是设计（见 D-03）。',
+    plan: 'M3 第 6 步（新家具类型）',
+    markedIn: [],
+    status: 'done',
+    resolvedIn: 'M3 第 6 步 —— 新增 data/furniture.ts，并把腐坏结算改成按容器各算虚拟天'
   },
   {
     id: 'D-03',
     kind: 'code',
     title: '寒潮 spoilRate = 0.5 → M1 全程不会发生腐坏',
     impact:
-      '腐坏机制**已经实现**（model/spoil.ts + 每日结算里真的会清掉过期批次），' +
-      '但寒潮是天然冷库，M1 全程没有任何东西会坏 —— 于是「临期优先」百分比、' +
-      '冰箱、日报里的腐坏行在本里程碑里**全是装饰**（实测 7 天 `survival.spoiled` 恒为 0）。' +
-      '这是玩家拍板的设计（"其他灾难保持真实，个别灾难可以延长"），不是 bug ——' +
-      '任何人都不许为了让数字好看而把 0.5 改成 1。',
-    plan: 'M3（热浪 spoilRate > 1 时，这套机制才真正吃紧）',
-    markedIn: ['data/disaster.ts'],
-    status: 'open'
+      '已清偿（M3 第 5 步，116 场灾难入库）。原欠账说的是' +
+      '"腐坏机制已实现，但寒潮是天然冷库，M1 全程没有东西会坏 ——' +
+      '临期优先百分比、冰箱、日报里的腐坏行在那个里程碑里全是装饰"。' +
+      '清偿条件正是"多灾难落地"，而它已经落地：116 场里有八十多场 `spoilRate > 1`' +
+      '（霉雨 3.0、热浪 2.4、森林虫灾 2.6……），腐坏在那些场次里是真的会吃人的。' +
+      '★ **寒潮仍然是 0.5，这一条不许改** —— 见 `deferred.test.ts` 里那条钉住它的用例：' +
+      '玩家拍板的是"寒潮是天然冷库"，不是"腐坏要好看"。',
+    plan: 'M3 第 5 步（多灾难）',
+    markedIn: [],
+    status: 'done',
+    resolvedIn: 'M3 第 5 步 —— 多灾难落地：116 场入库，其中八十多场 spoilRate > 1'
   },
   {
     id: 'D-04',
