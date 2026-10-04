@@ -28,7 +28,7 @@ import { TRADE_COST_PIECES, tradeCooldownLeft } from '../systems/trade';
 import type { Screen } from './Router';
 
 export interface SurvivalScreenProps {
-  /** D-Day：开始撑（day 0 → 1 并结算 D+1） */
+  /** D-Day：开始生存（day 0 → 1 并结算 D+1） */
   onStart: () => void;
   /** 过一天（结算新的一天） */
   onNext: () => void;
@@ -94,7 +94,7 @@ export class SurvivalScreen implements Screen {
       <div class="dock-tools">
         ${
           day === 0
-            ? `<button class="btn btn-primary" data-action="start">开始撑</button>`
+            ? `<button class="btn btn-primary" data-action="start">开始生存</button>`
             : `<button class="btn btn-primary" data-action="next">过一天</button>`
         }
       </div>

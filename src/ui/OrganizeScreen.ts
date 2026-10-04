@@ -896,7 +896,15 @@ export class OrganizeScreen {
         <button class="btn" data-action="toggle-add">${iconSvg('box')}<span>加家具 ${FURNITURE_PRICE}</span>${
           afford ? '' : `<em class="btn-note">差 ${FURNITURE_PRICE - cash}</em>`
         }</button>
-        ${this.addOpen ? `<div class="add-picks">${picks}</div>` : ''}
+        ${
+          this.addOpen
+            ? `<div class="add-picks" role="group" aria-label="挑一种家具">
+                 <span class="add-picks-title">加哪一种？</span>
+                 ${picks}
+                 <button class="mini" data-action="toggle-add">收起</button>
+               </div>`
+            : ''
+        }
       </div>
     `;
   }

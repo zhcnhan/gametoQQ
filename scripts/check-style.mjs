@@ -177,14 +177,18 @@ if (loud.size > LOUD_MAX) {
 /**
  * 允许带实心墨影的类。
  *
- * ★ 两个新加的（2026-10，胶带拖拽）都写清理由，因为这个名单一旦变成
- * "随手往里加"的垃圾桶，守卫就没了：
+ * ★ 三个"例外"都写清理由，因为这个名单一旦变成"随手往里加"的垃圾桶，
+ * 守卫就没了：
  *
  *  · `tape-drop` —— **拖拽幽灵的一部分**：它就是那段跟着手指走的胶带
  *    （`.drag-ghost` 的子元素）。守卫按类名匹配、看不到父子关系，所以要显式列。
  *    排一排的胶带**不许**带影子；
  *  · `tape-chip` —— 只有 `.is-lifted`（**被拿起来的那一张**）带影子。
- *    同样：常态那一排不带（`.tape-chip` 的基样式里没有 `box-shadow`）。
+ *    同样：常态那一排不带（`.tape-chip` 的基样式里没有 `box-shadow`）；
+ *  · `add-picks` —— 「加哪一种？」那个**锚定弹层**。它是浮在工具栏上方的一小块
+ *    （`position: absolute; bottom: 100%`），与抽屉同一类东西 ——
+ *    而它**同时只有一个**（点开才有），所以不会出现"一排东西同时浮起来"。
+ *    它原来挤在工具栏那一行里，那条路已经因为窄屏重叠被删掉了。
  */
 const SHADOW_OK = new Set([
   'drag-ghost',
@@ -194,7 +198,8 @@ const SHADOW_OK = new Set([
   'shelf-card',
   'identity-card',
   'tape-drop',
-  'tape-chip'
+  'tape-chip',
+  'add-picks'
 ]);
 const shadowed = new Set();
 for (const [name, value] of resolvedShadow) {

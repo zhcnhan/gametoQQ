@@ -354,7 +354,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 16,
     tags: ["canned", "food", "treat"],
     tier: 1,
-    decision: "又解馋又补水，但一罐半斤重，为它占一格货架值不值",
+    decision: "又解馋又补水，可一罐半斤重 —— 挪一块地方给它，值不值",
     note: "心情掉得快的局里，甜的比饭先吃完"
   },
 {
@@ -471,7 +471,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 9,
     tags: ["dry", "grain", "food"],
     tier: 1,
-    decision: "便宜又顶饿，但必须生火煮，停电停气的局里它帮不上忙",
+    decision: "便宜又顶饿，可得生火煮 —— 火不够的那几天它帮不上忙",
     note: "燃料管够的局里，最便宜的热量"
   },
 {
@@ -548,7 +548,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 16,
     tags: ["food", "treat"],
     tier: 2,
-    decision: "不用火不用电就能吃上热饭，但一份顶三份挂面的钱",
+    decision: "不用火不用水就能吃上热饭，可一份顶三份挂面的钱",
     note: "大停电和断气局里，唯一的热饭"
   },
 {
@@ -606,7 +606,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 20,
     tags: ["dry", "food", "treat"],
     tier: 2,
-    decision: "又轻又耐放的肉，价格像零食，囤它是为了过日子的感觉",
+    decision: "又轻又耐放的肉，价格像零食 —— 囤它是为了过日子的感觉",
     note: "生存期中段心情塌陷时，它比罐头管用"
   },
 {
@@ -626,7 +626,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 13,
     tags: ["fresh", "food"],
     tier: 1,
-    decision: "好吃顶饿但依赖冰箱，停电局里它是第一天就要吃完的债",
+    decision: "好吃顶饿，可得一直冻着 —— 化过一次就只能当天吃完",
     note: "寒潮局里是硬货，停电局里是陷阱"
   },
 {
@@ -665,7 +665,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 12,
     tags: ["fresh", "food"],
     tier: 1,
-    decision: "二十天保质期的鲜货，占两格还怕颠，囤它要算好日子",
+    decision: "二十天保质期的鲜货，一盒挺大还怕颠，囤它得先算好日子",
     note: "生存期前段的营养来源，后段指望不上"
   },
 {
@@ -685,7 +685,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 4,
     tags: ["fresh", "food"],
     tier: 1,
-    decision: "四块钱一棵能吃一星期，但一棵占两格，空间换便宜",
+    decision: "四块钱一棵能吃一星期，可一棵就得挪出两块地方 —— 空间换便宜",
     note: "冬天最耐放的鲜菜，寒潮局的性价比之王"
   },
 {
@@ -797,7 +797,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 4,
     tags: ["dry", "food"],
     tier: 1,
-    decision: "四块钱一包永远用得上，但谁会为四块钱的东西占一格",
+    decision: "四块钱一包永远用得上 —— 可它也得占着一块地方",
     note: "没人抢它，但缺了它饭菜难以下咽"
   },
 {
@@ -911,7 +911,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 24,
     tags: ["water", "drink", "heavy"],
     tier: 1,
-    decision: "比单瓶买便宜三成，但七公斤一箱，买回来就占一整格",
+    decision: "比单瓶买便宜三成，可七公斤一箱 —— 地上得腾出一整块地方",
     note: "批发思路的水，适合车载大的身份"
   },
 {
@@ -1048,7 +1048,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 6,
     tags: ["dry", "drink"],
     tier: 2,
-    decision: "一包冲一壶，便宜讨喜，但占了喝水的份额",
+    decision: "一包冲一壶，便宜讨喜，可它挤的是喝水的份额",
     note: "让人愿意多喝水的办法"
   },
 {
@@ -1125,7 +1125,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 7,
     tags: ["medkit", "medicine", "drink"],
     tier: 2,
-    decision: "它既算药也算水 —— 归到药那一格，缺水那天你会找不到它",
+    decision: "它既算药也算水 —— 归到药那边，缺水那天你会找不到它",
     note: "归类本身就是个决定"
   },
 {
@@ -1164,7 +1164,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 22,
     tags: ["medkit", "medicine"],
     tier: 2,
-    decision: "治病顺带哄心情，但一格只放得下两瓶",
+    decision: "治病顺带哄心情，可一块地方只放得下两瓶",
     note: "玻璃瓶占地方"
   },
 {
@@ -1223,7 +1223,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 34,
     tags: ["medkit", "medicine", "treat"],
     tier: 2,
-    decision: "一格只放一罐，而它同时是药、是粮、是甜头 —— 三样都不精",
+    decision: "一块地方只放一罐，而它同时是药、是粮、是甜头 —— 三样都不精",
     note: "样样都沾一点的那种货"
   },
 {
@@ -1255,7 +1255,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 30,
     tags: ["fuel", "light", "flammable"],
     tier: 2,
-    decision: "比燃料罐耐烧，但一格只放两瓶、而且洒了就没了",
+    decision: "比燃料罐耐烧，可一块地方只放两瓶，而且洒了就没了",
     note: "大瓶装的典型代价"
   },
 {
@@ -1271,7 +1271,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 16,
     tags: ["fuel", "heavy"],
     tier: 1,
-    decision: "便宜、热量足，但整袋 3.5 公斤 —— 上架要占两格还得弯腰搬",
+    decision: "便宜、热量足，可一袋 3.5 公斤，搬进来还得找地方墩",
     note: "重货的标准取舍"
   },
 {
@@ -1287,7 +1287,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 70,
     tags: ["fuel", "flammable", "heavy"],
     tier: 3,
-    decision: "一格顶四格的热量，代价是它一个人搬不动、而且怕火",
+    decision: "同样一块地方，它能顶四块地方的热量 —— 代价是一个人搬不动，而且怕火",
     note: "最危险也最顶用的那一件"
   },
 {
@@ -1319,7 +1319,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 20,
     tags: ["fuel", "heavy"],
     tier: 2,
-    decision: "最便宜的燃料，但一格只能放一捆、而且必须有引火块",
+    decision: "最便宜的燃料，可一捆就占掉一大块地方，而且得先有引火的东西",
     note: "便宜的东西往往要求你先有别的"
   },
 {
@@ -1353,7 +1353,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 130,
     tags: ["warmth", "soft"],
     tier: 3,
-    decision: "穿在身上那一格就省了 —— 但脱下来它就占两格",
+    decision: "穿在身上不占地方 —— 可一脱下来就得给它腾两块",
     note: "贵，但它是唯一「随身」的保暖"
   },
 {
@@ -1372,7 +1372,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 4,
     tags: ["warmth", "treat"],
     tier: 1,
-    decision: "一片只顶半天，但一格能塞十二片 —— 拿数量换质量",
+    decision: "一片只顶半天，可一小块地方能塞十二片 —— 拿数量换质量",
     note: "消耗品那一类"
   },
 {
@@ -1408,7 +1408,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 38,
     tags: ["warmth", "soft", "heavy"],
     tier: 1,
-    decision: "比棉被便宜、比棉被薄，但同样占满一格",
+    decision: "比棉被便宜、比棉被薄，可一样得占掉一整块地方",
     note: "棉被的廉价替代"
   },
 {
@@ -1458,7 +1458,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 96,
     tags: ["tool", "power"],
     tier: 3,
-    decision: "手电与收音机都靠它 —— 但它的电用完就再也充不回来了",
+    decision: "手电和收音机都靠它续着 —— 这些电器的力气用完就没了，而它是唯一能续的那个",
     note: "一次性电力的那种"
   },
 {
@@ -1522,7 +1522,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 58,
     tags: ["tool", "heavy"],
     tier: 2,
-    decision: "一整格换一块挡雨的布 —— 洪水那天它值这个价，别的天不值",
+    decision: "一整块地方换一块挡雨的布 —— 洪水那天它值这个价，别的天不值",
     note: "只在特定灾难里回本的货"
   },
 {
@@ -1540,7 +1540,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 74,
     tags: ["tool", "power"],
     tier: 3,
-    decision: "两格换一个「知道外面怎么了」 —— 情报在这局里不能吃也不能烧",
+    decision: "换来「知道外面怎么了」—— 情报在这局里不能吃也不能烧，但少了它会瞎",
     note: "它买的是心情与信息，不是物资"
   },
 {
@@ -1557,7 +1557,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 120,
     tags: ["treat", "luxury", "keepsake"],
     tier: 3,
-    decision: "一格换一次大心情 —— 而它能换四罐罐头",
+    decision: "一块地方换一次大心情 —— 而它能换四罐罐头",
     note: "奢侈品里的顶配；它的价值不在数值，在「你还愿不愿意为这个花钱」"
   },
 {
@@ -1591,7 +1591,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 26,
     tags: ["treat", "luxury"],
     tier: 2,
-    decision: "一格换一次甜头，没有别的用处 —— 它连饿都顶不了",
+    decision: "一块地方换一次甜头，没有别的用处 —— 它连饿都顶不了",
     note: "最便宜的那一档奢侈：用来验证「玩家还愿不愿意为纯心情花钱」"
   },
   // ═══ 生成内容 物资-02 止 ═══,
@@ -1613,7 +1613,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 78,
     tags: ["food", "dry", "treat"],
     tier: 4,
-    decision: "不用火不用水、拆开就热 —— 两格换一包，而它买的是\"最坏那天也能吃上热的\"",
+    decision: "不用火不用水、拆开就热 —— 代价是两块地方，买的是\"最坏那天也能吃上热的\"",
     note: "tier 4 里最贵的一件主食；它的价值不在热量，在\"不依赖任何条件\""
   },
 {
@@ -1653,7 +1653,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 62,
     tags: ["canned", "food", "keepsake"],
     tier: 4,
-    decision: "一件顶三件的热量，代价是一格只放四罐 —— 而且你会舍不得开",
+    decision: "一件顶三件的热量，代价是一块地方只放四罐 —— 而且你会舍不得开",
     note: "寒潮里不用加热就能吃的硬菜；\"舍不得开\"本身就是它的代价"
   },
 {
@@ -1672,7 +1672,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 18,
     tags: ["food", "dry", "heavy"],
     tier: 1,
-    decision: "热量高又便宜，但两格一袋、而且怕潮 —— 主粮里最\"娇\"的那一袋",
+    decision: "热量高又便宜，可一袋得占两块地方，而且怕潮 —— 主粮里最\"娇\"的那袋",
     note: "油料作物：热量密度高，储存条件差"
   },
 {
@@ -1711,7 +1711,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 32,
     tags: ["food", "dry", "treat"],
     tier: 3,
-    decision: "一格能放三袋，泡开就是一碗汤 —— 它买的是\"还有点像在过日子\"",
+    decision: "一块地方能放三袋，泡开就是一碗汤 —— 它买的是\"还有点像在过日子\"",
     note: "轻、耐放、提味；tier 3 里最省地方的一件"
   },
 {
@@ -1730,7 +1730,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 26,
     tags: ["water", "heavy"],
     tier: 3,
-    decision: "一格换一大桶，单价最低 —— 但 7.5 公斤，拎上楼要歇两次",
+    decision: "一块地方换一大桶，单价最低 —— 可 7.5 公斤，拎上楼要歇两次",
     note: "全表最重的一件；它的代价是\"必须有人搭把手\""
   },
 {
@@ -1788,7 +1788,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 34,
     tags: ["water", "drink"],
     tier: 4,
-    decision: "保质期最长的一种水，代价是它的瓶身最厚、一格只放两瓶",
+    decision: "保质期最长的一种水，代价是瓶身最厚、一块地方只放两瓶",
     note: "tier 4 的饮水：买的是\"放三年也不用管\""
   },
 {
@@ -1846,7 +1846,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 145,
     tags: ["medkit", "medicine"],
     tier: 4,
-    decision: "两格换一个\"什么都有一点\"的盒子 —— 单件最贵，但一次把急救那一格配齐",
+    decision: "两块地方换一个\"什么都有一点\"的盒子 —— 单件最贵，可一次把急救配齐",
     note: "tier 4 的医疗：买的是\"不用挑\""
   },
 {
@@ -1886,7 +1886,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 24,
     tags: ["medkit", "medicine", "food"],
     tier: 3,
-    decision: "它既是药也是粮 —— 归到药那格，真饿的那天你会想起它",
+    decision: "它既是药也是粮 —— 归到药那边，真饿的那天你会想起它",
     note: "与补液盐同一个\"归类本身就是决定\"的类型"
   },
 {
@@ -1938,7 +1938,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 22,
     tags: ["fuel", "light"],
     tier: 3,
-    decision: "一格能放六块，每块烧一顿 —— 它不取暖，只让你\"能烧开一壶水\"",
+    decision: "一块地方能放六块，每块烧一顿 —— 它不取暖，只让你能烧开一壶水",
     note: "把燃料拆成\"每顿一份\"，与整罐燃料是完全不同的用法"
   },
 {
@@ -1986,7 +1986,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 10,
     tags: ["fuel", "flammable"],
     tier: 1,
-    decision: "比自己劈柴省事得多，但一格只放四把 —— 而它烧得很快",
+    decision: "比自己劈柴省事得多，可一块地方只放四把 —— 而它烧得很快",
     note: "省的是时间与体力，不是钱"
   },
 {
@@ -2004,7 +2004,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 110,
     tags: ["warmth", "power"],
     tier: 4,
-    decision: "最省燃料的暖法 —— 但它吃电，而电要用充电宝换",
+    decision: "最省燃料的暖法 —— 前提是你手上还有能供电的东西，没有它就是一床普通的毯子",
     note: "tier 4 的保暖：把\"取暖\"从燃料问题变成电力问题"
   },
 {
@@ -2022,7 +2022,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 160,
     tags: ["warmth", "soft", "heavy"],
     tier: 4,
-    decision: "一件顶两床被子，代价是**整格** —— 而且它只能装一个人",
+    decision: "一件顶两床被子，代价是一整块地方 —— 而且它只能装一个人",
     note: "单人向的终极保暖；屋里两个人就露馅了"
   },
 {
@@ -2040,7 +2040,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 58,
     tags: ["warmth", "power"],
     tier: 3,
-    decision: "只暖一小块地方，但那一块正好是你坐的位置",
+    decision: "只暖一小块地方，可那一块正好是你坐着的位置",
     note: "与电热毯同一类，小得多也便宜得多"
   },
 {
@@ -2074,7 +2074,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 130,
     tags: ["tool", "fuel"],
     tier: 4,
-    decision: "有了它，燃料烧得更省 —— 但它本身占两格，而且要配燃料才成立",
+    decision: "有了它燃料烧得更省 —— 可它自己就得占两块地方，而且要配燃料才成立",
     note: "tier 4 的工具：它放大的是别的东西的价值"
   },
 {
@@ -2090,7 +2090,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 165,
     tags: ["tool", "water"],
     tier: 4,
-    decision: "一格换\"任何水都能喝\" —— 但它不产水，你仍然得先找到水",
+    decision: "一块地方换\"任何水都能喝\" —— 可它不产水，你还是得先找到水",
     note: "tier 4 里最贵的一件；它改的是水的**来源**，不是数量"
   },
 {
@@ -2103,11 +2103,11 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     stackLimit: 1,
     perishable: false,
     nutrition: {},
-    basePrice: 210,
+    basePrice: 128,
     tags: ["tool", "power", "heavy"],
-    tier: 4,
-    decision: "整格换\"白天有电\" —— 而它只在晴天有用，阴天它只是一块板",
-    note: "全表最贵；它的价值完全取决于天气，而天气不在你手里"
+    tier: 3,
+    decision: "晴天白天能给手电和收音机续上电 —— 阴天它就是一块板，而阴天往往正是要用它的时候",
+    note: "★ 电力机制还没做（策划案里没有）：`power` tag 目前没有读者。所以它的取舍暂时是\"占 4 格换一件工具\"，等 M4 接上电之后才有真价值"
   },
 {
     id: "air_pump",
@@ -2138,7 +2138,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 86,
     tags: ["tool", "heavy"],
     tier: 3,
-    decision: "能挖能撬能当锤子，但两格 —— 而你上一次用它是什么时候",
+    decision: "能挖能撬能当锤子，可它得占两块地方 —— 而你上一次用它是什么时候",
     note: "一件\"什么都能干一点\"的重货"
   },
 {
@@ -2189,7 +2189,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     basePrice: 96,
     tags: ["treat", "luxury", "heavy"],
     tier: 3,
-    decision: "整格换一瓶一瓶的甜 —— 而它解渴这件事会让你更想喝",
+    decision: "一整块地方换一瓶一瓶的甜 —— 而它解渴这件事会让你更想喝",
     note: "奢侈品里唯一\"占满一格\"的一件，代价很具体"
   },
 {

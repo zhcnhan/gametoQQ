@@ -2865,11 +2865,57 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 6px;
+  /* 弹层的定位基准 —— 它要贴着这一块的上沿长出来 */
+  position: relative;
 }
 
+/**
+ * 「加哪一种？」那一小块。
+ *
+ * ## ★★ 为什么它必须**从底部长出来**，而不是插在那一行里
+ *
+ * 用户的原话：
+ *
+ * > "窄屏和手机的（哪怕是 16promax）的那个加家具点击后弹出来的三种家具
+ * >  都会和其他的有些重叠"
+ *
+ * 原因是它原来就是 `dock-tools` 这一行里的一个 flex 子项，
+ * 而那一行本来就有"按保质期排 / 加家具 / 再去采购 / 过一天"四个按钮 ——
+ * 再插三个进去，窄屏上必然挤爆，而且**挤出容器**（`dock-tools` 没有
+ * `overflow: hidden`），于是叠到上面的房间区。
+ *
+ * 现在它是**绝对定位**的一小块，浮在工具栏上方：
+ *  · 不参与那一行的宽度分配 → 按钮不会被压扁、也不会溢出；
+ *  · 贴着上沿 "长" 出来（`bottom: 100%`），落点在玩家刚点的那个按钮正上方，
+ *    所以"它从哪儿来的"一目了然；
+ *  · `z-index` 抬到工具栏之上，盖住的是房间区的留白（那里本来没有可点的东西）。
+ *
+ * ⚠ 排版上**允许换行**（`flex-wrap`）：320px 上三个家具按钮加标题
+ * 一行放不下，硬挤会变成"按钮里的字被截断"，那比换行难看得多。
+ */
 .add-picks {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 3;
   display: flex;
-  gap: 4px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  background: var(--paper);
+  /* 它是"浮起来的一小块"，所以给一道墨影 —— 与抽屉同一套语言 */
+  box-shadow: 3px 3px 0 var(--ink-16);
+  /* 从按钮正上方长出来的那块，宽度不该超过屏幕 */
+  max-width: calc(100vw - 24px);
+}
+
+.add-picks-title {
+  font-size: 11px;
+  color: var(--ink-40);
+  white-space: nowrap;
 }
 
 /* "还差 N 元"：不上朱红 —— 差钱是处境，不是警告（与商店里那句同一条纪律） */
