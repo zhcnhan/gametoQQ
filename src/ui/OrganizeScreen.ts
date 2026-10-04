@@ -4,7 +4,7 @@
  * 分层纪律：本文件**只读** buildView() 的结果；写操作一律调用 systems/organize 的命令函数，
  * 命令返回的 OrganizeEvent 才是表现层的输入（音效 / 拟声字 / 压扁动画）。
  */
-import { FURNITURE_DEFS } from '../data/furniture';
+import { FURNITURE_DEFS, furnitureDefOf } from '../data/furniture';
 import { getItemDef } from '../data/items';
 import { ZONE_COLORS } from '../data/palette';
 import { initAudio, isMuted, playSfx, setMuted } from '../fx/audio';
@@ -15,6 +15,7 @@ import { findZone, getStack, isOffZone, rowZoneId, stackCount, zoneIdsOf } from 
 import type { CategoryId, ItemStack, Shelf, SlotPos, Zone } from '../model/types';
 import type { GameStore } from '../state/store';
 import { roomForNewFurniture, roomsOf, type RoomView } from '../systems/home';
+import { lockedRooms, survivedRuns } from '../systems/unlock';
 import {
   FURNITURE_PRICE,
   addFurnitureCommand,
@@ -773,11 +774,27 @@ export class OrganizeScreen {
         : zoneNames
             .map((z) => `<em class="zone-name" style="--zone:${z.color}">${escapeHtml(z.name)}</em>`)
             .join('');
+    /*
+     * ★★ 「这块家具凭什么占地方」——玩家问出来的。
+     *
+     * 用户的原话："我还想问你，冰箱现在是有效的吗，即便是我加家具加进来的冰箱也有效吗"
+     *
+     * 冰箱**是有效的**（`spoilFactor 0.4`，而货架是 1.0），而且自己买的走同一段逻辑。
+     * 但**界面上一个字都没说** —— 玩家会问这个问题，本身就是"机制看不见"的证据。
+     * 那句话早就写在 `FurnitureDef.why` 里（"断电之后它仍然是个箱子：
+     * 装鲜食能多撑一阵，装别的占地方"），却只躺在数据里没人读。
+     *
+     * ⚠ **只在它真的做了什么时才显示**（`spoilFactor < 1`）：
+     * 普通货架是 1.0，"什么都能放、什么都不额外保护"对玩家是废话 ——
+     * 而一块架子上挂一句废话，四块架子就是四句（§5A 的层次口径）。
+     */
+    const fur = furnitureDefOf(shelf.kind);
+    const special = fur.spoilFactor < 1 ? `<em class="shelf-why">${escapeHtml(fur.why)}</em>` : '';
     return `
       <section class="shelf-card" data-shelf-card="${shelf.id}">
         <div class="shelf-head">
           <span class="zone-tape" style="--zone:${zoneNames[0]?.color ?? 'transparent'}"></span>
-          <h2 class="shelf-title" data-shelf-title data-shelf="${shelf.id}" data-action="edit-zone" title="点一下给某几行贴胶带">
+          <h2 class="shelf-title" data-shelf-title data-shelf="${shelf.id}" data-action="edit-zone" title="点一下改这张胶带">
             ${shelfLabel(shelf, index)}
             ${tapeLabel}
           </h2>
@@ -787,10 +804,11 @@ export class OrganizeScreen {
                   title="${shelf.handyRank !== null ? '门口就是这块。再点一下撤下，可以换别的架' : '把这块标成门口的顺手位（全屋只有这一块）'}">
             ${shelf.handyRank !== null ? '门口这块' : '顺手位'}
           </button>
-          <button class="tape-btn" data-action="edit-zone" data-shelf="${shelf.id}" aria-label="给某几行贴胶带">
-            ${iconSvg('tag')}<span>贴标签</span>
+          <button class="tape-btn" data-action="edit-zone" data-shelf="${shelf.id}" aria-label="改这一架的胶带">
+            ${iconSvg('tag')}<span>胶带</span>
           </button>
         </div>
+        ${special}
         <div class="shelf-rows">${rows.join('')}</div>
       </section>
     `;
@@ -831,7 +849,29 @@ export class OrganizeScreen {
     const meta = this.store.save.meta;
     const room = roomForNewFurniture(meta, this.store.run);
     if (!room) {
-      return `<button class="btn" data-action="explain" data-explain="家里放不下了。每间房能放的块数是固定的，「搬更大的家」（活到最后一次）会开一间新的。">${iconSvg('box')}<span>放不下了</span></button>`;
+      /*
+       * ★★ 「家里满了」这条说法重写过（2026-10 用户反馈）。
+       *
+       * 用户的原话：
+       *
+       * > "搬更大的家是啥意思我不懂，我也没见到多房间，我也没解锁过多房间"
+       *
+       * 两句都是文案的错，不是机制的错：
+       *
+       *  ① **"搬更大的家"** 是一个玩家推不出来的短语 —— 他从没见过"家"这个单位，
+       *     也没见过"更大"是什么样。现在直接说**那间房叫什么**（储藏间），
+       *     以及**它还锁着**；
+       *  ② **"活到最后一次"** 更糟 —— 那句读起来像"再撑一天"，
+       *     而它实际的意思是"**完整跑完一局**（囤货期 + 生存期，撑满或倒下都算）"。
+       *     间隔用的 `survivedRuns` 数的是**局**，不是天。
+       *     所以写清是"跑完一局"，并把**还差几局**报出来。
+       */
+      const locked = lockedRooms(meta)[0];
+      const name = locked ? locked.label : '新的房间';
+      const need = locked ? locked.need : 1;
+      const done = survivedRuns(meta);
+      const left = Math.max(1, need - done);
+      return `<button class="btn" data-action="explain" data-explain="家里放不下了：每间房能放几块是固定的，${name}还锁着。解锁条件是**把一整局跑完**（囤货期 + 生存期，撑满或倒下都算）——再跑完 ${left} 局就开，它自带 3 块空位。">${iconSvg('box')}<span>放不下了 · ${name}还锁着</span></button>`;
     }
     const cash = this.store.run.cash;
     const afford = cash >= FURNITURE_PRICE;

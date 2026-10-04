@@ -210,6 +210,17 @@ export function createStartingBoxes(
  * seed 落盘策略：存的是"已经用掉的游标值"，后续任何随机（点位库存、事件抽取）
  * 都从这个游标继续走，于是同档同序。
  */
+/**
+ * D-Day 的四维起点。
+ *
+ * ⚠ 这个常量住在 **`data/survival.ts`** 里，这里只是转出去给调用点用。
+ * 为什么不放这儿：`data/` **不能**依赖 `systems/`（分层），
+ * 而 `data/survival.ts` 需要它当"囤货期的地板"（见那里的 `PEACETIME_FLOOR`）——
+ * 放这里会形成 `data/survival ⇄ systems/setup` 的**循环依赖**。
+ */
+import { STARTING_STATS } from '../data/survival';
+export { STARTING_STATS };
+
 export function createStartingRun(seed: number = randomSeed()): RunState {
   const cursor = createCursor(seed);
   const run: RunState = {
@@ -228,7 +239,7 @@ export function createStartingRun(seed: number = randomSeed()): RunState {
     zones: [],
     // 重生前家里就有的三箱货（§4.1 第0段"重生开局"）—— 不让玩家对着空货架开场
     boxesToUnpack: createStartingBoxes(cursor, STARTING_BOX_COUNT, FIRST_STOCKPILE_DAY),
-    stats: { health: 100, mood: 70, stamina: 100, shelter: 100 },
+    stats: { ...STARTING_STATS },
     trust: {},
     deliveredOrders: 0,
     log: [],

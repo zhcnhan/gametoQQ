@@ -205,6 +205,38 @@ describe('★ 胶带架渲染出来了', () => {
   });
 });
 
+describe('★★ 家具「凭什么占地方」要看得见', () => {
+  /*
+   * ★★ 这条是玩家问出来的。用户的原话：
+   *
+   * > "我还想问你，冰箱现在是有效的吗，即便是我加家具加进来的冰箱也有效吗"
+   *
+   * 机制**一直是有效的**（冰箱腐坏乘数 0.4，货架 1.0；`addFurniture` 造出来的
+   * 就是 `kind: 'fridge'`，走同一段逻辑）。但界面上一个字都没说 ——
+   * **玩家会问这个问题，本身就是"机制看不见"的证据**。
+   *
+   * 数据里那句 `FurnitureDef.why` 早就写好了，只是没人读过。
+   */
+  it('★★ 冰箱 / 柜子上有一句解释，普通货架上**没有**', () => {
+    const { root } = mount('good', shared); // 档里是 shelf, shelf, fridge
+    const why = root.querySelectorAll('.shelf-why');
+    /*
+     * ⚠ 判据是"**比货架多**"而不是"至少一句"：
+     * 普通货架的 `spoilFactor` 是 1（什么都不额外保护），那句话对玩家是废话 ——
+     * 而一块架子挂一句废话，四块就是四句（§5A 的层次口径）。
+     */
+    expect(why.length, '冰箱该有一句解释').toBeGreaterThan(0);
+    expect(why.length, '普通货架不该有（它们什么都不额外保护）').toBeLessThan(count(root, '[data-shelf-card]'));
+  });
+
+  it('★ 那条解释里写着它到底做了什么（不是一句空话）', () => {
+    const { root } = mount('good', shared);
+    const text = root.querySelectorAll('.shelf-why')[0]?.textContent ?? '';
+    // 数据里那句是"断电之后它仍然是个箱子：装鲜食能多撑一阵，装别的占地方"
+    expect(text.length, '解释要有内容').toBeGreaterThan(4);
+  });
+});
+
 describe('★★ 拖到行上就贴上 / 剪刀拖上去就撕下', () => {
   it('★★ 从架上拖一张到「别的一行」→ 那一行改贴这张胶带', () => {
     const { root, store, win } = mount('rows', shared);

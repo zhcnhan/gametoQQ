@@ -12,14 +12,21 @@
         {
           "label": "起来查一遍",
           "outcome": "你顺着管子摸到总阀，发现只是外面的风声。回床上时手脚都凉了，但心里踏实。",
-          "effect": { "stamina": -3, "mood": 4 }
+          "effect": {
+            "stamina": -3,
+            "mood": 4
+          }
         },
         {
           "label": "先睡",
           "outcome": "你翻了个身。那声音又响了一次，然后没了。",
-          "effect": { "stamina": 2, "mood": 1 }
+          "effect": {
+            "stamina": 2,
+            "mood": 1
+          }
         }
-      ]
+      ],
+      "when": "预兆"
     },
     {
       "id": "n_upstairs_steps",
@@ -30,14 +37,22 @@
         {
           "label": "上去看一眼",
           "outcome": "是楼上的门没关严，风在推它。你替他们带上了，回来路上脚步轻了些。",
-          "effect": { "stamina": -4, "mood": 5 }
+          "effect": {
+            "stamina": -4,
+            "mood": 5
+          }
         },
         {
           "label": "当没听见",
           "outcome": "你把被子拉到耳朵上。那声音到半夜才停。",
-          "effect": { "stamina": 1, "mood": -1, "shelter": 1 }
+          "effect": {
+            "stamina": 1,
+            "mood": -1,
+            "shelter": 1
+          }
         }
-      ]
+      ],
+      "when": "预兆"
     },
     {
       "id": "n_far_rumble",
@@ -48,14 +63,22 @@
         {
           "label": "出去看看",
           "outcome": "是路口那栋楼的外墙掉了一角。你在那儿站了一会儿，记住了这条路的样子，也记住了哪面墙不能靠。",
-          "effect": { "stamina": -4, "mood": 5, "shelter": 2 }
+          "effect": {
+            "stamina": -4,
+            "mood": 5,
+            "shelter": 2
+          }
         },
         {
           "label": "留在屋里",
           "outcome": "你检查了一遍门锁和窗户。什么都没发生，你也睡不着了。",
-          "effect": { "shelter": 3, "mood": 1 }
+          "effect": {
+            "shelter": 3,
+            "mood": 1
+          }
         }
-      ]
+      ],
+      "when": "预兆"
     },
     {
       "id": "n_last_candle",
@@ -66,14 +89,21 @@
         {
           "label": "再点一根",
           "outcome": "清单写完了。你把纸压在罐头底下，吹灭了火。",
-          "effect": { "mood": 3, "stamina": -1 }
+          "effect": {
+            "mood": 3,
+            "stamina": -1
+          }
         },
         {
           "label": "明天再说",
           "outcome": "你把纸折起来塞进兜里，摸着黑上了床。",
-          "effect": { "stamina": 2, "mood": 1 }
+          "effect": {
+            "stamina": 2,
+            "mood": 1
+          }
         }
-      ]
+      ],
+      "when": "预兆"
     },
     {
       "id": "n_torch_dim",
@@ -84,14 +114,21 @@
         {
           "label": "换新的",
           "outcome": "白光重新亮起来，屋里一下清楚了很多。备用那板少了两节。",
-          "effect": { "mood": 3, "stamina": -1 }
+          "effect": {
+            "mood": 3,
+            "stamina": -1
+          }
         },
         {
           "label": "省着用",
           "outcome": "你把光调暗，摸黑把该做的做完了。",
-          "effect": { "stamina": 1, "mood": 2 }
+          "effect": {
+            "stamina": 1,
+            "mood": 2
+          }
         }
-      ]
+      ],
+      "when": "预兆"
     },
     {
       "id": "n_blackout_fumble",
@@ -102,14 +139,22 @@
         {
           "label": "划火柴找",
           "outcome": "是那只空罐头，没碎。你把它捡起来放回原处，顺手把桌边东西归了位。",
-          "effect": { "mood": 3, "stamina": -2 }
+          "effect": {
+            "mood": 3,
+            "stamina": -2
+          }
         },
         {
           "label": "明天再捡",
           "outcome": "你绕开那个方向上了床，竖着耳朵听了一会儿。",
-          "effect": { "stamina": 2, "mood": -1, "shelter": 1 }
+          "effect": {
+            "stamina": 2,
+            "mood": -1,
+            "shelter": 1
+          }
         }
-      ]
+      ],
+      "when": "预兆"
     },
     {
       "id": "n_phone_again",
@@ -120,14 +165,21 @@
         {
           "label": "关掉睡觉",
           "outcome": "屏幕黑下去的一瞬间，屋里安静得有点陌生。你很快就睡着了。",
-          "effect": { "stamina": 4, "mood": 2 }
+          "effect": {
+            "stamina": 4,
+            "mood": 2
+          }
         },
         {
           "label": "再刷一遍",
           "outcome": "还是那几条。你又往下翻了两页，看到半年前的照片。",
-          "effect": { "mood": 3, "stamina": -2 }
+          "effect": {
+            "mood": 3,
+            "stamina": -2
+          }
         }
-      ]
+      ],
+      "when": "预兆"
     },
     {
       "id": "n_old_photo",
@@ -138,14 +190,21 @@
         {
           "label": "看一会儿",
           "outcome": "你把那几张来回看了几遍，然后锁了屏。躺下的时候心里是暖的。",
-          "effect": { "mood": 5, "stamina": -2 }
+          "effect": {
+            "mood": 5,
+            "stamina": -2
+          }
         },
         {
           "label": "锁屏睡觉",
           "outcome": "你把手机扣在枕头边，闭上眼睛。",
-          "effect": { "stamina": 3, "mood": 1 }
+          "effect": {
+            "stamina": 3,
+            "mood": 1
+          }
         }
-      ]
+      ],
+      "when": "预兆"
     },
     {
       "id": "n_replay_tomorrow",
@@ -156,14 +215,21 @@
         {
           "label": "写下来",
           "outcome": "三行字，写完就清楚了。你把它压在鞋边上，明天一低头就能看见。",
-          "effect": { "mood": 4, "stamina": -2 }
+          "effect": {
+            "mood": 4,
+            "stamina": -2
+          }
         },
         {
           "label": "脑子里过",
           "outcome": "你在黑暗里把顺序排了两遍，最后一条想不起来是什么。",
-          "effect": { "stamina": 1, "mood": 1 }
+          "effect": {
+            "stamina": 1,
+            "mood": 1
+          }
         }
-      ]
+      ],
+      "when": "平时"
     },
     {
       "id": "n_shoulder_numb",
@@ -174,14 +240,21 @@
         {
           "label": "热敷一会儿",
           "outcome": "你用毛巾包着热水袋敷了十分钟，麻意慢慢退回去了。",
-          "effect": { "health": 4, "mood": 2 }
+          "effect": {
+            "health": 4,
+            "mood": 2
+          }
         },
         {
           "label": "换个姿势",
           "outcome": "你侧过身，把手臂垫高。麻是麻，但困意上来了。",
-          "effect": { "stamina": 3, "mood": 1 }
+          "effect": {
+            "stamina": 3,
+            "mood": 1
+          }
         }
-      ]
+      ],
+      "when": "预兆"
     },
     {
       "id": "n_ear_ache",
@@ -192,14 +265,22 @@
         {
           "label": "吃一片药",
           "outcome": "药片吞下去，你又灌了半杯热水。躺下的时候疼已经轻了。",
-          "effect": { "health": 5, "mood": 1 }
+          "effect": {
+            "health": 5,
+            "mood": 1
+          }
         },
         {
           "label": "扛到明天",
           "outcome": "你把围巾绕在脖子上睡下了，睡得不算沉。",
-          "effect": { "stamina": 2, "health": -1, "mood": 1 }
+          "effect": {
+            "stamina": 2,
+            "health": -1,
+            "mood": 1
+          }
         }
-      ]
+      ],
+      "when": "灾后"
     },
     {
       "id": "n_heart_fast",
@@ -210,14 +291,22 @@
         {
           "label": "坐起来缓",
           "outcome": "你靠着墙坐了十来分钟，慢慢就平了。后背有点凉。",
-          "effect": { "health": 3, "stamina": -2, "mood": 2 }
+          "effect": {
+            "health": 3,
+            "stamina": -2,
+            "mood": 2
+          }
         },
         {
           "label": "数呼吸",
           "outcome": "数到四十几下的时候你睡着了，醒来时天刚亮。",
-          "effect": { "stamina": 4, "mood": 2 }
+          "effect": {
+            "stamina": 4,
+            "mood": 2
+          }
         }
-      ]
+      ],
+      "when": "预兆"
     },
     {
       "id": "n_finger_stiff",
@@ -228,14 +317,21 @@
         {
           "label": "泡一会儿",
           "outcome": "十个指头都活过来了。你顺便把指甲也剪了。",
-          "effect": { "health": 3, "mood": 3 }
+          "effect": {
+            "health": 3,
+            "mood": 3
+          }
         },
         {
           "label": "搓一搓",
           "outcome": "搓到发热就钻进了被窝，明天大概还是会僵。",
-          "effect": { "stamina": 3, "mood": 1 }
+          "effect": {
+            "stamina": 3,
+            "mood": 1
+          }
         }
-      ]
+      ],
+      "when": "预兆"
     },
     {
       "id": "n_breath_visible",
@@ -246,14 +342,21 @@
         {
           "label": "都盖上",
           "outcome": "两床被子加一件大衣，压得翻身都难。但半个小时后真的暖了。",
-          "effect": { "shelter": 4, "mood": 2 }
+          "effect": {
+            "shelter": 4,
+            "mood": 2
+          }
         },
         {
           "label": "加烧一档",
           "outcome": "炉子响了一阵，屋里的温度慢慢爬上来。燃料表又下去一格。",
-          "effect": { "shelter": 5, "stamina": 1 }
+          "effect": {
+            "shelter": 5,
+            "stamina": 1
+          }
         }
-      ]
+      ],
+      "when": "灾后"
     },
     {
       "id": "n_condensation",
@@ -264,14 +367,22 @@
         {
           "label": "擦一遍",
           "outcome": "抹布拧了三次水。你把窗台上那几样东西挪开，垫上了纸。",
-          "effect": { "shelter": 4, "stamina": -3, "mood": 2 }
+          "effect": {
+            "shelter": 4,
+            "stamina": -3,
+            "mood": 2
+          }
         },
         {
           "label": "明天再说",
           "outcome": "你把离窗最近的那袋东西往里挪了挪，别的没动。",
-          "effect": { "stamina": 2, "shelter": 1 }
+          "effect": {
+            "stamina": 2,
+            "shelter": 1
+          }
         }
-      ]
+      ],
+      "when": "预兆"
     },
     {
       "id": "n_frozen_bucket",
@@ -282,14 +393,22 @@
         {
           "label": "搬进来化",
           "outcome": "冰在屋里慢慢化开，地上湿了一小片。明天有水用了，屋里也潮得不那么干。",
-          "effect": { "stamina": -3, "mood": 3, "shelter": 2 }
+          "effect": {
+            "stamina": -3,
+            "mood": 3,
+            "shelter": 2
+          }
         },
         {
           "label": "明天砸冰",
           "outcome": "你回来躺下，想起冰化开还要很久。",
-          "effect": { "stamina": 3, "mood": 1 }
+          "effect": {
+            "stamina": 3,
+            "mood": 1
+          }
         }
-      ]
+      ],
+      "when": "灾后"
     },
     {
       "id": "n_door_check",
@@ -300,14 +419,22 @@
         {
           "label": "起来确认",
           "outcome": "锁着。你顺手把门后的挡板也顶上了。再躺下就踏实了。",
-          "effect": { "shelter": 3, "stamina": -1, "mood": 3 }
+          "effect": {
+            "shelter": 3,
+            "stamina": -1,
+            "mood": 3
+          }
         },
         {
           "label": "相信记忆",
           "outcome": "你闭上眼，那个念头又冒了两次，然后你睡着了。",
-          "effect": { "stamina": 3, "mood": 1 }
+          "effect": {
+            "stamina": 3,
+            "mood": 1
+          }
         }
-      ]
+      ],
+      "when": "平时"
     },
     {
       "id": "n_late_snack",
@@ -318,14 +445,21 @@
         {
           "label": "吃一点",
           "outcome": "你开了一听，只吃了一半，剩下的盖好放回架上。",
-          "effect": { "mood": 4, "stamina": 2 }
+          "effect": {
+            "mood": 4,
+            "stamina": 2
+          }
         },
         {
           "label": "喝水顶过去",
           "outcome": "两杯水下肚，饿感淡了。你躺下的时候肚子还有点响。",
-          "effect": { "mood": 1, "stamina": 1 }
+          "effect": {
+            "mood": 1,
+            "stamina": 1
+          }
         }
-      ]
+      ],
+      "when": "平时"
     },
     {
       "id": "n_prep_meds",
@@ -336,14 +470,21 @@
         {
           "label": "装个小包",
           "outcome": "你找了个干净袋子，把三样按顺序放好，塞进外套口袋里。",
-          "effect": { "mood": 4, "stamina": -1 }
+          "effect": {
+            "mood": 4,
+            "stamina": -1
+          }
         },
         {
           "label": "明天再说",
           "outcome": "你把东西推回原处，记住了它们大概在哪个角。",
-          "effect": { "stamina": 3, "mood": 1 }
+          "effect": {
+            "stamina": 3,
+            "mood": 1
+          }
         }
-      ]
+      ],
+      "when": "平时"
     },
     {
       "id": "n_gear_check",
@@ -354,14 +495,21 @@
         {
           "label": "重装一遍",
           "outcome": "你把能用的留下、没用的拿出来。口袋里比以前轻。",
-          "effect": { "mood": 3, "stamina": -2 }
+          "effect": {
+            "mood": 3,
+            "stamina": -2
+          }
         },
         {
           "label": "就这样挂着",
           "outcome": "你拍了拍外套，回床上去了。明早伸手就能拿。",
-          "effect": { "stamina": 3, "mood": 1 }
+          "effect": {
+            "stamina": 3,
+            "mood": 1
+          }
         }
-      ]
+      ],
+      "when": "平时"
     },
     {
       "id": "n_mark_expiry",
@@ -372,14 +520,21 @@
         {
           "label": "现在标上",
           "outcome": "你用纸胶带写了几个月份，贴在罐头上。以后一眼就能看见。",
-          "effect": { "mood": 5, "stamina": -3 }
+          "effect": {
+            "mood": 5,
+            "stamina": -3
+          }
         },
         {
           "label": "明天一起弄",
           "outcome": "你把最旧的那几样往前挪了一格，算是做了个记号。",
-          "effect": { "stamina": 2, "mood": 2 }
+          "effect": {
+            "stamina": 2,
+            "mood": 2
+          }
         }
-      ]
+      ],
+      "when": "平时"
     },
     {
       "id": "n_drink_alone",
@@ -390,14 +545,22 @@
         {
           "label": "喝一口",
           "outcome": "一口下去，从喉咙热到胃。你把瓶子拧紧放回去，还剩大半。",
-          "effect": { "mood": 5, "shelter": 2, "stamina": 1 }
+          "effect": {
+            "mood": 5,
+            "shelter": 2,
+            "stamina": 1
+          }
         },
         {
           "label": "留着",
           "outcome": "你把瓶子往里推了推 —— 它大概会在更冷的那天派上用场。",
-          "effect": { "mood": 2, "stamina": 2 }
+          "effect": {
+            "mood": 2,
+            "stamina": 2
+          }
         }
-      ]
+      ],
+      "when": "平时"
     },
     {
       "id": "n_knock_wrong_door",
@@ -408,14 +571,22 @@
         {
           "label": "问一句",
           "outcome": "是楼上找错楼层的人。他道了歉，你确认了门链是扣着的。",
-          "effect": { "mood": 3, "shelter": 2 }
+          "effect": {
+            "mood": 3,
+            "shelter": 2
+          }
         },
         {
           "label": "不出声",
           "outcome": "你在门边站了两分钟，直到隔壁的灯灭了。",
-          "effect": { "shelter": 3, "stamina": -1, "mood": 1 }
+          "effect": {
+            "shelter": 3,
+            "stamina": -1,
+            "mood": 1
+          }
         }
-      ]
+      ],
+      "when": "预兆"
     },
     {
       "id": "n_battery_radio",
@@ -426,14 +597,21 @@
         {
           "label": "听一会儿",
           "outcome": "播的是明天的天气，还有一段通知。你听完才关。",
-          "effect": { "mood": 5, "stamina": -1 }
+          "effect": {
+            "mood": 5,
+            "stamina": -1
+          }
         },
         {
           "label": "关掉省电",
           "outcome": "你把电留给了手电。屋里安静下来。",
-          "effect": { "stamina": 3, "mood": 1 }
+          "effect": {
+            "stamina": 3,
+            "mood": 1
+          }
         }
-      ]
+      ],
+      "when": "平时"
     },
     {
       "id": "n_shoes_drying",
@@ -444,14 +622,21 @@
         {
           "label": "再烤一会儿",
           "outcome": "你把鞋垫翻了个面，临睡前摸了摸 —— 干的。",
-          "effect": { "mood": 3, "health": 1 }
+          "effect": {
+            "mood": 3,
+            "health": 1
+          }
         },
         {
           "label": "明天穿湿的",
           "outcome": "你把鞋摆正，想着明天路上大概会不舒服。",
-          "effect": { "stamina": 2, "mood": 1 }
+          "effect": {
+            "stamina": 2,
+            "mood": 1
+          }
         }
-      ]
+      ],
+      "when": "预兆"
     },
     {
       "id": "n_neighbor_music",
@@ -462,14 +647,21 @@
         {
           "label": "听着睡",
           "outcome": "歌放到第三遍的时候你睡着了。楼里还有别人醒着，这件事让你踏实。",
-          "effect": { "mood": 4, "stamina": 2 }
+          "effect": {
+            "mood": 4,
+            "stamina": 2
+          }
         },
         {
           "label": "塞上耳塞",
           "outcome": "世界安静下来，你很快就沉下去了。",
-          "effect": { "stamina": 4, "mood": 1 }
+          "effect": {
+            "stamina": 4,
+            "mood": 1
+          }
         }
-      ]
+      ],
+      "when": "平时"
     }
   ]
 }

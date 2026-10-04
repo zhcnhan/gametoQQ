@@ -193,7 +193,13 @@ export function endDay(store: GameStore): PhaseResult {
 
   store.commit((draft) => {
     const cursor = createCursor(draft.seed);
-    const eventId = rollNight(cursor, draft.eventHistory.night);
+    /*
+     * ★ `phase = true`：`endDay` 只从**整理期**（= 囤货期）被调用，
+     * 所以这里一定是先知的安全期 —— 只抽 `平时` 与 `预兆`（风声），
+     * 不抽"半夜冻醒""天花板往下坠"这类灾后处境。
+     * 详见 `rollNight` 的参数注释。
+     */
+    const eventId = rollNight(cursor, draft.eventHistory.night, true);
     if (eventId) {
       draft.night = { eventId, choice: null, applied: null };
       draft.phase = 'night';

@@ -1,0 +1,149 @@
+{
+  "kind": "nightEvent",
+  "batch": "夜间-04",
+  "batchNote": "本批 6 条是**第 0 批**（原先是手写在 `src/data/nightEvents.ts` 里的，唯一一批没有内容文件的）。\n\n★ 搬进流水线的理由：2026-10 加\"阶段标签\"（`when`）时，我的脚本按内容文件遍历，\n于是这 6 条被**静默漏掉**了 —— 注册表照样 60 条、测试照样绿，而漏标的结果是\n它们在囤货期全部按\"灾后\"处理（看不到）。手写的东西不会自动被批量改动照顾到，\n所以把它搬进来。\n\n这 6 条的内容**一个字没改**（原样从代码里抽出），只补了 `when`。",
+  "entries": [
+    {
+      "id": "n_night_shift",
+      "text": "单位群里在喊人顶夜班，双倍工资。",
+      "options": [
+        {
+          "label": "去顶班",
+          "outcome": "你在单位坐到天亮。回来的时候，楼道里已经有人出门上班了。",
+          "effect": {
+            "stamina": -25,
+            "cash": 120
+          }
+        },
+        {
+          "label": "说家里有事",
+          "outcome": "你没去。群里很快没人说话了。",
+          "effect": {
+            "mood": -3
+          }
+        }
+      ],
+      "tier": 1,
+      "when": "平时"
+    },
+    {
+      "id": "n_neighbor_soup",
+      "text": "王阿姨敲门，说她家煮了汤，让你过去坐坐。",
+      "options": [
+        {
+          "label": "过去坐坐",
+          "outcome": "喝了两碗汤，听她念了半小时儿子。回来的时候身上是暖的。",
+          "effect": {
+            "mood": 12,
+            "stamina": -8
+          }
+        },
+        {
+          "label": "隔着门说累了",
+          "outcome": "她在门口站了会儿才走。你听见她上楼的声音。",
+          "effect": {
+            "mood": -5
+          }
+        }
+      ],
+      "tier": 1,
+      "when": "平时"
+    },
+    {
+      "id": "n_midnight_restock",
+      "text": "有人说南边那家超市半夜补货。小区里已经有车出去了。",
+      "options": [
+        {
+          "label": "开车去看看",
+          "outcome": "你摸黑拉回来一箱，箱子上没写标签。",
+          "effect": {
+            "stamina": -18,
+            "cash": -50,
+            "boxDefId": "box_mixed"
+          },
+          "requireFullCash": true
+        },
+        {
+          "label": "托邻居捎一箱",
+          "outcome": "他答应得爽快，也说好了要抽两成。",
+          "effect": {
+            "cash": -70,
+            "boxDefId": "box_staple"
+          },
+          "requireFullCash": true
+        }
+      ],
+      "tier": 1,
+      "when": "平时"
+    },
+    {
+      "id": "n_tripped_breaker",
+      "text": "晚上跳了闸。你摸黑找到配电箱，手电筒的光已经发黄了。",
+      "options": [
+        {
+          "label": "现在就修好",
+          "outcome": "你换上一根保险丝，灯亮了。屋里重新有点热乎气。",
+          "effect": {
+            "stamina": -14,
+            "shelter": 6
+          }
+        },
+        {
+          "label": "裹紧被子睡",
+          "outcome": "屋里比昨天冷一点。你听着风声睡着了。",
+          "effect": {
+            "shelter": -5
+          }
+        }
+      ],
+      "tier": 1,
+      "when": "预兆"
+    },
+    {
+      "id": "n_old_classmate",
+      "text": "一个很久没联系的同学发来消息，说手头紧，想周转一下。",
+      "options": [
+        {
+          "label": "转他 80",
+          "outcome": "你转过去 {spentCash}。他回了一串谢谢。",
+          "effect": {
+            "cash": -80,
+            "mood": 8
+          }
+        },
+        {
+          "label": "说自己也紧",
+          "outcome": "消息挂在那儿，他没再回。",
+          "effect": {
+            "mood": -6
+          }
+        }
+      ],
+      "tier": 1,
+      "when": "平时"
+    },
+    {
+      "id": "n_count_the_shelves",
+      "text": "睡前你站在货架前，把今天买回来的东西又看了一遍。",
+      "options": [
+        {
+          "label": "蹲下来数一遍",
+          "outcome": "数到一半忘了数到哪。",
+          "effect": {
+            "stamina": -6,
+            "mood": 10
+          }
+        },
+        {
+          "label": "看一眼就睡",
+          "outcome": "你站了会儿，关了灯。",
+          "effect": {
+            "mood": 3
+          }
+        }
+      ],
+      "tier": 1,
+      "when": "平时"
+    }
+  ]
+}

@@ -64,7 +64,7 @@ const contentDir = join(root, 'content');
 const FIELDS = {
   item: ['id', 'name', 'category', 'icon', 'unitWeight', 'slotSize', 'stackLimit', 'perishable', 'shelfLifeDays', 'nutrition', 'basePrice', 'tags', 'tier', 'decision', 'note'],
   identity: ['id', 'name', 'tagline', 'startCash', 'vehicleCapacity', 'carryLimit', 'perk', 'perkRule', 'tier', 'decision'],
-  nightEvent: ['id', 'text', 'options', 'tier', 'decision'],
+  nightEvent: ['id', 'text', 'options', 'tier', 'decision', 'when'],
   dayEvent: ['id', 'text', 'onlyShops', 'tags', 'options', 'tier', 'decision'],
   emergency: ['id', 'text', 'category', 'needOnHandy', 'lost', 'consumes', 'tier', 'decision'],
   helpRequest: ['id', 'npcId', 'text', 'demands', 'trustGain', 'trustLoss', 'thanks', 'tier', 'decision'],

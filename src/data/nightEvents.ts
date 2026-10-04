@@ -17,116 +17,6 @@ import type { NightEventDef } from '../model/types';
 export const NIGHT_SLEEP = -1;
 
 export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
-  {
-    id: 'n_night_shift',
-    text: '单位群里在喊人顶夜班，双倍工资。',
-    options: [
-      {
-        label: '去顶班',
-        outcome: '你在单位坐到天亮。回来的时候，楼道里已经有人出门上班了。',
-        effect: { stamina: -25, cash: 120 }
-      },
-      {
-        label: '说家里有事',
-        outcome: '你没去。群里很快没人说话了。',
-        effect: { mood: -3 }
-      }
-    ],
-    tier: 1
-  },
-  {
-    id: 'n_neighbor_soup',
-    text: '王阿姨敲门，说她家煮了汤，让你过去坐坐。',
-    options: [
-      {
-        label: '过去坐坐',
-        outcome: '喝了两碗汤，听她念了半小时儿子。回来的时候身上是暖的。',
-        effect: { mood: 12, stamina: -8 }
-      },
-      {
-        label: '隔着门说累了',
-        outcome: '她在门口站了会儿才走。你听见她上楼的声音。',
-        effect: { mood: -5 }
-      }
-    ],
-    tier: 1
-  },
-  {
-    id: 'n_midnight_restock',
-    text: '有人说南边那家超市半夜补货。小区里已经有车出去了。',
-    options: [
-      {
-        // 买货：钱不够就是买不成（界面上会置灰并写明还差多少）
-        label: '开车去看看',
-        outcome: '你摸黑拉回来一箱，箱子上没写标签。',
-        effect: { stamina: -18, cash: -50, boxDefId: 'box_mixed' },
-        requireFullCash: true
-      },
-      {
-        label: '托邻居捎一箱',
-        outcome: '他答应得爽快，也说好了要抽两成。',
-        effect: { cash: -70, boxDefId: 'box_staple' },
-        requireFullCash: true
-      }
-    ],
-    tier: 1
-  },
-  {
-    id: 'n_tripped_breaker',
-    text: '晚上跳了闸。你摸黑找到配电箱，手电筒的光已经发黄了。',
-    options: [
-      {
-        label: '现在就修好',
-        outcome: '你换上一根保险丝，灯亮了。屋里重新有点热乎气。',
-        effect: { stamina: -14, shelter: 6 }
-      },
-      {
-        label: '裹紧被子睡',
-        outcome: '屋里比昨天冷一点。你听着风声睡着了。',
-        effect: { shelter: -5 }
-      }
-    ],
-    tier: 1
-  },
-  {
-    id: 'n_old_classmate',
-    text: '一个很久没联系的同学发来消息，说手头紧，想周转一下。',
-    options: [
-      {
-        /**
-         * 人情这一类**允许少给**（不写 requireFullCash）：兜里只有 25 元的人照样能帮上忙，
-         * 只是帮得少一点。`{spentCash}` 会换成真的转出去的那个数 ——
-         * 屏幕上是"你转过去 80"还是"你转过去 25"，取决于这个人当时有多少。
-         */
-        label: '转他 80',
-        outcome: '你转过去 {spentCash}。他回了一串谢谢。',
-        effect: { cash: -80, mood: 8 }
-      },
-      {
-        label: '说自己也紧',
-        outcome: '消息挂在那儿，他没再回。',
-        effect: { mood: -6 }
-      }
-    ],
-    tier: 1
-  },
-  {
-    id: 'n_count_the_shelves',
-    text: '睡前你站在货架前，把今天买回来的东西又看了一遍。',
-    options: [
-      {
-        label: '蹲下来数一遍',
-        outcome: '数到一半忘了数到哪。',
-        effect: { stamina: -6, mood: 10 }
-      },
-      {
-        label: '看一眼就睡',
-        outcome: '你站了会儿，关了灯。',
-        effect: { mood: 3 }
-      }
-    ],
-    tier: 1
-  },
   // ═══ 生成内容 夜间-01 起（scripts/merge-content.mjs 插入，别手改这一段） ═══
 {
     id: "n_rat_droppings",
@@ -157,7 +47,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           boxDefId: "box_staple"
         }
       }
-    ]
+    ],
+    when: "平时"
   },
 {
     id: "n_cold_feet",
@@ -180,7 +71,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           stamina: 3
         }
       }
-    ]
+    ],
+    when: "灾后"
   },
 {
     id: "n_can_dented",
@@ -203,7 +95,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           mood: 1
         }
       }
-    ]
+    ],
+    when: "灾后"
   },
 {
     id: "n_power_bill",
@@ -226,7 +119,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           stamina: 2
         }
       }
-    ]
+    ],
+    when: "平时"
   },
 {
     id: "n_knock_sell",
@@ -250,7 +144,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           mood: 2
         }
       }
-    ]
+    ],
+    when: "平时"
   },
 {
     id: "n_back_pain",
@@ -273,7 +168,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           stamina: 4
         }
       }
-    ]
+    ],
+    when: "预兆"
   },
 {
     id: "n_smell_fridge",
@@ -297,7 +193,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           stamina: 4
         }
       }
-    ]
+    ],
+    when: "预兆"
   },
 {
     id: "n_window_rattle",
@@ -322,7 +219,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           mood: 1
         }
       }
-    ]
+    ],
+    when: "预兆"
   },
 {
     id: "n_trade_smokes",
@@ -345,7 +243,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           stamina: 2
         }
       }
-    ]
+    ],
+    when: "平时"
   },
 {
     id: "n_shiver_night",
@@ -368,7 +267,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           mood: 1
         }
       }
-    ]
+    ],
+    when: "灾后"
   },
 {
     id: "n_expired_milk",
@@ -391,7 +291,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           mood: 2
         }
       }
-    ]
+    ],
+    when: "平时"
   },
 {
     id: "n_neighbor_borrow",
@@ -414,7 +315,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           mood: 1
         }
       }
-    ]
+    ],
+    when: "平时"
   },
 {
     id: "n_sore_throat",
@@ -437,7 +339,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           stamina: 2
         }
       }
-    ]
+    ],
+    when: "预兆"
   },
 {
     id: "n_dark_landing",
@@ -461,7 +364,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           stamina: 3
         }
       }
-    ]
+    ],
+    when: "平时"
   },
 {
     id: "n_leftover_stew",
@@ -485,7 +389,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           stamina: 2
         }
       }
-    ]
+    ],
+    when: "平时"
   },
 {
     id: "n_blisters",
@@ -507,7 +412,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           stamina: 3
         }
       }
-    ]
+    ],
+    when: "平时"
   },
 {
     id: "n_group_chat",
@@ -530,7 +436,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           stamina: 2
         }
       }
-    ]
+    ],
+    when: "平时"
   },
 {
     id: "n_wet_shoes",
@@ -555,7 +462,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           mood: 1
         }
       }
-    ]
+    ],
+    when: "平时"
   },
 {
     id: "n_water_meter",
@@ -577,7 +485,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           mood: 3
         }
       }
-    ]
+    ],
+    when: "预兆"
   },
 {
     id: "n_cough_nextdoor",
@@ -599,7 +508,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           stamina: 4
         }
       }
-    ]
+    ],
+    when: "平时"
   },
 {
     id: "n_scale_weight",
@@ -623,7 +533,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           stamina: 2
         }
       }
-    ]
+    ],
+    when: "平时"
   },
 {
     id: "n_drip_faucet",
@@ -647,7 +558,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           stamina: 3
         }
       }
-    ]
+    ],
+    when: "预兆"
   },
   // ═══ 生成内容 夜间-01 止 ═══,
   // ═══ 生成内容 夜间-02 起（scripts/merge-content.mjs 插入，别手改这一段） ═══
@@ -673,7 +585,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           stamina: 4
         }
       }
-    ]
+    ],
+    when: "灾后"
   },
 {
     id: "n_partition_fall",
@@ -698,7 +611,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           mood: 2
         }
       }
-    ]
+    ],
+    when: "灾后"
   },
 {
     id: "n_rice_weevil",
@@ -730,7 +644,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           stamina: 3
         }
       }
-    ]
+    ],
+    when: "平时"
   },
 {
     id: "n_ant_trail",
@@ -763,7 +678,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           shelter: 4
         }
       }
-    ]
+    ],
+    when: "平时"
   },
 {
     id: "n_flea_bite",
@@ -796,7 +712,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           health: -1
         }
       }
-    ]
+    ],
+    when: "灾后"
   },
 {
     id: "n_moth_holes",
@@ -829,7 +746,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           mood: 1
         }
       }
-    ]
+    ],
+    when: "平时"
   },
   // ═══ 生成内容 夜间-02 止 ═══,
   // ═══ 生成内容 夜间-03 起（scripts/merge-content.mjs 插入，别手改这一段） ═══
@@ -855,7 +773,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           mood: 1
         }
       }
-    ]
+    ],
+    when: "预兆"
   },
 {
     id: "n_upstairs_steps",
@@ -880,7 +799,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           shelter: 1
         }
       }
-    ]
+    ],
+    when: "预兆"
   },
 {
     id: "n_far_rumble",
@@ -905,7 +825,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           mood: 1
         }
       }
-    ]
+    ],
+    when: "预兆"
   },
 {
     id: "n_last_candle",
@@ -929,7 +850,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           mood: 1
         }
       }
-    ]
+    ],
+    when: "预兆"
   },
 {
     id: "n_torch_dim",
@@ -953,7 +875,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           mood: 2
         }
       }
-    ]
+    ],
+    when: "预兆"
   },
 {
     id: "n_blackout_fumble",
@@ -978,7 +901,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           shelter: 1
         }
       }
-    ]
+    ],
+    when: "预兆"
   },
 {
     id: "n_phone_again",
@@ -1002,7 +926,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           stamina: -2
         }
       }
-    ]
+    ],
+    when: "预兆"
   },
 {
     id: "n_old_photo",
@@ -1026,7 +951,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           mood: 1
         }
       }
-    ]
+    ],
+    when: "预兆"
   },
 {
     id: "n_replay_tomorrow",
@@ -1050,7 +976,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           mood: 1
         }
       }
-    ]
+    ],
+    when: "平时"
   },
 {
     id: "n_shoulder_numb",
@@ -1074,7 +1001,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           mood: 1
         }
       }
-    ]
+    ],
+    when: "预兆"
   },
 {
     id: "n_ear_ache",
@@ -1099,7 +1027,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           mood: 1
         }
       }
-    ]
+    ],
+    when: "灾后"
   },
 {
     id: "n_heart_fast",
@@ -1124,7 +1053,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           mood: 2
         }
       }
-    ]
+    ],
+    when: "预兆"
   },
 {
     id: "n_finger_stiff",
@@ -1148,7 +1078,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           mood: 1
         }
       }
-    ]
+    ],
+    when: "预兆"
   },
 {
     id: "n_breath_visible",
@@ -1172,7 +1103,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           stamina: 1
         }
       }
-    ]
+    ],
+    when: "灾后"
   },
 {
     id: "n_condensation",
@@ -1197,7 +1129,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           shelter: 1
         }
       }
-    ]
+    ],
+    when: "预兆"
   },
 {
     id: "n_frozen_bucket",
@@ -1222,7 +1155,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           mood: 1
         }
       }
-    ]
+    ],
+    when: "灾后"
   },
 {
     id: "n_door_check",
@@ -1247,7 +1181,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           mood: 1
         }
       }
-    ]
+    ],
+    when: "平时"
   },
 {
     id: "n_late_snack",
@@ -1271,7 +1206,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           stamina: 1
         }
       }
-    ]
+    ],
+    when: "平时"
   },
 {
     id: "n_prep_meds",
@@ -1295,7 +1231,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           mood: 1
         }
       }
-    ]
+    ],
+    when: "平时"
   },
 {
     id: "n_gear_check",
@@ -1319,7 +1256,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           mood: 1
         }
       }
-    ]
+    ],
+    when: "平时"
   },
 {
     id: "n_mark_expiry",
@@ -1343,7 +1281,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           mood: 2
         }
       }
-    ]
+    ],
+    when: "平时"
   },
 {
     id: "n_drink_alone",
@@ -1368,7 +1307,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           stamina: 2
         }
       }
-    ]
+    ],
+    when: "平时"
   },
 {
     id: "n_knock_wrong_door",
@@ -1393,7 +1333,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           mood: 1
         }
       }
-    ]
+    ],
+    when: "预兆"
   },
 {
     id: "n_battery_radio",
@@ -1417,7 +1358,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           mood: 1
         }
       }
-    ]
+    ],
+    when: "平时"
   },
 {
     id: "n_shoes_drying",
@@ -1441,7 +1383,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           mood: 1
         }
       }
-    ]
+    ],
+    when: "预兆"
   },
 {
     id: "n_neighbor_music",
@@ -1465,9 +1408,154 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
           mood: 1
         }
       }
-    ]
+    ],
+    when: "平时"
   },
-  // ═══ 生成内容 夜间-03 止 ═══
+  // ═══ 生成内容 夜间-03 止 ═══,
+  // ═══ 生成内容 夜间-04 起（scripts/merge-content.mjs 插入，别手改这一段） ═══
+{
+    id: "n_night_shift",
+    text: "单位群里在喊人顶夜班，双倍工资。",
+    options: [
+      {
+        label: "去顶班",
+        outcome: "你在单位坐到天亮。回来的时候，楼道里已经有人出门上班了。",
+        effect: {
+          stamina: -25,
+          cash: 120
+        }
+      },
+      {
+        label: "说家里有事",
+        outcome: "你没去。群里很快没人说话了。",
+        effect: {
+          mood: -3
+        }
+      }
+    ],
+    tier: 1,
+    when: "平时"
+  },
+{
+    id: "n_neighbor_soup",
+    text: "王阿姨敲门，说她家煮了汤，让你过去坐坐。",
+    options: [
+      {
+        label: "过去坐坐",
+        outcome: "喝了两碗汤，听她念了半小时儿子。回来的时候身上是暖的。",
+        effect: {
+          mood: 12,
+          stamina: -8
+        }
+      },
+      {
+        label: "隔着门说累了",
+        outcome: "她在门口站了会儿才走。你听见她上楼的声音。",
+        effect: {
+          mood: -5
+        }
+      }
+    ],
+    tier: 1,
+    when: "平时"
+  },
+{
+    id: "n_midnight_restock",
+    text: "有人说南边那家超市半夜补货。小区里已经有车出去了。",
+    options: [
+      {
+        label: "开车去看看",
+        outcome: "你摸黑拉回来一箱，箱子上没写标签。",
+        effect: {
+          stamina: -18,
+          cash: -50,
+          boxDefId: "box_mixed"
+        },
+        requireFullCash: true
+      },
+      {
+        label: "托邻居捎一箱",
+        outcome: "他答应得爽快，也说好了要抽两成。",
+        effect: {
+          cash: -70,
+          boxDefId: "box_staple"
+        },
+        requireFullCash: true
+      }
+    ],
+    tier: 1,
+    when: "平时"
+  },
+{
+    id: "n_tripped_breaker",
+    text: "晚上跳了闸。你摸黑找到配电箱，手电筒的光已经发黄了。",
+    options: [
+      {
+        label: "现在就修好",
+        outcome: "你换上一根保险丝，灯亮了。屋里重新有点热乎气。",
+        effect: {
+          stamina: -14,
+          shelter: 6
+        }
+      },
+      {
+        label: "裹紧被子睡",
+        outcome: "屋里比昨天冷一点。你听着风声睡着了。",
+        effect: {
+          shelter: -5
+        }
+      }
+    ],
+    tier: 1,
+    when: "预兆"
+  },
+{
+    id: "n_old_classmate",
+    text: "一个很久没联系的同学发来消息，说手头紧，想周转一下。",
+    options: [
+      {
+        label: "转他 80",
+        outcome: "你转过去 {spentCash}。他回了一串谢谢。",
+        effect: {
+          cash: -80,
+          mood: 8
+        }
+      },
+      {
+        label: "说自己也紧",
+        outcome: "消息挂在那儿，他没再回。",
+        effect: {
+          mood: -6
+        }
+      }
+    ],
+    tier: 1,
+    when: "平时"
+  },
+{
+    id: "n_count_the_shelves",
+    text: "睡前你站在货架前，把今天买回来的东西又看了一遍。",
+    options: [
+      {
+        label: "蹲下来数一遍",
+        outcome: "数到一半忘了数到哪。",
+        effect: {
+          stamina: -6,
+          mood: 10
+        }
+      },
+      {
+        label: "看一眼就睡",
+        outcome: "你站了会儿，关了灯。",
+        effect: {
+          mood: 3
+        }
+      }
+    ],
+    tier: 1,
+    when: "平时"
+  },
+  // ═══ 生成内容 夜间-04 止 ═══
 ];
 
 const NIGHT_BY_ID: ReadonlyMap<string, NightEventDef> = new Map(NIGHT_EVENT_DEFS.map((e) => [e.id, e]));

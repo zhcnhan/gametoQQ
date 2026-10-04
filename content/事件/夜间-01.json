@@ -33,7 +33,8 @@
           }
         }
       ],
-      "tags": []
+      "tags": [],
+      "when": "平时"
     },
     {
       "id": "n_cold_feet",
@@ -57,7 +58,8 @@
           }
         }
       ],
-      "tags": []
+      "tags": [],
+      "when": "灾后"
     },
     {
       "id": "n_can_dented",
@@ -81,7 +83,8 @@
           }
         }
       ],
-      "tags": []
+      "tags": [],
+      "when": "灾后"
     },
     {
       "id": "n_power_bill",
@@ -105,7 +108,8 @@
           }
         }
       ],
-      "tags": []
+      "tags": [],
+      "when": "平时"
     },
     {
       "id": "n_knock_sell",
@@ -130,7 +134,8 @@
           }
         }
       ],
-      "tags": []
+      "tags": [],
+      "when": "平时"
     },
     {
       "id": "n_back_pain",
@@ -154,7 +159,8 @@
           }
         }
       ],
-      "tags": []
+      "tags": [],
+      "when": "预兆"
     },
     {
       "id": "n_smell_fridge",
@@ -179,7 +185,8 @@
           }
         }
       ],
-      "tags": []
+      "tags": [],
+      "when": "预兆"
     },
     {
       "id": "n_window_rattle",
@@ -205,7 +212,8 @@
           }
         }
       ],
-      "tags": []
+      "tags": [],
+      "when": "预兆"
     },
     {
       "id": "n_trade_smokes",
@@ -229,7 +237,8 @@
           }
         }
       ],
-      "tags": []
+      "tags": [],
+      "when": "平时"
     },
     {
       "id": "n_shiver_night",
@@ -253,7 +262,8 @@
           }
         }
       ],
-      "tags": []
+      "tags": [],
+      "when": "灾后"
     },
     {
       "id": "n_expired_milk",
@@ -277,7 +287,8 @@
           }
         }
       ],
-      "tags": []
+      "tags": [],
+      "when": "平时"
     },
     {
       "id": "n_neighbor_borrow",
@@ -301,7 +312,8 @@
           }
         }
       ],
-      "tags": []
+      "tags": [],
+      "when": "平时"
     },
     {
       "id": "n_sore_throat",
@@ -325,7 +337,8 @@
           }
         }
       ],
-      "tags": []
+      "tags": [],
+      "when": "预兆"
     },
     {
       "id": "n_dark_landing",
@@ -350,7 +363,8 @@
           }
         }
       ],
-      "tags": []
+      "tags": [],
+      "when": "平时"
     },
     {
       "id": "n_leftover_stew",
@@ -375,7 +389,8 @@
           }
         }
       ],
-      "tags": []
+      "tags": [],
+      "when": "平时"
     },
     {
       "id": "n_blisters",
@@ -398,7 +413,8 @@
           }
         }
       ],
-      "tags": []
+      "tags": [],
+      "when": "平时"
     },
     {
       "id": "n_group_chat",
@@ -422,7 +438,8 @@
           }
         }
       ],
-      "tags": []
+      "tags": [],
+      "when": "平时"
     },
     {
       "id": "n_wet_shoes",
@@ -448,7 +465,8 @@
           }
         }
       ],
-      "tags": []
+      "tags": [],
+      "when": "平时"
     },
     {
       "id": "n_water_meter",
@@ -471,7 +489,8 @@
           }
         }
       ],
-      "tags": []
+      "tags": [],
+      "when": "预兆"
     },
     {
       "id": "n_cough_nextdoor",
@@ -494,7 +513,8 @@
           }
         }
       ],
-      "tags": []
+      "tags": [],
+      "when": "平时"
     },
     {
       "id": "n_scale_weight",
@@ -519,7 +539,8 @@
           }
         }
       ],
-      "tags": []
+      "tags": [],
+      "when": "平时"
     },
     {
       "id": "n_drip_faucet",
@@ -544,7 +565,8 @@
           }
         }
       ],
-      "tags": []
+      "tags": [],
+      "when": "预兆"
     }
   ]
 }

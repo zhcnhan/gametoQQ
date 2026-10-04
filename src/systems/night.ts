@@ -30,10 +30,37 @@ export const NIGHT_EVENT_CHANCE = 0.6;
  *   紧邻的上一条会被**排除** —— "连着两晚是同一件事"是重复感最强的一种，
  *   而池子里还剩 5 条可选，随机性一点没少。理由写在 `model/rng.ts` 的
  *   `pickEventAvoidingRecent` 上。
+ * @param phase ★ 现在是不是**囤货期**（2026-10 加）。
+ *
+ * ## ★★ 为什么夜间事件要分阶段
+ *
+ * 用户的原话：
+ *
+ * > "不是囤货期庇护所会掉，而是囤货期间有一些不属于囤货这一
+ * >  我作为先知安全期惬意且安详的事件与任务与描述"
+ *
+ * 囤货期是**先知视角的安全期**：灾难还没来，玩家知道它要来，而世界还是正常的。
+ * 而这一池子里原来混着"半夜冻醒、温度贴 9°C""呼出的气能看见""阳台的水结成冰"
+ * "天花板往下坠" —— 那些是**灾难已经发生之后**的日子，在囤货期读起来完全不对。
+ *
+ * 现在按 `NightEventDef.when` 分池：
+ *  · 囤货期只抽 `平时` 与 `预兆`（预兆就是"风声" —— 那正是先知该听到的）；
+ *  · 生存期抽全部（包括 `平时` 与 `预兆`，它们在后半段读起来是"想起以前"）。
+ *
+ * ★ 缺省值 `phase = false` 是**故意**的：老的调用点（与测试）不传就得到
+ * "全部池子"，也就是**原来那个行为**。新行为只在你显式说"我在囤货期"时生效。
  */
-export function rollNight(cursor: RngCursor, recent: readonly string[] = []): string | null {
+export function rollNight(cursor: RngCursor, recent: readonly string[] = [], phase = false): string | null {
   if (nextFloat(cursor) >= NIGHT_EVENT_CHANCE) return null;
-  return pickEventAvoidingRecent(cursor, NIGHT_EVENT_DEFS, recent, nightEventWeight)?.id ?? null;
+  // （这一行被"临时忽略阶段"验证过会红 —— 见 night.test.ts 的那条 ★★）
+  const pool = phase ? NIGHT_EVENT_DEFS.filter((d) => d.when !== '灾后') : NIGHT_EVENT_DEFS;
+  /*
+   * ★ 池子空了的兜底：**宁可抽到一条灾后，也不要一个没有夜晚的游戏**。
+   * 内容写歪（比如所有条目都被标成 `灾后`）时，这一条能保住可玩性。
+   * 而"囤货期一条事件都没有"是个**安静**的失败 —— 玩家只会觉得这一周很无聊。
+   */
+  const safe = pool.length > 0 ? pool : NIGHT_EVENT_DEFS;
+  return pickEventAvoidingRecent(cursor, safe, recent, nightEventWeight)?.id ?? null;
 }
 
 /**
@@ -90,25 +117,68 @@ export const NO_EFFECT: AppliedEffect = { cash: 0, health: 0, mood: 0, stamina: 
 export function applyNightEffect(run: RunState, effect: NightEffect, cursor: RngCursor): AppliedEffect {
   const applied: AppliedEffect = { ...NO_EFFECT };
 
+  /*
+   * ★★ 囤货期**只涨不跌**（2026-10 用户反馈）。
+   *
+   * 用户的原话：
+   *
+   * > "不是囤货期庇护所会掉，而是囤货期间有一些不属于囤货这一
+   * >  我作为先知安全期惬意且安详的事件与任务与描述"
+   *
+   * 机制上的原因：生存期的四维账是**闭合**的（每天被灾难磨损、被保暖品/医疗品
+   * 自动补），而**囤货期不结算** —— 那套账整个不跑。于是囤货期一旦有选项扣了
+   * 庇护所（实测只有一条：`n_tripped_breaker` 的"裹紧被子睡" -5），它就是
+   * **单向的**：掉了没有磨损来对照、也没有自动补。玩家看到的是
+   * "我家在自己变冷"，而灾难还没登门。
+   *
+   * 现在的口径：
+   *  · **跌的部分在囤货期不生效**（`Math.max(地板, 结果)`，地板 = D-Day 起点）；
+   *  · **涨的部分照给**（换灯泡、封胶带都是"我把屋子弄好了"，该有回报）；
+   *  · **生存期一个字没动** —— 那里"掉下去就回不来"正是压力所在。
+   *
+   * ⚠ 判据用 `run.phase`，不用"第几天"：`day <= 0` 与 phase 是两套口径，
+   * 混用迟早会在某个中间状态上分家。
+   */
+  const peacetime = run.phase === 'stockpile_shop' || run.phase === 'organize' || run.phase === 'night';
+  /**
+   * 囤货期：**往下走的效果不生效**，往上走的照给。
+   *
+   * 一句话就是上面这句。而我在这里改错过**三次**，三次都值得记下来 ——
+   * 因为每一次都是一个"听起来很合理、在边界上完全不同"的形状：
+   *
+   *  ① `Math.max(起点, 结果)` —— 庇护所 80 时"扣 5 点"变成"**涨 20 点**"；
+   *  ② "只要要跌就冻住" —— 体力本来只有 3 时"扣 25 点"变成"一点都不掉"，
+   *     于是**生存期的夹取语义在囤货期被悄悄换掉了**；
+   *  ③ 又想"跌不过起点" —— 可**起点是满值 100**，于是"80 + 3 = 83"会被
+   *     抬到 100（`applied.shelter = 20`，凭空涨 20）。
+   *
+   * 三次的根子是同一个：我一直在试图让它**相对于起点**做事，
+   * 而这周的状态本来就是"完整"的 —— 所以不需要相对任何东西，
+   * 只需要"别往下走"。
+   *
+   * ⚠ 判据用 `run.phase`，不用"第几天"：两套口径混用迟早会在某个中间状态上分家。
+   */
+  const peacetimeDelta = (delta: number): number => (peacetime && delta < 0 ? 0 : delta);
+
   if (effect.cash) {
     const next = Math.max(0, run.cash + effect.cash);
     applied.cash = next - run.cash;
     run.cash = next;
   }
   if (effect.health) {
-    applied.health = shiftStat(run.stats.health, effect.health) - run.stats.health;
+    applied.health = shiftStat(run.stats.health, peacetimeDelta(effect.health)) - run.stats.health;
     run.stats.health += applied.health;
   }
   if (effect.mood) {
-    applied.mood = shiftStat(run.stats.mood, effect.mood) - run.stats.mood;
+    applied.mood = shiftStat(run.stats.mood, peacetimeDelta(effect.mood)) - run.stats.mood;
     run.stats.mood += applied.mood;
   }
   if (effect.stamina) {
-    applied.stamina = shiftStat(run.stats.stamina, effect.stamina) - run.stats.stamina;
+    applied.stamina = shiftStat(run.stats.stamina, peacetimeDelta(effect.stamina)) - run.stats.stamina;
     run.stats.stamina += applied.stamina;
   }
   if (effect.shelter) {
-    applied.shelter = shiftStat(run.stats.shelter, effect.shelter) - run.stats.shelter;
+    applied.shelter = shiftStat(run.stats.shelter, peacetimeDelta(effect.shelter)) - run.stats.shelter;
     run.stats.shelter += applied.shelter;
   }
   if (effect.boxDefId) {

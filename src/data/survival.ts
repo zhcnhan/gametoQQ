@@ -25,6 +25,17 @@
  */
 import type { CategoryId, DisasterProfile, HardPressLevel, ItemDef, SurvivalSnapshot } from '../model/types';
 
+/**
+ * D-Day 的四维起点。
+ *
+ * ★ 它住在这儿（`data/`）而不是 `systems/setup.ts`，因为 **`data/` 不能依赖
+ * `systems/`**（分层），而下面那条"囤货期的地板"（`PEACETIME_FLOOR`）需要它。
+ * 放 setup 里会形成 `data/survival ⇄ systems/setup` 的循环依赖 ——
+ * 那种循环在打包器里**通常也能跑**（两个都是常量），所以它不会报错、
+ * 只会在某次改动顺序之后变成一个很难查的 `undefined`。
+ */
+export const STARTING_STATS = { health: 100, mood: 70, stamina: 100, shelter: 100 } as const;
+
 /** `SurvivalState.last` 的零值（D-Day 还没结算过时用它） */
 export const EMPTY_SURVIVAL_SNAPSHOT: SurvivalSnapshot = {
   health: 0,
@@ -56,6 +67,45 @@ export const BASE_DRAIN: Readonly<Partial<Record<CategoryId, number>>> = { food:
 
 /** 睡一觉恢复的体力 */
 export const STAMINA_RECOVER = 12;
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  ★★ 囤货期的四维**只涨不跌**（2026-10 用户反馈）
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * 用户的原话：
+ *
+ * > "不是囤货期庇护所会掉，而是囤货期间有一些不属于囤货这一
+ * >  我作为先知安全期惬意且安详的事件与任务与描述"
+ *
+ * ## 为什么原来是"只跌不涨"
+ *
+ * 生存期的四维账是**闭合**的：每天被灾难磨损，同时被保暖品 / 医疗品自动补回来
+ * （`sleepRecoverAt`、`WARMTH_TRIGGER`、`shelterOf` 那一套）。
+ * 而**囤货期不结算** —— 那套账整个不跑。
+ *
+ * 于是囤货期的夜里一旦有选项扣了庇护所（实测只有一条：`n_tripped_breaker` 的
+ * "裹紧被子睡" -5），它就是**单向的**：掉了没有磨损来对照、也没有自动补。
+ * 玩家看到的是"我家在自己变冷"，而灾难还没登门 —— 与"先知的安全期"正好相反。
+ *
+ * ## 这条规则做什么
+ *
+ * 结算时把四维**往下取整到"不低于 D-Day 的起点"**：
+ *  · 掉的部分**不生效**（这一周世界还没坏，你的家是完整的）；
+ *  · **涨的部分照给**（换灯泡、封胶带、擦水珠都是"我把屋子弄好了"，那该有回报）。
+ *
+ * ★ 为什么不干脆把那些负向选项删掉：
+ *  · "吃了一罐鼓盖的黄豆，健康 -2"是**玩家自己选的代价**（`n_can_dented`），
+ *    删掉它那条决定就变浅了；
+ *  · 而按起点取整既保住了那个选择的形状，又保住了"安全期不会更冷"这件事。
+ *
+ * ⚠ 它**只对囤货期生效**（调用点见 `systems/night.ts` 的 `applyNightEffect`）。
+ * 生存期的账一个字没动 —— 那里"掉下去就回不来"正是压力所在。
+ *
+ * ★ 落地形式最后是"**往下走的效果不生效**"（`peacetimeDelta`），而不是"地板值" ——
+ * 我先按地板写了三版，每一版都在"读数已经低于起点"时出问题（详见那里的注释）。
+ * 所以 `STARTING_STATS` 现在只由 `systems/setup.ts` 用，不再是这里的一部分。
+ */
 
 // ———————— 庇护所的下游（§12.3 v0.7） ————————
 

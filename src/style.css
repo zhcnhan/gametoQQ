@@ -984,6 +984,25 @@ body::before {
   outline-offset: 3px;
 }
 
+/**
+ * 「这块家具凭什么占地方」——只在家具**真的做了什么**时才出现（冰箱 / 柜子）。
+ *
+ * ★ 它回答的是玩家真问出来的问题（"冰箱现在是有效的吗，即便是我自己加进来的"）。
+ * 机制一直是有效的（腐坏乘数 0.4 对货架 1.0），但界面上一个字都没说 ——
+ * 而"玩家会问"本身就是机制看不见的证据。
+ *
+ * ⚠ 层次上刻意做得**比胶带名还轻**：它是解释，不是状态。
+ * 所以小字、灰、不加底色，也不参与抬头那一行的竞争。
+ */
+.shelf-why {
+  display: block;
+  margin: 0 0 6px;
+  padding-left: 2px;
+  font-size: 11px;
+  font-style: normal;
+  color: var(--ink-40);
+}
+
 .field {
   display: block;
   margin-top: 12px;

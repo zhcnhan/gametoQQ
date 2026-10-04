@@ -25,7 +25,8 @@
             "stamina": 4
           }
         }
-      ]
+      ],
+      "when": "灾后"
     },
     {
       "id": "n_partition_fall",
@@ -50,7 +51,8 @@
             "mood": 2
           }
         }
-      ]
+      ],
+      "when": "灾后"
     },
     {
       "id": "n_rice_weevil",
@@ -82,7 +84,8 @@
             "stamina": 3
           }
         }
-      ]
+      ],
+      "when": "平时"
     },
     {
       "id": "n_ant_trail",
@@ -115,7 +118,8 @@
             "shelter": 4
           }
         }
-      ]
+      ],
+      "when": "平时"
     },
     {
       "id": "n_flea_bite",
@@ -148,7 +152,8 @@
             "health": -1
           }
         }
-      ]
+      ],
+      "when": "灾后"
     },
     {
       "id": "n_moth_holes",
@@ -181,7 +186,8 @@
             "mood": 1
           }
         }
-      ]
+      ],
+      "when": "平时"
     }
   ]
 }

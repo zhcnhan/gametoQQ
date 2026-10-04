@@ -8,7 +8,15 @@ import { NIGHT_EVENT_DEFS, NIGHT_SLEEP, findNightEvent, hasNightEvent } from '..
 import { createCursor } from '../model/rng';
 import { createSaveGame } from '../state/save';
 import { GameStore } from '../state/store';
-import { NIGHT_EVENT_CHANCE, NO_EFFECT, describeEffect, optionAt, resolveOutcome, rollNight } from './night';
+import {
+  NIGHT_EVENT_CHANCE,
+  NO_EFFECT,
+  applyNightEffect,
+  describeEffect,
+  optionAt,
+  resolveOutcome,
+  rollNight
+} from './night';
 import { chooseIdentity, chooseNightOption, endDay, goHome, sleep } from './phases';
 import { createStartingRun } from './setup';
 
@@ -160,7 +168,7 @@ describe('过一天 → 入夜', () => {
 });
 
 describe('决定今晚怎么办', () => {
-  it('选项后果真的落账：心情涨、体力掉、日志写一条', () => {
+  it('选项后果真的落账：心情涨、日志写一条（★ 囤货期四维只涨不跌）', () => {
     const store = storeAtNight();
     const def = findNightEvent(store.run.night?.eventId ?? '');
     expect(def).not.toBeNull();
@@ -173,8 +181,43 @@ describe('决定今晚怎么办', () => {
     expect(result.ok).toBe(true);
     expect(store.run.night?.choice).toBe(0);
     expect(store.run.stats.mood).toBe(clamp(before.mood + (opt.effect.mood ?? 0)));
-    expect(store.run.stats.stamina).toBe(clamp(before.stamina + (opt.effect.stamina ?? 0)));
+    /*
+     * ★★ 体力这一条改过（2026-10）：`storeAtNight()` 造的是**囤货期**的夜晚，
+     * 而囤货期现在"四维只涨不跌"（理由见 `applyNightEffect` 的注释）。
+     * 所以这里不能再断言"体力按声明值掉" —— 要断言它**没掉到起点以下**，
+     * 而"掉的部分真的生效"由下面那条**生存期**的用例守。
+     */
+    const declared = before.stamina + (opt.effect.stamina ?? 0);
+    expect(store.run.stats.stamina).toBe(Math.max(clamp(declared), before.stamina));
     expect(store.run.log.some((line) => line.startsWith('夜间 · '))).toBe(true);
+  });
+
+  it('★★ 囤货期：扣庇护所的选项**不生效**，但涨的照给', () => {
+    /*
+     * ★★ 用户原始反馈的核心。`n_tripped_breaker` 的「裹紧被子睡」声明 `shelter: -5`
+     * —— 它原来会在囤货期真的扣掉，而囤货期**不结算**（没有日常磨损、也没有
+     * 保暖品自动补），所以那一下是**单向的**。玩家看到的是"我家在自己变冷"，
+     * 而灾难还没登门。
+     */
+    const store = storeAtHome(20261001);
+    store.run.phase = 'night';
+    store.run.night = { eventId: 'n_tripped_breaker', choice: null, applied: null };
+    const before = store.run.stats.shelter;
+    chooseNightOption(store, 1); // 「裹紧被子睡」shelter -5
+    expect(store.run.stats.shelter, '囤货期不该往下走').toBe(before);
+
+    // 而"把屋子弄好"的那些照给（换灯泡 +3 庇护所）
+    const store2 = storeAtHome(20261001);
+    store2.run.phase = 'night';
+    store2.run.night = { eventId: 'n_dark_landing', choice: null, applied: null };
+    /*
+     * ⚠ 起点是 100（满），所以这里**必须先压低**才验得出"涨"。
+     * （第一版没压，`100 + 3` 夹回 100，断言 `toBeGreaterThan` 就红了 ——
+     *  而那是"它没涨"还是"它本来就满"分不清。）
+     */
+    store2.run.stats.shelter = 80;
+    chooseNightOption(store2, 0); // 「换灯泡」shelter +3
+    expect(store2.run.stats.shelter, '涨的部分该照给').toBe(83);
   });
 
   it('「关灯睡觉」= 什么都不做：数值一分不动，但选择被记住（夜必须能过）', () => {
@@ -224,23 +267,39 @@ describe('决定今晚怎么办', () => {
   });
 
   it('四维与现金都被夹在合法区间（不会因为一个选项变成负数或爆表）', () => {
-    const store = storeAtHome(20261001);
-    store.run.stats.mood = 2;
-    store.run.stats.stamina = 3;
-    store.run.cash = 0;
-    store.run.phase = 'night';
-    store.run.night = { eventId: 'n_night_shift', choice: null, applied: null };
+    /*
+     * ★★ 这条**直接测 `applyNightEffect`**，不走命令链 —— 而且这是个刻意的选择。
+     *
+     * 我第一版想走 `chooseNightOption`，于是把 `phase` 手改成 `'survival_day'`
+     * 去构造"生存期的一晚"。结果命令**被自己拒了**：`chooseNightOption` 要求
+     * `phase === 'night'`（它是对的），于是什么都没发生，而断言红得莫名其妙
+     * （诊断打出来才知道：`stamina=3 cash=0`）。
+     *
+     * 教训：`phase` 与 `day` 是一套**状态机**，手工拼一个"自相矛盾的中间态"
+     * 不是捷径、是陷阱 —— 命令层的守卫会（正确地）把它挡在门外。
+     * 要测"夹取"这种**纯计算**语义，就直测纯函数；要测"规则在命令链里生效"，
+     * 就用**真实的阶段**（见上面那条囤货期的用例，它走的是真命令链）。
+     */
+    const run = storeAtHome(20261001).run;
+    run.stats.mood = 2;
+    run.stats.stamina = 3;
+    run.stats.health = 5;
+    run.stats.shelter = 4;
+    run.cash = 0;
+    // 生存期：`phase` 说 survival，`day` 也在灾难之后 —— 两者一致
+    run.day = 3;
+    run.phase = 'survival_day';
 
-    chooseNightOption(store, 0); // 体力 -25，现金 +120
-    expect(store.run.stats.stamina).toBe(0);
-    expect(store.run.cash).toBe(120);
+    applyNightEffect(run, { stamina: -25, cash: 120 }, createCursor(1));
+    expect(run.stats.stamina, '体力夹在 0，不会变负').toBe(0);
+    expect(run.cash).toBe(120);
 
-    const store2 = storeAtHome(20261001);
-    store2.run.cash = 10;
-    store2.run.phase = 'night';
-    store2.run.night = { eventId: 'n_old_classmate', choice: null, applied: null };
-    chooseNightOption(store2, 0); // 现金 -80
-    expect(store2.run.cash).toBe(0);
+    const run2 = storeAtHome(20261001).run;
+    run2.cash = 10;
+    run2.day = 3;
+    run2.phase = 'survival_day';
+    applyNightEffect(run2, { cash: -80 }, createCursor(1));
+    expect(run2.cash, '现金夹在 0，不给人欠债').toBe(0);
   });
 });
 
@@ -368,5 +427,54 @@ describe('后果摘要（界面用）', () => {
     expect(optionAt(def, NIGHT_SLEEP)).toBeNull();
     expect(optionAt(def, 0)).toBe(def.options[0]);
     expect(optionAt(def, 99)).toBeNull();
+  });
+});
+
+describe('★★ 囤货期只抽「平时」与「预兆」', () => {
+  /*
+   * ★★ 用户的原话：
+   *
+   * > "不是囤货期庇护所会掉，而是囤货期间有一些不属于囤货这一
+   * >  我作为先知安全期惬意且安详的事件与任务与描述"
+   *
+   * 囤货期是**先知视角的安全期**：灾难还没来，玩家知道它要来，而世界还是正常的。
+   * 原来这一池子混着"半夜冻醒、温度贴 9°C""呼出的气能看见""阳台的水结成冰"
+   * "天花板往下坠"—— 那些是灾难**已经发生**之后的日子。
+   */
+  const drawMany = (phase: boolean, rounds: number): string[] => {
+    const out: string[] = [];
+    for (let i = 0; i < rounds; i++) {
+      for (let k = 0; k < 4; k++) {
+        // 每次都用新的游标：反复抽到"今晚没事"（40%）也要继续
+        const id = rollNight(createCursor(i * 7919 + k * 104729 + 11), [], phase);
+        if (id) out.push(id);
+      }
+    }
+    return out;
+  };
+
+  it('★★ 囤货期抽到的每一条都不是「灾后」', () => {
+    const ids = drawMany(true, 400);
+    expect(ids.length, '该抽到不少（否则这条在验空气）').toBeGreaterThan(200);
+    const bad = [...new Set(ids.filter((id) => findNightEvent(id)?.when === '灾后'))];
+    expect(bad, '这些是灾后处境，不该出现在先知的安全期里').toEqual([]);
+  });
+
+  it('★ 生存期**会**抽到「灾后」（否则那些内容等于白写）', () => {
+    const ids = drawMany(false, 400);
+    const after = [...new Set(ids.filter((id) => findNightEvent(id)?.when === '灾后'))];
+    expect(after.length, '生存期该抽得到灾后处境').toBeGreaterThan(0);
+  });
+
+  it('★ 两个阶段都抽得到东西（池子不能空）', () => {
+    for (const phase of [true, false]) {
+      const ids = new Set(drawMany(phase, 120));
+      expect(ids.size, `phase=${phase} 时抽到的种类太少，池子可能被写空了`).toBeGreaterThan(3);
+    }
+  });
+
+  it('★★ 60 条全都标了 `when`（漏标会静默掉进"灾后"，囤货期就看不到它）', () => {
+    const untagged = NIGHT_EVENT_DEFS.filter((d) => d.when === undefined).map((d) => d.id);
+    expect(untagged, '漏标不会报错、只会让内容在囤货期消失 —— 所以在这里守住').toEqual([]);
   });
 });

@@ -155,6 +155,13 @@ const SCHEMAS = {
       outcome: 'string（选完一句话，可用 {spentCash}）',
       effect: 'NightEffect（见下）'
     },
+    /*
+     * ★ `when` 是 2026-10 加的**阶段标签**（用户的口径：囤货期是先知的安全期，
+     * 不该出现"冻醒""天花板往下坠"这类灾后处境）。
+     * 它是**可选**的，而漏标的默认是 `灾后` —— 也就是最严的那一档，
+     * 所以漏标只会让内容在囤货期看不到，不会污染它。
+     */
+    optional: { when: "'平时' | '预兆' | '灾后'（不写 = 灾后。囤货期只抽 平时/预兆）" },
     tier: 'number 1~4'
   },
   dayEvent: {
@@ -337,6 +344,19 @@ function checkEntry(file, kind, obj, index) {
   // ⑤ 数值区间
   for (const [field, range] of Object.entries(schema.ranges ?? {})) {
     if (obj[field] !== undefined) checkRange(file, id, field, obj[field], range);
+  }
+
+  /*
+   * ★ 夜间事件的**阶段标签**（2026-10 加）。
+   *
+   * 它是可选的（不写 = `灾后`，最严的那一档），但**写了就必须是三个已知值之一** ——
+   * 否则一个错别字（比如 `'灾侯'`）会让那一条悄悄从囤货期消失，
+   * 而"内容没出现"是最难被发现的一类错（没有任何报错、也没有任何现象）。
+   */
+  if (kind === 'nightEvent' && obj.when !== undefined) {
+    if (!['平时', '预兆', '灾后'].includes(obj.when)) {
+      fail(file, id, `when='${obj.when}' 不是已知阶段（只许 平时 / 预兆 / 灾后；不写 = 灾后）`);
+    }
   }
 
   // 引用完整性
