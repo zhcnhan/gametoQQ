@@ -949,7 +949,16 @@ function normalizeRun(save: SaveGame): SaveGame | null {
       // 宁可少显示一条旧叙事，也不要让日报去查一个不存在的 id
       emergencyId: typeof last.emergencyId === 'string' && findEmergency(last.emergencyId) ? last.emergencyId : null,
       emergencyResolved: last.emergencyResolved === true,
-      emergencyLost: Math.max(0, num(last.emergencyLost))
+      emergencyLost: Math.max(0, num(last.emergencyLost)),
+      /*
+       * 翻乱（D-11）。旧档没有这两个字段 —— 默认 0 / 空数组：
+       * "昨天没被翻乱"是零值，也是绝大多数日子的真相。
+       * ⚠ `scatteredRows` 只用于显示，所以不认识的字符串一律丢掉（不要 `as string[]`）。
+       */
+      scattered: Math.max(0, num(last.scattered)),
+      scatteredRows: Array.isArray(last.scatteredRows)
+        ? last.scatteredRows.filter((r): r is string => typeof r === 'string')
+        : []
     }
   };
 

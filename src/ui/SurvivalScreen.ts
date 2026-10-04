@@ -152,6 +152,16 @@ export class SurvivalScreen implements Screen {
               : '该吃该烧的都凑齐了。'
           }
           ${last.spoiled > 0 ? `坏掉 ${last.spoiled} 件。` : ''}
+          ${
+            /*
+             * ★ 翻乱（§6.4 的滚雪球，D-11）：说**做了什么**，不说"归位率掉了 X%"。
+             * 后者是分数口径，而玩家刚才做的事是"翻找"——
+             * 因果要连在一起他才知道下次该怎么改。
+             */
+            last.scattered > 0
+              ? `<span class="scatter-line">翻找的时候把 ${escapeHtml(last.scatteredRows.join('、'))} 翻乱了。</span>`
+              : ''
+          }
         </p>
         ${last.hardPress ? `<p class="press-line is-${last.hardPressLevel}">${escapeHtml(hardPressLine(last.hardPressLevel))}</p>` : ''}
         ${emergencyHtml(last)}

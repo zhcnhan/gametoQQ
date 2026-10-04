@@ -54,7 +54,10 @@ export const EMPTY_SURVIVAL_SNAPSHOT: SurvivalSnapshot = {
   usedWarmth: 0,
   emergencyId: null,
   emergencyResolved: false,
-  emergencyLost: 0
+  emergencyLost: 0,
+  // D-11 的翻乱：零值就是"没乱"，而绝大多数日子的正常值正是 0
+  scattered: 0,
+  scatteredRows: []
 };
 
 /** `SurvivalState.lastTradeDay` 的"从来没换过"。用一个不可能的天数，省掉一个可空字段 */

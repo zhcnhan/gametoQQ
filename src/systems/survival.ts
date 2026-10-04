@@ -44,6 +44,8 @@ import { consumeCategory } from '../model/consume';
 import { countOnHandy } from '../model/shelf';
 import { computeOrganizeScore } from '../model/score';
 import { spoilEverything } from '../model/spoil';
+import { messiestRows, rowZoneName, scatterCountFor, scatterRows } from '../model/scatter';
+import { furnitureDefOf } from '../data/furniture';
 import { EMERGENCY_DEFS, emergencyNoneWeight } from '../data/emergencies';
 import { disasterModifiersOf, getDisasterDef } from '../data/disaster';
 import { CATEGORY_LABELS, getItemDef } from '../data/items';
@@ -204,6 +206,16 @@ export interface SurvivalReport {
   emergencyResolved: boolean;
   /** 没化解时受创的件数（按缺货口径） */
   emergencyLost: number;
+  /**
+   * ★ 今天被翻乱了几件（§6.4 的"翻乱相邻货架"，2026-10 清偿 D-11）。
+   *
+   * 0 = 没乱（多数日子都是 0 —— 它只在"你从货架上翻了东西"**而且**整理得差时才发生）。
+   * 界面据此说一句"翻找把第 2 行翻乱了"，而**不说**"归位率掉了 X%"——
+   * 后者是分数口径，前者是玩家刚才做的事。
+   */
+  scattered: number;
+  /** 被翻乱的那几行的说法（例 `货架 A 第 2 行`），供日报直接印 */
+  scatteredRows: string[];
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -433,6 +445,55 @@ export function settleSurvivalDay(run: RunState, cursor?: RngCursor): SurvivalRe
   // 最低体力（v16，成就「一路从容」读它）。它是"历史最低"，所以只往下走
   run.survival.minStamina = Math.min(run.survival.minStamina, run.stats.stamina);
 
+  /*
+   * ★★ 「翻乱相邻货架」（§6.4 的滚雪球）—— 2026-10 清偿 D-11。
+   *
+   * ## 位置很要紧：**必须在下面那份快照之前**
+   *
+   * 第一版把它放在函数最后，于是 `run.survival.last` 早就赋过值了 ——
+   * 结果是"每天真的会发生翻乱，但日报永远看不到它"（诊断打出来是 `null`）。
+   * 这一类"机制生效了但没接线"是最难发现的一种：数据在动、测试全绿、
+   * 而界面上什么都没有。
+   *
+   * ## 三个输入都是**已经算好的**
+   *
+   * `fromShelves`（今天从货架上取了几件）/ `unreachableUnits`（有没有翻不出来）/
+   * `score.placement`（归位率）—— 全部来自上面那段结算。
+   *
+   * ## ⚠ 它与 `placement` / `fefo` 两个报告值的关系
+   *
+   * 翻乱**会改变盘面**，所以它之后 `computeOrganizeScore` 会得到更低的数。
+   * 而报告里那两个数应当是"**今天结算时**的成绩"（玩家照着它判断今天过得怎么样），
+   * 不是"被翻乱之后的"。所以下面先把它们存进 `reportPlacement` / `reportFefo`。
+   */
+  const reportPlacement = score.placement;
+  const reportFefo = score.fefo;
+  let scattered = 0;
+  const scatteredRows: string[] = [];
+  const wanted = scatterCountFor({ taken: fromShelves, unreachable: unreachableUnits, placement: score.placement });
+  if (wanted > 0 && cursor) {
+    const targets = messiestRows(run, wanted);
+    for (const target of targets) {
+      const idx = run.shelves.findIndex((s) => s.id === target.shelfId);
+      const shelf = run.shelves[idx];
+      if (!shelf) continue;
+      const result = scatterRows(shelf, [target.row], () => nextFloat(cursor));
+      const movedShelf = result.shelves[0];
+      if (!movedShelf || result.moved === 0) continue;
+      run.shelves[idx] = movedShelf;
+      scattered += result.moved;
+      const zoneName = rowZoneName(run.zones, shelf, target.row);
+      /*
+       * ⚠ 这里**不能**用 `ui/labels.ts` 的 `shelfLabel` —— `systems/` 不许依赖 `ui/`
+       * （分层纪律，见 AGENTS.md）。而这句话会进 `run.log`（存档里、日报上），
+       * 所以它得有个人话的名字：直接取家具表里的 `label`。
+       */
+      scatteredRows.push(
+        `${furnitureDefOf(shelf.kind).label} ${idx + 1}${zoneName ? `（${zoneName}）` : ''} 第 ${target.row + 1} 行`
+      );
+    }
+  }
+
   // 落盘一份增量快照：刷新回来还要能看见"今天掉了哪些点"（§4A 恢复即续玩）
   run.survival.last = {
     health: deltas.health,
@@ -451,7 +512,9 @@ export function settleSurvivalDay(run: RunState, cursor?: RngCursor): SurvivalRe
     usedWarmth: supply.usedWarmth,
     emergencyId: emergencyOutcome?.def.id ?? null,
     emergencyResolved: emergencyOutcome?.resolved ?? false,
-    emergencyLost: emergencyOutcome?.lost ?? 0
+    emergencyLost: emergencyOutcome?.lost ?? 0,
+    scattered,
+    scatteredRows
   };
 
   // ⑧ 报到日志里（阶段 E 的日报按 'D+3 · ' 前缀分组）
@@ -514,6 +577,15 @@ export function settleSurvivalDay(run: RunState, cursor?: RngCursor): SurvivalRe
     run.log.push(`${stamp} · 该拿到的都拿到了，连着第 ${run.survival.safeStreak} 天。`);
   }
 
+  /*
+   * ★★ 「翻乱相邻货架」已经在上面的快照之前做完了（见那段注释）。
+   * 这里只把日志写上 —— 它要排在"消耗 / 坏掉 / 突发事件"那几行之后，
+   * 因为那些是**今天发生的事**，而翻乱是它们的结果。
+   */
+  if (scattered > 0) {
+    run.log.push(`${stamp} · 翻找的时候把 ${scatteredRows.join('、')} 翻乱了。`);
+  }
+
   return {
     day: run.day,
     severity,
@@ -521,8 +593,8 @@ export function settleSurvivalDay(run: RunState, cursor?: RngCursor): SurvivalRe
     spoiled: sweep.losses,
     spoiledToday: sweep.total,
     deltas,
-    placement: score.placement,
-    fefo: score.fefo,
+    placement: reportPlacement,
+    fefo: reportFefo,
     quality,
     workCost,
     fromShelves,
@@ -534,7 +606,9 @@ export function settleSurvivalDay(run: RunState, cursor?: RngCursor): SurvivalRe
     usedWarmth: supply.usedWarmth,
     emergencyId: emergencyOutcome?.def.id ?? null,
     emergencyResolved: emergencyOutcome?.resolved ?? false,
-    emergencyLost: emergencyOutcome?.lost ?? 0
+    emergencyLost: emergencyOutcome?.lost ?? 0,
+    scattered,
+    scatteredRows
   };
 }
 

@@ -12,9 +12,10 @@ import { CATEGORY_ORDER, getItemDef } from '../data/items';
 import { NIGHT_SLEEP } from '../data/nightEvents';
 import { moodFromPlacement, dailyDrainOf, hardPressTier, workCostOf } from '../data/survival';
 import { consumeCategory, countCategory } from '../model/consume';
-import { fefoSorted, makeStack, setSlotStack } from '../model/shelf';
+import { scatterRows } from '../model/scatter';
+import { createShelf, fefoSorted, getStack, makeStack, readingOrder, setSlotStack, stackCount } from '../model/shelf';
 import { isBatchSpoiled, spoilEverything, virtualDay } from '../model/spoil';
-import type { CategoryId, ItemStack, RunState, SlotPos, UnpackBox, Zone } from '../model/types';
+import type { CategoryId, ItemStack, RunState, Shelf, SlotPos, UnpackBox, Zone } from '../model/types';
 import { createSaveGame } from '../state/save';
 import { GameStore } from '../state/store';
 import { declineRequest } from './help';
@@ -757,6 +758,8 @@ function runProbe(build: (run: RunState) => void, fixAtDay: number | null = null
   const emergencies: { id: string; resolved: boolean }[] = [];
   /** 每天的体力（跑完之后读，用来读"下沉有没有被止住"） */
   const staminaByDay: number[] = [];
+  /** 每天被翻乱了几件（D-11 的观测量） */
+  const scatteredByDay: number[] = [];
   let guard = 0;
   while (store.run.phase === 'survival_day' && guard < 60) {
     if (fixAtDay !== null && store.run.day === fixAtDay) {
@@ -767,6 +770,7 @@ function runProbe(build: (run: RunState) => void, fixAtDay: number | null = null
     resolveHelpIfAny(store);
     staminaFloor = Math.min(staminaFloor, store.run.stats.stamina);
     staminaByDay.push(store.run.stats.stamina);
+    scatteredByDay.push(store.run.survival.last.scattered);
     if (store.run.survival.last.emergencyId) {
       emergencies.push({
         id: store.run.survival.last.emergencyId,
@@ -780,6 +784,7 @@ function runProbe(build: (run: RunState) => void, fixAtDay: number | null = null
     outcome: store.run.outcome,
     staminaFloor,
     staminaByDay,
+    scatteredByDay,
     hardPressDays: store.run.survival.hardPressDays,
     health: store.run.stats.health,
     mood: store.run.stats.mood,
@@ -959,9 +964,16 @@ describe('★ 全周期探针（§12.3 v0.7 / §12 v0.8 的永久回归）：好
     /*
      * ★★ 补救的轨迹是"**上升然后在高位振荡**"，不是单调爬升。
      *
-     * 实测（2026-10 重取）：
+     * 实测（2026-10 清偿 D-11 之后重取，理由见下）：
      *   乱档  [65, 40, 23, 4.5, 0, 0, 0]                     最低 0，D+10 倒
-     *   补救  [98, 91, 94, 97, 100, 100, 100, 93, 96, 99, 97, 94, 91, 91]  最低 91
+     *   补救  [98, 91, 94, 97, 100, 100, 98, 96, 99, 100, 100, 97, 94, 94]  最低 91
+     *
+     * ⚠ 这两组数**重取过一次**：加「翻乱相邻货架」时它们先变成了
+     * `[100,100,100,...]`（补救那局前六天顶在上限）。那不是"机制把曲线压低了"，
+     * 而是我当时**没加 `placement >= 1 → 不翻乱` 那一条**，于是连整理好的盘面
+     * 也被翻乱 —— 而翻乱让它更"顺手"地取到了东西，反而省了体力。
+     * 补上那一条之后曲线回到这里的两组值。**所以这条用例的红是有用的**：
+     * 它是发现那个设计错误的唯一信号。
      *
      * ⚠ 原来这里写的是 `staminaByDay[2] > staminaByDay[0]`，注释还标着"实测"——
      * 而它**从来没有成立过**：D+0 补的是 98，D+2 是 94（补货当天要先付整理劳作）。
@@ -970,11 +982,88 @@ describe('★ 全周期探针（§12.3 v0.7 / §12 v0.8 的永久回归）：好
      * 现在改成两条真的可主张的：
      *  ① **同日对照**：D+2 那一刻，补救的 94 对乱档的 23 —— 差距是这一段代码的意义；
      *  ② **早期确实在升**：D+2 的 94 → D+4 的 100（走上限了）。
-     * 高位那段（D+7 起 93~99 振荡）是庇护所跌破后的睡眠折损，
+     * 高位那段（D+7 起 94~100 振荡）是庇护所跌破后的睡眠折损，
      * 不归整理管 —— 所以不断言它单调。
      */
     expect(rescued.staminaByDay[2] as number).toBeGreaterThan(messy.staminaByDay[2] as number);
     expect(rescued.staminaByDay[4] as number).toBeGreaterThan(rescued.staminaByDay[2] as number);
+    /*
+     * ★★ 而整理好的那一局**不该被翻乱**（D-11 的 `placement >= 1` 那条）——
+     * 这是"翻乱"与"整整齐齐"能共存的前提，所以钉在探针里。
+     */
+    expect(rescued.scatteredByDay.every((n) => n === 0), '整理好的盘面不该被自己翻乱').toBe(true);
+  });
+});
+
+describe('★★ 翻乱相邻货架（§6.4 的滚雪球）—— D-11', () => {
+  /** 一块盘面上有多少件（用 `stackCount`：`ItemStack` 里没有 `count` 字段） */
+  function piecesOf(shelf: Shelf): number {
+    return readingOrder(shelf).reduce((sum, p) => {
+      const stack = getStack(shelf, p);
+      return sum + (stack ? stackCount(stack) : 0);
+    }, 0);
+  }
+
+  /**
+   * 一个**盘面乱但东西够**的档：口粮按货架顺序平铺（没有胶带，所以"没归位"），
+   * 于是 `placement` 很低 —— 这正是"翻找会把这一行翻乱"的现场。
+   *
+   * ⚠ 不能用"全堆在箱子里"那个乱档：那时 `fromShelves = 0`（一件都没上架），
+   * 而翻乱的前提是**你从货架上翻了东西**。所以那一种恰好**不该**触发翻乱。
+   */
+  function runMessyOnShelves(days: number) {
+    const run = bareRun();
+    run.day = 0;
+    run.phase = 'survival_day';
+    stockFor(run, days);
+    const store = new GameStore(createSaveGame(run), createSaveSchedulerStub());
+    startSurvival(store);
+    resolveHelpIfAny(store);
+    return store;
+  }
+
+  it('★★ 盘面乱 + 今天从货架上取了东西 → 真的翻乱，而且日报里写了', () => {
+    const store = runMessyOnShelves(SURVIVAL_DAYS + 1);
+    advanceSurvivalDay(store);
+    const last = store.run.survival.last;
+    expect(last.scattered, '乱盘面上翻找该把某几行翻乱').toBeGreaterThan(0);
+    expect(last.scatteredRows.length, '日报要说清是哪一行').toBeGreaterThan(0);
+    expect(
+      store.run.log.some((line) => line.includes('翻乱了')),
+      '这件事必须进日报 —— 不做声的机制等于没发生'
+    ).toBe(true);
+  });
+
+  it('★★ 翻乱**不丢东西**（同一块盘面前后件数必须一致）', () => {
+    /*
+     * ⚠ 这条**不走结算**，而是自己铺一块盘面、做一次翻乱再比对。
+     *
+     * 为什么不走结算：结算是会**正常地消耗掉一些**的（那是既有机制），
+     * 拿整局的前后件数比，量到的是"消耗 + 翻乱"两件事，分不清翻乱有没有吃件 ——
+     * 那种断言会在别的地方红，而不是在这里。而 `stockFor` 之后架上本来就是空的
+     * （东西在箱子里，那正是"没整理"），所以借它做这块盘面也是错的。
+     *
+     * 主张只有一句：**一个会丢东西的机制会让玩家再也不敢整理**。
+     */
+    let shelf = createShelf('probe', 'room_living', 'shelf', 3, 3);
+    /*
+     * ⚠ 三格放**三种不同的货**：用同一种货的话"顺序变了没有"根本看不出来
+     * （`['canned_beans','canned_beans',...]` 旋转之后还是同一个数组）。
+     * 第一版就是这么写的，于是断言红得莫名其妙。
+     */
+    for (const [col, itemId] of ['canned_beans', 'rice_bag', 'salt_bag'].entries()) {
+      shelf = setSlotStack(shelf, { row: 0, col }, makeStack(itemId, 3 + col, null));
+    }
+    const before = piecesOf(shelf);
+    expect(before, '这块盘面上该有东西（否则这条在验空气）').toBeGreaterThan(0);
+
+    const moved = scatterRows(shelf, [0], () => 0).shelves[0];
+    if (!moved) throw new Error('该返回一块货架');
+    expect(piecesOf(moved), '翻乱前后件数必须一样').toBe(before);
+    expect(
+      [0, 1, 2].map((col) => getStack(moved, { row: 0, col })?.itemId),
+      '而且顺序真的变了'
+    ).not.toEqual([0, 1, 2].map((col) => getStack(shelf, { row: 0, col })?.itemId));
   });
 });
 
