@@ -976,6 +976,49 @@ export function assignZone(
   return ok(events);
 }
 
+/**
+ * 只改一张胶带**自己**（名字 / 颜色 / 清单），不碰"它贴在哪几行"。
+ *
+ * ## 为什么需要它（与 `applyZone` 的分工）
+ *
+ * `applyZone` 是"**给某块架子的某几行**贴一张胶带"，所以它必须知道货架与行。
+ * 而 2026-10 加的手感是"从**胶带架**上轻点一张胶带 → 改它" ——
+ * 那时玩家想改的是**这张胶带本身**，而它可能贴在好几块架子上，
+ * "从哪一块进"没有答案。拿一个假货架去凑 `applyZone`，后果是把胶带
+ * 贴到玩家没看见的行上。
+ *
+ * ★ 改名字时**同时改所有贴着它的行看到的名字**：行只存 `zoneId`，
+ * 名字在 `zones` 表里只有一份 —— 这是行级胶带之后"一块架子上两种颜色"
+ * 能成立的原因，也是这里不需要遍历货架的原因。
+ */
+export function editZone(
+  store: GameStore,
+  zoneId: string,
+  input: { name: string; color: string; categories: CategoryId[] }
+): CommandResult {
+  const run = store.run;
+  const zone = findZone(run.zones, zoneId);
+  if (!zone) return reject('没有这张胶带');
+  const name = input.name.trim();
+  if (name.length === 0) return reject('给它起个名字');
+  if (name.length > 8) return reject('名字最多 8 个字（手机上一行放得下）');
+
+  store.commit((draft) => {
+    for (const z of draft.zones) {
+      if (z.id !== zoneId) continue;
+      z.name = name;
+      z.color = input.color;
+      /*
+       * 空清单是**合法**的（§12 v0.8：空清单的胶带归位率是 0），
+       * 所以这里不做"至少要选一个品类"的校验 —— 那是玩家的自由，
+       * 而它的代价（归位率 0）已经在分数上体现了。
+       */
+      z.autoAccept = { categories: [...input.categories] };
+    }
+  });
+  return ok([{ type: 'zoneUpdated', shelfId: '' }]);
+}
+
 /** 显式剪掉一张胶带（UI 的"撕下最后一行"已能自动回收，这个留给脚本/M1 用） */
 export function deleteZone(store: GameStore, zoneId: string): CommandResult {
   const run = store.run;

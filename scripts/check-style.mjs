@@ -174,7 +174,28 @@ if (loud.size > LOUD_MAX) {
 }
 
 // ———————— ② 实心墨影只给真正浮起来的东西（同样只看最终生效值） ————————
-const SHADOW_OK = new Set(['drag-ghost', 'drawer-body', 'zone-tape', 'tape-slot', 'shelf-card', 'identity-card']);
+/**
+ * 允许带实心墨影的类。
+ *
+ * ★ 两个新加的（2026-10，胶带拖拽）都写清理由，因为这个名单一旦变成
+ * "随手往里加"的垃圾桶，守卫就没了：
+ *
+ *  · `tape-drop` —— **拖拽幽灵的一部分**：它就是那段跟着手指走的胶带
+ *    （`.drag-ghost` 的子元素）。守卫按类名匹配、看不到父子关系，所以要显式列。
+ *    排一排的胶带**不许**带影子；
+ *  · `tape-chip` —— 只有 `.is-lifted`（**被拿起来的那一张**）带影子。
+ *    同样：常态那一排不带（`.tape-chip` 的基样式里没有 `box-shadow`）。
+ */
+const SHADOW_OK = new Set([
+  'drag-ghost',
+  'drawer-body',
+  'zone-tape',
+  'tape-slot',
+  'shelf-card',
+  'identity-card',
+  'tape-drop',
+  'tape-chip'
+]);
 const shadowed = new Set();
 for (const [name, value] of resolvedShadow) {
   if (SHADOW_OK.has(name)) continue;

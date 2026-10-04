@@ -6,12 +6,13 @@
  */
 import { FURNITURE_DEFS } from '../data/furniture';
 import { getItemDef } from '../data/items';
+import { ZONE_COLORS } from '../data/palette';
 import { initAudio, isMuted, playSfx, setMuted } from '../fx/audio';
 import { iconSvg, itemIconSvg } from '../fx/icons';
 import { showToast, spawnCrushGhost, spawnSfxWord, spawnTidyTag } from '../fx/popup';
 import { dayLabel } from '../model/calendar';
 import { findZone, getStack, isOffZone, rowZoneId, stackCount, zoneIdsOf } from '../model/shelf';
-import type { ItemStack, Shelf, SlotPos, Zone } from '../model/types';
+import type { CategoryId, ItemStack, Shelf, SlotPos, Zone } from '../model/types';
 import type { GameStore } from '../state/store';
 import { roomForNewFurniture, roomsOf, type RoomView } from '../systems/home';
 import {
@@ -20,6 +21,7 @@ import {
   applyZone,
   assignZone,
   buildView,
+  editZone,
   inventoryTotals,
   placeHeld,
   pickupFromShelf,
@@ -50,6 +52,18 @@ export interface OrganizeScreenProps {
 interface DragState {
   active: boolean;
   source: 'shelf' | 'box' | 'hand';
+}
+
+/**
+ * 正在从「胶带架」上拖着的东西。
+ *
+ * · `tape` + `zoneId` —— 拖一张**已有的**胶带，落到某一行上；
+ * · `tape` + `zoneId: null` —— 拖的是「＋」，落地时**新建**一张（默认名 + 自动色）；
+ * · `scissors` —— 拖的是剪刀，落到行上撕那一行、落到整块架上清那一架。
+ */
+interface TapeDrag {
+  kind: 'tape' | 'scissors';
+  zoneId?: string | null;
 }
 
 /**
@@ -115,6 +129,16 @@ export class OrganizeScreen {
   private hoverEl: HTMLElement | null = null;
   private ghost: HTMLElement | null = null;
   /**
+   * 正在拖的是胶带还是剪刀（`null` = 没在拖）。
+   *
+   * ★ 它是**纯界面状态**，不进存档，也刻意不与 `session.held`（货物拖拽）共用 ——
+   * 两者语义不同：一个"手里拿着一件货"，一个"手上捏着一张胶带"。
+   * 共用会让"手里有货时又去拖胶带"变成一种无法解释的状态。
+   */
+  private tapeDrag: TapeDrag | null = null;
+  /** 拖动时高亮着的落点（一行或一整块架子） */
+  private tapeHoverEl: HTMLElement | null = null;
+  /**
    * 「加家具」的三个选择展不展开。
    *
    * ★ 它是**会话态**（不进存档），而且故意不自动收起 ——
@@ -146,6 +170,11 @@ export class OrganizeScreen {
             </div>
           </div>
           <div class="score" data-score></div>
+          <!--
+            「胶带架」：胶带与剪刀都住在这儿，从这里**拖到某一行**上使用。
+            见 renderTapeShelf 的注释（用户要的手感：写一张 → 拖到某一行）。
+          -->
+          <div class="tape-shelf" data-tape-shelf></div>
         </header>
         <main class="room-scroll" data-room></main>
         <footer class="dock">
@@ -184,8 +213,16 @@ export class OrganizeScreen {
           const result = assignZone(this.store, shelfId, zoneId, rows);
           this.consume(result);
           return result.ok;
-        }
-      },
+        },
+        /*
+         * 从**胶带架**上轻点进来时走这条：只改这张胶带自己。
+         * `editZone` 是纯逻辑层的"改名 / 换色 / 改清单"，不碰任何货架 ——
+         * 正是这里需要的语义（那张胶带可能贴在好几块架子上）。
+         */
+        updateZone: (zoneId: string, input: { name: string; color: string; categories: CategoryId[] }) => {          const result = editZone(this.store, zoneId, input);
+          this.consume(result);
+          return result.ok;
+        }      },
       () => this.clearEditHighlight()
     );
 
@@ -224,6 +261,7 @@ export class OrganizeScreen {
     const view = buildView(this.store, this.session);
     this.renderSub(view);
     this.renderScore(view);
+    this.renderTapeShelf();
     this.renderRoom(view);
     this.renderDock(view);
     this.applyFocus();
@@ -231,6 +269,270 @@ export class OrganizeScreen {
   }
 
   // ———————— 渲染 ————————
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  「胶带架」：胶带与剪刀都住在这儿，从这儿拖到某一行上使用
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * ## 用户要的手感（2026-10 走测）
+   *
+   * > "胶带能不能换个手感，就是我写一张胶带，然后拖到某一行上，这样子，
+   * >  然后还可以用一个剪刀拖上去清掉，他还有选中动画"
+   * > "然后已有的胶带存在一个区域直接拖上去就行"
+   *
+   * 所以这里是**一个常驻区域**（不藏在抽屉里）：
+   *
+   *     胶带  [主食][工具][随便]…  [＋]  [✂]
+   *
+   *  · **拖胶带 → 某一行** = 贴上（已有胶带用它的名字与颜色）；
+   *  · **拖剪刀 → 某一行** = 撕下那一行；
+   *  · **拖剪刀 → 一整块架子** = 清掉这一架所有胶带；
+   *  · **轻点胶带** = 打开抽屉改名字/颜色/清单（拖是"贴"，点是"改"）。
+   *
+   * ## 为什么"＋"拖出去是**先贴、后改名**
+   *
+   * 拖出去时先落一张**默认名 + 自动色**的胶带，落地之后点它改名。
+   * 反过来（先弹输入框、打完字再拖）要多一次交互，而那一瞬间玩家手上
+   * 还按着东西、心思在"贴到哪一行"上 —— 分两步更顺。用户拍板了这个口径。
+   *
+   * ## 撕下来的胶带**留在架上**
+   *
+   * 只有"没有任何一行在用它"时才真正消失 —— 否则玩家会不敢试（贴错了就没了）。
+   */
+  private renderTapeShelf(): void {
+    const host = this.query('[data-tape-shelf]');
+    if (!host) return;
+    const run = this.store.run;
+    const chips = run.zones
+      .map((zone) => {
+        // 这张胶带现在贴在几行上（0 = 还在架上、没被用）
+        const rows = run.shelves.reduce(
+          (n, s) =>
+            n + Array.from({ length: s.h }, (_, r) => rowZoneId(s, r)).filter((id) => id === zone.id).length,
+          0
+        );
+        const lifted = this.tapeDrag?.kind === 'tape' && this.tapeDrag.zoneId === zone.id ? ' is-lifted' : '';
+        return `<button class="tape-chip${rows === 0 ? ' is-idle' : ''}${lifted}"
+                  data-tape-chip="${zone.id}"
+                  style="--zone:${zone.color}"
+                  title="拖到某一行上贴上去；点一下改名字与清单${rows === 0 ? '（现在没贴在哪儿）' : `（贴在 ${rows} 行上）`}">
+          ${escapeHtml(zone.name)}${rows > 0 ? `<em class="tape-chip-count">${rows}</em>` : ''}
+        </button>`;
+      })
+      .join('');
+    const liftedCut = this.tapeDrag?.kind === 'scissors' ? ' is-lifted' : '';
+    host.innerHTML = `
+      <span class="tape-shelf-label">胶带</span>
+      <div class="tape-shelf-list">
+        ${chips || '<span class="tape-shelf-empty">还没有胶带。点右边那个「＋」拖到某一行上，就有了。</span>'}
+      </div>
+      <button class="tape-tool" data-tape-new title="拖到某一行上，新建一张胶带">＋</button>
+      <button class="tape-tool tape-tool-cut${liftedCut}" data-tape-scissors
+              title="拖到某一行上撕下那一行；拖到一整块架子上就清掉那一架">✂</button>
+    `;
+    this.bindTapeGestures();
+  }
+
+  /** 把胶带架上的三样东西挂上手势（每次重绘都要重挂 —— 元素换了） */
+  private bindTapeGestures(): void {
+    const host = this.query('[data-tape-shelf]');
+    if (!host) return;
+    host.querySelectorAll<HTMLElement>('[data-tape-chip]').forEach((el) => {
+      const zoneId = el.dataset['tapeChip'] ?? '';
+      attachPointerGesture(el, {
+        onTap: () => this.openZoneDrawer(undefined, undefined, zoneId),
+        onDragStart: (point) => this.beginTapeDrag({ kind: 'tape', zoneId }, point),
+        onDragMove: (point) => this.moveTapeDrag(point),
+        onDragEnd: (point) => this.endTapeDrag(point),
+        // 被打断（判定为滚动）时只收幽灵，什么都不改 —— 拖到一半不算数
+        onCancel: () => {
+          this.endGhost();
+          this.tapeDrag = null;
+          this.clearTapeHover();
+          this.renderTapeShelf();
+        }
+      });
+    });
+    const fresh = host.querySelector<HTMLElement>('[data-tape-new]');
+    if (fresh) {
+      attachPointerGesture(fresh, {
+        onTap: () => showToast(this.fxLayer, '把这个「＋」拖到某一行上，就新建一张胶带', 'ink'),
+        onDragStart: (point) => this.beginTapeDrag({ kind: 'tape', zoneId: null }, point),
+        onDragMove: (point) => this.moveTapeDrag(point),
+        onDragEnd: (point) => this.endTapeDrag(point),
+        onCancel: () => {
+          this.endGhost();
+          this.tapeDrag = null;
+          this.clearTapeHover();
+          this.renderTapeShelf();
+        }
+      });
+    }
+    const cut = host.querySelector<HTMLElement>('[data-tape-scissors]');
+    if (cut) {
+      attachPointerGesture(cut, {
+        onTap: () => showToast(this.fxLayer, '把剪刀拖到某一行上就能撕下来', 'ink'),
+        onDragStart: (point) => this.beginTapeDrag({ kind: 'scissors' }, point),
+        onDragMove: (point) => this.moveTapeDrag(point),
+        onDragEnd: (point) => this.endTapeDrag(point),
+        onCancel: () => {
+          this.endGhost();
+          this.tapeDrag = null;
+          this.clearTapeHover();
+          this.renderTapeShelf();
+        }
+      });
+    }
+  }
+
+  /**
+   * 起手拖胶带 / 剪刀。
+   *
+   * ★ 与货物的拖拽（`beginDrag`）是**两套状态**，刻意不共用 `session.held`：
+   * 那个字段的语义是"玩家手里拿着一件货"，而且它**进存档**。
+   * 胶带拖拽是纯界面状态（松手就没了），塞进去会让存档多一个不该有的字段。
+   */
+  private beginTapeDrag(drag: TapeDrag, point: { x: number; y: number }): void {
+    this.tapeDrag = drag;
+    const el = document.createElement('div');
+    el.className = 'drag-ghost tape-ghost';
+    if (drag.kind === 'scissors') {
+      el.innerHTML = '<span class="tape-ghost-cut">✂</span>';
+    } else {
+      const zone = drag.zoneId ? findZone(this.store.run.zones, drag.zoneId) : null;
+      const color = zone?.color ?? this.newTapeInput().color;
+      el.innerHTML = `<span class="tape-ghost-strip" style="--zone:${color}"></span>`;
+      el.style.setProperty('--zone', color);
+    }
+    el.style.left = `${point.x}px`;
+    el.style.top = `${point.y}px`;
+    this.fxLayer.appendChild(el);
+    this.ghost = el;
+    this.renderTapeShelf(); // 让被拿起来的那一张显示"抬起"态
+    playSfx('preview');
+  }
+
+  /** 拖动中：高亮指针下的那一行 / 那一块架子，并让幽灵跟手 */
+  private moveTapeDrag(point: { x: number; y: number }): void {
+    this.moveGhostTo(point);
+    const target = this.pickTapeTarget(point);
+    if (target === this.tapeHoverEl) return;
+    this.clearTapeHover();
+    if (!target) return;
+    this.tapeHoverEl = target;
+    target.classList.add(target.dataset['row'] !== undefined ? 'is-tape-hover' : 'is-tape-hover-card');
+  }
+
+  /**
+   * 指针下能贴的东西：**一行**优先，其次**一整块架子**（只有剪刀用得上）。
+   *
+   * ⚠ 用 `elementFromPoint` 而不是"缓存的悬停元素" —— 理由与货物那条一样
+   * （见 `endDrag` 的注释：缓存与松手那一刻的指针不保证一致）。
+   * 而拖着幽灵时指针**正下方是幽灵自己**，所以幽灵必须 `pointer-events: none`
+   * （`.drag-ghost` 本来就有，见样式表）。
+   */
+  private pickTapeTarget(point: { x: number; y: number }): HTMLElement | null {
+    const el = document.elementFromPoint(point.x, point.y);
+    if (!(el instanceof HTMLElement)) return null;
+    const row = el.closest<HTMLElement>('[data-shelf-row]');
+    if (row) return row;
+    if (this.tapeDrag?.kind === 'scissors') {
+      const card = el.closest<HTMLElement>('[data-shelf-card]');
+      if (card) return card;
+    }
+    return null;
+  }
+
+  private endTapeDrag(point: { x: number; y: number }): void {
+    const drag = this.tapeDrag;
+    const target = this.pickTapeTarget(point);
+    this.endGhost();
+    this.tapeDrag = null;
+    this.clearTapeHover();
+
+    // 丢在空处 = 什么都没发生（不许"贴在某个我没看清的地方"）
+    if (!drag || !target) {
+      this.renderTapeShelf();
+      return;
+    }
+    const shelfId = target.dataset['shelf'] ?? '';
+    if (!shelfId) {
+      this.renderTapeShelf();
+      return;
+    }
+    const rowAttr = target.dataset['row'];
+
+    if (drag.kind === 'scissors') {
+      const rows = rowAttr === undefined ? this.allRowsOf(shelfId) : [Number(rowAttr)];
+      const r = assignZone(this.store, shelfId, null, rows);
+      this.consume(r);
+      if (r.ok) {
+        playSfx('cut');
+        showToast(this.fxLayer, rowAttr === undefined ? '这一架的胶带清掉了' : '这一行撕下来了', 'ink');
+      }
+      this.render();
+      return;
+    }
+
+    if (rowAttr === undefined) {
+      // 胶带只能贴到**某一行**上（想整块贴 = 抽屉里的「全选」那条路）
+      showToast(this.fxLayer, '拖到具体某一行上', 'ink');
+      this.renderTapeShelf();
+      return;
+    }
+
+    const row = Number(rowAttr);
+    const r = drag.zoneId
+      ? assignZone(this.store, shelfId, drag.zoneId, [row])
+      : applyZone(this.store, shelfId, { ...this.newTapeInput(), rows: [row] });
+    this.consume(r);
+    if (r.ok) {
+      playSfx('place');
+      // ★ 落定之后那一行闪一下 —— "贴上去了"这件事必须看得见（用户要的"选中动画"）
+      this.flashRow(shelfId, row);
+    }
+    this.render();
+  }
+
+  /** 这一块架子的全部行号（剪刀落在整块卡上时用） */
+  private allRowsOf(shelfId: string): number[] {
+    const shelf = this.store.run.shelves.find((s) => s.id === shelfId);
+    return shelf ? Array.from({ length: shelf.h }, (_, r) => r) : [];
+  }
+
+  /**
+   * 新胶带的默认名字与颜色。
+   *
+   * ★ 名字取"**没被用过的第一个** `胶带 N`"，而不是 `zones.length + 1` ——
+   * 否则删掉一张再新建就会撞名，而撞名的后果是 `applyZone` 的
+   * "同名复用"分支把两张胶带并成一张（那是它设计好的行为，但在这里是意外）。
+   */
+  private newTapeInput(): { name: string; color: string } {
+    const zones = this.store.run.zones;
+    const used = new Set(zones.map((z) => z.name));
+    let n = 1;
+    while (used.has(`胶带 ${n}`)) n += 1;
+    const usedColors = new Set(zones.map((z) => z.color));
+    return { name: `胶带 ${n}`, color: ZONE_COLORS.find((c) => !usedColors.has(c)) ?? ZONE_COLORS[0]! };
+  }
+
+  /** 某一行的"贴上去了"闪烁 */
+  private flashRow(shelfId: string, row: number): void {
+    const el = this.roomEl.querySelector<HTMLElement>(
+      `[data-shelf-row][data-shelf="${shelfId}"][data-row="${row}"]`
+    );
+    if (!el) return;
+    el.classList.add('is-tape-landed');
+    window.setTimeout(() => el.classList.remove('is-tape-landed'), 420);
+  }
+
+  private clearTapeHover(): void {
+    for (const el of this.roomEl.querySelectorAll('.is-tape-hover, .is-tape-hover-card')) {
+      el.classList.remove('is-tape-hover', 'is-tape-hover-card');
+    }
+    this.tapeHoverEl = null;
+  }
 
   private renderSub(view: OrganizeView): void {
     const run = this.store.run;
@@ -1108,24 +1410,38 @@ export class OrganizeScreen {
    * 打开胶带抽屉。刻意做两件事：把目标货架滚到房间区顶部（抽屉只占下半屏，
    * 货架必须露在上面）、给它加虚线高亮 —— 分区是空间概念，编辑时必须看得见那块区域。
    */
-  private openZoneDrawer(shelfId: string, rows?: number[]): void {
+  /**
+   * 打开抽屉。
+   *
+   * `rows` 决定"预选哪几行"，`focusZoneId` 决定"预填哪一张胶带"。
+   * ★ 从**胶带架**上轻点进来时只给 `focusZoneId`、不给 `shelfId` ——
+   * 那时玩家想改的是**这张胶带**，而它可能贴在好几块架子上，
+   * "从哪一块进"没有答案。抽屉因此要接受 `shelfId` 为空。
+   */
+  private openZoneDrawer(shelfId?: string, rows?: number[], focusZoneId?: string): void {
     /*
      * ★ "同一个货架"不再等于"同一次编辑"：从第 1 行点进来与从第 3 行点进来
-     * 要看的是不同的胶带。所以还开着的时候，只在**行也一样**时才跳过重开 ——
+     * 要看的是不同的胶带。所以还开着的时候，只在**货架与行都一样**时才跳过重开 ——
      * 否则玩家点了另一行，抽屉里却还是上一行的内容（而那一行看起来"点了没反应"）。
      */
-    const sameRows =
-      (this.sheet.currentRows.join(',') ?? '') === (rows ?? []).join(',');
-    if (this.sheet.isOpen && this.sheet.currentShelfId === shelfId && sameRows) return;
+    const sameRows = (this.sheet.currentRows?.join(',') ?? '') === (rows ?? []).join(',');
+    if (
+      this.sheet.isOpen &&
+      this.sheet.currentShelfId === (shelfId ?? null) &&
+      sameRows &&
+      !focusZoneId
+    ) {
+      return;
+    }
     this.clearEditHighlight();
-    this.sheet.open(shelfId, rows);
+    this.sheet.open(shelfId ?? null, rows, focusZoneId);
+    if (!shelfId) return;
     const card = this.roomEl.querySelector<HTMLElement>(`[data-shelf-card="${shelfId}"]`);
     if (card) {
       card.scrollIntoView({ block: 'start' });
       card.classList.add('is-editing');
     }
   }
-
   private clearEditHighlight(): void {
     this.roomEl.querySelectorAll('.shelf-card.is-editing').forEach((el) => el.classList.remove('is-editing'));
   }

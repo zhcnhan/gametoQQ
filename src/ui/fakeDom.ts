@@ -15,8 +15,11 @@
  *  · **没有布局**：`getBoundingClientRect` 返回的是你显式 set 的矩形（默认 0,0,0,0）。
  *    要测"落点判定"，得先给元素摆好位置 —— 见 `layoutGrid`。
  *  · **不解析 CSS**：`:hover`、`@media` 一律不生效，`classList` 只是字符串集合。
- *  · `elementFromPoint` 由 `FakeDocument` 按"最靠上、含该点"的元素自己做一次命中测试，
- *    只认 `data-slot`（够用）。
+ *  · `elementFromPoint` 由 `FakeDocument` 按"最靠上、含该点"的元素自己做一次命中测试。
+ *    ★ 它**对任何元素都通用**（早期注释里写的"只认 `data-slot`"是过期的：
+ *    实现走的是"有非零矩形 + 不是 `pointer-events: none`"，与选择器无关）。
+ *    但假体不做布局，所以**测之前要自己把矩形摆好**（`layoutGrid` 或直接设 `rect`）——
+ *    否则每个元素都是 0×0，命中测试永远返回 `null`，落点断言全在验空气。
  *  · `closest` 只支持 `[attr]` / `[attr="v"]` / 标签名 / 类名这几种简单选择器。
  */
 

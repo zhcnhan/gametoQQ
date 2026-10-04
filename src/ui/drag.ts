@@ -109,6 +109,12 @@ let installedOn: unknown = null;
  * 加它的原因很具体：手机的日志里出现"每 6px 就被打断一次"，
  * 而"谁打断了它"有**五条**不同的路径（滚动判定 / 看门狗 / pointercancel /
  * window blur / 新的 pointerdown 顶掉）。不打出来就只能靠猜 —— 猜了三轮了。
+ *
+ * ★ 2026-10 补了两条曾经"安静地不做任何事"的路径的日志：
+ *  · `beginDrag` —— 起手那一刻（没有它，"拖拽没反应"看不出是哪一段断的）；
+ *  · `up 判定 tap` —— 抬手时的两个数（位移 / 用时）。这一条是在写胶带拖拽测试时
+ *    补的：当时"轻点不触发 onTap"，而**没有任何日志**说明为什么，
+ *    只能一个分支一个分支地试。现在它会直接把两个数与两个阈值打出来。
  */
 function traceDrag(message: string): void {
   const w = typeof window !== 'undefined' ? (window as unknown as Record<string, unknown>) : null;
@@ -202,6 +208,7 @@ function beginDrag(g: ActiveGesture, point: Point): void {
   if (g.dragging) return;
   g.dragging = true;
   g.el.classList.add('is-dragging');
+  traceDrag(`beginDrag at ${Math.round(point.x)},${Math.round(point.y)}`);
   g.handlers.onDragStart?.(point);
 }
 
@@ -217,9 +224,14 @@ function handleMove(e: PointerEvent): void {
       if (distance(point, g.start) > 6) beginDrag(g, point);
       return;
     }
-    // 长按还没成立：按**方向**判断滚动意图（见 GestureOptions.scrollTolerance）
+    /*
+     * 长按还没成立：按**方向**判断滚动意图（见 GestureOptions.scrollTolerance）。
+     * ⚠ 这一条也打日志：它是一条**安静地放弃手势**的路径，
+     * 而"安静地放弃"在测试里与"什么都没发生"长得一模一样。
+     */
     const dy = Math.abs(point.y - g.start.y);
     const dx = Math.abs(point.x - g.start.x);
+    traceDrag(`move 未定格 dy=${Math.round(dy)} dx=${Math.round(dx)} 阈值=${g.opts.scrollTolerance}`);
     if (dy > g.opts.scrollTolerance && dy > dx) {
       traceDrag(`cancel 来源=滚动判定 dy=${Math.round(dy)} dx=${Math.round(dx)}`);
       settle(g);
@@ -232,6 +244,7 @@ function handleMove(e: PointerEvent): void {
 
 function handleUp(e: PointerEvent): void {
   const g = active;
+  traceDrag(`window pointerup，active=${g ? '有' : '**没有**'}`);
   if (!g) return;
   g.lastSeenAt = now();
   g.lastButtons = 0;
@@ -244,6 +257,9 @@ function handleUp(e: PointerEvent): void {
     g.handlers.onDragEnd?.(point);
     return;
   }
+  traceDrag(
+    `up 判定 tap：moved=${Math.round(moved)} 容差=${g.opts.moveTolerance} elapsed=${Math.round(elapsed)} 上限=${g.opts.tapMaxMs}`
+  );
   if (moved <= g.opts.moveTolerance && elapsed <= g.opts.tapMaxMs) g.handlers.onTap?.(point);
 }
 

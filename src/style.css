@@ -2489,6 +2489,182 @@ button:disabled {
 
 /*
  * ═══════════════════════════════════════════════════════════════════════════
+ *  「胶带架」：胶带与剪刀住在这儿，从这儿拖到某一行上使用（用户要的手感）
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * ## 它为什么在顶栏而不是抽屉里
+ *
+ * 用户的原话："已有的胶带存在一个区域直接拖上去就行" ——
+ * 常驻区域让"拖"这个动作有起点，也让"我手上有哪些胶带"一直看得见。
+ * 藏进抽屉的话每次贴都得先开抽屉，那比原来的点选还慢。
+ *
+ * ## 窄屏
+ *
+ * 320px 上这一条必须**横着滚**而不是换行 —— 换行会把顶栏撑高，
+ * 而顶栏高一点，下面能看到的货架就少一点（那是这一屏的主体）。
+ */
+.tape-shelf {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1.5px solid var(--ink-16);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.tape-shelf-label {
+  flex: 0 0 auto;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--ink-40);
+}
+
+.tape-shelf-list {
+  display: flex;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* 一张胶带：左侧一段自己的颜色（与货架上的行内色条同一套语言） */
+.tape-chip {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 34px;
+  padding: 0 10px 0 7px;
+  border: 1.5px solid var(--ink-16);
+  border-left: 7px solid var(--zone, var(--ink-16));
+  border-radius: 4px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  /* 胶带是纸的：微微转一点，与货架抬头那个 `.zone-name` 同一种做法 */
+  transform: rotate(-1.2deg);
+  cursor: grab;
+  /* 拖它的时候页面不许跟着滚（与格子那条同一个理由） */
+  touch-action: none;
+}
+
+/* 没贴在任何一行上：虚线边框 + 淡一档 —— "它还在架上" */
+.tape-chip.is-idle {
+  border-style: dashed;
+  border-left-style: solid;
+  opacity: 0.72;
+}
+
+/*
+ * 被拿起来的那一张：抬起来、淡下去（用户要的"选中动画"）。
+ * ★ 影子只给**这一种状态**，不给常态 —— 一排胶带同时带影子就没有层次了
+ * （`check-style` 的实心墨影守卫第一次就拦下了常态那条，它是对的）。
+ * 而"被拿起来的那一张"确实浮着，所以它该有。
+ */
+.tape-chip.is-lifted {
+  transform: rotate(-3deg) translateY(-2px);
+  box-shadow: 3px 3px 0 var(--ink-16);
+  opacity: 0.55;
+}
+
+.tape-chip-count {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--ink-40);
+  font-variant-numeric: tabular-nums;
+}
+
+.tape-shelf-empty {
+  font-size: 11px;
+  color: var(--ink-40);
+  white-space: nowrap;
+}
+
+/* 「＋」与剪刀：两个圆钮，与货架抬头那两枚 `.tape-btn` 同一种形状 */
+.tape-tool {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1.5px solid var(--ink);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  font-size: 15px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.tape-tool-cut {
+  font-size: 14px;
+}
+
+.tape-tool.is-lifted {
+  transform: translateY(-2px);
+  opacity: 0.55;
+}
+
+/* 拖动中跟着手指的那一段胶带 / 那把剪刀 */
+.tape-ghost {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tape-ghost-strip {
+  display: block;
+  width: 56px;
+  height: 18px;
+  border-radius: 3px;
+  background: var(--zone, var(--ink-16));
+  transform: rotate(-2deg);
+}
+
+.tape-ghost-cut {
+  font-size: 26px;
+}
+
+/*
+ * 落点高亮：一行（虚线框，与格子的 `is-hover` 同一套语言）。
+ * ★ 它必须**一眼看得出是哪一行** —— 一块架子上四行，差一行就是差一个分类。
+ */
+.shelf-row.is-tape-hover {
+  outline: 2px dashed var(--vermilion);
+  outline-offset: 2px;
+  background: var(--ink-08);
+}
+
+/* 剪刀落在整块架子上（那会清掉这一架的全部胶带，所以更重） */
+.shelf-card.is-tape-hover-card {
+  outline: 3px solid var(--vermilion);
+  outline-offset: 2px;
+}
+
+/*
+ * 贴上去了：那一行闪一下。
+ * ★ 用户要的"选中动画"其实要的是**反馈** —— 拖完必须看得见"它真的贴上了"，
+ * 否则玩家会怀疑自己有没有放对位置（尤其是一块架子上四行长得一样的时候）。
+ */
+@keyframes tape-land {
+  0% {
+    background: var(--ink-16);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+.shelf-row.is-tape-landed {
+  animation: tape-land 420ms ease-out;
+}
+
+/*
+ * ═══════════════════════════════════════════════════════════════════════════
  *  行级胶带（用户拍板 2026-10：胶带的粒度从「一块货架」细到「一行」）
  * ═══════════════════════════════════════════════════════════════════════════
  *

@@ -7,7 +7,25 @@
  * 本文件属于 fx/，允许碰 DOM；但对外只暴露函数，界面不认识 AudioContext。
  */
 
-type SoundName = 'place' | 'preview' | 'unbox' | 'crush' | 'sort' | 'pick' | 'reject' | 'tidy' | 'return';
+/**
+ * 音效名。
+ *
+ * ★ `cut`（撕胶带）是 2026-10 加的。它值得**自己的**声音，而不是借 `return`：
+ * 这个动作的意思是"**我把立的规矩撤了**"，而 `return` 是"把东西放回去" ——
+ * 两件事在玩家心里不该听起来一样。声音形状取"短、干、偏高频"：
+ * 胶带被拉断的那一下本来就只有一声。
+ */
+type SoundName =
+  | 'place'
+  | 'preview'
+  | 'unbox'
+  | 'crush'
+  | 'sort'
+  | 'pick'
+  | 'reject'
+  | 'tidy'
+  | 'return'
+  | 'cut';
 
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
@@ -131,6 +149,11 @@ export function playSfx(name: SoundName): void {
       break;
     case 'return':
       playNoise({ duration: 0.03, gain: 0.09, freq: 1300, q: 1 });
+      break;
+    case 'cut':
+      // 撕胶带：一声干脆的高频"啪"。两句噪声叠在一起才有撕裂感（一句像点击）
+      playNoise({ duration: 0.02, gain: 0.11, freq: 2600, q: 1.6 });
+      playNoise({ duration: 0.045, gain: 0.07, freq: 1500, q: 0.9, delay: 0.018 });
       break;
     case 'tidy':
       playTone({ duration: 0.08, gain: 0.1, from: 1180, to: 1180, type: 'triangle' });
