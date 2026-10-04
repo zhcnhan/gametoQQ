@@ -75,6 +75,15 @@ interface Ctx {
   root: FakeElement;
   store: GameStore;
   win: FakeWindow;
+  /**
+   * 屏幕实例本身。
+   *
+   * ⚠ 只用在一个地方：`renderTapeShelf()` 是 `private`，而"整页重绘之后监听还在不在"
+   * 这条测试需要**显式触发那条横条的重建**。用 `as unknown as` 取私有方法
+   * 是有意的 —— 与其为测试开一个 public 后门（那会变成产品 API 的一部分），
+   * 不如让这一处的不正当性**显式可见**。
+   */
+  screen: OrganizeScreen;
 }
 
 function mount(name: string, sharedWin: FakeWindow): Ctx {
@@ -90,12 +99,13 @@ function mount(name: string, sharedWin: FakeWindow): Ctx {
     dispose: () => undefined,
     pending: false
   });
-  new OrganizeScreen(asElement(root), store, createOrganizeSession(), {
+  const screen = new OrganizeScreen(asElement(root), store, createOrganizeSession(), {
     onRestart: () => undefined,
     onGoOut: () => undefined,
     onEndDay: () => undefined
-  }).mount();
-  return { root, store, win: sharedWin };
+  });
+  screen.mount();
+  return { root, store, win: sharedWin, screen };
 }
 
 const count = (root: FakeElement, sel: string): number => root.querySelectorAll(sel).length;
@@ -326,6 +336,51 @@ describe('★★ 从胶带架上改一张胶带（没有"从哪块架子进"这�
    *
    * ⚠ 所以"标 `it.fails` 等它自己变红"这个做法是对的：D-27 现在**清偿**。
    */
+  it('★★ 只发一个原生 `click` 也能打开抽屉（手机端的兜底路径）', () => {
+    /*
+     * ★★ 用户报："手机上……那个胶带的编辑还是不行，他不弹出，
+     * 贴上去判定那个功能没问题了" —— 也就是**拖**通了而**点**不通。
+     *
+     * 手势层的 tap 判定（位移 ≤12px 且 ≤500ms）在真实手指上很紧，
+     * 所以在手势之外又挂了一个**原生 `click`**（浏览器自己的判定宽容得多）。
+     *
+     * 这条测试**完全不碰手势层**：只发一个 click，抽屉必须打开。
+     * 它就是那条兜底的守卫 —— 谁把 `el.addEventListener('click', …)` 删了，
+     * 这条会立刻红。
+     */
+    const { root } = mount('rows', shared);
+    const chip = root.querySelectorAll('[data-tape-chip]')[0]!;
+    chip.dispatch('click', {});
+    const input = root.querySelectorAll('input[data-zone-name]')[0];
+    expect(input, '原生 click 该把抽屉打开').toBeTruthy();
+  });
+
+  it('★★ 整页重绘之后，页面上那一张仍然点得开（手机端真实场景）', () => {
+    /*
+     * ★★ 这条比"只发一个 click"那条更贴近真机。
+     *
+     * 手机上玩家点之前，页面已经因为**任何一次操作**重绘过好几轮了
+     * （贴一张、拖一件货、点一次排序……每次复盘都会重画这一条）。
+     * 如果 `bindTapeGestures()` 只在挂载时跑一次、重绘时忘了重挂，
+     * 那么"页面上那一张"就没有监听 —— 而测试里"挂载时那一张"有。
+     * 这类"测试绿、真机红"的差别正是这条要挡住的。
+     *
+     * ⚠ 第一版这条**写得含糊**：它只是重新查了一次元素，并没有真的触发重绘 ——
+     * 那样它验的东西与上一条完全一样。现在显式调 `renderTapeShelf()` 重建这一条。
+     */
+    const { root, screen } = mount('rows', shared);
+    const before = root.querySelectorAll('[data-tape-chip]')[0]!;
+    // 触发这一条的**重建**（真机上每次页面重绘都会走到这里）
+    (screen as unknown as { renderTapeShelf(): void }).renderTapeShelf();
+    const after = root.querySelectorAll('[data-tape-chip]')[0]!;
+    expect(after, '重建之后架上仍然该有胶带').toBeTruthy();
+    expect(after, '重建应当换了元素（否则这条没验到"重挂监听"）').not.toBe(before);
+
+    after.dispatch('click', {});
+    const input = root.querySelectorAll('input[data-zone-name]')[0];
+    expect(input, '重建之后的那一张也该点得开').toBeTruthy();
+  });
+
   it('★★ 改名会改到**所有**贴着它的行看到的那个名字', () => {
     const { root, store, win } = mount('rows', shared);
     /*

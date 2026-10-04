@@ -2514,11 +2514,27 @@ button:disabled {
   color: var(--ink-40);
 }
 
+/**
+ * 胶带列表：**自己横向滚**，而且不许把两个工具挤走。
+ *
+ * ★ 用户报过："如果胶带种类太多在手机上会覆盖住加号和剪刀，无法继续操作"。
+ * 布局上的修法有两半：工具挪到最左（见 `renderTapeShelf`），
+ * 以及这里 —— `flex: 1 1 auto; min-width: 0; overflow-x: auto`，
+ * 三件一起才能让"列表再长也不影响工具"成立。
+ * 少了 `min-width: 0`，flex 子项的最小尺寸会等于内容宽度，
+ * 于是它会把兄弟元素挤扁（这是 flex 最经典的那个坑）。
+ */
 .tape-shelf-list {
   display: flex;
   gap: 6px;
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tape-shelf-list::-webkit-scrollbar {
+  display: none;
 }
 
 /* 一张胶带：左侧一段自己的颜色（与货架上的行内色条同一套语言） */
@@ -2541,6 +2557,14 @@ button:disabled {
   cursor: grab;
   /* 拖它的时候页面不许跟着滚（与格子那条同一个理由） */
   touch-action: none;
+  /*
+   * ★ 名字最长 8 个字，但**不许**把别的块挤走 —— `max-width` 兜住，
+   * 超出的部分省略。胶带种类一多时，一堆"宽窄不一"的块会让这一条看起来更乱。
+   */
+  max-width: 42vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 没贴在任何一行上：虚线边框 + 淡一档 —— "它还在架上" */
@@ -2591,6 +2615,15 @@ button:disabled {
   font-size: 15px;
   cursor: grab;
   touch-action: none;
+  /*
+   * ★ `position: relative; z-index` —— 两个工具**永远压在胶带上面**。
+   *
+   * 布局上它们已经排在最左（不会被推走），但胶带块自己带 `transform: rotate(-1.2deg)`
+   * 且没有 `z-index` —— 一个带 transform 的元素会创建层叠上下文，
+   * 于是"谁盖住谁"取决于文档顺序。把工具抬到上面，避免任何情况下被压住。
+   */
+  position: relative;
+  z-index: 2;
 }
 
 .tape-tool-cut {

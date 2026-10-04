@@ -325,14 +325,26 @@ export class OrganizeScreen {
       })
       .join('');
     const liftedCut = this.tapeDrag?.kind === 'scissors' ? ' is-lifted' : '';
+    /*
+     * ★★ 顺序是**工具在前、胶带列表在后**（2026-10 修）。
+     *
+     * 用户报的问题："如果胶带种类太多在手机上会覆盖住加号和剪刀，无法继续操作"。
+     *
+     * 原来的顺序是「标签 + 胶带列表 + ＋ + 剪刀」，于是胶带一多，
+     * 列表把两个工具**推出可视区**（这一条是 `overflow-x: auto`，推出去就滚不回来了，
+     * 因为工具本身也在可滚区域里）。
+     *
+     * 现在把两个工具放在**最左**：它们永远可见、永远够得到，
+     * 而胶带列表在右边自己滚。列表再长也不会影响这两个按钮。
+     */
     host.innerHTML = `
       <span class="tape-shelf-label">胶带</span>
-      <div class="tape-shelf-list">
-        ${chips || '<span class="tape-shelf-empty">还没有胶带。点右边那个「＋」拖到某一行上，就有了。</span>'}
-      </div>
       <button class="tape-tool" data-tape-new title="拖到某一行上，新建一张胶带">＋</button>
       <button class="tape-tool tape-tool-cut${liftedCut}" data-tape-scissors
               title="拖到某一行上撕下那一行；拖到一整块架子上就清掉那一架">✂</button>
+      <div class="tape-shelf-list">
+        ${chips || '<span class="tape-shelf-empty">还没有胶带。把左边那个「＋」拖到某一行上，就有了。</span>'}
+      </div>
     `;
     this.bindTapeGestures();
   }
@@ -348,14 +360,31 @@ export class OrganizeScreen {
         onDragStart: (point) => this.beginTapeDrag({ kind: 'tape', zoneId }, point),
         onDragMove: (point) => this.moveTapeDrag(point),
         onDragEnd: (point) => this.endTapeDrag(point),
-        // 被打断（判定为滚动）时只收幽灵，什么都不改 —— 拖到一半不算数
-        onCancel: () => {
-          this.endGhost();
-          this.tapeDrag = null;
-          this.clearTapeHover();
-          this.renderTapeShelf();
-        }
+        onCancel: () => this.cancelTapeDrag()
       });
+      /*
+       * ★★ 原生 `click` 兜底（2026-10）。
+       *
+       * 用户报："手机上……那个胶带的编辑还是不行，他不弹出，贴上去判定那个功能没问题了"。
+       *
+       * 也就是说：**拖**那条路通了（落点判定修好之后），而**点**这条路不通。
+       * 手势层的 tap 判定（位移 ≤12px 且 ≤500ms）在真实手指上很紧 ——
+       * 而拖拽那条路我们已经验证是好的。所以这里加一条**不依赖手势层**的兜底：
+       * 浏览器自己的 `click` 只要按下与抬起落在同一个元素上就会发，
+       * 而它在移动端比我们那套阈值宽容得多。
+       *
+       * ## 为什么不会变成"点两下开两次"
+       *
+       * `openZoneDrawer` 是**幂等**的：它开头就有"抽屉开着、而且货架与行都没变 → 直接 return"。
+       * 所以手势层与原生 click 都触发时，第二次是空操作。
+       *
+       * ## 为什么不会与拖拽打架
+       *
+       * 拖拽结束后浏览器**不会**补发 click（元素在拖拽中被重绘换掉了，
+       * 而且指针已经移开）—— 真发了也无害，见上一条。
+       */
+      // （这条被"临时关掉验证过会红"—— 见 tapeShelf.test.ts 的两条 ★★）
+      el.addEventListener('click', () => this.openZoneDrawer(undefined, undefined, zoneId));
     });
     const fresh = host.querySelector<HTMLElement>('[data-tape-new]');
     if (fresh) {
@@ -364,13 +393,10 @@ export class OrganizeScreen {
         onDragStart: (point) => this.beginTapeDrag({ kind: 'tape', zoneId: null }, point),
         onDragMove: (point) => this.moveTapeDrag(point),
         onDragEnd: (point) => this.endTapeDrag(point),
-        onCancel: () => {
-          this.endGhost();
-          this.tapeDrag = null;
-          this.clearTapeHover();
-          this.renderTapeShelf();
-        }
+        onCancel: () => this.cancelTapeDrag()
       });
+      // 原生 click 兜底：新建一张（与拖到空处同一个结果）
+      fresh.addEventListener('click', () => this.openZoneDrawer());
     }
     const cut = host.querySelector<HTMLElement>('[data-tape-scissors]');
     if (cut) {
@@ -379,14 +405,18 @@ export class OrganizeScreen {
         onDragStart: (point) => this.beginTapeDrag({ kind: 'scissors' }, point),
         onDragMove: (point) => this.moveTapeDrag(point),
         onDragEnd: (point) => this.endTapeDrag(point),
-        onCancel: () => {
-          this.endGhost();
-          this.tapeDrag = null;
-          this.clearTapeHover();
-          this.renderTapeShelf();
-        }
+        onCancel: () => this.cancelTapeDrag()
       });
+      cut.addEventListener('click', () => showToast(this.fxLayer, '把剪刀拖到某一行上就能撕下来', 'ink'));
     }
+  }
+
+  /** 手势被打断（判定为滚动等）：收幽灵、清状态，什么都不改 */
+  private cancelTapeDrag(): void {
+    this.endGhost();
+    this.tapeDrag = null;
+    this.clearTapeHover();
+    this.renderTapeShelf();
   }
 
   /**
