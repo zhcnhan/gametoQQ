@@ -158,7 +158,9 @@ export class ZoneSheet {
      */
     this.rows = [];
     this.root.hidden = false;
+    this.openedAt = Date.now();
     this.render();
+    this.pinToVisibleViewport();
     /*
      * ★★ **不要自动聚焦输入框**（2026-10 去掉，这是手机上"闪一下就没了"的元凶）。
      *
@@ -174,10 +176,92 @@ export class ZoneSheet {
      */
   }
 
+  /**
+   * 抽屉是**哪一刻**打开的（`Date.now()`；0 = 没开过）。
+   *
+   * ★★ 它挡的是一个只在手机上出现的时序 bug（2026-10 用户实测）：
+   *
+   * > "点一下，瞬间弹出来然后消失，之后再点连这个弹出来的一瞬间都没有了，
+   * >  但是如果我切回电脑模式再点一下他又能出现"
+   *
+   * ## 机制：**同一只手指合成了一个 click**
+   *
+   * 触摸序列是 `pointerdown → pointerup →（浏览器补发）click`。
+   * 而"点胶带 → 打开抽屉"发生在 **pointerup** 那一刻 ——
+   * 于是紧接着补发的那个 `click` 落到的是**刚刚才盖上来的遮罩**
+   * （`.drawer-blocker` 覆盖整屏，而它自己写着 `data-zone-act="close"`）。
+   * 结果：打开 → 同一只手指把它关掉。看起来就是"闪一下就没了"。
+   *
+   * 关掉之后第二次点，因为抽屉已经关了，守卫放行 ——
+   * 但第二次同样会被那一发 click 关掉。而**电脑模式下没有合成的 click**，
+   * 所以同一个操作在桌面上完全正常。这就是"F12 换回电脑模式就能出现"的原因。
+   *
+   * ## 修法：打开之后极短的一段时间内不认遮罩的关闭
+   *
+   * 350ms 是"一次触摸序列的余波"的量级 —— 比它短的连击不算两次操作。
+   * ⚠ 只挡**遮罩**（`data-zone-act="close"` 里那个 blocker），
+   * 不挡"收起"按钮：玩家手速再快也不至于在 350ms 内去点两处，
+   * 而挡错了会让"收起"变成偶尔失灵 —— 那比原 bug 更烦人。
+   */
+  private openedAt = 0;
+
+  /**
+   * 把抽屉钉在**当前可见的那块视口**里。
+   *
+   * ## 为什么不能只靠 CSS 的 `position: fixed`
+   *
+   * `fixed` 是相对**布局视口**定位的，而手机上"看得见的那块"是**视觉视口**
+   * （`visualViewport`）—— 软键盘弹起、地址栏收放、下拉刷新都会让两者不一样。
+   * 那时 `fixed` 的元素会**跑到看得见的地方之外**，而 CSS 里没有任何东西
+   * 能表达"我要贴在可见区域底部"。
+   *
+   * ## 做法
+   *
+   * 把 `.drawer-body` 从"贴在容器底部"改成**显式给出 top 与高度**，
+   * 数值来自 `visualViewport`（拿不到就退回 `innerHeight`，老浏览器/测试环境）。
+   * 同时把这个抽屉本身也挪到可见区域的顶部，让遮罩与它对齐。
+   *
+   * ⚠ 这是**防御性**的（用户在这个 bug 上报过两次）。它自己不会让任何东西出错：
+   * 量不到就直接返回，此时 CSS 的值照常生效。
+   */
+  private pinToVisibleViewport(): void {
+    const root = this.root as HTMLElement & { style?: CSSStyleDeclaration };
+    if (!root.style) return;
+    const body = this.root.querySelector<HTMLElement>('.drawer-body');
+    const vv = typeof window !== 'undefined' ? window.visualViewport : null;
+    const visibleH = Math.round(vv?.height ?? window.innerHeight);
+    const offsetTop = Math.round(vv?.offsetTop ?? 0);
+    if (!(visibleH > 0)) return;
+
+    root.style.top = `${offsetTop}px`;
+    root.style.bottom = 'auto';
+    root.style.height = `${visibleH}px`;
+    if (body) {
+      /*
+       * 最多占可见高度的 58%（与 CSS 里那条 `max-height: 58vh` 同一个口径，
+       * 但这里用的是**可见**高度 —— 那才是玩家真正看到的那块）。
+       */
+      const maxH = Math.round(visibleH * 0.58);
+      body.style.maxHeight = `${maxH}px`;
+    }
+  }
+
+  /** 清掉 `pinToVisibleViewport` 写下的 inline 值（关抽屉时） */
+  private unpinViewport(): void {
+    const root = this.root as HTMLElement & { style?: CSSStyleDeclaration };
+    if (!root.style) return;
+    root.style.top = '';
+    root.style.bottom = '';
+    root.style.height = '';
+    const body = this.root.querySelector<HTMLElement>('.drawer-body');
+    if (body) body.style.maxHeight = '';
+  }
+
   close(): void {
     if (this.root.hidden) return;
     this.shelfId = null;
     this.rows = [];
+    this.unpinViewport();
     this.root.hidden = true;
     this.root.innerHTML = '';
     this.onClose?.();
@@ -232,6 +316,25 @@ export class ZoneSheet {
      */
     if (!hit || !this.isOpen) return;
     const act = hit.dataset['zoneAct'];
+
+    /*
+     * ★★ 刚打开的那一瞬间，**不认遮罩的关闭**（理由见 `openedAt` 的注释）。
+     *
+     * 手机上"点胶带"会在 `pointerup` 打开抽屉，紧接着浏览器补发一个 `click`，
+     * 而它落到的是**刚盖上来的遮罩** —— 于是刚打开就被同一只手指关掉。
+     * 桌面没有合成的 click，所以只在小屏上出现。
+     *
+     * ⚠ 只挡遮罩（`closest('.drawer-blocker')`），不挡"收起"按钮 ——
+     * 挡错了会让"收起"偶尔失灵，那比原 bug 更烦人。
+     */
+    if (
+      act === 'close' &&
+      hit.classList.contains('drawer-blocker') &&
+      // （这个窗口被"临时改成 0"验证过会红 —— 见 tapeShelf.test.ts 的那条 ★★）
+      Date.now() - this.openedAt < 350
+    ) {
+      return;
+    }
 
     switch (act) {
       case 'close':

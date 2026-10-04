@@ -390,6 +390,56 @@ describe('★★ 从胶带架上改一张胶带（没有"从哪块架子进"这�
     expect(input, '重建之后的那一张也该点得开').toBeTruthy();
   });
 
+  it('★★ 打开之后紧跟的那一发 `click` 落在遮罩上，**不许把它关掉**', () => {
+    /*
+     * ★★ 这条复现的是手机上的真实现象（用户原话）：
+     *
+     * > "点一下，瞬间弹出来然后消失，之后再点连这个弹出来的一瞬间都没有了，
+     * >  但是如果我切回电脑模式再点一下他又能出现"
+     *
+     * 机制：触摸序列是 `pointerdown → pointerup →（浏览器补发）click`，
+     * 而"打开抽屉"发生在 **pointerup** —— 于是紧接着补发的那个 `click`
+     * 落到的是**刚刚盖上来的遮罩**（`.drawer-blocker` 覆盖整屏，
+     * 而它自己写着 `data-zone-act="close"`）。打开 → 同一只手指关掉。
+     * 桌面没有合成的 click，所以只有小屏上出现。
+     *
+     * 这条把那一发 click **手动**打在遮罩上，然后要求抽屉还开着。
+     */
+    const { root } = mount('rows', shared);
+    const chip = root.querySelectorAll('[data-tape-chip]')[0]!;
+    chip.dispatch('click', {});
+    const drawer = body.querySelectorAll('.zone-drawer')[0]!;
+    expect(body.querySelectorAll('input[data-zone-name]').length, '先确认它开了').toBe(1);
+
+    // 模拟浏览器补发的那一发 click：目标是遮罩
+    const blocker = drawer.querySelectorAll('.drawer-blocker')[0]!;
+    drawer.dispatch('click', { target: blocker });
+
+    expect(
+      body.querySelectorAll('input[data-zone-name]').length,
+      '刚打开时遮罩上的这一发 click 该被忽略，抽屉要还在'
+    ).toBe(1);
+  });
+
+  it('★ 过一会儿再点遮罩 —— 那才是真的要关', () => {
+    /*
+     * 上一条的另一半：那个"忽略"必须**只覆盖刚打开的那一小段**。
+     * 否则抽屉就再也关不掉了 —— 那比原 bug 更烦人。
+     */
+    const { root } = mount('rows', shared);
+    const chip = root.querySelectorAll('[data-tape-chip]')[0]!;
+    chip.dispatch('click', {});
+    const drawer = body.querySelectorAll('.zone-drawer')[0]!;
+    const blocker = drawer.querySelectorAll('.drawer-blocker')[0]!;
+    expect(body.querySelectorAll('input[data-zone-name]').length).toBe(1);
+
+    // 把假时钟推过那 350ms 的窗口
+    shared.tick(400);
+    drawer.dispatch('click', { target: blocker });
+
+    expect(body.querySelectorAll('input[data-zone-name]').length, '过了窗口该能关掉').toBe(0);
+  });
+
   it('★★ 改名会改到**所有**贴着它的行看到的那个名字', () => {
     const { root, store, win } = mount('rows', shared);
     /*
