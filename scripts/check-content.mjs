@@ -101,7 +101,13 @@ const KNOWN = {
   item: new Set(ITEM_IDS),
   box: new Set(BOX_IDS),
   category: new Set(CATEGORIES),
-  disaster: new Set(DISASTER_IDS)
+  disaster: new Set(DISASTER_IDS),
+  /*
+   * ★ NPC id 也要读出来（2026-10 补）：求援订单的 `npcId` 认不出来时，
+   * `getNpcDef` 会在**玩家点开那一单的时候**抛 —— 也就是一条内容错误
+   * 会变成运行期崩溃。这类"引用了不存在的东西"正是本脚本最该拦的一类。
+   */
+  npc: new Set(readIds('data/npcs.ts'))
 };
 
 // ——————————————————————————————————————————————————————————————
@@ -235,15 +241,36 @@ const SCHEMAS = {
   },
   helpRequest: {
     label: '求援订单',
-    idPattern: /^h_[a-z0-9_]+$/,
+    /**
+     * ★★ 这个 schema 曾经**整个是过期的**，2026-10 才修（当时它挡住了第 3 轮内容）。
+     *
+     * 它原来要求 `validUntilDay` / `rewards` / `declineTrust` / `demands[].itemId` ——
+     * 而 `HelpRequestDef`（`src/data/helpRequests.ts`）里**一个都没有**：
+     * 活代码读的是 `npcId` / `demands[].category` / `trustGain` / `trustLoss` / `thanks`。
+     *
+     * 后果有两层，而且都很糟：
+     *  ① 校验器把 `demands[].category` 当成 `itemId` 查，于是每条都报
+     *     "引用了不存在的物资 'undefined'" —— **报的是它自己看错了字段**；
+     *  ② 现有那 6 条的 id 是 `q_` 前缀，**连 `idPattern` 都不匹配**，
+     *     所以求援这一类**从来没有被校验过**（`--fresh` 也没用，id 先不过）。
+     *
+     * 一条永远报错的规则等于没有规则 —— 而且比没有更糟：它会训练人忽略输出。
+     * 现在按活类型重写，并把前缀放宽到 `[a-z]`（`q_` 是历史前缀，改它要动存档里的
+     * `helpRequest.defId`，代价不值得）。
+     */
+    idPattern: /^[a-z][a-z0-9_]*_[a-z0-9_]+$/,
     required: {
-      id: 'string（以 h_ 开头）',
-      demands: '{itemId,count}[]（1~3 条，itemId 必须真实存在）',
-      validUntilDay: 'number（天数）',
-      rewards: '{trust?,intel?,barter?}（至少一项）',
-      declineTrust: 'number（婉拒扣多少信任，0~5）'
+      id: 'string（`h_` / `h2_` / `q_` 开头都认 —— `q_` 是历史前缀）',
+      npcId: 'string（必须是已知 NPC id）',
+      text: 'string（门口那句话，1~2 句）',
+      demands: '{category,count}[]（1~3 条；**是品类不是 itemId**）',
+      trustGain: 'number（交付涨多少人情，1~5）',
+      trustLoss: 'number（婉拒扣多少人情，0~5）',
+      tier: 'number 1~4'
     },
-    tier: 'number 1~4'
+    optional: {
+      thanks: '{cash?,boxDefId?}（对方留下的东西；**不是每单都有**，全靠回报会把门口变成刷分点）'
+    }
   },
   shop: {
     label: '囤货期点位（商店）',
@@ -331,15 +358,48 @@ function checkEntry(file, kind, obj, index) {
     fail(file, id, `category='${obj.category}' 不是已知品类`);
   }
   if (kind === 'helpRequest') {
-    for (const d of Array.isArray(obj.demands) ? obj.demands : []) {
-      if (!KNOWN.item.has(d.itemId)) fail(file, id, `demands 引用了不存在的物资 '${d.itemId}'`);
+    /*
+     * ★ 这一段原来查的是 `demands[].itemId` —— 而求援的 `demands` 里**没有这个字段**
+     * （它是 `{category, count}`），于是每一条都报"引用了不存在的物资 'undefined'"，
+     * 而那句报错**指向了错误的地方**（它说的不是内容的问题，是它自己看错了字段）。
+     * 现在按活类型查品类与 NPC，并给信任值定区间。
+     */
+    const npcIds = KNOWN.npc;
+    if (typeof obj.npcId !== 'string' || !npcIds.has(obj.npcId)) {
+      fail(file, id, `npcId='${obj.npcId}' 不是已知 NPC（${[...npcIds].join('/')}）`);
     }
-    const r = obj.rewards;
-    if (typeof r !== 'object' || r === null || (r.trust === undefined && r.intel === undefined && r.barter === undefined)) {
-      fail(file, id, 'rewards 至少要给一项（trust / intel / barter）');
+    const dem = Array.isArray(obj.demands) ? obj.demands : [];
+    if (dem.length < 1 || dem.length > 3) {
+      fail(file, id, `demands 应为 1~3 条（§11：一次最多要三样），实际 ${dem.length}`);
     }
-    for (const b of Array.isArray(r?.barter) ? r.barter : []) {
-      if (!KNOWN.item.has(b.itemId)) fail(file, id, `barter 引用了不存在的物资 '${b.itemId}'`);
+    for (const [di, d] of dem.entries()) {
+      if (!KNOWN.category.has(d?.category)) {
+        fail(file, id, `demands[${di}].category='${d?.category}' 不是已知品类（${CATEGORIES.join('/')}）`);
+      }
+      if (!Number.isFinite(d?.count) || d.count < 1 || d.count > 8) {
+        fail(file, id, `demands[${di}].count=${d?.count} 越界（1~8）`);
+      }
+    }
+    if (typeof obj.text !== 'string' || obj.text.trim().length === 0) {
+      fail(file, id, 'text 不能为空（门口那句话是玩家唯一的线索）');
+    }
+    for (const key of ['trustGain', 'trustLoss']) {
+      if (!Number.isFinite(obj[key]) || obj[key] < 0 || obj[key] > 5) {
+        fail(file, id, `${key}=${obj[key]} 越界（0~5）`);
+      }
+    }
+    /*
+     * ★ `thanks` 是可选的（§6.5：回报不该每单都有），但**给了就必须能兑现**：
+     * `boxDefId` 认不出来时 `getBoxDef` 会抛，而那一下发生在玩家点"凑单"的时候。
+     */
+    if (obj.thanks !== undefined) {
+      const t = obj.thanks;
+      if (t?.boxDefId !== undefined && !KNOWN.box.has(t.boxDefId)) {
+        fail(file, id, `thanks.boxDefId='${t.boxDefId}' 不是已知箱型（${BOX_IDS.join('/')}）`);
+      }
+      if (t?.cash !== undefined && (!Number.isFinite(t.cash) || t.cash < 0 || t.cash > 400)) {
+        fail(file, id, `thanks.cash=${t.cash} 越界（0~400）`);
+      }
     }
   }
   if (kind === 'disaster') {

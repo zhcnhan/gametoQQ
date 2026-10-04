@@ -44,14 +44,16 @@ function closeRepeats(ids: readonly string[], window = 2): number {
 
 describe('★ 事件不要重复：最近出过的会被压低权重', () => {
   it('求援订单：同一条隔一次以内又来的次数明显下降（新口径 vs 老口径）', () => {
-    const run = (recentAware: boolean): string[] => {
-      const cursor = createCursor(20261001);
+    const run = (seed: number, recentAware: boolean): string[] => {
+      const cursor = createCursor(seed);
       const history: string[] = [];
       const out: string[] = [];
       for (let day = 0; day < 400; day++) {
         const id = recentAware
           ? rollHelpRequest(cursor, history)
-          : (nextFloat(cursor) < 0.45 ? uniformPick(cursor, HELP_REQUEST_DEFS).id : null);
+          : nextFloat(cursor) < 0.45
+            ? uniformPick(cursor, HELP_REQUEST_DEFS).id
+            : null;
         if (!id) continue;
         out.push(id);
         if (recentAware) {
@@ -61,12 +63,37 @@ describe('★ 事件不要重复：最近出过的会被压低权重', () => {
       }
       return out;
     };
-    const now = run(true);
-    const before = run(false);
-    expect(now.length).toBeGreaterThan(100);
-    expect(before.length).toBeGreaterThan(100);
-    // 这就是玩家感觉到的那件事：老口径下差不多每四次就有一次是"又是他，又是那件事"
-    expect(closeRepeats(now, 2)).toBeLessThan(closeRepeats(before, 2));
+
+    /*
+     * ★★ 这条用例在 2026-10 改过一次，而它原来**根本没在测它声称的东西**。
+     *
+     * 原版只跑**一组**种子（20261001）然后断言
+     * `closeRepeats(now) < closeRepeats(before)`，注释还写着
+     * "老口径下差不多每四次就有一次是'又是他，又是那件事'"。
+     *
+     * 实际数字（求援池从 6 涨到 33 之后量出来的）：
+     *     now = 4，before = 3，两边各 177 次抽签
+     * 而 33 的池子里、177 次抽签、窗口为 2，**期望的"近距离重来"本来就只有约 3.4 次** ——
+     * 所以 `4 < 3` 是**噪声**，不是效果。改成池子小的时候它碰巧成立（6 条池子期望约 60 次），
+     * 内容一多就随机红。
+     *
+     * 现在改成：**跨 40 组种子求总数**。单组是噪声，40 组的总数才量得出"少了很多"。
+     * 这条例子的主张是"新口径显著少于老口径"，而它现在真的在量那句话。
+     */
+    let nowTotal = 0;
+    let beforeTotal = 0;
+    let draws = 0;
+    for (let i = 0; i < 40; i++) {
+      const seed = 20261001 + i * 7919;
+      const now = run(seed, true);
+      const before = run(seed, false);
+      draws += now.length;
+      nowTotal += closeRepeats(now, 2);
+      beforeTotal += closeRepeats(before, 2);
+    }
+    expect(draws, '40 组加起来的总抽签数').toBeGreaterThan(3000);
+    // 新口径应该少一大截，而不是"少一点点" —— 留 40% 的余量给种子之间的波动
+    expect(nowTotal).toBeLessThan(beforeTotal * 0.6);
   });
 
   it('夜间事件：不会连续两晚是同一件事', () => {
