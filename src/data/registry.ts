@@ -328,12 +328,18 @@ function boxPoolDefs(): readonly BoxDef[] {
  *
  * 各表的口径不同，而且**每个不同都是有意的**：
  *   · 物资 —— 有人在卖，或某个箱子开得出（见 `ItemSource`）；
- *   · 灾难 —— 看它的 `tier`：`tier: 1` 的那个开局就在（§10B.3.2 的解锁阶梯，
- *     寒潮是唯一的 tier 1）；更高层的等解锁功能做出来才算"可达"，
- *     而解锁功能还没做 —— 所以这里返回 false，让图鉴与校验器都能看见这笔账；
- *   · 身份 —— 同上，`tier: 1` 开局可选（见 `IDENTITY_DEFS`：`group_buyer` /
- *     `night_shift` / `nurse` 三个）；
+ *   · 灾难 / 身份 —— 看 `tier`：`tier: 1` 开局就在，更高的**活到最后几次**解锁
+ *     （`systems/unlock.ts` 按进度算，两套系统共用同一把尺子）；
  *   · 事件 / 订单 / 商店 / 箱型 / NPC —— 进了池子就是可达的（抽取器按各自的权重表走）。
+ *
+ * ★ 这两行原来写的是"解锁功能还没做，所以 `tier 1` 之外一律 false" ——
+ * 那是**当时如实登记的账**（`deferred.ts` 与图鉴都看得见它）。
+ * M3 第 7 步把解锁做出来之后，那句话就不成立了：
+ * 现在"可达"是**分级**的（要活几次），而不是"只有第一层"。
+ *
+ * ⚠ 这个函数**不查存档**（注册表是静态内容的查询层，不该依赖某一份 meta）。
+ * 它回答的是"这条内容有没有一条路能拿到"，而"你现在够不够格"由
+ * `systems/unlock.ts` 回答。两者不是一回事，别合并。
  */
 function accessibilityOf(kind: ContentKind, def: unknown, tier: ContentTier | undefined, sources: Map<string, ItemSource>): boolean {
   switch (kind) {
@@ -342,10 +348,10 @@ function accessibilityOf(kind: ContentKind, def: unknown, tier: ContentTier | un
       const s = sources.get(id);
       return Boolean(s && (s.shops.length > 0 || s.boxes.length > 0));
     }
-    // 灾难 / 身份的解锁功能在 §10B 第 2~3 步（成就与解锁阶梯），现在只有 tier 1 可达
+    // 有 tier 就有解锁阶梯 —— 每一层都有一条"怎么拿到"的路
     case 'disaster':
     case 'identity':
-      return tier === 1;
+      return typeof tier === 'number' && tier >= 1 && tier <= 4;
     default:
       return true;
   }

@@ -392,6 +392,68 @@ for (const name of scriptNames) {
   }
 }
 
+// ———————— ⑧ ★ 用到的 CSS 变量必须真的被定义过 ————————
+
+/**
+ * `var(--typo)` 不会报错，它**静默失效** —— 那条声明被丢掉，
+ * 元素退回继承（或者干脆没有颜色/间距）。
+ *
+ * 我自己刚踩过一次：给新加的一行写了 `color: var(--ink-90)`，而本项目
+ * 只有 `--ink-70 / --ink-40 / --ink-16 / --ink-08` 四档。
+ * 屏幕上看起来"差别不大"，所以它**不会被眼睛发现** —— 而那正是
+ * 值得让机器记着的那一类。
+ *
+ * ## 判据里有两条"故意放过"
+ *
+ *  ① `var(--x, fallback)` —— 有兜底值，读不到也不会坏事；
+ *  ② ★ **内联设过的变量**（`style="--zone:red"` / `style.setProperty('--x', …)`）。
+ *     这一条不能靠一张豁免名单：名单会过期，而"哪几个变量是内联的"
+ *     是能从源码里**扫出来**的。所以本守则顺手扫一遍 `src/`，
+ *     把代码里真的设置过的变量名收集起来。
+ *
+ *     ★ 这个假阳性是我第一版就撞上的：`--zone` 与 `--swatch` 都定义在
+ *     `ui/zoneSheet.ts` 的内联 style 里，样式表里读它们是对的。
+ *     **会误报的守卫活不过一周** —— 人一旦开始无视它，它就等于没有。
+ */
+const definedVars = new Set();
+for (const m of code.matchAll(/(--[\w-]+)\s*:/g)) definedVars.add(m[1]);
+
+/** 代码里内联设置过的 CSS 变量（`style="--x:…"` 与 `setProperty('--x', …)`） */
+const inlineVars = new Set();
+{
+  const srcDir = join(here, '..', 'src');
+  const walk = (dir) => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (/\.(ts|css)$/.test(e.name)) {
+        const text = readFileSync(p, 'utf8');
+        for (const m of text.matchAll(/--[\w-]+\s*:/g)) inlineVars.add(m[0].replace(/\s*:$/, ''));
+        for (const m of text.matchAll(/setProperty\(\s*['"](--[\w-]+)['"]/g)) inlineVars.add(m[1]);
+      }
+    }
+  };
+  walk(srcDir);
+}
+
+const undefinedVars = new Map();
+for (const m of code.matchAll(/var\(\s*(--[\w-]+)\s*([,)])/g)) {
+  const name = m[1];
+  const hasFallback = m[2] === ',';
+  if (hasFallback || definedVars.has(name) || inlineVars.has(name)) continue;
+  undefinedVars.set(name, (undefinedVars.get(name) ?? 0) + 1);
+}
+if (undefinedVars.size > 0) {
+  const list = [...undefinedVars.entries()].map(([n, c]) => `${n}（${c} 处）`).join('、');
+  note(
+    `样式表用了没定义过的 CSS 变量：${list}\n` +
+      `    \`var()\` 读不到变量时**不报错**，那条声明被静默丢掉、元素退回继承 ——\n` +
+      `    屏幕上"看起来差别不大"，所以只能靠这道守卫发现。\n` +
+      `    已定义：${[...definedVars].sort().join(' ')}\n` +
+      `    内联设置过（不算错）：${[...inlineVars].sort().join(' ')}`
+  );
+}
+
 // ———————— 报账 ————————
 if (failures.length > 0) {
   console.error('[check-style] 样式层次出问题了：\n');

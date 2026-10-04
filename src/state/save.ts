@@ -75,7 +75,7 @@ export const STORAGE_KEY = 'tunhuo.save';
  *        （这一局用的等级，开局时从 `meta.identityLevels` **快照**下来）。
  *        老档补 **1**，那正好是它们当时的真实情况（那时还没有等级这回事）。
  */
-export const SAVE_VERSION = 17;
+export const SAVE_VERSION = 18;
 /** 落盘节流上限（提示词 0：debounce ≤ 300ms） */
 export const SAVE_DEBOUNCE_MS = 250;
 
@@ -93,6 +93,7 @@ export function createMetaProfile(): MetaProfile {
     codex: { items: [], disasters: [], npcs: [] },
     bestSurvivalDays: {},
     bestSafeStreak: 0,
+    survivedRuns: 0,
     achievements: [],
     totalShelved: 0,
     everBoughtItemIds: []
@@ -176,6 +177,7 @@ export function migrate(raw: unknown): SaveGame | null {
   if (declared < 15) save = migrateV14ToV15(save);
   if (declared < 16) save = migrateV15ToV16(save);
   if (declared < 17) save = migrateV16ToV17(save);
+  if (declared < 18) save = migrateV17ToV18(save);
   return normalizeRun(save);
 }
 
@@ -198,6 +200,35 @@ export function migrate(raw: unknown): SaveGame | null {
 export function migrateV16ToV17(save: SaveGame): SaveGame {
   const run = save.run;
   if (run && typeof run.identityLevel !== 'number') run.identityLevel = 1;
+  save.meta.version = SAVE_VERSION;
+  return save;
+}
+
+/**
+ * v17 → v18：M3 第 7 步「解锁系统」（§10.2.1 第四层）。
+ *
+ * ## 老档补的是 `survivedRuns: 0`，而这是一个**会让玩家少拿东西**的选择
+
+ * 值得说清为什么还是这么补：
+ *
+ *  · `bestSurvivalDays` 那张表**不能**用来反推"活过几次"。
+ *    它记的是**每一场灾难的最好成绩**，而"活过几次"是一个**计数** ——
+ *    两者在"纪录被刷新"时会分家：原来活过 3 次、最长 12 天；
+ *    这次活到 14 天但只多了一次。从纪录反推只会得到一个瞎猜的数；
+ *  · 反推的另一个问题是**它对不上玩家的记忆**。玩家记得自己"活过好几次"，
+ *    而我们从纪录里推出一个 2 —— 于是他看到"再活到最后一次就解锁"
+ *    这句话，却发现没有任何变化。**一个撒谎的进度比一个归零的进度更坏**；
+ *  · 补 0 的代价是**具体且一次性的**：一个老玩家要再活到最后一次
+ *    才能看到第二个身份。而这个项目在 v18 之前**根本没有解锁功能** ——
+ *    也就是说"他本来就没有解锁过任何东西"，补 0 是**说真话**。
+ *
+ * ★ 这与 `migrateV16ToV17` 补 `identityLevel: 1` 是同一条纪律：
+ * **补的值必须等于"那个时刻真实发生的事"**，而不是"现在能算出什么"。
+ */
+export function migrateV17ToV18(save: SaveGame): SaveGame {
+  if (typeof save.meta.survivedRuns !== 'number' || !Number.isFinite(save.meta.survivedRuns)) {
+    save.meta.survivedRuns = 0;
+  }
   save.meta.version = SAVE_VERSION;
   return save;
 }
@@ -308,6 +339,14 @@ function normalizeMeta(meta: MetaProfile): MetaProfile {
     bestSafeStreak:
       typeof meta.bestSafeStreak === 'number' && Number.isFinite(meta.bestSafeStreak)
         ? Math.max(0, Math.round(meta.bestSafeStreak))
+        : 0,
+    /*
+     * 活到最后的累计次数（v18）。与 `totalShelved` 一样是**计数**，
+     * 所以清洗方式也相同：非数字/负数/NaN 一律补 0，不反推。
+     */
+    survivedRuns:
+      typeof meta.survivedRuns === 'number' && Number.isFinite(meta.survivedRuns)
+        ? Math.max(0, Math.round(meta.survivedRuns))
         : 0,
     // 成就（v16）：三件都补"空"，而且**每一项都刻意不反推**，理由与 codex 那句相同 ——
     // 老档走过的局没有这个账本，凭空补一份等于告诉玩家他达成过一些他从没达成过的事

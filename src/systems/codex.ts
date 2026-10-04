@@ -45,6 +45,7 @@ import type { GameStore } from '../state/store';
 import type { CodexPage, CodexState, MetaProfile, RunState } from '../model/types';
 import { unlockAchievements, type AchievementVerdict } from './achievements';
 import { levelOf, raiseIdentityLevel } from './identity';
+import { survivedRuns } from './unlock';
 
 /** 三页各自的中文名。界面与结算页共用一份，免得两处各写一遍 */
 export const CODEX_PAGE_LABELS: Record<CodexPage, string> = {
@@ -141,6 +142,17 @@ export function settleRunMeta(store: GameStore): RunVerdict | null {
   }
   if (newRecord) meta.bestSurvivalDays[run.disasterId] = days;
   if (run.survival.safeStreak > meta.bestSafeStreak) meta.bestSafeStreak = run.survival.safeStreak;
+
+  /*
+   * ★ §10.2.1 第四层的解锁计数：**活到最后一次就 +1**（累计，不是连续）。
+   *
+   * 它是身份与房间解锁**唯一**的输入（`systems/unlock.ts`），
+   * 所以这一行是那两套系统的总开关 —— 不在这里加，界面上的
+   * "再活到最后一次就解锁"就永远只是句空话（那正是用户报的那个 bug）。
+   *
+   * 与熟练度同一把尺子（`outcome === 'survived'`）：倒下的那一局不算。
+   */
+  if (outcome === 'survived') meta.survivedRuns = survivedRuns(meta) + 1;
 
   /*
    * ★ 成就（§10B.2）必须排在**图鉴合并之后**，这是硬顺序。

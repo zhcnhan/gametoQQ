@@ -9,6 +9,7 @@ import { getBoxDef, STRAY_BOX_ID } from '../data/boxes';
 import { getDisasterDef } from '../data/disaster';
 import { CATEGORY_ORDER, getItemDef } from '../data/items';
 import { DEFAULT_ZONE_COLOR } from '../data/palette';
+import { LIVING_ROOM_ID, roomDefOf } from '../data/rooms';
 import {
   autoPlace,
   dropStack,
@@ -27,6 +28,7 @@ import {
 import { computeOrganizeScore, type OrganizeScore } from '../model/score';
 import type { CategoryId, HeldOrigin, ItemStack, RunState, Shelf, SlotPos, Zone } from '../model/types';
 import type { GameStore } from '../state/store';
+import { addFurnitureToHome, roomForNewFurniture } from './home';
 import { boxLabel, nextBoxSeq } from './setup';
 
 // ———————— 事件（表现层的唯一输入） ————————
@@ -64,6 +66,8 @@ export type OrganizeEvent =
   | { type: 'zoneRemoved'; shelfId: string; name: string; affected?: number }
   /** 顺手位被标记 / 取消（§5 的"门口那一块"，全屋唯一） */
   | { type: 'handyChanged'; shelfId: string; rank: number | null }
+  /** 新加了一块家具（§10.2.4 的"新货架 / 新家具类型"） */
+  | { type: 'furnitureAdded'; shelfId: string; kind: Shelf['kind']; roomId: string; roomLabel: string }
   | { type: 'rejected'; reason: string };
 
 export interface CommandResult {
@@ -834,6 +838,71 @@ export function toggleHandy(store: GameStore, shelfId: string): CommandResult {
   });
 
   return ok([{ type: 'handyChanged', shelfId, rank: store.run.shelves[idx]?.handyRank ?? null }]);
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  加一块家具（§10.2.4 的「新货架 / 新家具类型」—— 第 6 步 B 的入口）
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * ## 为什么它现在才能做
+ *
+ * 第 6 步 A 把家具变成了**真的有效果**的东西（冰箱 0.4 倍的腐坏速度），
+ * 但玩家**拿不到** —— 家里永远是开局那三块。
+ * 卡点不在机制，而在"谁发给你"：§10.2.4 把新家具定为**解锁物**，
+ * 而解锁系统（`systems/unlock.ts`）与房间容量是第 7 步的事。现在两样都有了。
+ *
+ * ## 代价：它花**现金**
+ *
+ * 设计上没有明写"家具要花钱"，但"搬更大的家"如果免费，
+ * 那 §6.2 的**行动点与现金取舍**就会多出一条免费的路：
+ * 东西放不下 → 直接加一块 → 不需要在想清楚"该丢什么"。
+ * 而"想清楚该丢什么"正是整理这件事的核心。
+ *
+ * 所以定价取的是**一床棉被的两倍上下**（棉被 45）：一件家具 ≈ 100 元。
+ * 那个价位的意思是"买得起，但要少买几罐燃料" ——
+ * 与 §6.2 的三约束同一条松紧度。
+ */
+export const FURNITURE_PRICE = 100;
+
+export function addFurnitureCommand(
+  store: GameStore,
+  session: OrganizeSession,
+  kind: Shelf['kind']
+): CommandResult {
+  const run = store.run;
+  /*
+   * 手里还拿着东西时不许加家具：新家具会插进 `shelves`，
+   * 而"手里那件从哪来"的位置引用（`session.heldFrom`）在那之后可能指向别处。
+   * 与拖拽中途不许重开一局是同一条纪律 —— **不制造无法解释的中间状态**。
+   */
+  if (session.held) return reject('先把手里那件放下');
+
+  const room = roomForNewFurniture(store.save.meta, run);
+  if (!room) return reject('家里放不下了 —— 去解锁一间新房');
+
+  if (run.cash < FURNITURE_PRICE) return reject(`现金不够（要 ${FURNITURE_PRICE}）`);
+
+  const plan = addFurnitureToHome(store.save.meta, run, kind);
+  if (!plan.added) return reject('家里放不下了');
+
+  store.commit((draft) => {
+    draft.shelves = plan.shelves;
+    draft.cash -= FURNITURE_PRICE;
+  });
+
+  const added = store.run.shelves[store.run.shelves.length - 1];
+  const roomDef = roomDefOf(plan.roomId ?? LIVING_ROOM_ID);
+  return ok([
+    {
+      type: 'furnitureAdded',
+      shelfId: added?.id ?? '',
+      kind,
+      roomId: roomDef.id,
+      // 房名一起带出去：界面不必再查一次表，也就不会与命令层的口径分家
+      roomLabel: roomDef.label
+    }
+  ]);
 }
 
 /** 把胶带贴到货架上；zoneId = null 表示"撕下"（这张胶带没人用了就自己消失） */

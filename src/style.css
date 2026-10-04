@@ -2413,6 +2413,74 @@ button:disabled {
   text-align: right;
 }
 
+/*
+ * 「下一个解锁目标」那一行。
+ *
+ * 它比其它 block-note 显眼一档（墨色更深、左边一道朱红竖线）——
+ * 因为它是这一屏**唯一一个"你接下来该干什么"**的答案，
+ * 而 §10B.2 对未点亮格子那条道理同样适用于它：玩家需要一个可执行的目标。
+ * 不上朱红整块：朱红是警告与"你做到了"，而这是一句提示。
+ */
+.unlock-next {
+  padding-left: 8px;
+  border-left: 2px solid var(--vermilion);
+  color: var(--ink);
+}
+
+/*
+ * 房间分组标题（「搬更大的家」之后才会有多个）。
+ *
+ * 只有一间房时 `renderRoom` **不画它** —— 那一刻"客厅"没有任何信息量，
+ * 多一行标题只会让整理页看起来比实际复杂。所以这条样式只在真的分组时出现。
+ */
+.room-group + .room-group {
+  margin-top: 14px;
+}
+
+.room-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 6px;
+  padding-bottom: 4px;
+  font-size: 13px;
+  border-bottom: 1.5px solid var(--ink-16);
+}
+
+.room-count {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ink-40);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * 「加家具」那一组（§10.2.4 第 6 步 B 的入口）。
+ *
+ * ★ 展开而不是弹对话框：手机上没有 hover，而"加家具"是一个要挑种类的动作。
+ * 对话框要处理遮罩 / 焦点 / 返回键，三个并排的小按钮说的是同一件事。
+ * 展开后**不自动收起** —— 玩家常常想连着加两块。
+ */
+.add-furniture {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.add-picks {
+  display: flex;
+  gap: 4px;
+}
+
+/* "还差 N 元"：不上朱红 —— 差钱是处境，不是警告（与商店里那句同一条纪律） */
+.btn-note {
+  margin-left: 4px;
+  font-style: normal;
+  font-size: 10px;
+  color: var(--ink-70);
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
  *  图鉴与成就（M3 第 2 步，§10B.2）
  * ═══════════════════════════════════════════════════════════════════════

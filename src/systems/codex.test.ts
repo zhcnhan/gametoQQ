@@ -19,7 +19,7 @@ import { getDisasterDef } from '../data/disaster';
 import { createCursor } from '../model/rng';
 import { makeStack } from '../model/shelf';
 import type { RunState } from '../model/types';
-import { SAVE_VERSION, createSaveGame, deserialize, migrate, serialize } from '../state/save';
+import { SAVE_VERSION, createMetaProfile, createSaveGame, deserialize, migrate, serialize } from '../state/save';
 import { GameStore } from '../state/store';
 import { earnedCodex, settleRunMeta } from './codex';
 import { createStartingRun, generateBoxStacks } from './setup';
@@ -275,8 +275,8 @@ describe('跨局结算：只发一次奖', () => {
   });
 });
 
-describe('存档 v13~v17：M2~M3 新字段的迁移与自愈', () => {
-  it('当前版本是 v17（M3 第 3 步加了这一局的身份熟练度快照）', () => {
+describe('存档 v13~v18：M2~M3 新字段的迁移与自愈', () => {
+  it('当前版本是 v18（M3 第 7 步加了"活到最后的累计次数"—— 解锁系统的唯一输入）', () => {
     /*
      * ★ 这条断言是**故意的**：它是"改 schema 必须 +1 版本"那条规矩的报警器。
      *
@@ -285,7 +285,40 @@ describe('存档 v13~v17：M2~M3 新字段的迁移与自愈', () => {
      * 而你抬了版本号却忘了写迁移，这条会红并让你想起"迁移写了没有"。
      * 两个方向都有人守，所以它是这套自愈体系里的一个必要齿轮。
      */
-    expect(SAVE_VERSION).toBe(17);
+    expect(SAVE_VERSION).toBe(18);
+  });
+
+  it('★★ v17 老档：`survivedRuns` 补 0，而且**不从纪录反推**', () => {
+    /*
+     * 这条守的是"补的值必须等于那个时刻真实发生的事"。
+     *
+     * `bestSurvivalDays` 那张表**不能**用来推"活过几次"：它记的是纪录，
+     * 而这里要的是计数 —— 两者在"纪录被刷新"时会分家。
+     * 更要紧的是：v18 之前**根本没有解锁功能**，
+     * 所以"他本来就没有解锁过任何东西"，补 0 是**说真话**。
+     *
+     * ★ 一个撒谎的进度比一个归零的进度更坏：玩家记得自己活过好几次，
+     * 却看到"再活一次就解锁"没有任何变化 —— 那正是用户报的那个 bug 的形状。
+     */
+    const meta = {
+      version: 17,
+      identityLevels: {},
+      codex: { items: [], disasters: ['cold_snap'], npcs: [] },
+      // 故意放一份"看起来活过很多次"的纪录
+      bestSurvivalDays: { cold_snap: 14 },
+      bestSafeStreak: 9,
+      achievements: [],
+      totalShelved: 640,
+      everBoughtItemIds: []
+    } as never;
+    const back = deserialize(serialize({ meta, run: null, savedAt: 1, syncVersion: 1, deviceId: 'd' }));
+    expect(back?.meta.survivedRuns).toBe(0);
+  });
+
+  it('★ v18 往返：`survivedRuns` 存得住、被清洗成正整数', () => {
+    const meta = { ...createMetaProfile(), survivedRuns: 3 } as never;
+    const back = deserialize(serialize({ meta, run: null, savedAt: 1, syncVersion: 1, deviceId: 'd' }));
+    expect(back?.meta.survivedRuns).toBe(3);
   });
 
   it('★ v14 老档：手里那件补空（不反推 —— 老档根本没记录过这件事）', () => {

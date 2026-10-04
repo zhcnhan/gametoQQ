@@ -4,6 +4,7 @@
  * 分层纪律：本文件**只读** buildView() 的结果；写操作一律调用 systems/organize 的命令函数，
  * 命令返回的 OrganizeEvent 才是表现层的输入（音效 / 拟声字 / 压扁动画）。
  */
+import { FURNITURE_DEFS } from '../data/furniture';
 import { getItemDef } from '../data/items';
 import { initAudio, isMuted, playSfx, setMuted } from '../fx/audio';
 import { iconSvg, itemIconSvg } from '../fx/icons';
@@ -12,7 +13,10 @@ import { dayLabel } from '../model/calendar';
 import { getStack, isOffZone, stackCount } from '../model/shelf';
 import type { ItemStack, Shelf, SlotPos, Zone } from '../model/types';
 import type { GameStore } from '../state/store';
+import { roomForNewFurniture, roomsOf } from '../systems/home';
 import {
+  FURNITURE_PRICE,
+  addFurnitureCommand,
   applyZone,
   assignZone,
   buildView,
@@ -110,6 +114,14 @@ export class OrganizeScreen {
   private pendingFocus: { shelfId: string; pos: SlotPos } | null = null;
   private hoverEl: HTMLElement | null = null;
   private ghost: HTMLElement | null = null;
+  /**
+   * 「加家具」的三个选择展不展开。
+   *
+   * ★ 它是**会话态**（不进存档），而且故意不自动收起 ——
+   * 玩家常常想连着加两块。刷新之后收起是可以接受的：
+   * 那只是少一次点击，不是一个会丢的状态。
+   */
+  private addOpen = false;
   private drag: DragState = { active: false, source: 'shelf' };
 
   constructor(root: HTMLElement, store: GameStore, session: OrganizeSession, props: OrganizeScreenProps) {
@@ -141,6 +153,7 @@ export class OrganizeScreen {
           <div class="dock-boxes" data-boxes></div>
           <div class="dock-tools">
             <button class="btn" data-action="sort">${iconSvg('sort')}<span>按保质期排</span></button>
+            ${this.addFurnitureHtml()}
             <button class="btn" data-action="go-out"><span>再去采购</span></button>
             <button class="btn btn-primary" data-action="end-day"><span>过一天</span></button>
           </div>
@@ -252,9 +265,35 @@ export class OrganizeScreen {
 
   private renderRoom(view: OrganizeView): void {
     const scrollTop = this.roomEl.scrollTop;
-    this.roomEl.innerHTML = view.shelves
-      .map((shelf, index) => this.shelfHtml(shelf, index, view))
-      .join('');
+    /*
+     * ★ 按房间分组（§10.2.4 的「搬更大的家」）。
+     *
+     * 只有一间房时**不画房名** —— 那一刻"客厅"这个词没有任何信息量，
+     * 而多一行标题会让整理页看起来比它实际复杂。两间房起才分组。
+     *
+     * ★ 顺序取自 `roomsOf()`（房间表的顺序），不是 `shelves` 的顺序 ——
+     * 否则家具一多，房间的先后会随存档里的插入顺序漂。
+     */
+    const rooms = roomsOf(this.store.save.meta, this.store.run);
+    if (rooms.length <= 1) {
+      this.roomEl.innerHTML = view.shelves
+        .map((shelf, index) => this.shelfHtml(shelf, index, view))
+        .join('');
+    } else {
+      this.roomEl.innerHTML = rooms
+        .map((room) => {
+          const cards = room.shelves
+            .map((shelf) => this.shelfHtml(shelf, view.shelves.indexOf(shelf), view))
+            .join('');
+          return `
+            <section class="room-group">
+              <h2 class="room-title">${escapeHtml(room.label)}<span class="room-count">${room.used}/${room.capacity}</span></h2>
+              ${cards}
+            </section>
+          `;
+        })
+        .join('');
+    }
     this.roomEl.scrollTop = scrollTop;
     this.bindRoomGestures();
   }
@@ -309,6 +348,52 @@ export class OrganizeScreen {
       ${soon ? `<span class="slot-soon" aria-hidden="true"></span>` : ''}
       ${off ? '<span class="slot-off" aria-hidden="true"></span>' : ''}
     </button>`;
+  }
+
+  /**
+   * 「加家具」那个按钮（§10.2.4 的"新货架 / 新家具类型" —— 第 6 步 B 的入口）。
+   *
+   * ## 三条界面纪律
+   *
+   *  ① **放不下时按钮不灰**，而是改成"家里放不下了"并指出去解锁新房 ——
+   *     §4A 说"不许有死按钮"，而灰掉的按钮既不解释原因、也不给下一步；
+   *  ② **现金不够时也不灰**，只是把差价说出来。这与商店里"钱不够"的处理一致：
+   *     玩家需要知道自己差多少，而不是面对一个点不动的按钮；
+   *  ③ 只在**整理页**给这个入口。它是"东西放不下了"的解药，
+   *     而"东西放不下"这件事只在整理时被感受到。
+   */
+  private addFurnitureHtml(): string {
+    const meta = this.store.save.meta;
+    const room = roomForNewFurniture(meta, this.store.run);
+    if (!room) {
+      return `<button class="btn" data-action="explain" data-explain="家里放不下了。每间房能放的块数是固定的，「搬更大的家」（活到最后一次）会开一间新的。">${iconSvg('box')}<span>放不下了</span></button>`;
+    }
+    const cash = this.store.run.cash;
+    const afford = cash >= FURNITURE_PRICE;
+    /*
+     * ★ 展开三个选择，而不是弹对话框。
+     *
+     * 手机上没有 hover，而"加家具"是一个**要挑种类**的动作
+     * （冰箱 / 柜子 / 货架的腐坏乘数不同）。做一个对话框要处理遮罩、
+     * 焦点、返回键；而三个并排的小按钮说的是同一件事，还少一层。
+     * 展开后**不自动收起** —— 玩家可能想连着加两块。
+     */
+    const picks = FURNITURE_DEFS.filter((d) => d.kind !== 'floor')
+      .map(
+        (d) =>
+          `<button class="mini" data-action="add-furniture" data-kind="${d.kind}" title="${escapeHtml(d.why)}"${
+            afford ? '' : ' disabled'
+          }>${escapeHtml(d.label)}</button>`
+      )
+      .join('');
+    return `
+      <div class="add-furniture">
+        <button class="btn" data-action="toggle-add">${iconSvg('box')}<span>加家具 ${FURNITURE_PRICE}</span>${
+          afford ? '' : `<em class="btn-note">差 ${FURNITURE_PRICE - cash}</em>`
+        }</button>
+        ${this.addOpen ? `<div class="add-picks">${picks}</div>` : ''}
+      </div>
+    `;
   }
 
   private renderDock(view: OrganizeView): void {
@@ -488,6 +573,27 @@ export class OrganizeScreen {
     const action = hit.dataset['action'];
     const shelfId = hit.dataset['shelf'];
     switch (action) {
+      case 'toggle-add':
+        this.addOpen = !this.addOpen;
+        // 只重画底部工具条：整屏重绘会把货架滚动位置与手势绑定一起重置，
+        // 而"展开一个选择"不该有那个副作用
+        this.renderDock(buildView(this.store, this.session));
+        return;
+      case 'add-furniture': {
+        const kind = hit.dataset['kind'] as Shelf['kind'] | undefined;
+        if (!kind) return;
+        const result = addFurnitureCommand(this.store, this.session, kind);
+        this.consume(result);
+        if (result.ok) {
+          this.addOpen = false;
+          const added = result.events.find(
+            (e): e is Extract<typeof e, { type: 'furnitureAdded' }> => e.type === 'furnitureAdded'
+          );
+          if (added) showToast(this.fxLayer, `放进了${added.roomLabel}`, 'ink');
+        }
+        this.render();
+        return;
+      }
       case 'explain':
         showToast(this.fxLayer, hit.dataset['explain'] ?? '', 'ink');
         return;

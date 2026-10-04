@@ -176,12 +176,32 @@ describe('注册表：可达性（D-16 的静态版本）', () => {
     }
   });
 
-  it('灾难与身份的可达性看 tier 1（解锁功能还没做，这是诚实的口径）', () => {
-    // 寒潮是唯一的 tier 1，所以它必然可达
+  it('★ 灾难与身份的可达性看**分级**：每一层 tier 都有一条"怎么拿到"的路', () => {
+    /*
+     * ★ 这条用例在 M3 第 7 步改过口径，值得说明改了什么：
+     *
+     * 它原来叫"可达性看 tier 1（解锁功能还没做，这是诚实的口径）"——
+     * 那时 `accessibilityOf` 对 `tier !== 1` 一律返回 false，于是
+     * **一百多场灾难全被报成"拿不到"**。那是**当时如实登记的账**，
+     * 有它是对的（否则会变成一个没人记得的坑）。
+     *
+     * 解锁做出来之后，那句话不成立了：现在"可达"是**分级**的
+     * （`tier` 就是要活到最后几次），而不是"只有第一层"。
+     *
+     * ⚠ 注意本函数**不查存档**：它回答"这条内容有没有一条路能拿到"，
+     * 而"你现在够不够格"由 `systems/unlock.ts` 回答。两者不是一回事 ——
+     * 合并的话，注册表就会依赖某一份 meta，而它是静态内容的查询层。
+     */
     expect(isObtainable('cold_snap')).toBe(true);
-    // 更高层的灾难现在拿不到（等 §10B.3.2 的解锁阶梯）—— 它们必须被报出来
-    const locked = unobtainableEntries('disaster').map((e) => e.id);
-    expect(locked).toContain('heat_wave');
+    // 每一层都要有内容（否则那条解锁阶梯是空的）
+    for (const t of [1, 2, 3, 4]) {
+      const ids = entriesOfKind('disaster').filter((e) => e.tier === t);
+      expect(ids.length, `tier ${t} 一场灾难都没有`).toBeGreaterThan(0);
+    }
+    // 于是**没有任何灾难**是"写了但永远出不来"的
+    expect(unobtainableEntries('disaster')).toEqual([]);
+    // 身份同理（8 个身份分成 1/2/3 三档）
+    expect(unobtainableEntries('identity')).toEqual([]);
   });
 });
 

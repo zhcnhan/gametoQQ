@@ -6,11 +6,11 @@
  * 寒潮要燃料，夜班员的燃料便宜 20% —— 这个念头应该由界面自己浮出来，不要靠教学文案点破。
  */
 import { M1_DISASTER_ID, getDisasterDef } from '../data/disaster';
-import { IDENTITY_DEFS } from '../data/identities';
 import { CATEGORY_LABELS } from '../data/items';
 import { calendarBars, dayLabel } from '../model/calendar';
 import type { IdentityDef, MetaProfile } from '../model/types';
 import { identityStartOf, unlockHintOf } from '../systems/identity';
+import { lockedIdentities, nextUnlock, unlockedIdentities } from '../systems/unlock';
 import { iconSvg } from '../fx/icons';
 import type { Screen } from './Router';
 
@@ -70,10 +70,11 @@ export class PrologueScreen implements Screen {
           <section class="block">
             <h2 class="block-title">你重生了，先决定你是谁</h2>
             <div class="identity-list">
-              ${IDENTITY_DEFS.filter((def) => def.tier === 1)
+              ${unlockedIdentities(this.props.meta)
                 .map((def) => this.identityCard(def))
                 .join('')}
             </div>
+            ${this.nextUnlockHtml()}
             ${this.lockedHtml()}
           </section>
 
@@ -129,7 +130,7 @@ export class PrologueScreen implements Screen {
    * 而"再活到最后一次就解锁"是一个明确的、可执行的目标。
    */
   private lockedHtml(): string {
-    const locked = IDENTITY_DEFS.filter((def) => def.tier !== 1);
+    const locked = lockedIdentities(this.props.meta);
     if (locked.length === 0) return '';
     return `
       <p class="block-note">还有 ${locked.length} 个身份没解锁。</p>
@@ -145,6 +146,31 @@ export class PrologueScreen implements Screen {
           )
           .join('')}
       </div>
+    `;
+  }
+
+  /**
+   * 「下一个解锁目标」那一行。
+   *
+   * ## 为什么只写一个
+   *
+   * 一次列出五个待解锁项，等于一条都不给 —— 玩家需要的是**一个可执行的目标**。
+   * `nextUnlock()` 挑出**门槛最低**的那一个，并说清"你还差几次"。
+   *
+   * ★ 这一行是"活到最后一次就解锁"那句话的**回执**：
+   * 在解锁系统做出来之前，界面上写着那句话，而玩家活到最后一次之后
+   * 什么都不会发生 —— 用户报的正是这个。现在它会变成
+   * "再活到最后一次就解锁「储藏间」"，然后真的解锁。
+   */
+  private nextUnlockHtml(): string {
+    const next = nextUnlock(this.props.meta);
+    if (!next) return '';
+    const left = Math.max(0, next.need - next.have);
+    return `
+      <p class="block-note unlock-next">
+        下一个：${escapeHtml(next.label)} —— 再活到最后 <b>${left}</b> 次。
+        <br><span class="identity-lock-hint">${escapeHtml(next.hint)}</span>
+      </p>
     `;
   }
 
