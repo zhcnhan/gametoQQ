@@ -345,7 +345,249 @@ export const EMERGENCY_DEFS: readonly EmergencyDef[] = [
     tier: 1,
     decision: "奢侈品留没留可以出手的富余"
   },
-  // ═══ 生成内容 突发-01 止 ═══
+  // ═══ 生成内容 突发-01 止 ═══,
+  // ═══ 生成内容 突发-02 起（scripts/merge-content.mjs 插入，别手改这一段） ═══
+{
+    id: "e_pantry_moth",
+    text: "橱柜深处飞出一只灰蛾子。你想起上次那袋面就是这么没的。",
+    category: "food",
+    needOnHandy: 1,
+    lost: 1,
+    consumes: false,
+    tier: 1,
+    decision: "主食有没有密封、顺手位有没有留一份备用口粮"
+  },
+{
+    id: "e_flour_damp",
+    text: "墙根返潮，最底下那袋粉结成了硬块。",
+    category: "food",
+    needOnHandy: 2,
+    lost: 2,
+    consumes: false,
+    tier: 2,
+    decision: "怕潮的东西有没有垫高、有没有把耐放的与怕放的分开"
+  },
+{
+    id: "e_can_dent",
+    text: "搬箱子时磕了一下，有几罐的接缝处鼓起来了。",
+    category: "food",
+    needOnHandy: 2,
+    lost: 1,
+    consumes: true,
+    tier: 2,
+    decision: "罐头够不够多到可以丢掉几罐而不心疼"
+  },
+{
+    id: "e_oil_rancid",
+    text: "开盖闻到一股旧油味，那桶油放得太靠暖气片了。",
+    category: "food",
+    needOnHandy: 2,
+    lost: 2,
+    consumes: false,
+    tier: 3,
+    decision: "怕热的油有没有放到阴凉那一格"
+  },
+{
+    id: "e_pipe_freeze",
+    text: "早上拧开龙头，只有一声空响。管子冻住了。",
+    category: "water",
+    needOnHandy: 3,
+    lost: 2,
+    consumes: false,
+    tier: 2,
+    decision: "水有没有按\"够喝几天\"备而不是\"够喝今天\""
+  },
+{
+    id: "e_bottle_crack",
+    text: "一整提水的塑料膜破了，有两瓶在楼道里冻裂。",
+    category: "water",
+    needOnHandy: 3,
+    lost: 2,
+    consumes: true,
+    tier: 1,
+    decision: "水这个品类够不够经得起一次损耗"
+  },
+{
+    id: "e_water_mold",
+    text: "储水桶内壁起了一层滑腻的东西，闻着不对。",
+    category: "water",
+    needOnHandy: 2,
+    lost: 1,
+    consumes: false,
+    tier: 3,
+    decision: "储水有没有轮换、有没有把\"先买的先用\"当真"
+  },
+{
+    id: "e_med_expired",
+    text: "翻药盒时发现一整排都过期了，盒子上的日期是去年。",
+    category: "medicine",
+    needOnHandy: 2,
+    lost: 1,
+    consumes: false,
+    tier: 2,
+    decision: "药有没有按效期排、有没有在用之前看过日期"
+  },
+{
+    id: "e_med_crushed",
+    text: "药盒被压在最底下，铝箔全皱了，有几片露在外面。",
+    category: "medicine",
+    needOnHandy: 2,
+    lost: 2,
+    consumes: true,
+    tier: 2,
+    decision: "急救品有没有放在拿得到、压不着的地方"
+  },
+{
+    id: "e_infection_night",
+    text: "伤口周围红了一圈，摸着发烫。你翻出药盒，手有点抖。",
+    category: "medicine",
+    needOnHandy: 3,
+    lost: 3,
+    consumes: true,
+    tier: 3,
+    decision: "医疗那格够不够厚到能应付一次真的感染"
+  },
+{
+    id: "e_stove_clog",
+    text: "炉子的喷嘴堵了，火苗忽大忽小，屋里飘着一股没烧净的味道。",
+    category: "fuel",
+    needOnHandy: 2,
+    lost: 1,
+    consumes: false,
+    tier: 2,
+    decision: "燃料有没有备用、有没有留一件能替换的"
+  },
+{
+    id: "e_kerosene_leak",
+    text: "储物角有一股刺鼻味 —— 有一桶燃料在慢慢渗。",
+    category: "fuel",
+    needOnHandy: 3,
+    lost: 2,
+    consumes: false,
+    tier: 3,
+    decision: "燃料有没有独立存放、有没有垫托盘"
+  },
+{
+    id: "e_ash_vent",
+    text: "炉子的排烟口积了灰，屋里飘着一层薄薄的烟。",
+    category: "fuel",
+    needOnHandy: 3,
+    lost: 3,
+    consumes: true,
+    tier: 3,
+    decision: "烧得多的那些天，有没有想过炉子本身也要维护"
+  },
+{
+    id: "e_wet_wood",
+    text: "屋檐下的柴受了潮，点着只冒烟不出火。",
+    category: "fuel",
+    needOnHandy: 2,
+    lost: 1,
+    consumes: false,
+    tier: 1,
+    decision: "有没有留一件\"一定点得着\"的引火物"
+  },
+{
+    id: "e_window_seep",
+    text: "风从窗缝里钻进来，桌上的水杯表面结了一层薄冰。",
+    category: "warmth",
+    needOnHandy: 2,
+    lost: 2,
+    consumes: false,
+    tier: 2,
+    decision: "保暖那一格够不够堵住一个漏风的窗"
+  },
+{
+    id: "e_mattress_mildew",
+    text: "褥子底下起了一片黑斑，凑近闻有股闷味。",
+    category: "warmth",
+    needOnHandy: 3,
+    lost: 2,
+    consumes: false,
+    tier: 3,
+    decision: "铺盖有没有定期离地翻晒、有没有留一套干爽的替换"
+  },
+{
+    id: "e_heat_lost",
+    text: "暖宝宝整盒都硬成一块了。可能是受潮，也可能本来就是存货。",
+    category: "warmth",
+    needOnHandy: 3,
+    lost: 2,
+    consumes: true,
+    tier: 2,
+    decision: "一次性取暖品够不够多到能损耗一批"
+  },
+{
+    id: "e_battery_dead",
+    text: "手电按了两下，光只亮了一瞬。电池到底还是没电了。",
+    category: "tool",
+    needOnHandy: 2,
+    lost: 1,
+    consumes: true,
+    tier: 1,
+    decision: "电池那一格有没有留够、有没有按型号分开"
+  },
+{
+    id: "e_tape_lost",
+    text: "你翻遍抽屉也没找到那卷胶带，窗缝还在漏风。",
+    category: "tool",
+    needOnHandy: 2,
+    lost: 2,
+    consumes: false,
+    tier: 2,
+    decision: "常用的小工具是不是放在固定、拿得到的地方"
+  },
+{
+    id: "e_rope_needed",
+    text: "楼下的东西太重，一个人抬不上来，得捆一下再拖。",
+    category: "tool",
+    needOnHandy: 3,
+    lost: 2,
+    consumes: false,
+    tier: 3,
+    decision: "有没有备那种\"平时用不上、缺了过不去\"的东西"
+  },
+{
+    id: "e_treat_ants",
+    text: "糖罐外面爬了一圈蚂蚁，旁边的点心也遭了殃。",
+    category: "luxury",
+    needOnHandy: 1,
+    lost: 1,
+    consumes: false,
+    tier: 1,
+    decision: "零嘴有没有密封、有没有和主粮分开"
+  },
+{
+    id: "e_coffee_mold",
+    text: "咖啡粉结块了，闻着有一股闷味。",
+    category: "luxury",
+    needOnHandy: 2,
+    lost: 1,
+    consumes: false,
+    tier: 2,
+    decision: "开封过的零嘴有没有尽快吃完或封好"
+  },
+{
+    id: "e_treat_gone",
+    text: "柜子最上层空了 —— 那盒东西不知道什么时候见底了。",
+    category: "luxury",
+    needOnHandy: 2,
+    lost: 2,
+    consumes: true,
+    tier: 2,
+    decision: "心情类的东西要不要也留一点余量给最难的那几天"
+  },
+{
+    id: "e_chocolate_bloom",
+    text: "那板巧克力表面起了一层白霜，摸着还是硬的。",
+    category: "luxury",
+    needOnHandy: 2,
+    lost: 1,
+    consumes: false,
+    tier: 3,
+    decision: "怕热的东西有没有避开暖气片与南窗"
+  },
+  // ═══ 生成内容 突发-02 止 ═══
 ];
 
 const EMERGENCY_BY_ID: ReadonlyMap<string, EmergencyDef> = new Map(EMERGENCY_DEFS.map((d) => [d.id, d]));

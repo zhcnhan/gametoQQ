@@ -13,8 +13,9 @@
     "check:style": "node scripts/check-style.mjs",
     "check:content": "node scripts/check-content.mjs",
     "check:registry": "vite-node scripts/check-registry.mjs",
-    "check": "npm run typecheck && npm run check:style && npm run check:content && npm run check:registry && npm run test",
-    "make-save": "vite-node scripts/make-save.mjs"
+    "check": "npm run typecheck && npm run check:style && npm run check:content && npm run check:batches && npm run check:registry && npm run test",
+    "make-save": "vite-node scripts/make-save.mjs",
+    "check:batches": "node scripts/check-batches.mjs"
   },
   "devDependencies": {
     "typescript": "~5.6.3",

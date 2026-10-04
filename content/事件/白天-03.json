@@ -1,0 +1,760 @@
+{
+  "kind": "dayEvent",
+  "batch": "白天-03",
+  "batchNote": "本批 17 条，补第 II 批新点位（农贸市场 / 粮油批发站 / 社区小卖部 / 街角诊所 / 加油站便利店 / 周末旧货市）的场景。\n\n★ 三条硬约束（check-content 强制，每条都是用玩家的反馈换来的）：\n  ① 每个选项**净收益必须为正**；\"只有代价\"的选项不许有；\n  ② `stockCut` / `limit` **不能单独构成一个选项** —— 限购与缺货是**处境**，不是奖励；\n  ③ label ≤ 8 字（手机竖屏一行放得下）。\n\n取舍类型分布：趁乱拿 vs 照规矩买 3 / 花钱买时间与省力 3 / 一次性的\"今天不买就没了\" 3 /\n以物易物与人情 2 / 为口味与心情花这笔钱 2 / 大件与小件的搬运账 2 /\n信息本身值钱 1 / 稀缺时的第二选择 1",
+  "entries": [
+    {
+      "id": "d_vegetable_crates",
+      "text": "菜场门口的塑料筐里堆着带伤的白菜，摊主忙着收摊。",
+      "onlyShops": [
+        "market"
+      ],
+      "tier": 1,
+      "decision": "趁收摊压价买一批快坏的，还是照价买耐放的那一垛",
+      "options": [
+        {
+          "label": "压价买一筐",
+          "outcome": "摊主挥手让你搬走。筐里的菜到手，叶子上还有泥。",
+          "effect": {
+            "grab": {
+              "category": "food",
+              "count": 5
+            },
+            "cash": -12,
+            "stamina": -3
+          }
+        },
+        {
+          "label": "买耐放的",
+          "outcome": "干菜捆得紧实，你拿了两捆，能在架上待很久。",
+          "effect": {
+            "grab": {
+              "category": "food",
+              "count": 3
+            },
+            "cash": -20,
+            "mood": 1
+          }
+        },
+        {
+          "label": "先记下价",
+          "outcome": "你把几样菜的价钱在心里过了一遍。明天再来心里有数。",
+          "effect": {
+            "mood": 2
+          }
+        }
+      ],
+      "tags": [
+        "market",
+        "supply"
+      ]
+    },
+    {
+      "id": "d_butcher_clearing",
+      "text": "肉铺老板把冰柜里的东西全摊在案板上，说电快停了。",
+      "onlyShops": [
+        "market"
+      ],
+      "tier": 2,
+      "decision": "拿走这一堆只能撑两三天的肉，还是换成旁边货架的干货",
+      "options": [
+        {
+          "label": "全要了",
+          "outcome": "油纸包了四大包，冰袋还没化。",
+          "effect": {
+            "grab": {
+              "category": "food",
+              "count": 6
+            },
+            "cash": -34,
+            "stamina": -4
+          }
+        },
+        {
+          "label": "换干货",
+          "outcome": "老板叹了口气，从后面搬出两袋豆子。",
+          "effect": {
+            "grab": {
+              "category": "food",
+              "count": 4
+            },
+            "cash": -22
+          }
+        },
+        {
+          "label": "只要一副",
+          "outcome": "你只挑了一副最便宜的，剩下的留给别人。",
+          "effect": {
+            "mood": 2
+          }
+        }
+      ],
+      "tags": [
+        "market",
+        "food",
+        "supply"
+      ]
+    },
+    {
+      "id": "d_fish_bucket",
+      "text": "水产摊的增氧泵在响，桶里的鱼翻着白肚。",
+      "onlyShops": [
+        "market"
+      ],
+      "tier": 1,
+      "decision": "买活鱼今天吃，还是买冰鲜的明天还能留着",
+      "options": [
+        {
+          "label": "买两条活的",
+          "outcome": "塑料袋里的水晃来晃去，得赶紧回去。",
+          "effect": {
+            "grab": {
+              "category": "food",
+              "count": 2
+            },
+            "cash": -16,
+            "mood": 3
+          }
+        },
+        {
+          "label": "买冰鲜的",
+          "outcome": "碎冰裹着鱼，你拎着袋子回去，放在冰箱那格还能顶几天。",
+          "effect": {
+            "grab": {
+              "category": "food",
+              "count": 3
+            },
+            "cash": -18
+          }
+        },
+        {
+          "label": "问问明天",
+          "outcome": "摊主说明天还有一车。你点点头，空手回去了。",
+          "effect": {
+            "mood": 2
+          }
+        }
+      ],
+      "tags": [
+        "market",
+        "food"
+      ]
+    },
+    {
+      "id": "d_flour_mill_day",
+      "text": "粮油站的石磨今天开着，面粉现磨，热气腾腾。",
+      "onlyShops": [
+        "wholesale"
+      ],
+      "tier": 1,
+      "decision": "现磨的比袋装贵，但它香 —— 值不值这个差价",
+      "options": [
+        {
+          "label": "买现磨的",
+          "outcome": "袋口还烫手，面粉到手。屋子里的味道像过年。",
+          "effect": {
+            "grab": {
+              "category": "food",
+              "count": 3
+            },
+            "cash": -26,
+            "mood": 4
+          }
+        },
+        {
+          "label": "拿袋装的",
+          "outcome": "袋装的买了四袋，干燥剂还在，能放很久。",
+          "effect": {
+            "grab": {
+              "category": "food",
+              "count": 4
+            },
+            "cash": -20,
+            "stamina": -2
+          }
+        },
+        {
+          "label": "闻闻就走",
+          "outcome": "你在磨坊站了一会儿，闻够了那股麦香。",
+          "effect": {
+            "mood": 3
+          }
+        }
+      ],
+      "tags": [
+        "supply",
+        "grain"
+      ]
+    },
+    {
+      "id": "d_wholesale_min_order",
+      "text": "批发站的卷帘门只开了一半，说散客不接，除非凑够一整车。",
+      "onlyShops": [
+        "wholesale"
+      ],
+      "tier": 2,
+      "decision": "凑一整批（压掉大半现金），还是转去别处零买",
+      "options": [
+        {
+          "label": "凑一整车",
+          "outcome": "五箱码进后备箱，货到手了，后轮明显沉了。",
+          "effect": {
+            "boxDefId": "box_staple",
+            "cash": -70,
+            "stamina": -8
+          }
+        },
+        {
+          "label": "转去零买",
+          "outcome": "你掉头去了小卖部，价格贵一点但灵活，还顺手带了一件热的。",
+          "effect": {
+            "grab": {
+              "category": "water",
+              "count": 1
+            },
+            "mood": 3,
+            "stamina": -2,
+            "cash": -4
+          }
+        },
+        {
+          "label": "问问散客",
+          "outcome": "看门的人说周末可能开门做散客。你记下了。",
+          "effect": {
+            "mood": 2
+          }
+        }
+      ],
+      "tags": [
+        "supply",
+        "market"
+      ]
+    },
+    {
+      "id": "d_store_hot_rice",
+      "text": "小卖部的电饭锅还热着，老板娘说今天煮多了。",
+      "onlyShops": [
+        "community_store"
+      ],
+      "tier": 1,
+      "decision": "当场吃掉（回体力），还是打包带走留着",
+      "options": [
+        {
+          "label": "当场吃一碗",
+          "outcome": "热饭下肚，手脚一下就暖了。",
+          "effect": {
+            "stamina": 5,
+            "mood": 2,
+            "cash": -6
+          }
+        },
+        {
+          "label": "打包两份",
+          "outcome": "两个饭盒塞进袋子，晚饭有着落了。",
+          "effect": {
+            "grab": {
+              "category": "food",
+              "count": 2
+            },
+            "cash": -10
+          }
+        },
+        {
+          "label": "谢过就走",
+          "outcome": "你说家里还有剩饭，谢过老板娘出门了。",
+          "effect": {
+            "mood": 2
+          }
+        }
+      ],
+      "tags": [
+        "neighbor",
+        "food"
+      ]
+    },
+    {
+      "id": "d_store_card_bundle",
+      "text": "柜台上贴着一张手写的条子：买五瓶水送一包饼干。",
+      "onlyShops": [
+        "community_store"
+      ],
+      "tier": 1,
+      "decision": "为赠品凑单（多花钱多占地方），还是各买各的",
+      "options": [
+        {
+          "label": "凑够五瓶",
+          "outcome": "五瓶水装进篮子，饼干也塞了进去，老板娘还多给了一根火腿肠。",
+          "effect": {
+            "grab": {
+              "category": "water",
+              "count": 5
+            },
+            "cash": -15,
+            "mood": 2
+          }
+        },
+        {
+          "label": "只买两瓶",
+          "outcome": "两瓶水到手，钱省下来了，赠品没有。",
+          "effect": {
+            "grab": {
+              "category": "water",
+              "count": 2
+            },
+            "cash": -6,
+            "mood": 1
+          }
+        },
+        {
+          "label": "不凑这个单",
+          "outcome": "你把条子拍了张照，决定下次再说。",
+          "effect": {
+            "mood": 2
+          }
+        }
+      ],
+      "tags": [
+        "supply",
+        "treat"
+      ]
+    },
+    {
+      "id": "d_clinic_free_check",
+      "text": "诊所门口摆了张桌子，说今天免费量血压、教包扎。",
+      "onlyShops": [
+        "clinic"
+      ],
+      "tier": 1,
+      "decision": "花半小时学包扎（费体力但心里有底），还是趁人少赶紧买药",
+      "options": [
+        {
+          "label": "学一会儿",
+          "outcome": "护士在你手背上示范了两遍，你记住了那个结法。没买东西，心里也踏实了。",
+          "effect": {
+            "mood": 5,
+            "stamina": -4
+          }
+        },
+        {
+          "label": "趁人少买药",
+          "outcome": "柜台后面的人正闲着，你报了三样，药装进袋子。",
+          "effect": {
+            "grab": {
+              "category": "medicine",
+              "count": 4
+            },
+            "cash": -24
+          }
+        }
+      ],
+      "tags": [
+        "people",
+        "medkit"
+      ]
+    },
+    {
+      "id": "d_clinic_expired_rack",
+      "text": "诊所角落的纸箱写着\"临期\"，里面是还有两个月效期的药。",
+      "onlyShops": [
+        "clinic"
+      ],
+      "tier": 2,
+      "decision": "临期的便宜一半，但你知道它撑不到灾难结束",
+      "options": [
+        {
+          "label": "买临期的",
+          "outcome": "半价拿了一堆，药装进袋子，效期印在盒底。",
+          "effect": {
+            "grab": {
+              "category": "medicine",
+              "count": 6
+            },
+            "cash": -14
+          }
+        },
+        {
+          "label": "买正常效期",
+          "outcome": "贵，但买到手的盒子上日期在两年后。",
+          "effect": {
+            "grab": {
+              "category": "medicine",
+              "count": 3
+            },
+            "cash": -30,
+            "mood": 1
+          }
+        },
+        {
+          "label": "记下效期",
+          "outcome": "你把几盒的效期抄在手机备忘录里，回去再决定。",
+          "effect": {
+            "mood": 2
+          }
+        }
+      ],
+      "tags": [
+        "medkit",
+        "supply"
+      ]
+    },
+    {
+      "id": "d_gas_hot_water",
+      "text": "加油站的饮水机还通着电，司机们在排队接开水。",
+      "onlyShops": [
+        "gas_station"
+      ],
+      "tier": 1,
+      "decision": "排队接水（费时间），还是直接买瓶装水走人",
+      "options": [
+        {
+          "label": "排队接水",
+          "outcome": "两个暖瓶都灌满了，水到手，一分钱没花。",
+          "effect": {
+            "grab": {
+              "category": "water",
+              "count": 4
+            },
+            "stamina": -3,
+            "mood": 1
+          }
+        },
+        {
+          "label": "买瓶装水",
+          "outcome": "整箱买下、搬上车，塑料膜还没拆。",
+          "effect": {
+            "grab": {
+              "category": "water",
+              "count": 6
+            },
+            "cash": -20
+          }
+        }
+      ],
+      "tags": [
+        "water",
+        "queue"
+      ]
+    },
+    {
+      "id": "d_gas_battery_tray",
+      "text": "收银台边上有个塑料筐，散着各种型号的电池，随便挑。",
+      "onlyShops": [
+        "gas_station"
+      ],
+      "tier": 1,
+      "decision": "按把抓一把（型号杂、不一定用得上），还是买整板同型号的",
+      "options": [
+        {
+          "label": "抓一把",
+          "outcome": "抓了一把塞进兜里，哗啦响，回去得挑半天。",
+          "effect": {
+            "grab": {
+              "category": "tool",
+              "count": 6
+            },
+            "cash": -8,
+            "stamina": -2
+          }
+        },
+        {
+          "label": "买整板的",
+          "outcome": "买了一板同型号的，手电和收音机都够用。",
+          "effect": {
+            "grab": {
+              "category": "tool",
+              "count": 4
+            },
+            "cash": -16,
+            "mood": 1
+          }
+        },
+        {
+          "label": "只挑型号",
+          "outcome": "你按手电的型号挑了两节，别的没动。",
+          "effect": {
+            "mood": 2
+          }
+        }
+      ],
+      "tags": [
+        "power",
+        "supply"
+      ]
+    },
+    {
+      "id": "d_flea_bargain_bin",
+      "text": "旧货市最里面有个\"一元一件\"的箱子，上头压着别人翻乱的东西。",
+      "onlyShops": [
+        "weekend_flea"
+      ],
+      "tier": 1,
+      "decision": "蹲下翻半小时（费体力，可能翻到好东西），还是看摊上摆好的",
+      "options": [
+        {
+          "label": "蹲下翻",
+          "outcome": "翻出一件厚毛衣和一条围巾，都塞进袋子里了，都是干净的。",
+          "effect": {
+            "grab": {
+              "category": "warmth",
+              "count": 4
+            },
+            "cash": -6,
+            "stamina": -6
+          }
+        },
+        {
+          "label": "看摆好的",
+          "outcome": "你挑了两件买了，都是摊主挑过的，价钱也标得清楚。",
+          "effect": {
+            "grab": {
+              "category": "warmth",
+              "count": 2
+            },
+            "cash": -14,
+            "mood": 1
+          }
+        },
+        {
+          "label": "翻完放回",
+          "outcome": "你蹲着翻了一会儿，把东西按原样码了回去。",
+          "effect": {
+            "mood": 3,
+            "stamina": -2
+          }
+        }
+      ],
+      "tags": [
+        "market",
+        "warmth"
+      ]
+    },
+    {
+      "id": "d_flea_kiln_wool",
+      "text": "一个老太太在卖自己织的毛线袜，说用的是存了十年的羊毛。",
+      "onlyShops": [
+        "weekend_flea"
+      ],
+      "tier": 2,
+      "decision": "买她手织的（贵、但真的暖），还是买旁边成包的化纤袜",
+      "options": [
+        {
+          "label": "买手织的",
+          "outcome": "针脚密实，老太太让你当场试了试，两双到手。",
+          "effect": {
+            "grab": {
+              "category": "warmth",
+              "count": 2
+            },
+            "cash": -30,
+            "mood": 4
+          }
+        },
+        {
+          "label": "买化纤的",
+          "outcome": "买了那一包，十双到手，便宜，但捂脚。",
+          "effect": {
+            "grab": {
+              "category": "warmth",
+              "count": 3
+            },
+            "cash": -12
+          }
+        },
+        {
+          "label": "试了试没买",
+          "outcome": "老太太让你试了半天，你道了谢，说下次带够钱。",
+          "effect": {
+            "mood": 3
+          }
+        }
+      ],
+      "tags": [
+        "warmth",
+        "neighbor",
+        "keepsake"
+      ]
+    },
+    {
+      "id": "d_hardware_tarp_roll",
+      "text": "五金店门口摊着一卷防水布，老板说剪多少算多少。",
+      "onlyShops": [
+        "hardware"
+      ],
+      "tier": 1,
+      "decision": "剪一大块（重、占地方），还是剪够封一扇窗的",
+      "options": [
+        {
+          "label": "剪一大块",
+          "outcome": "剪下一大块，卷起来比人还高，两个人抬上车。",
+          "effect": {
+            "grab": {
+              "category": "tool",
+              "count": 3
+            },
+            "cash": -26,
+            "stamina": -6
+          }
+        },
+        {
+          "label": "够用就行",
+          "outcome": "剪下一块正方形的布，刚好一扇窗，塞进袋子里。",
+          "effect": {
+            "grab": {
+              "category": "tool",
+              "count": 1
+            },
+            "cash": -8,
+            "mood": 1
+          }
+        },
+        {
+          "label": "量了窗户",
+          "outcome": "你借了卷尺量了家里那扇窗，记下尺寸再定剪多少。",
+          "effect": {
+            "mood": 2
+          }
+        }
+      ],
+      "tags": [
+        "supply",
+        "tool"
+      ]
+    },
+    {
+      "id": "d_hardware_lamp_test",
+      "text": "老板在柜台后面点着一盏煤油灯，说这灯能烧一整夜。",
+      "onlyShops": [
+        "hardware"
+      ],
+      "tier": 2,
+      "decision": "买灯（一次性花一笔）还是买两桶油（细水长流）",
+      "options": [
+        {
+          "label": "买那盏灯",
+          "outcome": "灯买到手，玻璃罩擦得干净，火苗稳稳的。",
+          "effect": {
+            "grab": {
+              "category": "fuel",
+              "count": 1
+            },
+            "cash": -34,
+            "mood": 3
+          }
+        },
+        {
+          "label": "买两桶油",
+          "outcome": "两桶油到手，提着回去，够点很多个晚上。",
+          "effect": {
+            "grab": {
+              "category": "fuel",
+              "count": 3
+            },
+            "cash": -28,
+            "stamina": -3
+          }
+        },
+        {
+          "label": "看他点灯",
+          "outcome": "老板点给你看了一整晚的样子，你谢过他走了。",
+          "effect": {
+            "mood": 3
+          }
+        }
+      ],
+      "tags": [
+        "light",
+        "fuel"
+      ]
+    },
+    {
+      "id": "d_super_broken_case",
+      "text": "超市的冷柜坏了，工作人员正把里面的东西往手推车上搬。",
+      "onlyShops": [
+        "supermarket"
+      ],
+      "tier": 2,
+      "decision": "跟着抢那批快化的冻品，还是照常买货架上的常温货",
+      "options": [
+        {
+          "label": "抢冻品",
+          "outcome": "抱了一堆得赶紧回家放冰箱的东西，都在袋子里。",
+          "effect": {
+            "grab": {
+              "category": "food",
+              "count": 6
+            },
+            "cash": -24,
+            "stamina": -5
+          }
+        },
+        {
+          "label": "买常温货",
+          "outcome": "买了米面油，装进车里，不着急。",
+          "effect": {
+            "grab": {
+              "category": "food",
+              "count": 4
+            },
+            "cash": -22,
+            "mood": 1
+          }
+        },
+        {
+          "label": "划掉这一项",
+          "outcome": "你在清单上把冻品那一栏划掉了 —— 家里冰箱那格本来就满了。",
+          "effect": {
+            "mood": 2
+          }
+        }
+      ],
+      "tags": [
+        "supply",
+        "panic"
+      ]
+    },
+    {
+      "id": "d_super_staff_tip",
+      "text": "理货员一边补货一边跟熟客小声说：明天这批不来了。",
+      "onlyShops": [
+        "supermarket"
+      ],
+      "tier": 2,
+      "decision": "信这句话当场多买一批，还是觉得他在促销、按原计划买",
+      "options": [
+        {
+          "label": "多买一批",
+          "outcome": "一箱货到手，购物车压得推不动，收银员看了你一眼。",
+          "effect": {
+            "boxDefId": "box_staple",
+            "cash": -45,
+            "stamina": -5
+          }
+        },
+        {
+          "label": "按原计划买",
+          "outcome": "你只抓了清单上的那几样，钱留着。",
+          "effect": {
+            "grab": {
+              "category": "food",
+              "count": 2
+            },
+            "cash": -10,
+            "mood": 1
+          }
+        },
+        {
+          "label": "记下他的话",
+          "outcome": "你把理货员那句话记在本子上。信不信，明天就知道了。",
+          "effect": {
+            "mood": 2
+          }
+        }
+      ],
+      "tags": [
+        "supply",
+        "people",
+        "panic"
+      ]
+    }
+  ]
+}

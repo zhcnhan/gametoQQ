@@ -139,18 +139,32 @@ describe('★ 事件不要重复：最近出过的会被压低权重', () => {
     const cursor = createCursor(20261001);
     const history: string[] = [];
     const ids: string[] = [];
-    for (let i = 0; i < 400; i++) {
+    /*
+     * ★ 取样量从 400 抬到 20000（2026-10，加了一批突发事件之后）。
+     *
+     * 400 次里**只有约 109 次真的抽到东西**，其余全是"今晚没事"
+     * （`EMERGENCY_CHANCE = 0.3`）。109 次抽样去盖 52 条池子，期望上就会漏几条 ——
+     * 实测漏 5 条，而最后那句 `Set(ids).size === EMERGENCY_DEFS.length` 是**全集相等**，
+     * 于是它红了。
+     *
+     * ★ 判断"这是抽样太少还是可达性 bug"的办法：**把次数加大看会不会补齐**。
+     * 20000 次（≈6119 次真抽）之后 52 条全中 —— 所以那 5 条是可达的，
+     * 红的是**取样量**，不是产品。这个区间定在两者之间很关键：
+     *  · 太小 → 会随机红，而"随机红的测试"最后一定会被人加 `skip`；
+     *  · 太大 → 白跑几千次抽签，而这条要守的只是"每条都够得着"。
+     */
+    for (let i = 0; i < 20000; i++) {
       const def = rollEmergency(cursor, history);
       if (!def) continue;
       ids.push(def.id);
       history.unshift(def.id);
       history.length = Math.min(history.length, 4);
     }
-    expect(ids.length).toBeGreaterThan(50);
+    expect(ids.length, '真抽到的次数（其余是"今晚没事"）').toBeGreaterThan(50);
     for (let i = 1; i < ids.length; i++) {
       expect(ids[i], '连续两天同一件突发事件').not.toBe(ids[i - 1]);
     }
-    // 而池子里每一条都还会出现
+    // 而池子里每一条都还会出现（这才是真判据：没有结构上够不着的条目）
     expect(new Set(ids).size).toBe(EMERGENCY_DEFS.length);
   });
 

@@ -915,7 +915,16 @@ describe('★ 全周期探针（§12.3 v0.7 / §12 v0.8 的永久回归）：好
 
   it('中途补救：乱档在第 2 天全部上架 + 写清单 + FEFO → 撑过 14 天', () => {
     const messy = runProbe(() => undefined);
-    const rescued = runProbe(() => undefined, 2);
+    /*
+     * ★ 补救那一份**显式标上顺手位**（`shelve(run, true)`）。
+     *
+     * 原来它走的是 `shelve` 的默认值 —— 而"补救"的定义是**好好整理一遍**：
+     * 上架、写清单、FEFO、标顺手位，四件都是整理的一部分。
+     * 少做最后一件会让这个对照实验比它该有的样子更弱：
+     * 顺手位决定突发事件化不化解（`countOnHandy`），而事件化解与否
+     * 直接落在体力曲线上。
+     */
+    const rescued = runProbe((run) => shelveEverything(run, true), 2);
 
     // 乱档的轨迹（实测）：体力 70 → 55 → 40 → 23 → 4.5 → 0，D+6 起趴在 0 上，
     // D+10 健康归零。每天净 -15 体力，睡一觉回的那 12 点根本不够。
@@ -932,10 +941,40 @@ describe('★ 全周期探针（§12.3 v0.7 / §12 v0.8 的永久回归）：好
     expect(rescued.outcome).toBe('survived');
     expect(rescued.day).toBe(SURVIVAL_DAYS);
     expect(rescued.day).toBeGreaterThan(messy.day);
-    expect(rescued.staminaFloor).toBeGreaterThan(40);
+    /*
+     * ★ 门槛与实测值（2026-10 重取）。
+     *
+     * 实测：乱档 `staminaFloor = 0`（D+10 倒），补救 `= 94`（活满 14 天）。
+     * 门槛定在 **70**，而不是贴着 94 定 —— 这一条主张的是
+     * "**补救把下沉止住了，而且止得很干净**"，不是"最低点恰好是某个数"。
+     * 乱档是 0、补救是 94，两者之间的差距（94 点）才是这段代码要守的东西；
+     * 把门槛钉在 90 只会让它在下次内容变动时毫无理由地红。
+     *
+     * ⚠ 两个值都是**重取**的，原因是 `bareRun` 把 RNG 游标按回了原种子
+     * （见那个函数的注释：修"内容量会拖探针漂"）。原来那两处
+     * （`> 40` 与 `> 65`，而且它们互相矛盾）是更早一版序列下的数。
+     */
+    expect(rescued.staminaFloor).toBeGreaterThan(70);
     expect(rescued.staminaFloor).toBeGreaterThan(messy.staminaFloor);
-    // 补救之后下沉确实停住了：体力在回升，而不是像乱档那样一路往下
-    expect(rescued.staminaByDay[2] as number).toBeGreaterThan(rescued.staminaByDay[0] as number);
+    /*
+     * ★★ 补救的轨迹是"**上升然后在高位振荡**"，不是单调爬升。
+     *
+     * 实测（2026-10 重取）：
+     *   乱档  [65, 40, 23, 4.5, 0, 0, 0]                     最低 0，D+10 倒
+     *   补救  [98, 91, 94, 97, 100, 100, 100, 93, 96, 99, 97, 94, 91, 91]  最低 91
+     *
+     * ⚠ 原来这里写的是 `staminaByDay[2] > staminaByDay[0]`，注释还标着"实测"——
+     * 而它**从来没有成立过**：D+0 补的是 98，D+2 是 94（补货当天要先付整理劳作）。
+     * 那是"照着想要的结论写断言"，不是量出来的。
+     *
+     * 现在改成两条真的可主张的：
+     *  ① **同日对照**：D+2 那一刻，补救的 94 对乱档的 23 —— 差距是这一段代码的意义；
+     *  ② **早期确实在升**：D+2 的 94 → D+4 的 100（走上限了）。
+     * 高位那段（D+7 起 93~99 振荡）是庇护所跌破后的睡眠折损，
+     * 不归整理管 —— 所以不断言它单调。
+     */
+    expect(rescued.staminaByDay[2] as number).toBeGreaterThan(messy.staminaByDay[2] as number);
+    expect(rescued.staminaByDay[4] as number).toBeGreaterThan(rescued.staminaByDay[2] as number);
   });
 });
 
