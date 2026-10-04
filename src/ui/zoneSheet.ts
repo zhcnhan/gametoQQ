@@ -159,11 +159,19 @@ export class ZoneSheet {
     this.rows = [];
     this.root.hidden = false;
     this.render();
-    const input = this.root.querySelector<HTMLInputElement>('input[data-zone-name]');
-    if (input && !zone) {
-      // 新建时顺手聚焦，少点一次（不 hard-focus，手机上弹不弹键盘交给系统）
-      window.setTimeout(() => input.focus({ preventScroll: true }), 60);
-    }
+    /*
+     * ★★ **不要自动聚焦输入框**（2026-10 去掉，这是手机上"闪一下就没了"的元凶）。
+     *
+     * 这里原来有一句"新建时顺手聚焦，少点一次"。而手机上 `focus()` 会**弹出软键盘**，
+     * 键盘把**视觉视口**压扁 —— 而抽屉是贴在视口底部的（`position: fixed` + `bottom: 0`），
+     * 于是它在键盘弹起的那一瞬间被顶到可视区外面。玩家看到的正是
+     * "闪出来极短的一瞬间然后消失"，而**这一点在桌面上完全看不出来**
+     * （桌面没有软键盘）—— 用户的原话："如果我用 f12 换回电脑模式，
+     * 那么那个编辑胶带其实是弹出来了的，只不过在小屏上看不到"。
+     *
+     * 顺带：那一句本来就是我自己加的便利，用户没要求过；
+     * 而"少点一次"换"打开之后看不见"显然不划算。要打字就点一下输入框。
+     */
   }
 
   close(): void {

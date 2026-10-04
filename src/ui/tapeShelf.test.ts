@@ -86,8 +86,17 @@ interface Ctx {
   screen: OrganizeScreen;
 }
 
+/**
+ * 抽屉挂在 **`body`** 上（2026-10 起，见 `OrganizeScreen.mount` 的注释），
+ * 所以查它要**从 `body` 查**，不能从这个用例的 `root` 里查 ——
+ * 从 root 里查会得到"没有抽屉"，而那是"它挂在别处"，不是"它没打开"。
+ * （这个 bug 在这个文件里真的发生过：改完之后 4 条测试一起红。）
+ */
+let body: FakeElement;
+
 function mount(name: string, sharedWin: FakeWindow): Ctx {
   const doc = (sharedWin as unknown as { document: FakeDocument }).document;
+  body = doc.body as unknown as FakeElement;
   const root = doc.createElement('div');
   // 挂进文档树 —— 不挂的话 `elementFromPoint` 永远 null，落点断言会在验空气
   doc.body.appendChild(root);
@@ -249,7 +258,7 @@ describe('★★ 拖到行上就贴上 / 剪刀拖上去就撕下', () => {
     chip.place(0, 0, 60, 34);
     // 所有行都不摆位置（0×0）→ 落点判定必为空
     drag(win, chip, [10, 10], [500, 500]);
-    const input = root.querySelectorAll('input[data-zone-name]')[0];
+    const input = body.querySelectorAll('input[data-zone-name]')[0];
     expect(input, '拖到空处该打开抽屉，而不是静默什么都不做').toBeTruthy();
     expect(store.run.zones.some((z) => z.id === zoneId), '而且什么都不该改').toBe(true);
   });
@@ -351,7 +360,7 @@ describe('★★ 从胶带架上改一张胶带（没有"从哪块架子进"这�
     const { root } = mount('rows', shared);
     const chip = root.querySelectorAll('[data-tape-chip]')[0]!;
     chip.dispatch('click', {});
-    const input = root.querySelectorAll('input[data-zone-name]')[0];
+    const input = body.querySelectorAll('input[data-zone-name]')[0];
     expect(input, '原生 click 该把抽屉打开').toBeTruthy();
   });
 
@@ -377,7 +386,7 @@ describe('★★ 从胶带架上改一张胶带（没有"从哪块架子进"这�
     expect(after, '重建应当换了元素（否则这条没验到"重挂监听"）').not.toBe(before);
 
     after.dispatch('click', {});
-    const input = root.querySelectorAll('input[data-zone-name]')[0];
+    const input = body.querySelectorAll('input[data-zone-name]')[0];
     expect(input, '重建之后的那一张也该点得开').toBeTruthy();
   });
 
@@ -405,16 +414,16 @@ describe('★★ 从胶带架上改一张胶带（没有"从哪块架子进"这�
      * 那条路由 `drag.test.ts` 的手势状态机覆盖）。
      */
     tap(win, chip!, [5, 5]);
-    const input = root.querySelectorAll('input[data-zone-name]')[0];
+    const input = body.querySelectorAll('input[data-zone-name]')[0];
     expect(input, '抽屉该开着，而且有名字输入框').toBeTruthy();
     (input as unknown as { value: string }).value = '换了名';
     input!.dispatch('input', {});
 
     // 保存按钮就在抽屉里 —— 点它要**从抽屉根派发**（假 DOM 不做冒泡，
     // 而 ZoneSheet 的点击处理器挂在根上做事件委托）
-    const save = root.querySelectorAll('[data-zone-act="save"]')[0];
+    const save = body.querySelectorAll('[data-zone-act="save"]')[0];
     expect(save, '抽屉里该有保存按钮').toBeTruthy();
-    const drawer = root.querySelectorAll('.zone-drawer')[0]!;
+    const drawer = body.querySelectorAll('.zone-drawer')[0]!;
     drawer.dispatch('click', { target: save });
 
     const zone = store.run.zones.find((z) => z.id === targetId);

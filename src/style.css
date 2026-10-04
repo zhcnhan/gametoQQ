@@ -930,8 +930,21 @@ body::before {
   left: 0;
   right: 0;
   bottom: 0;
-  max-height: 52dvh;
+  /*
+   * ★★ `vh` 而不是 `dvh`（2026-10 修）。
+   *
+   * `dvh` 是"**动态**视口高度"，它跟着软键盘与地址栏一起变 ——
+   * 于是抽屉会在键盘弹起时被压小、连同内容一起跳到看不见的地方。
+   * 而这一屏要的只是"下半屏"，用 `vh`（布局视口）反而**稳定**：
+   * 键盘弹起时 `vh` 不变，抽屉原地不动，玩家看得见自己在打什么字。
+   *
+   * 用户报的症状是"弹出极短一瞬间然后消失"，而**桌面上完全复现不出来**
+   * （桌面没有软键盘）。这一条、抽屉挂到 `body`（见 `OrganizeScreen.mount`）、
+   * 以及 `open()` 里去掉自动聚焦，是同一件事的三个修法，各堵一条路。
+   */
+  max-height: 58vh;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   padding: 12px 14px calc(14px + env(safe-area-inset-bottom));
   border-top: 2.5px solid var(--ink);
   border-radius: 20px 20px 0 0;

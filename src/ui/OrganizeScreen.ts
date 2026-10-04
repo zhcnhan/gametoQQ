@@ -199,7 +199,22 @@ export class OrganizeScreen {
     this.fxLayer = this.query('[data-fx]');
 
     const sheetEl = document.createElement('div');
-    this.root.appendChild(sheetEl);
+    /*
+     * ★★ 抽屉挂在 **`document.body`** 上，不挂 `#app`（2026-10 修）。
+     *
+     * 用户报的现象："那个编辑胶带其实是弹出来了的，只不过在小屏上看不到"、
+     * "在小屏上他会闪出来极短的一瞬间然后消失"。
+     *
+     * `#app` 有 `height: 100dvh` —— 而 `dvh` 是**会跟着视觉视口变**的单位：
+     * 手机软键盘弹起、地址栏收放、甚至下拉刷新，都会让它变小。
+     * 抽屉原来是 `#app` 的子元素，于是**父容器一变小，它就被一起压掉**，
+     * 而它自己又是 `position: fixed`（本该脱离父容器的布局）—— 两者一套组合，
+     * 表现就是"闪一下然后没了"。桌面没有软键盘，所以完全看不出来。
+     *
+     * 挂到 `body` 上之后，它与那个会变的容器**没有任何布局关系**，
+     * `position: fixed` 才真正只在做"贴视口"这一件事。
+     */
+    document.body.appendChild(sheetEl);
     this.sheet = new ZoneSheet(
       sheetEl,
       {
