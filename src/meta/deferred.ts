@@ -663,7 +663,14 @@ export const DEFERRED_ITEMS: readonly DeferredItem[] = [
      * 具体在哪个文件见 `impact` 里写的 `src/ui/tapeShelf.test.ts`。
      */
     markedIn: [],
-    status: 'open'
+    status: 'done',
+    resolvedIn:
+      '2026-10（同一天，用户走测"手感不错"之后）—— ★ **根因在测试的驱动方式，不在产品**：' +
+      '我一直用**触摸**指针去派发 tap，而触摸路径下 `onDown` 会起一个 220ms 的长按定时器，' +
+      '于是"按下 → 抬手"的判定要跨过假时钟与定时器的时序，试了四种写法都不稳。' +
+      '换成 `pointerType: \'mouse\'`（无定时器）之后一次就通 —— 见 `tapeShelf.test.ts` 的 `tap()`。' +
+      '那条用例现在是普通 `it`。\n\n' +
+      '★ 顺带说明"标 `it.fails` 等它自己变红"这个做法是对的：这一条就是那样被清偿的。'
   }
 ];
 

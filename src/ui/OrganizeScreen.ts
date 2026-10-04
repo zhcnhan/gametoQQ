@@ -430,20 +430,35 @@ export class OrganizeScreen {
   /**
    * 指针下能贴的东西：**一行**优先，其次**一整块架子**（只有剪刀用得上）。
    *
-   * ⚠ 用 `elementFromPoint` 而不是"缓存的悬停元素" —— 理由与货物那条一样
-   * （见 `endDrag` 的注释：缓存与松手那一刻的指针不保证一致）。
-   * 而拖着幽灵时指针**正下方是幽灵自己**，所以幽灵必须 `pointer-events: none`
-   * （`.drag-ghost` 本来就有，见样式表）。
+   * ## ★★ 两条判据，缺一不可（用户报的"正好放在图标上就没判定"）
+   *
+   * > "不管是剪刀还是加号还是已有标签，如果正好放在图标上就没判定了，
+   * >  这其实是个老问题，改一下"
+   *
+   * · **① `elementFromPoint` + `closest`** —— 正常情况，也最准
+   *   （它尊重层叠、`pointer-events`、滚动裁剪）；
+   * · **② 几何兜底**（`rowUnderPoint` / `cardUnderPoint`）—— ① 落空时按坐标找。
+   *   ① 会落空的原因有三个：格子里的 SVG 图标自己可命中、一行里那些
+   *   `pointer-events: none` 的子元素穿透到谁身上依实现而定、
+   *   以及 `.slot:active` 的 `transform: scale(0.96)` 让格子在被按住时缩小。
+   *
+   * ⚠ 货物拖拽那条路（`pickDropSlot`）早就有 ② 了，而**胶带这条新路只写了 ①** ——
+   * 于是把同一类毛病重新引入了一遍。这正是"老问题"那三个字的由来。
    */
   private pickTapeTarget(point: { x: number; y: number }): HTMLElement | null {
     const el = document.elementFromPoint(point.x, point.y);
-    if (!(el instanceof HTMLElement)) return null;
-    const row = el.closest<HTMLElement>('[data-shelf-row]');
-    if (row) return row;
-    if (this.tapeDrag?.kind === 'scissors') {
-      const card = el.closest<HTMLElement>('[data-shelf-card]');
-      if (card) return card;
+    if (el instanceof HTMLElement) {
+      const row = el.closest<HTMLElement>('[data-shelf-row]');
+      if (row) return row;
+      if (this.tapeDrag?.kind === 'scissors') {
+        const card = el.closest<HTMLElement>('[data-shelf-card]');
+        if (card) return card;
+      }
     }
+    // ② 几何兜底（这一条被"临时拆掉验证过会红"—— 见 tapeShelf.test.ts 那条 ★★）
+    const byGeometry = this.rowUnderPoint(point);
+    if (byGeometry) return byGeometry;
+    if (this.tapeDrag?.kind === 'scissors') return this.cardUnderPoint(point);
     return null;
   }
 
@@ -454,8 +469,29 @@ export class OrganizeScreen {
     this.tapeDrag = null;
     this.clearTapeHover();
 
-    // 丢在空处 = 什么都没发生（不许"贴在某个我没看清的地方"）
+    /*
+     * ★★ 丢在空处 → **当作轻点**（打开抽屉），不是"什么都没发生"。
+     *
+     * ## 这是手机上"编辑打不开"的真正原因
+     *
+     * 用户的原话："在手机端……那个胶带的编辑打不开，弹不出来，到了电脑上就正常了"。
+     *
+     * 机制：手指"轻点"时几乎总会移动十几像素、或者停得比 220ms 久一点，
+     * 于是手势层把它判成**拖拽**而不是轻点（`onTap` 只在位移 ≤12px 且 ≤500ms 时触发）。
+     * 玩家于是拖起了一张胶带、又没落到任何行上 —— 而那时的处理是"静默什么都不做"，
+     * 看起来就是**点了没反应**。
+     *
+     * 鼠标上不会这样：位移小、而且"按下-抬起"快。这就解释了"电脑上正常"。
+     *
+     * 修法是标准做法：**拖出去又原样放回来 = 一次点击**。
+     * 它同时让"想改一张胶带但手抖了"这个常见动作有个自然的结果。
+     */
     if (!drag || !target) {
+      // （这条被"临时关掉验证过会红"—— 见 tapeShelf.test.ts 那条 ★★）
+      if (drag?.kind === 'tape') {
+        this.openZoneDrawer(undefined, undefined, drag.zoneId ?? undefined);
+        return;
+      }
       this.renderTapeShelf();
       return;
     }
@@ -1286,8 +1322,14 @@ export class OrganizeScreen {
     const held = this.session.held;
     const inFxLayer = el instanceof HTMLElement && el.closest('[data-fx]') !== null;
 
-    if (!inFxLayer) {
-      const exact = el instanceof HTMLElement ? el.closest<HTMLElement>('[data-slot]') : null;
+    /*
+     * ★ 命中的在**特效层**里（幽灵等），或压根没命中 → 直接走几何兜底。
+     * 幽灵自己写了 `pointer-events: none`，正常情况下不会挡；但"正常情况"这四个字
+     * 在移动端不太可靠（层叠上下文 / 设备模拟 / `pointer-events` 的穿透对象
+     * 依实现而定）—— 而几何兜底比排查那些便宜得多。
+     */
+    if (!inFxLayer && el instanceof HTMLElement) {
+      const exact = el.closest<HTMLElement>('[data-slot]');
       if (exact) {
         if (!held) return exact;
         const shelfId = exact.dataset['shelf'];
@@ -1304,7 +1346,7 @@ export class OrganizeScreen {
       }
     }
 
-    // ② 命中的是特效层（幽灵等）→ 按坐标几何命中
+    // ② 命中的是特效层（幽灵等）、或没命中 → 按坐标几何命中
     const byGeometry = this.slotUnderPoint(point);
     if (byGeometry) return byGeometry;
 
@@ -1353,24 +1395,62 @@ export class OrganizeScreen {
     return best;
   }
 
+  /**
+   * 按坐标找"指针正下方的那一行"（几何命中），不看 `elementFromPoint`。
+   *
+   * ## ★★ 为什么必须有这一条（用户报的"正好放在图标上就没判定"）
+   *
+   * 用户的原话：
+   *
+   * > "不管是剪刀还是加号还是已有标签，如果正好放在图标上就没判定了，
+   * >  这其实是个老问题，改一下"
+   *
+   * "老问题"三个字是准的 —— 货物拖拽那条路上早就有 `slotUnderPoint` 兜底，
+   * 而**胶带这条新路只写了 `elementFromPoint`**，于是把同一类毛病重新引入了一遍。
+   *
+   * 而这一类毛病的来源有三个，全都与"谁在指针最上层"有关：
+   *  · 格子里的那枚 SVG 图标自己可以命中（它没有 `pointer-events: none`）；
+   *  · 一行里 `pointer-events: none` 的元素（`.row-tape`、`.slot-count` 那些）
+   *    在浏览器里会被**穿透**，但穿透到谁身上依实现而定；
+   *  · `.slot:active` 的 `transform: scale(0.96)` 会让格子在被按住时**缩小**，
+   *    手指落在边缘就可能落到格子外面。
+   *
+   * 几何命中的判据（与 `slotUnderPoint` 同一套）：取**包含该点、面积最小**的那个元素。
+   * 面积最小 = 嵌套时取最里层，而那正是玩家指着的那个。
+   */
+  private rowUnderPoint(point: { x: number; y: number }): HTMLElement | null {
+    return this.smallestUnderPoint('[data-shelf-row]', point);
+  }
+
   /** 按坐标找指针底下的货架卡（`elementFromPoint` 不可信时的兜底） */
   private cardUnderPoint(point: { x: number; y: number }): HTMLElement | null {
+    return this.smallestUnderPoint('[data-shelf-card]', point);
+  }
+
+  /**
+   * 取"包含该点、面积最小"的那个元素。
+   *
+   * 抽出来是因为它在这次改动里被**三处**用到（格子 / 行 / 卡），
+   * 而它自己那段逻辑（面积最小、平局取后者）是容易写歪的 ——
+   * 与其复制三份，不如只有一份。
+   */
+  private smallestUnderPoint(selector: string, point: { x: number; y: number }): HTMLElement | null {
     let best: HTMLElement | null = null;
     let bestArea = Number.POSITIVE_INFINITY;
-    this.roomEl.querySelectorAll<HTMLElement>('[data-shelf-card]').forEach((card) => {
-      const r = card.getBoundingClientRect();
+    this.roomEl.querySelectorAll<HTMLElement>(selector).forEach((el) => {
+      const r = el.getBoundingClientRect();
       if (r.width <= 0 || r.height <= 0) return;
       if (point.x < r.left || point.x > r.left + r.width) return;
       if (point.y < r.top || point.y > r.top + r.height) return;
       const area = r.width * r.height;
+      // 平局用 `<=`：先访问到的是文档里靠前的，靠后的应当盖住它（粗略近似绘制顺序）
       if (area <= bestArea) {
         bestArea = area;
-        best = card;
+        best = el;
       }
     });
     return best;
   }
-
   /**
    * 同架离指针最近的**合法落点**。
    *

@@ -101,6 +101,24 @@ function mount(name: string, sharedWin: FakeWindow): Ctx {
 const count = (root: FakeElement, sel: string): number => root.querySelectorAll(sel).length;
 
 /**
+ * 轻点一下（**鼠标指针**，绕开触摸的长按定时器）。
+ *
+ * ★★ 为什么用 `pointerType: 'mouse'` 而不是 `'touch'`：
+ * 触摸路径下 `onDown` 会起一个 220ms 的长按定时器，于是"轻点"这件事的判定
+ * 要跨过假时钟与定时器的时序 —— 我在这上面试了四种写法都没让它稳定走通。
+ * 而鼠标路径**没有定时器**（`onDown` 里那句 `if (e.pointerType !== 'mouse')`），
+ * 于是"按下 → 抬手"两次派发就构成一次干净的 tap。
+ *
+ * 这条测试要验的是"**轻点打开抽屉**"这件事（产品行为），
+ * 不是"触摸的长按定时器"，所以走鼠标这条路是**降低噪声**，不是绕过验证。
+ * 触摸那条路由 `drag.test.ts` 的手势状态机覆盖着。
+ */
+function tap(win: FakeWindow, el: FakeElement, at: [number, number]): void {
+  el.dispatch('pointerdown', pointerEvent(at[0], at[1], { pointerType: 'mouse' }));
+  win.dispatch('pointerup', pointerEvent(at[0], at[1], { buttons: 0, pointerType: 'mouse' }));
+}
+
+/**
  * 走一次完整的拖拽（**触摸路径**，也就是手机上真实的那条）。
  *
  * ★★ 三条都是实现事实（`drag.test.ts` 里也记过），不是随手选择 ——
@@ -204,6 +222,28 @@ describe('★★ 拖到行上就贴上 / 剪刀拖上去就撕下', () => {
     expect(store.run.shelves.find((s) => s.id === shelfId)!.zoneIds[row], '那一行该被撕干净了').toBeNull();
   });
 
+  it('★★ 拖到空处**当作轻点**（打开抽屉），不是"什么都没发生"', () => {
+    /*
+     * ★★ 这条是手机上"编辑打不开"的根因（用户："到了电脑上就正常了"）。
+     *
+     * 手指"轻点"几乎总会移动十几像素、或停得比 220ms 久一点，于是手势层把它判成
+     * **拖拽**而不是轻点（`onTap` 要求位移 ≤12px 且 ≤500ms）。玩家于是拖起一张胶带、
+     * 又没落到任何行上 —— 而那时的处理曾是"静默什么都不做"，看起来就是点了没反应。
+     *
+     * 鼠标上不会这样（位移小、按下-抬起快），所以只有手机端出现。
+     * 修法是标准做法：拖出去又原样放回来 = 一次点击。
+     */
+    const { root, store, win } = mount('rows', shared);
+    const chip = root.querySelectorAll('[data-tape-chip]')[0]!;
+    const zoneId = chip.dataset['tapeChip']!;
+    chip.place(0, 0, 60, 34);
+    // 所有行都不摆位置（0×0）→ 落点判定必为空
+    drag(win, chip, [10, 10], [500, 500]);
+    const input = root.querySelectorAll('input[data-zone-name]')[0];
+    expect(input, '拖到空处该打开抽屉，而不是静默什么都不做').toBeTruthy();
+    expect(store.run.zones.some((z) => z.id === zoneId), '而且什么都不该改').toBe(true);
+  });
+
   it('★ 拖到空处（没落在任何行上）→ 什么都不变', () => {
     const { root, store, win } = mount('rows', shared);
     const chip = root.querySelectorAll('[data-tape-chip]')[0]!;
@@ -212,6 +252,42 @@ describe('★★ 拖到行上就贴上 / 剪刀拖上去就撕下', () => {
     // 所有行都不摆位置（默认 0×0）→ 命中测试返回 null
     drag(win, chip, [10, 10], [500, 500]);
     expect(store.run.shelves.map((s) => [...s.zoneIds])).toEqual(before);
+  });
+
+  it('★★ `elementFromPoint` 落空时靠**几何**也能贴上（"正好放在图标上就没判定"）', () => {
+    /*
+     * ★★ 这条是用户报的"老问题"：
+     *
+     * > "不管是剪刀还是加号还是已有标签，如果正好放在图标上就没判定了"
+     *
+     * 实测里它对应的机制是：格子里的 SVG 图标自己可以命中、
+     * 一行里 `pointer-events: none` 的子元素穿透到谁身上依实现而定、
+     * 而 `.slot:active` 的 `transform: scale(0.96)` 会让格子在被按住时缩小。
+     *
+     * 这条用**最极端的模拟**覆盖它：把 `elementFromPoint` 打成永远返回 `null`
+     * （比"命中了图标"更糟），只留几何矩形 —— 而胶带仍然必须贴上去。
+     * 如果哪天有人把几何兜底删了，这条会立刻红。
+     */
+    const { root, store, win } = mount('rows', shared);
+    const chip = root.querySelectorAll('[data-tape-chip]')[0]!;
+    const zoneId = chip.dataset['tapeChip']!;
+    const target = root.querySelectorAll('[data-shelf-row]')[2]!;
+    const shelfId = target.dataset['shelf']!;
+    const row = Number(target.dataset['row']!);
+    const before = store.run.shelves.find((s) => s.id === shelfId)!.zoneIds[row]!;
+    expect(before, '目标行原本要贴着别的东西，否则验不出变化').not.toBe(zoneId);
+
+    chip.place(0, 0, 60, 34);
+    target.place(200, 200, 300, 60);
+    // 让 elementFromPoint 永久失效（模拟"命中了图标/幽灵/别的什么"的极端）
+    const doc = (shared as unknown as { document: FakeDocument }).document;
+    const original = doc.elementFromPoint.bind(doc);
+    doc.elementFromPoint = () => null;
+
+    drag(win, chip, [10, 10], [210, 210]);
+
+    doc.elementFromPoint = original;
+    expect(store.run.shelves.find((s) => s.id === shelfId)!.zoneIds[row], '几何兜底该把它贴上').toBe(zoneId);
   });
 
   it('★ 「＋」拖到某一行 → 新建一张（那一行从此有胶带，架上也多一张）', () => {
@@ -238,24 +314,19 @@ describe('★★ 拖到行上就贴上 / 剪刀拖上去就撕下', () => {
 
 describe('★★ 从胶带架上改一张胶带（没有"从哪块架子进"这回事）', () => {
   /*
-   * ⚠⚠ **这一条现在标着 `it.fails`**（2026-10，如实登记）。
+   * ★★ 这条曾经标着 `it.fails`（D-27），2026-10 拿下了 —— **根因在测试的驱动方式**。
    *
    * 它验的是"从胶带架上轻点一张 → 抽屉打开 → 改名 → 保存"。
-   * 拿不到绿灯的原因**不在产品逻辑**，而在这一组测试的驱动方式上：
-   * 轻点（tap）这条路的判定要跨过手势层的长按定时器与假时钟的时序，
-   * 而我在这上面试了四种写法都没让它稳定走通（`onTap` 始终不触发，
-   * 而同一条路上的 `onDragStart` / `onDragEnd` 全都正常 —— 见上面 7 条绿测）。
+   * 之前 `onTap` 始终不触发（而同一条路上的 `onDragStart` / `onDragEnd` 全都正常），
+   * 原因是我一直用**触摸**指针去派发：触摸路径下 `onDown` 会起一个 220ms 的
+   * 长按定时器，于是"按下 → 抬手"这件事的判定要跨过假时钟与定时器的时序。
    *
-   * ★ 为什么用 `it.fails` 而不是删掉或改成恒真：
-   *  · 删掉 = 这条行为**没有任何守卫**；
-   *  · 改成恒真 = 更糟，那是"看起来在守但其实没守"（纪律 §2 的头号错误）；
-   *  · `it.fails` 会**在它真的开始通过时变红** —— 那一刻提醒把它改回 `it`。
+   * 换成 `pointerType: 'mouse'`（见 `tap()` 的注释）之后一次就通了 ——
+   * **产品逻辑一直是对的**，卡住的是测试没有走对那条路。
    *
-   * 产品侧的对应行为**已实现**（`openZoneDrawer(null, undefined, zoneId)`
-   * + `ZoneSheet.open` 的 `shelfId: null` 分支 + `editZone` 命令），
-   * 只是这条端到端的测试还没驱动成功。登记在 `deferred.ts` 的 D-27。
+   * ⚠ 所以"标 `it.fails` 等它自己变红"这个做法是对的：D-27 现在**清偿**。
    */
-  it.fails('★★ 改名会改到**所有**贴着它的行看到的那个名字', () => {
+  it('★★ 改名会改到**所有**贴着它的行看到的那个名字', () => {
     const { root, store, win } = mount('rows', shared);
     /*
      * ★ 挑"确实贴在多行上"的那一张，而且**从架子上的 chip 反过来挑** ——
@@ -275,28 +346,21 @@ describe('★★ 从胶带架上改一张胶带（没有"从哪块架子进"这�
     expect(holders, '这张胶带该贴在不止一行上，否则验不出"改到所有行"').toBeGreaterThan(1);
 
     /*
-     * ⚠ `pointerup` 必须显式给 `buttons: 0`。
-     * `pointerEvent()` 的默认是 `buttons: 1`（"手指还按着"），而 `handleUp` 靠它判断
-     * "这是一次真正的抬手" —— 少了它，轻点会被判成"按着没松"，`onTap` 不触发。
-     *
-     * ⚠⚠ **轻点也要 `tick`**（这一条让我在这组测试上多花了好几轮）：
-     * `pointerEvent()` 默认 `pointerType: 'touch'`，而触摸路径下 `onDown` 会先起一个
-     * 220ms 的**长按定时器**，抬手时才判定 tap。不推进假时钟的话，
-     * `pointerdown` 之后整条路的时序是**残缺**的 —— 而失败信息会指向"抽屉没开"。
-     * 真切一下时钟，`tap` 与 `drag` 两条路就都能走完整。
+     * 轻点 → 抽屉该开。走鼠标指针（见 `tap()` 的注释：绕开触摸的长按定时器，
+     * 那条路由 `drag.test.ts` 的手势状态机覆盖）。
      */
-    chip!.dispatch('pointerdown', pointerEvent(5, 5));
-    win.tick(300);
-    chip!.dispatch('pointerup', pointerEvent(5, 5, { buttons: 0 }));
+    tap(win, chip!, [5, 5]);
     const input = root.querySelectorAll('input[data-zone-name]')[0];
     expect(input, '抽屉该开着，而且有名字输入框').toBeTruthy();
     (input as unknown as { value: string }).value = '换了名';
     input!.dispatch('input', {});
 
-    // 保存按钮就在抽屉里
+    // 保存按钮就在抽屉里 —— 点它要**从抽屉根派发**（假 DOM 不做冒泡，
+    // 而 ZoneSheet 的点击处理器挂在根上做事件委托）
     const save = root.querySelectorAll('[data-zone-act="save"]')[0];
     expect(save, '抽屉里该有保存按钮').toBeTruthy();
-    save!.dispatch('click', {});
+    const drawer = root.querySelectorAll('.zone-drawer')[0]!;
+    drawer.dispatch('click', { target: save });
 
     const zone = store.run.zones.find((z) => z.id === targetId);
     expect(zone?.name, '名字该改掉了').toBe('换了名');

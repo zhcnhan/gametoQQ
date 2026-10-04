@@ -241,6 +241,20 @@ export class ZoneSheet {
       }
       case 'save': {
         /*
+         * ★★ 保存前**从输入框读一次实时值**。
+         *
+         * `this.name` 平时靠 `input` 事件跟着输入框走，但那条路只在玩家**打字**
+         * 时触发 —— 而"打完字直接点保存"这件事在移动端未必会先派发一个 `input`
+         * （软键盘的完成键、或者输入法还在组合中）。那时 `this.name` 还是旧值，
+         * 保存就"什么都没改"。
+         *
+         * 这是实测出来的：`tapeShelf.test.ts` 里那条改名用例，
+         * 输入框的值设了、保存点了，而名字没变 —— 因为没人派发 `input`。
+         * 真实手机上同类情况（输入法未提交）也会落到这里。
+         */
+        const liveInput = this.root.querySelector<HTMLInputElement>('input[data-zone-name]');
+        if (liveInput) this.name = liveInput.value;
+        /*
          * ★★ 抽屉现在是**纯粹的编辑器**（2026-10 用户拍板）。
          *
          * > "有了这个就不需要那个贴标签按钮了"

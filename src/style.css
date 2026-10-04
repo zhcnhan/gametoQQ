@@ -1025,17 +1025,12 @@ body::before {
 
 
 
-.tape-slot-name {
-  font-family: 'Songti SC', 'STSong', Georgia, serif;
-  font-size: 14px;
-  letter-spacing: 0.04em;
+.tape-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
 }
-
-.tape-slot-meta {
-  font-size: 11px;
-  color: var(--ink-70);
-}
-
 
 
 .tape-chip {
@@ -2459,6 +2454,57 @@ button:disabled {
   border-top: 1.5px solid var(--ink-16);
   overflow-x: auto;
   scrollbar-width: thin;
+  /*
+   * ★ `touch-action: pan-x` —— 横条要能**横向滚**（窄屏上放不下几张胶带）。
+   *
+   * ## ⚠ 这里有一处真实的手势冲突，值得写清楚
+   *
+   * `.tape-chip` / `.tape-tool` 自己写着 `touch-action: none`（"拖"必须吃掉手势，
+   * 否则浏览器会把它当成滚动而发 `pointercancel`）。于是：
+   *  · 手指落在**胶带块**上 → 那一块不滚（它要给拖拽）；
+   *  · 手指落在**这一条的空白处**（两侧的 padding 与块之间的 gap）→ 能滚。
+   *
+   * 结果是"横条只能从空白处滚" —— 不理想，但它是这个交互的**必然代价**：
+   * 同一块像素既当"拖拽起点"又当"滚动把手"是做不到的。
+   * 所以下面特意给了左右 padding，让空白处**够宽**（不然这条在手机上就滚不动了）。
+   */
+  touch-action: pan-x;
+  padding-left: 2px;
+  padding-right: 8px;
+}
+
+/*
+ * ★ 窄屏（≤400px）：手机上这条不能再横向铺开。
+ *
+ * 用户的原话："在手机端有点拥挤了"。
+ * 顶栏已经有标题 + 四个指标卡 + 这一条，320~400px 上确实挤。
+ * 所以窄屏做三件事：
+ *  ① 「胶带」那个标签**收起来**（横条自己有上下文，标签是重复的）；
+ *  ② 触控目标放大到 **44px**（苹果/谷歌都把这个当下限，而原来是 34px）——
+ *     它是"拖"的起点，太小就变成"总是拖不动"；
+ *  ③ 胶带块之间**留出空隙**，免得拖到一半抓错相邻的那一张。
+ */
+@media (max-width: 400px) {
+  .tape-shelf-label {
+    display: none;
+  }
+
+  .tape-shelf {
+    gap: 8px;
+    margin-top: 6px;
+    padding-top: 6px;
+  }
+
+  .tape-tool {
+    width: 44px;
+    height: 44px;
+    font-size: 18px;
+  }
+
+  .tape-chip {
+    min-height: 44px;
+    font-size: 13px;
+  }
 }
 
 .tape-shelf-label {
@@ -2668,27 +2714,6 @@ button:disabled {
   .row-cells {
     grid-template-columns: repeat(var(--cols, 6), minmax(0, 1fr));
   }
-}
-
-
-
-
-/* 这一行现在贴着谁：一小段色条，与货架上的侧色条同一种语言 */
-.row-pick-tape {
-  width: 4px;
-  height: 18px;
-  border-radius: 2px;
-  background: var(--zone, var(--ink-16));
-  flex: 0 0 auto;
-}
-
-.row-pick-zone {
-  font-size: 11px;
-  color: var(--ink-40);
-  max-width: 5em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 
