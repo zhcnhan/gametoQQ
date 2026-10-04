@@ -242,6 +242,12 @@ export function createStartingRun(seed: number = randomSeed()): RunState {
     stats: { ...STARTING_STATS },
     trust: {},
     deliveredOrders: 0,
+    /*
+     * 情报（D-13）：开局给 1 条 —— 也就是"今天"那一天。
+     * `revealedForecasts` 让过去的天无条件可见，所以这一条的实际作用是
+     * "开局就知道今天将要面对什么"，而更远的那些天要挣。
+     */
+    intel: 1,
     log: [],
     seed: cursor.state,
     actionPoints: 0,

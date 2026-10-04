@@ -14,9 +14,9 @@
  *  5. **不写台词腔**（§11）：他站在门口说一件具体的事就够了。
  *     不要"谢谢你啊你真是好人"——那句话会把整件事变成道德考试。
  *
- * DEFERRED(D-13): §6.5 的三种回报里，**「情报」还没做** —— 它需要一个能被追加的
- * 先知日历，而 M1 的 `DisasterProfile.calendar` 是静态表。所以这里的 `thanks`
- * 只有现金与箱型两种形态。
+ * ★ §6.5 的三种回报现在齐了（2026-10 清偿 D-13）：人情（`trustGain`）、
+ * 以物易物（`thanks.cash` / `thanks.boxDefId`）、**情报（`thanks.intel`）**。
+ * 情报的定义与来源见 `systems/intel.ts`。
  */
 import type { CategoryId, ContentTier } from '../model/types';
 
@@ -43,8 +43,14 @@ export interface HelpRequestDef {
   trustGain: number;
   /** 婉拒扣多少 */
   trustLoss: number;
-  /** 对方留下的东西（§6.5 的"以物易物"）。不是每单都有 */
-  thanks?: { readonly cash?: number; readonly boxDefId?: string };
+  /**
+   * 对方留下的东西（§6.5 的"以物易物" / "情报"）。不是每单都有。
+   *
+   * ★ `intel` 是 2026-10 补的（清偿 D-13）：§6.5 写了三种回报
+   * （人情 / 情报 / 以物易物），而**情报一直没做** —— 原来这里只有
+   * 现金与箱型两种形态。现在它是第三种，也是唯一一种**不给东西、给消息**的回报。
+   */
+  thanks?: { readonly cash?: number; readonly boxDefId?: string; readonly intel?: number };
   /**
    * 内容分层（§10B.5 第 3 件）。
    *
@@ -282,7 +288,7 @@ export const HELP_REQUEST_DEFS: readonly HelpRequestDef[] = [
     trustGain: 2,
     trustLoss: 2,
     thanks: {
-      cash: 20
+      intel: 2
     },
     tier: 3,
     decision: "买消息 —— 他说的那条路你没法事先验证"
@@ -390,7 +396,7 @@ export const HELP_REQUEST_DEFS: readonly HelpRequestDef[] = [
     trustGain: 2,
     trustLoss: 1,
     thanks: {
-      cash: 15
+      intel: 2
     },
     tier: 3,
     decision: "一条还没证实的消息 —— 它可能让你少亏一批货，也可能是空话"

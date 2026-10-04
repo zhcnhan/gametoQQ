@@ -39,6 +39,7 @@ import { computeOrganizeScore } from '../model/score';
 import type { CategoryId, RunState } from '../model/types';
 import type { GameStore } from '../state/store';
 import { disasterModifiersOf } from '../data/disaster';
+import { intelCapacity } from './intel';
 import { generateBoxStacks, nextBoxSeq } from './setup';
 
 /**
@@ -201,6 +202,23 @@ export function fulfillRequest(store: GameStore): HelpResult {
         items: generateBoxStacks(cursor, boxDef, draft.day)
       });
       thanks = `一${boxDef.name}`;
+    }
+    /*
+     * ★ 情报（§6.5 的第三种回报，2026-10 清偿 D-13）。
+     *
+     * 它是唯一一种**不给东西、给消息**的回报 —— 所以文案也得换一套说法：
+     * "他留下 X" 对一条消息不成立（那是东西的说法）。用**数量**说：
+     * "他多说了两句" / 加了个数字。
+     *
+     * ⚠ 上限是"还没到的天数"：再多的情报也没有东西可揭了，
+     * 而给一个用不掉的数字是**在骗玩家**（他会以为攒着有用）。
+     */
+    if (def.thanks?.intel) {
+      const capacity = intelCapacity(draft);
+      const before = draft.intel;
+      draft.intel = Math.min(capacity, before + def.thanks.intel);
+      const gained = draft.intel - before;
+      if (gained > 0) thanks = thanks ? `${thanks}，另外多说了${gained}天的事` : `多说了${gained}天的事`;
     }
 
     draft.helpRequest = null;

@@ -985,6 +985,50 @@ body::before {
 }
 
 /**
+ * ★ 「你事先知道的」—— 情报（§6.5 的第三种回报，D-13）。
+ *
+ * 层次上刻意与"缺口 / 硬撑"那些**告警行**区分：
+ * 这一块是**好消息**（你比昨天多知道一点），所以不上朱红、不用粗边，
+ * 只用一道左侧细边表明它是"引来的消息"（与 `blockquote` 同一套语言）。
+ */
+.intel-box {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--ink-16);
+  background: var(--paper-2);
+  border-radius: 0 6px 6px 0;
+}
+
+.intel-title {
+  margin: 0 0 4px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--ink-40);
+}
+
+.intel-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.intel-item {
+  display: flex;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.intel-item b {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-70);
+}
+
+/**
  * 「这块家具凭什么占地方」——只在家具**真的做了什么**时才出现（冰箱 / 柜子）。
  *
  * ★ 它回答的是玩家真问出来的问题（"冰箱现在是有效的吗，即便是我自己加进来的"）。

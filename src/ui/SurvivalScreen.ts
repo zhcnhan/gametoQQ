@@ -21,6 +21,7 @@ import { countByItem, countCategory } from '../model/consume';
 import { districtDays, indoorTemp, supplyDays } from '../model/contrast';
 import { computeOrganizeScore } from '../model/score';
 import type { DisasterProfile, HardPressLevel, RunState, SurvivalSnapshot } from '../model/types';
+import { revealedForecasts } from '../systems/intel';
 import type { GameStore } from '../state/store';
 import { isShutOut } from '../systems/help';
 import { householdTotals } from '../systems/organize';
@@ -156,6 +157,7 @@ export class SurvivalScreen implements Screen {
         ${emergencyHtml(last)}
         ${coldHouseNote(run)}
         ${last.usedMedicine > 0 || last.usedWarmth > 0 ? `<p class="block-note">${escapeHtml(supplyText(last))}</p>` : ''}
+        ${this.intelHtml(run)}
         ${this.marketHtml(run)}
         ${this.stockHtml(disaster)}
       </section>
@@ -392,6 +394,35 @@ export class SurvivalScreen implements Screen {
    * **或**有限购在生效 —— 那时玩家在下一个囤货日会真的多付钱，值得知道。
    * 一场都没发生过（`shopPriceFactor` 还是 1）就**一个字都不显示**。
    */
+  /**
+   * ★★ 「先知日历上还剩下什么」—— 情报（§6.5 的第三种回报，D-13）。
+   *
+   * ## 为什么它长这样
+   *
+   * 情报买到的不是数字，是**消息**：日历上还没到的那些天的预告。
+   * 所以这一块显示的是"**你已经知道哪几天**"，而不是"你有 3 条情报"——
+   * 后者是一个抽象的库存，前者才是玩家真正拿到手的东西。
+   *
+   * ⚠ 还没揭开的天**不画空位**：画了就等于告诉他"这里还有几天"，
+   * 而那本身也是情报。所以它只报已有的，不报缺的。
+   */
+  private intelHtml(run: RunState): string {
+    const known = revealedForecasts(run).filter((f) => !f.past);
+    if (known.length === 0) return '';
+    const lines = known
+      .map(
+        (f) =>
+          `<li class="intel-item"><b>${dayLabel(f.day)}</b><span>${escapeHtml(f.hint)}</span></li>`
+      )
+      .join('');
+    return `
+      <div class="intel-box">
+        <p class="intel-title">你事先知道的</p>
+        <ul class="intel-list">${lines}</ul>
+      </div>
+    `;
+  }
+
   private marketHtml(run: RunState): string {
     /*
      * `shopPriceFactor` 是**囤货期被事件抬上去的**那部分（`applyDayEffect` 里累乘）。

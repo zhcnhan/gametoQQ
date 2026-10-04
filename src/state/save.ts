@@ -1217,6 +1217,15 @@ export function migrateV0ToV1(save: SaveGame): SaveGame {
       run.stats = { health: 100, mood: 70, stamina: 100, shelter: 100 };
     }
     if (typeof run.deliveredOrders !== 'number') run.deliveredOrders = 0;
+  /*
+   * 情报（D-13，2026-10 加的字段）。
+   *
+   * ★ 旧档没有它 —— 默认给 **1**（不是 0）：开局本来就该知道"今天"那一天，
+   * 而 0 会让一个正在进行的旧档在日历上连今天都看不到，
+   * 那是"自愈时把玩家已有的东西弄丢"这一类错误。
+   */
+  if (typeof run.intel !== 'number' || !Number.isFinite(run.intel)) run.intel = 1;
+  if (run.intel < 0) run.intel = 0;
     if (!run.phase) run.phase = 'organize';
     if (typeof run.day !== 'number') run.day = 0;
     if (!run.identityId) run.identityId = 'default';

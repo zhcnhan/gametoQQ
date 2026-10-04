@@ -130,7 +130,7 @@ const SCHEMAS = {
       name: 'string（中文名，2~6 字最佳）',
       category: `'${CATEGORIES.join("' | '")}'`,
       icon: 'string（图标键，**必须与 id 不同名**也要能认出来）',
-      unitWeight: 'number（kg/件，0.05~8）',
+      unitWeight: 'number（kg/件，0.05~8）',
       stackLimit: 'number（单槽堆叠上限，1~20）',
       perishable: 'boolean',
       nutrition: 'Partial<{food,water,health,comfort}>（0~3）',
@@ -275,7 +275,9 @@ const SCHEMAS = {
       tier: 'number 1~4'
     },
     optional: {
-      thanks: '{cash?,boxDefId?}（对方留下的东西；**不是每单都有**，全靠回报会把门口变成刷分点）'
+      thanks:
+        '{cash?,boxDefId?,intel?}（对方留下的东西；**不是每单都有**，全靠回报会把门口变成刷分点。' +
+        '`intel` = §6.5 的「情报」，2026-10 补：它揭的是先知日历里还没到的那些天的预告）'
     }
   },
   shop: {
@@ -418,6 +420,20 @@ function checkEntry(file, kind, obj, index) {
       }
       if (t?.cash !== undefined && (!Number.isFinite(t.cash) || t.cash < 0 || t.cash > 400)) {
         fail(file, id, `thanks.cash=${t.cash} 越界（0~400）`);
+      }
+      /*
+       * ★★ `intel`（2026-10 补，清偿 D-13）。
+       *
+       * 为什么必须查**类型**而不只是区间：这个字段是数字，而内容文件里
+       * 写成一个字符串（`"2"`）非常容易发生 —— 而它在 JS 里会**静默变成拼接**：
+       * `run.intel + "2"` 得到 `"12"`，于是"揭开 12 天"（日历只有十几天）。
+       * 那种错不会抛、也不会红，只会让日历多显示几天。
+       *
+       * ⚠ 这条守卫是**故意破坏验证过**的：把一条 `intel` 改成 `"2"`、
+       * 跑一遍 `check-content`，确认它报错（脚本见提交记录里的说明）。
+       */
+      if (t?.intel !== undefined && (!Number.isFinite(t.intel) || t.intel < 1 || t.intel > 5)) {
+        fail(file, id, `thanks.intel=${JSON.stringify(t.intel)} 必须是 1~5 的数字（字符串会让它变成拼接）`);
       }
     }
   }
