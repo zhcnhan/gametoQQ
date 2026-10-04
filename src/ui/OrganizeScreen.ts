@@ -35,7 +35,7 @@ import {
   toggleHandy,
   type CommandResult,
   type OrganizeSession,
-  type OrganizeView,
+  type OrganizeView,
 } from '../systems/organize';
 import { attachLongPress, attachPointerGesture } from './drag';
 import { expiryText, isExpiringSoon, shelfLabel, stackLabel } from './labels';
@@ -996,11 +996,13 @@ export class OrganizeScreen {
         return;
       case 'edit-zone': {
         /*
-         * ★ 从**哪一行**点进来的，就预选哪一行。
+         * ★ 从**哪一行**点进来的，就编辑那一行贴着的那张胶带。
          *
          * 一行一段胶带之后，"给这架贴胶带"没有唯一答案 —— 玩家点的是
-         * 第 2 行的那条色条，他想改的就是第 2 行。从抬头点进来时
-         * （没有 `data-row`）才默认整块（`rows` 传 `undefined`，由抽屉自己全选）。
+         * 第 2 行的那条色条，他想改的就是第 2 行的那张。
+         *
+         * ⚠ `rows` 现在**只用来认领要编辑的那张胶带**（见 `ZoneSheet.open`），
+         * 不再表示"保存时贴到哪几行" —— 那个决定已经交给拖拽了。
          */
         const rowAttr = hit.dataset['row'];
         if (shelfId) this.openZoneDrawer(shelfId, rowAttr === undefined ? undefined : [Number(rowAttr)]);
@@ -1410,16 +1412,18 @@ export class OrganizeScreen {
   }
 
   /**
-   * 打开胶带抽屉。刻意做两件事：把目标货架滚到房间区顶部（抽屉只占下半屏，
-   * 货架必须露在上面）、给它加虚线高亮 —— 分区是空间概念，编辑时必须看得见那块区域。
-   */
-  /**
-   * 打开抽屉。
+   * 打开胶带抽屉。
    *
-   * `rows` 决定"预选哪几行"，`focusZoneId` 决定"预填哪一张胶带"。
-   * ★ 从**胶带架**上轻点进来时只给 `focusZoneId`、不给 `shelfId` ——
-   * 那时玩家想改的是**这张胶带**，而它可能贴在好几块架子上，
-   * "从哪一块进"没有答案。抽屉因此要接受 `shelfId` 为空。
+   * 它刻意做两件事：把目标货架滚到房间区顶部（抽屉只占下半屏，货架必须露在上面）、
+   * 给它加虚线高亮 —— 分区是空间概念，编辑时必须看得见那块区域。
+   *
+   * @param shelfId 从哪块架子进来（不给 = 从**胶带架**进来，那时"从哪一块"没有答案，
+   *   因为一张胶带可能贴在好几块架子上）
+   * @param rows 从哪一行进来 —— 只用来**认领要编辑的那张胶带**
+   * @param focusZoneId 直接指定要编辑哪一张（从胶带架轻点某一张时）
+   *
+   * ★ 抽屉是**纯编辑器**（2026-10 用户拍板："有了这个就不需要那个贴标签按钮了"），
+   * 所以"贴到哪几行"不在这里决定 —— 那是拖拽的事。
    */
   private openZoneDrawer(shelfId?: string, rows?: number[], focusZoneId?: string): void {
     /*
