@@ -1,6 +1,6 @@
 {
   "kind": "emergency",
-  "batch": "emg-01",
+  "batch": "突发-01",
   "batchNote": "本批 21 条，7 个品类各 3 条。needOnHandy 分布：1件 6条 / 2件 10条 / 3件 3条 / 4件 2条。最弱的一条：e_bad_day（奢侈品的'检查题'天然偏弱，靠文案撑，后续批次可考虑更强的奢侈品疏忽类型）。",
   "entries": [
     {

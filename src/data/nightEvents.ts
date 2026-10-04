@@ -127,7 +127,7 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
     ],
     tier: 1
   },
-  // ═══ 生成内容 night-01 起（scripts/merge-content.mjs 插入，别手改这一段） ═══
+  // ═══ 生成内容 夜间-01 起（scripts/merge-content.mjs 插入，别手改这一段） ═══
 {
     id: "n_rat_droppings",
     text: "米袋旁边有几粒黑色的东西。你蹲下来看了看。",
@@ -649,8 +649,8 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
       }
     ]
   },
-  // ═══ 生成内容 night-01 止 ═══,
-  // ═══ 生成内容 night-02 起（scripts/merge-content.mjs 插入，别手改这一段） ═══
+  // ═══ 生成内容 夜间-01 止 ═══,
+  // ═══ 生成内容 夜间-02 起（scripts/merge-content.mjs 插入，别手改这一段） ═══
 {
     id: "n_ceiling_fall",
     text: "头顶的天花板鼓了个包，边缘往下坠。床就摆在正下方。",
@@ -831,7 +831,7 @@ export const NIGHT_EVENT_DEFS: readonly NightEventDef[] = [
       }
     ]
   },
-  // ═══ 生成内容 night-02 止 ═══
+  // ═══ 生成内容 夜间-02 止 ═══
 ];
 
 const NIGHT_BY_ID: ReadonlyMap<string, NightEventDef> = new Map(NIGHT_EVENT_DEFS.map((e) => [e.id, e]));

@@ -1,6 +1,6 @@
 {
   "kind": "nightEvent",
-  "batch": "night-01",
+  "batch": "夜间-01",
   "batchNote": "本批 22 条（物资与身体）。决定分类统计：持家省钱 4 / 存货取舍 7 / 身体状态 6 / 邻里人情 5。最弱的一条：n_leftover_stew（两个选项的结果太接近，决定感最薄，留作填充档）。",
   "entries": [
     {

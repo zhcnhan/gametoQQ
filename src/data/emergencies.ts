@@ -134,7 +134,7 @@ export const EMERGENCY_DEFS: readonly EmergencyDef[] = [
     lost: 1,
     tier: 1
   },
-  // ═══ 生成内容 emg-01 起（scripts/merge-content.mjs 插入，别手改这一段） ═══
+  // ═══ 生成内容 突发-01 起（scripts/merge-content.mjs 插入，别手改这一段） ═══
 {
     id: "e_weevils",
     text: "米袋里爬出几只米虫。整袋米都得翻一遍。",
@@ -345,7 +345,7 @@ export const EMERGENCY_DEFS: readonly EmergencyDef[] = [
     tier: 1,
     decision: "奢侈品留没留可以出手的富余"
   },
-  // ═══ 生成内容 emg-01 止 ═══
+  // ═══ 生成内容 突发-01 止 ═══
 ];
 
 const EMERGENCY_BY_ID: ReadonlyMap<string, EmergencyDef> = new Map(EMERGENCY_DEFS.map((d) => [d.id, d]));

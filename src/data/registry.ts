@@ -331,7 +331,8 @@ function boxPoolDefs(): readonly BoxDef[] {
  *   · 灾难 —— 看它的 `tier`：`tier: 1` 的那个开局就在（§10B.3.2 的解锁阶梯，
  *     寒潮是唯一的 tier 1）；更高层的等解锁功能做出来才算"可达"，
  *     而解锁功能还没做 —— 所以这里返回 false，让图鉴与校验器都能看见这笔账；
- *   · 身份 —— 同上，`tier: 1` 开局可选（现在开局给 2 个，见 `systems/setup.ts`）；
+ *   · 身份 —— 同上，`tier: 1` 开局可选（见 `IDENTITY_DEFS`：`group_buyer` /
+ *     `night_shift` / `nurse` 三个）；
  *   · 事件 / 订单 / 商店 / 箱型 / NPC —— 进了池子就是可达的（抽取器按各自的权重表走）。
  */
 function accessibilityOf(kind: ContentKind, def: unknown, tier: ContentTier | undefined, sources: Map<string, ItemSource>): boolean {

@@ -71,7 +71,7 @@ export const SHOP_DEFS: readonly ShopDef[] = [
     ],
     tier: 1
   },
-  // ═══ 生成内容 shop-01 起（scripts/merge-content.mjs 插入，别手改这一段） ═══
+  // ═══ 生成内容 点位 起（scripts/merge-content.mjs 插入，别手改这一段） ═══
 {
     id: "market",
     name: "农贸市场",
@@ -421,7 +421,7 @@ export const SHOP_DEFS: readonly ShopDef[] = [
     tier: 1,
     decision: "便宜三成但全是旧货还要看日子，为省钱等不等周日"
   },
-  // ═══ 生成内容 shop-01 止 ═══
+  // ═══ 生成内容 点位 止 ═══
 ];
 
 const SHOP_BY_ID: ReadonlyMap<string, ShopDef> = new Map(SHOP_DEFS.map((s) => [s.id, s]));

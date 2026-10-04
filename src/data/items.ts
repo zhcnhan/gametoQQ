@@ -296,7 +296,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     tags: ['treat', 'luxury', 'keepsake'],
     tier: 1
   },
-  // ═══ 生成内容 item-01 起（scripts/merge-content.mjs 插入，别手改这一段） ═══
+  // ═══ 生成内容 物资-01 起（scripts/merge-content.mjs 插入，别手改这一段） ═══
 {
     id: "canned_corned_beef",
     name: "午餐肉罐头",
@@ -1070,7 +1070,7 @@ export const ITEM_DEFS: readonly ItemDef[] = [
     decision: "三年保质期的水，价格翻三倍，买的是不用操心的确定性",
     note: "放在那就忘了它的那种保险"
   },
-  // ═══ 生成内容 item-01 止 ═══
+  // ═══ 生成内容 物资-01 止 ═══
 ];
 
 const ITEM_BY_ID: ReadonlyMap<string, ItemDef> = new Map(ITEM_DEFS.map((d) => [d.id, d]));
@@ -1111,5 +1111,4 @@ export const CATEGORY_ORDER: readonly CategoryId[] = [
   'fuel',
   'warmth',
   'tool',
-  'luxury',
-];
+  'luxury'];

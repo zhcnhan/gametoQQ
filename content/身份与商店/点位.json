@@ -1,6 +1,6 @@
 {
   "kind": "shop",
-  "batch": "shop-01",
+  "batch": "点位",
   "batchNote": "本批 6 个点位。差异化覆盖：更便宜但更远 2（market / wholesale）/ 库存厚与现金起订 1（wholesale 兼任）/ 灾后仍开、认人 1（community_store）/ 贵但从不关门 1（gas_station）/ 旧货与时间限制 1（weekend_flea）/ 不排队的近处药点 1（clinic）。注意：offers 只引用了现有 17 件物资的 id；item-01 的 40 件入库后可以再扩一轮。最弱的一家：gas_station（与五金店在燃料上有部分重叠，靠'不关门'的叙事撑着，需要引擎的时间机制才能完全立住）。",
   "entries": [
     {

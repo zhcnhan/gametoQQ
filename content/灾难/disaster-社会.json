@@ -1,0 +1,2689 @@
+{
+  "kind": "disaster",
+  "batch": "灾难-社会",
+  "batchNote": "本族 16 场（由外援分批生成、后按家族合并）。\n\n· 骚乱（riot_curfew）：通行与供给：门开不开不由你说了算，街上不安全，店早早关了\n· 断供（supply_cut）：外来的货进不来，存量成了唯一来源\n· 抢购潮（panic_buy）：还没出事，货先没了，提前量被一口吃掉\n· 封控（community_lockdown）：出不去小区，活动半径缩到楼里\n· 配给登记（ration_registry）：限购加实名，买得到但买不多\n· 出城潮（exodus_wave）：邻居都走了，帮手也没了\n· 罢工（strike_halt）：物流与清洁停摆，垃圾和水先出问题\n· 征用（requisition）：官方征用物资，私人囤积被抽走\n· 宵禁（curfew_order）：几点之后，街上不许有人\n· 通信中断（comms_blackout）：订不了、问不到、叫不应\n· 黑市（black_market）：明面上限价，暗地里换东西\n· 避难所超载（shelter_overload）：有地方去，但一个铺位三个人\n· 燃油配给（fuel_ration）：车还在，油是按周给的\n· 失业潮（unemployment）：工资断了，钱只出不进\n· 治安真空（security_vacuum）：管的人没了，规则由最近的那群人定\n· 返乡潮（return_wave）：外来的人涌进来，本地的货不够分\n\n## 生成时的说明（原样保留）\n\n标杆 4 场（手写），按 §10B.8 的 5c 写的：每场主打一个**还没被覆盖的家族与机制**，它们是后面批量生成的**口径样板**。选题理由：① 骚乱走「社会」家族，全案第一次让 NPC 行为成为主要压力（人来得更勤、要的是吃的）；② 沙暴走「空气」家族，第一次用 healthRiskPerDay 。那个维度是唯一一个「不看玩家做了什么也在掉血」的；③ 地震走「结构」家族，第一次用 unusableShelfIds（整块家具没了，不是「小一圈」）；④ 霉雨走「生物」家族，第一次用 categoryEfficiency 打主食。四场都刻意避开『把敌人血量乘 1.5』那种写法：每一场的 pressure 都换了一条轴。\n\n---\n\n本批 4 场，家族=社会。已把「谣言」整条移出（降为事件，信息乱这一轴交给事件层）。保留的四场各自换轴：断供把压力放到进货的路断掉（NPC 反而更少）、抢购潮放到灾难之前的货架被清空、封控放到活动半径缩进楼里、配给登记放到「买得到但买不多」的配额。最弱的一场：配给登记（它的痛点「不贵但少」在引擎里没有独立的配额口径，目前只能靠 shopSupplyFactor 与 limit 事件权重间接表达，真正落地需要策划案里的配额系统）。\n\n---\n\n本批 2 场，家族=社会。已把「邻里纠纷」「保险拒赔」「治安巡逻」三条整条移出（降为事件，楼内人情账、事后兜底、自治设卡这三轴交给事件层）。保留的两场各自换轴：出城潮放到帮手消失（NPC 全族最低）、罢工放到清洁与物流停摆（卫生先出问题）。最弱的一场：罢工（它的痛点「垃圾与污水」只能整体压在 healthRiskPerDay 上，玩家做什么都在掉血，区分度不如其它场干净）。\n\n---\n\n本批 1 场，家族=社会。已把「排长队」「高利贷」「慈善点」三条整条移出（降为事件，时间被队伍吃掉、延后的账、人潮与拥挤这三轴交给事件层）。保留的一场：征用把压力放到「按规矩被抽走」（越整齐越吃亏）。最弱的一场：征用（它的核心是「官方按件清点、散装藏起来的反而留下」，而引擎里没有独立的登记清点口径，目前只能靠 npcVisitFactor 与 shopSupplyFactor 间接表达）。\n\n---\n\n本批 8 场，家族=社会（新增）。这一族的内核是策划案点名的「骚乱 / 宵禁 / 断供」，本批补齐区域级的社会灾难，并明确把 npcVisitFactor 用足两头：宵禁、燃油配给是「没人来」（0.7 / 0.6），避难所超载、返乡潮、黑市、治安真空、失业潮、通信中断是「人来得更勤」（1.2~1.5）。最弱的一场：失业潮（它的核心是「工资断了、钱只出不进」，而日结模型里没有独立收入结算点，只能靠 priceSurcharge 走低与市场事件权重间接表达，真正落地需要策划案里的收入系统）。",
+  "entries": [
+    {
+      "id": "riot_curfew",
+      "name": "骚乱",
+      "family": "社会",
+      "level": "L3",
+      "tier": 2,
+      "axis": "通行与供给：门开不开不由你说了算，街上不安全，店早早关了",
+      "temperatures": {
+        "0": 11,
+        "3": 10,
+        "7": 9,
+        "11": 9,
+        "14": 10,
+        "-7": 14,
+        "-4": 13,
+        "-1": 12
+      },
+      "spoilRate": 1.4,
+      "dailyDrain": {
+        "food": 1,
+        "medicine": 1
+      },
+      "priorityCategories": [
+        "food",
+        "medicine"
+      ],
+      "windowScene": "riot-street",
+      "shelterDecayPerDay": -2,
+      "restEfficiency": 0.75,
+      "carryFactor": 0.65,
+      "actionPointDelta": -1,
+      "shopSupplyFactor": 0.5,
+      "closedShopIds": [
+        "market"
+      ],
+      "priceSurcharge": 0.4,
+      "eventPoolWeights": {
+        "people": 3,
+        "panic": 2,
+        "supply": 2
+      },
+      "npcVisitFactor": 1.4,
+      "categoryEfficiency": {
+        "tool": 0.7
+      },
+      "scoreWeights": {
+        "emergency": 2
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "14°C。城南有个路口封了半天，群里在传。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "13°C。超市的米面区排起了长队。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "13°C。有家店提前两小时拉下了卷帘门。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "12°C。公交改道，三条线停运。"
+        },
+        {
+          "day": -3,
+          "severity": 0.4,
+          "hint": "12°C。公司让提前下班，说别走大路。"
+        },
+        {
+          "day": -2,
+          "severity": 0.5,
+          "hint": "11°C。两家便利店被搬空了货架。"
+        },
+        {
+          "day": -1,
+          "severity": 0.7,
+          "hint": "11°C。晚上八点，主街上几乎没人。"
+        },
+        {
+          "day": 0,
+          "severity": 0.75,
+          "hint": "11°C。夜里开始宵禁，喇叭车绕了两圈。"
+        },
+        {
+          "day": 1,
+          "severity": 0.85,
+          "hint": "10°C。五金店和农贸市场都没开门。"
+        },
+        {
+          "day": 2,
+          "severity": 0.9,
+          "hint": "10°C。楼下的车被砸了两辆，没人管。"
+        },
+        {
+          "day": 3,
+          "severity": 0.95,
+          "hint": "10°C。物业把大门锁了，进出要登记。"
+        },
+        {
+          "day": 4,
+          "severity": 0.9,
+          "hint": "9°C。有人在楼道里换东西，声音压得很低。"
+        },
+        {
+          "day": 5,
+          "severity": 0.95,
+          "hint": "9°C。远处有玻璃碎的声音，断断续续。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "9°C。超市只开半天，队伍排到马路对面。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "10°C。夜里有人挨家敲门，问有没有多的吃的。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "10°C。公告说要按楼栋轮流出小区。"
+        },
+        {
+          "day": 9,
+          "severity": 0.95,
+          "hint": "11°C。楼下停了两辆没牌子的车，一整天没动。"
+        },
+        {
+          "day": 10,
+          "severity": 1,
+          "hint": "11°C。药店只在早上开一小时。"
+        },
+        {
+          "day": 11,
+          "severity": 1,
+          "hint": "12°C。有人开始拿东西换药。"
+        },
+        {
+          "day": 12,
+          "severity": 0.95,
+          "hint": "12°C。宵禁提前到七点。"
+        },
+        {
+          "day": 13,
+          "severity": 0.9,
+          "hint": "13°C。街上清得很快，风一吹就没人。"
+        },
+        {
+          "day": 14,
+          "severity": 0.85,
+          "hint": "13°C。今天没听见喇叭车。撑到今天就算过去了。"
+        }
+      ],
+      "counterIntuitive": "出不去这件事让存粮变得更耐用 。 囤得多不再只是安全感，而是「你根本买不回来」；反过来，药店那点存货比什么都金贵，因为被打伤这件事在这一场里是常态",
+      "decisions": [
+        "行动点少了一个，今天该出门碰运气，还是在家把东西理到随手能拿",
+        "街上不安全，工具在混乱里更容易丢或坏，要不要带上",
+        "邻居来得更勤，给出去的是口粮、换回来的是消息，这笔账怎么算"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/13/16，共 14 个。主打维度 12（NPC 行为：npcVisitFactor 1.4 。 全案第一次让「人来得更勤」成为主要压力）与 16（分数口径：emergency 权重 2，因为这一场里「急用的够不够得到」比摆得整齐重要）。与已有四场都不撞：寒潮动燃料保暖且腐坏变慢、热浪动水与药且腐坏加快、洪水废掉保暖与低处空间、大停电动行动点与冰箱；本场动的是**通行与供给**，而且它是唯一一场把「NPC 来得更勤」当压力写的。"
+    },
+    {
+      "id": "supply_cut",
+      "name": "断供",
+      "family": "社会",
+      "level": "L3",
+      "tier": 3,
+      "axis": "外来的货进不来，存量成了唯一来源",
+      "temperatures": {
+        "0": 13,
+        "3": 12,
+        "7": 12,
+        "11": 13,
+        "14": 14,
+        "-7": 16,
+        "-4": 15,
+        "-1": 14
+      },
+      "spoilRate": 1.5,
+      "dailyDrain": {
+        "food": 1
+      },
+      "priorityCategories": [
+        "food",
+        "water",
+        "warmth"
+      ],
+      "windowScene": "empty-shelves",
+      "shelterDecayPerDay": -1.5,
+      "restEfficiency": 0.8,
+      "carryFactor": 0.7,
+      "shopSupplyFactor": 0.4,
+      "closedShopIds": [
+        "wholesale",
+        "market"
+      ],
+      "priceSurcharge": 0.5,
+      "eventPoolWeights": {
+        "supply": 4,
+        "queue": 2
+      },
+      "npcVisitFactor": 0.5,
+      "categoryEfficiency": {
+        "food": 0.8
+      },
+      "healthRiskPerDay": 1,
+      "scoreWeights": {
+        "emergency": 2
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "16°C。物流园的车少了一半，公告说在调度。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "15°C。超市的米面区一天比一天薄。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "15°C。批发市场的门口贴了暂停营业。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "14°C。邻市的货车下不了高速，堵在匝道。"
+        },
+        {
+          "day": -3,
+          "severity": 0.4,
+          "hint": "13°C。群里说外地的仓也空了，没人辟谣。"
+        },
+        {
+          "day": -2,
+          "severity": 0.5,
+          "hint": "13°C。便利店的牛奶柜空了，只剩饮料。"
+        },
+        {
+          "day": -1,
+          "severity": 0.65,
+          "hint": "12°C。公告说进货要等通知，日期没给。"
+        },
+        {
+          "day": 0,
+          "severity": 0.8,
+          "hint": "12°C。批发和农贸同时关了门。"
+        },
+        {
+          "day": 1,
+          "severity": 0.85,
+          "hint": "12°C。货架补不上，标签还挂在那里。"
+        },
+        {
+          "day": 2,
+          "severity": 0.9,
+          "hint": "11°C。社区小店开始按人头卖米。"
+        },
+        {
+          "day": 3,
+          "severity": 0.92,
+          "hint": "11°C。有人用两瓶酒换了一袋面粉。"
+        },
+        {
+          "day": 4,
+          "severity": 0.95,
+          "hint": "11°C。仓库的存粮被人一车车拉走。"
+        },
+        {
+          "day": 5,
+          "severity": 0.95,
+          "hint": "10°C。外卖停了，说是没货可送。"
+        },
+        {
+          "day": 6,
+          "severity": 0.98,
+          "hint": "10°C。主食的消耗比平常快了一成。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "10°C。蜡烛和电池也买不到了。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "10°C。有人开始把存粮往外搬，去换药。"
+        },
+        {
+          "day": 9,
+          "severity": 0.98,
+          "hint": "11°C。运货的车在路口排了一夜。"
+        },
+        {
+          "day": 10,
+          "severity": 0.97,
+          "hint": "11°C。公告说市面恢复要看下周。"
+        },
+        {
+          "day": 11,
+          "severity": 0.96,
+          "hint": "12°C。小店的面粉涨了一倍，还得抢。"
+        },
+        {
+          "day": 12,
+          "severity": 0.9,
+          "hint": "12°C。隔壁楼有人拿金饰换了米。"
+        },
+        {
+          "day": 13,
+          "severity": 0.8,
+          "hint": "13°C。第一批外地的车进了城。"
+        },
+        {
+          "day": 14,
+          "severity": 0.7,
+          "hint": "13°C。货架慢慢有了东西。撑到今天就算过去了。"
+        }
+      ],
+      "counterIntuitive": "这一场里现金会先失效，因为它买不到不存在的货；平时最占地方、最没用的贵重品，反而成了唯一能换来主食的东西。",
+      "decisions": [
+        "补货的路断了，主食要按 14 天压满，还是留钱等市面恢复",
+        "批发和农贸都关了，剩下的社区小店溢价高，值不值得去",
+        "没人来敲门了，想换东西得自己上门，人情这张牌要不要先打"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/9（含 closedShopIds）/10/11/12/13/15/16，共 14 个。主打维度 9（shopSupplyFactor 0.4 全族最低，且关掉批发与农贸两条进货线）与 10（priceSurcharge 0.5）。与骚乱不撞：骚乱是门外不安全、人要躲；本场是门外没货、出门也买不到，价格与库存一起塌，NPC 反而来得更少（npcVisitFactor 0.5）。"
+    },
+    {
+      "id": "panic_buy",
+      "name": "抢购潮",
+      "family": "社会",
+      "level": "L3",
+      "tier": 2,
+      "axis": "还没出事，货先没了，提前量被一口吃掉",
+      "temperatures": {
+        "0": 12,
+        "3": 11,
+        "7": 11,
+        "11": 12,
+        "14": 13,
+        "-7": 15,
+        "-4": 14,
+        "-1": 13
+      },
+      "spoilRate": 1.8,
+      "dailyDrain": {
+        "water": 1
+      },
+      "priorityCategories": [
+        "food",
+        "water",
+        "luxury"
+      ],
+      "windowScene": "rush-hour-shop",
+      "shelterDecayPerDay": -1,
+      "restEfficiency": 0.85,
+      "carryFactor": 0.6,
+      "actionPointDelta": -1,
+      "shopSupplyFactor": 0.45,
+      "closedShopIds": [
+        "supermarket",
+        "weekend_flea"
+      ],
+      "priceSurcharge": 0.6,
+      "eventPoolWeights": {
+        "panic": 4,
+        "queue": 3,
+        "market": 2
+      },
+      "npcVisitFactor": 1.5,
+      "categoryEfficiency": {
+        "food": 0.7
+      },
+      "healthRiskPerDay": 1,
+      "scoreWeights": {
+        "emergency": 3
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "15°C。新闻说有一波物资紧张，超市人多了。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "14°C。米面区的推车一辆接一辆。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "14°C。矿泉水整箱往外搬，货架空了。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "13°C。结账的队伍排到了货架中间。"
+        },
+        {
+          "day": -3,
+          "severity": 0.45,
+          "hint": "13°C。有人一次买了十袋面，装了两趟。"
+        },
+        {
+          "day": -2,
+          "severity": 0.6,
+          "hint": "12°C。速食和罐头被搬空，只剩调料。"
+        },
+        {
+          "day": -1,
+          "severity": 0.8,
+          "hint": "12°C。晚上九点超市还在补货，人还在。"
+        },
+        {
+          "day": 0,
+          "severity": 0.9,
+          "hint": "12°C。开门十分钟，米面就没了。"
+        },
+        {
+          "day": 1,
+          "severity": 0.95,
+          "hint": "11°C。两个人为了最后一箱水吵起来。"
+        },
+        {
+          "day": 2,
+          "severity": 1,
+          "hint": "11°C。奢侈品柜的烟酒也被扫空。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "11°C。超市改成每人限买两份。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "11°C。货架空了一半，补货的车没来。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "10°C。有人拿抢来的货在楼道里加价卖。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "10°C。收银台只收现金，不找零。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "10°C。方便面和蜡烛一起没了。"
+        },
+        {
+          "day": 8,
+          "severity": 0.97,
+          "hint": "10°C。冷藏柜的鲜食没人要，价签还在。"
+        },
+        {
+          "day": 9,
+          "severity": 0.95,
+          "hint": "11°C。有人开始退货，说抢多了。"
+        },
+        {
+          "day": 10,
+          "severity": 0.9,
+          "hint": "11°C。小店的货被搬空后关了门。"
+        },
+        {
+          "day": 11,
+          "severity": 0.85,
+          "hint": "11°C。二手群里粮食的价格翻了一倍。"
+        },
+        {
+          "day": 12,
+          "severity": 0.8,
+          "hint": "12°C。补货的车来了，队伍又排起来。"
+        },
+        {
+          "day": 13,
+          "severity": 0.75,
+          "hint": "12°C。货架慢慢满了，人少了一半。"
+        },
+        {
+          "day": 14,
+          "severity": 0.7,
+          "hint": "13°C。今天没人再抢。撑到今天就算过去了。"
+        }
+      ],
+      "counterIntuitive": "这一场里现金和货架同时失灵：真的灾难还没来，能买的东西先没了，于是「晚点再买」这个选项在灾难开始之前就已经作废。",
+      "decisions": [
+        "行动点少一个，是挤进人堆抢一箱主食，还是把钱换成更轻便的贵重品",
+        "超市只收现金不找零，零钱要不要提前换整",
+        "奢侈品被抢空后反而好出手，要不要拿它去换别人手里的粮"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/13/15/16，共 15 个。主打维度 8（actionPointDelta -1：抢购把行动点耗在排队上）与 12（npcVisitFactor 1.5 全族最高，货架前全是人）。与骚乱不撞：骚乱发生在灾难之后、街上不安全；本场发生在灾难之前，门开着、街也安全，被吃掉的是「提前量」和货架本身。spoilRate 1.8：抢回家的鲜食在拥堵里挤坏得快。"
+    },
+    {
+      "id": "community_lockdown",
+      "name": "封控",
+      "family": "社会",
+      "level": "L3",
+      "tier": 3,
+      "axis": "出不去小区，活动半径缩到楼里",
+      "temperatures": {
+        "0": 10,
+        "3": 9,
+        "7": 9,
+        "11": 10,
+        "14": 11,
+        "-7": 13,
+        "-4": 12,
+        "-1": 11
+      },
+      "spoilRate": 1.3,
+      "dailyDrain": {
+        "food": 1
+      },
+      "priorityCategories": [
+        "food",
+        "tool",
+        "warmth"
+      ],
+      "windowScene": "sealed-gate",
+      "shelterDecayPerDay": -2,
+      "restEfficiency": 0.9,
+      "carryFactor": 0.85,
+      "actionPointDelta": -1,
+      "shopSupplyFactor": 0.6,
+      "closedShopIds": [
+        "market"
+      ],
+      "priceSurcharge": 0.3,
+      "eventPoolWeights": {
+        "neighbor": 3,
+        "limit": 3
+      },
+      "npcVisitFactor": 1.3,
+      "categoryEfficiency": {
+        "warmth": 1.2
+      },
+      "healthRiskPerDay": 1,
+      "scoreWeights": {
+        "placement": 2
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "13°C。小区门口开始查出入证。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "12°C。公告说要减少外出，先劝不强制。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "12°C。快递只送到大门外，得自己下来拿。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "11°C。居委会在门口登记每户人数。"
+        },
+        {
+          "day": -3,
+          "severity": 0.45,
+          "hint": "11°C。侧门被锁了，只剩正门能走。"
+        },
+        {
+          "day": -2,
+          "severity": 0.6,
+          "hint": "10°C。公告说非必要不出楼栋。"
+        },
+        {
+          "day": -1,
+          "severity": 0.8,
+          "hint": "10°C。晚上有人敲门，登记家里几口人。"
+        },
+        {
+          "day": 0,
+          "severity": 0.9,
+          "hint": "10°C。早上大门被拦住，出入要证明。"
+        },
+        {
+          "day": 1,
+          "severity": 0.95,
+          "hint": "9°C。楼下的出口只留一个，排着队。"
+        },
+        {
+          "day": 2,
+          "severity": 1,
+          "hint": "9°C。院墙外的菜场开着，人过不去。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "9°C。有人隔着栏杆从外面递东西进来。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "9°C。每户发一张出门条，两天用一次。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "10°C。楼里的人开始互相借东西。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "10°C。楼道里堆了各家退回来的纸箱。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "10°C。电梯里贴了新的出入时间表。"
+        },
+        {
+          "day": 8,
+          "severity": 0.98,
+          "hint": "10°C。有人翻墙出去，被劝了回来。"
+        },
+        {
+          "day": 9,
+          "severity": 0.96,
+          "hint": "10°C。补给送到小区门口，要排队领。"
+        },
+        {
+          "day": 10,
+          "severity": 0.94,
+          "hint": "11°C。院里的空地成了换东西的地方。"
+        },
+        {
+          "day": 11,
+          "severity": 0.92,
+          "hint": "11°C。公告说还要再封一周。"
+        },
+        {
+          "day": 12,
+          "severity": 0.88,
+          "hint": "11°C。有人把阳台的菜搬到了楼道里。"
+        },
+        {
+          "day": 13,
+          "severity": 0.84,
+          "hint": "12°C。出门条改成了一天一次。"
+        },
+        {
+          "day": 14,
+          "severity": 0.75,
+          "hint": "12°C。门口不查了。撑到今天就算过去了。"
+        }
+      ],
+      "counterIntuitive": "这一场考验的是「货离你有多近」，不是「货有多少」：市面还在、东西也还在，但都被挡在小区外面，囤在别处等于没囤。",
+      "decisions": [
+        "行动点少一个，是去门口碰运气，还是在家把楼里能用的东西清点一遍",
+        "门的开与关不归你决定，出门的时间要提前算好",
+        "邻居都被关在一起，来往更勤，分东西还是换东西要想清楚"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/13/15/16，共 15 个。主打维度 12（npcVisitFactor 1.3：全楼被关在一起，人来往反而更勤）与 13（categoryEfficiency 保暖 1.2：待在家里，取暖的效用被放大）。与骚乱不撞：骚乱是街上不安全、店关了；本场街上没事、店也开着，只是你出不去，压力来自活动半径而不是危险。与配给登记不撞：配给登记是能出去但买不多，本场是买得到但过不去。"
+    },
+    {
+      "id": "ration_registry",
+      "name": "配给登记",
+      "family": "社会",
+      "level": "L3",
+      "tier": 2,
+      "axis": "限购加实名，买得到但买不多",
+      "temperatures": {
+        "0": 9,
+        "3": 8,
+        "7": 8,
+        "11": 9,
+        "14": 10,
+        "-7": 12,
+        "-4": 11,
+        "-1": 10
+      },
+      "spoilRate": 1.4,
+      "dailyDrain": {
+        "food": 1,
+        "water": 1
+      },
+      "priorityCategories": [
+        "food",
+        "water",
+        "tool"
+      ],
+      "windowScene": "ration-counter",
+      "shelterDecayPerDay": -1,
+      "restEfficiency": 0.75,
+      "carryFactor": 0.75,
+      "actionPointDelta": -1,
+      "shopSupplyFactor": 0.5,
+      "closedShopIds": [
+        "wholesale"
+      ],
+      "priceSurcharge": 0.2,
+      "eventPoolWeights": {
+        "limit": 4,
+        "queue": 2
+      },
+      "npcVisitFactor": 0.8,
+      "scoreWeights": {
+        "emergency": 2
+      },
+      "healthRiskPerDay": 0.5,
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "12°C。上了新系统，买米要刷身份证。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "11°C。超市贴出限购通知，每人两份。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "11°C。登记要排号，早上发了五十个。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "10°C。有人拿着全家的证件来登记。"
+        },
+        {
+          "day": -3,
+          "severity": 0.4,
+          "hint": "10°C。价格没涨，但货架一次只放一点。"
+        },
+        {
+          "day": -2,
+          "severity": 0.5,
+          "hint": "9°C。居委会说配额按人头，不按户。"
+        },
+        {
+          "day": -1,
+          "severity": 0.7,
+          "hint": "9°C。登记处排到了街角，有人凌晨就来。"
+        },
+        {
+          "day": 0,
+          "severity": 0.85,
+          "hint": "9°C。今天起买粮油都要实名登记。"
+        },
+        {
+          "day": 1,
+          "severity": 0.9,
+          "hint": "8°C。一份米够吃三天，多的买不到。"
+        },
+        {
+          "day": 2,
+          "severity": 0.95,
+          "hint": "8°C。有人借邻居的证件多买了一份。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "8°C。登记的队伍比昨天长了半条街。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "9°C。药店的常用药也开始限购。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "9°C。有人把配额的号拿到群里倒卖。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "9°C。队伍里有人站不动，蹲在路边。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "9°C。公告说配额下周调低一成。"
+        },
+        {
+          "day": 8,
+          "severity": 0.97,
+          "hint": "10°C。登记本上的字写满了，换了新本。"
+        },
+        {
+          "day": 9,
+          "severity": 0.95,
+          "hint": "10°C。有户人家的配额被停了三天。"
+        },
+        {
+          "day": 10,
+          "severity": 0.9,
+          "hint": "10°C。大家开始按顿数分着吃。"
+        },
+        {
+          "day": 11,
+          "severity": 0.85,
+          "hint": "11°C。限购的牌子多了两行字。"
+        },
+        {
+          "day": 12,
+          "severity": 0.8,
+          "hint": "11°C。登记处挪到了小区里面。"
+        },
+        {
+          "day": 13,
+          "severity": 0.78,
+          "hint": "12°C。配额恢复到了原来的量。"
+        },
+        {
+          "day": 14,
+          "severity": 0.72,
+          "hint": "12°C。不用再排队登记了。撑到今天就算过去了。"
+        }
+      ],
+      "counterIntuitive": "配给把「买得多」这条策略整条删掉了：货架上有货、价钱也不贵，但每家每天只有一份，于是决定成败的不是钱，是你有几口人能去登记。",
+      "decisions": [
+        "限购按户算，家里人多的一份不够分，要不要分开登记",
+        "买得到但买不多，天数要按配额重新算一遍",
+        "登记要排号，行动点只剩两个，今天去还是明天去"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/15/16，共 14 个。主打维度 11（eventPoolWeights limit:4，限购事件主导）与 10（priceSurcharge 0.2：配额制下价格被压住，痛点不是贵而是少）。与骚乱不撞：骚乱是供给塌了、价格飞涨；本场供给还在、价格也稳，被限住的是「每户能买多少」。与抢购潮不撞：抢购潮发生在灾难前、靠抢；本场是灾难后、靠登记与配额。"
+    },
+    {
+      "id": "exodus_wave",
+      "name": "出城潮",
+      "family": "社会",
+      "level": "L3",
+      "tier": 3,
+      "axis": "邻居都走了，帮手也没了",
+      "temperatures": {
+        "0": 12,
+        "3": 11,
+        "7": 11,
+        "11": 12,
+        "14": 13,
+        "-7": 15,
+        "-4": 14,
+        "-1": 13
+      },
+      "spoilRate": 1.5,
+      "dailyDrain": {
+        "fuel": 2
+      },
+      "priorityCategories": [
+        "fuel",
+        "water",
+        "tool"
+      ],
+      "windowScene": "moving-vans",
+      "shelterDecayPerDay": -2,
+      "restEfficiency": 0.7,
+      "carryFactor": 0.65,
+      "actionPointDelta": -1,
+      "shopSupplyFactor": 0.7,
+      "closedShopIds": [
+        "gas_station",
+        "market"
+      ],
+      "priceSurcharge": 0.4,
+      "eventPoolWeights": {
+        "people": 3,
+        "supply": 2
+      },
+      "npcVisitFactor": 0.2,
+      "categoryEfficiency": {
+        "tool": 1.2
+      },
+      "healthRiskPerDay": 0.5,
+      "scoreWeights": {
+        "emergency": 2
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "15°C。楼下开始有人往车上搬行李。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "14°C。群里说往南边去的人越来越多。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "14°C。加油站排起了队，油枪不够用。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "13°C。对门那户天没亮就走了，灯黑着。"
+        },
+        {
+          "day": -3,
+          "severity": 0.45,
+          "hint": "13°C。幼儿园空了，老师也走了大半。"
+        },
+        {
+          "day": -2,
+          "severity": 0.6,
+          "hint": "12°C。小区里停了半数的车，车位空出来。"
+        },
+        {
+          "day": -1,
+          "severity": 0.75,
+          "hint": "12°C。剩下的人互相留了电话，说有事喊。"
+        },
+        {
+          "day": 0,
+          "severity": 0.85,
+          "hint": "12°C。半夜又走了一车人，车灯照了很远。"
+        },
+        {
+          "day": 1,
+          "severity": 0.9,
+          "hint": "11°C。五金店的师傅走了，东西坏了没人修。"
+        },
+        {
+          "day": 2,
+          "severity": 0.95,
+          "hint": "11°C。加油站白天关了半天门。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "11°C。楼道里积了快递，没人送了。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "11°C。剩下的几户把能帮的活排了个班。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "11°C。有人搬不动大件，站在楼梯口发愁。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "10°C。有户人家走后没锁门，被人搬空。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "10°C。工具成了硬通货，借出去要打欠条。"
+        },
+        {
+          "day": 8,
+          "severity": 0.98,
+          "hint": "10°C。有人想走但车没油了，只能留下。"
+        },
+        {
+          "day": 9,
+          "severity": 0.96,
+          "hint": "11°C。留下的几户拼着用一台发电机。"
+        },
+        {
+          "day": 10,
+          "severity": 0.94,
+          "hint": "11°C。街上比前几天安静，店关了一半。"
+        },
+        {
+          "day": 11,
+          "severity": 0.9,
+          "hint": "11°C。有人说南边也不好过，走的想回。"
+        },
+        {
+          "day": 12,
+          "severity": 0.86,
+          "hint": "12°C。开始有人回来了，车位又满了些。"
+        },
+        {
+          "day": 13,
+          "severity": 0.82,
+          "hint": "12°C。回来的邻居带了消息，也带回了些货。"
+        },
+        {
+          "day": 14,
+          "severity": 0.74,
+          "hint": "13°C。楼里的人比前几天多了。撑到今天就算过去了。"
+        }
+      ],
+      "counterIntuitive": "这一场最缺的资源是「帮你搭把手的人」：东西还在、店也半开着，但你一个人搬不动、修不了、也守不住，于是人手比物资先见底。",
+      "decisions": [
+        "邻居走了，重活没人帮，是花钱雇人还是把活拆小了慢慢干",
+        "油站关了，剩下的油要留给出城的车还是留给自己用",
+        "留下的人少了，抢东西的也少了，要不要趁这时候多出门一趟"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/13/15/16，共 15 个。主打维度 12（npcVisitFactor 0.2 全族最低：人都走了，没人再来）+ 13（categoryEfficiency 工具 1.2：帮手没了，全靠自己手上的工具）。与骚乱不撞：骚乱人扎堆、来得更勤；本场正好相反，人一走空，压力变成「没人搭手」。与封控不撞：封控是你出不去，本场是别人都出去了。"
+    },
+    {
+      "id": "strike_halt",
+      "name": "罢工",
+      "family": "社会",
+      "level": "L3",
+      "tier": 2,
+      "axis": "物流与清洁停摆，垃圾和水先出问题",
+      "temperatures": {
+        "0": 10,
+        "3": 9,
+        "7": 9,
+        "11": 10,
+        "14": 11,
+        "-7": 13,
+        "-4": 12,
+        "-1": 11
+      },
+      "spoilRate": 1.6,
+      "dailyDrain": {
+        "water": 1
+      },
+      "priorityCategories": [
+        "water",
+        "warmth",
+        "luxury"
+      ],
+      "windowScene": "piled-trash",
+      "shelterDecayPerDay": -2,
+      "restEfficiency": 0.65,
+      "carryFactor": 0.7,
+      "shopSupplyFactor": 0.6,
+      "closedShopIds": [
+        "community_store",
+        "market"
+      ],
+      "priceSurcharge": 0.35,
+      "eventPoolWeights": {
+        "supply": 3,
+        "queue": 2
+      },
+      "npcVisitFactor": 0.6,
+      "healthRiskPerDay": 2,
+      "scoreWeights": {
+        "fefo": 2
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "13°C。收垃圾的车今天没来，垃圾堆着。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "12°C。物流园的人没到齐，货停在路边。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "12°C。楼下的垃圾箱满了，往外溢。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "11°C。快递和外卖都停了，说送不了。"
+        },
+        {
+          "day": -3,
+          "severity": 0.45,
+          "hint": "11°C。送水的车没来，说在协调。"
+        },
+        {
+          "day": -2,
+          "severity": 0.6,
+          "hint": "10°C。垃圾堆了两天，味道散开了。"
+        },
+        {
+          "day": -1,
+          "severity": 0.75,
+          "hint": "10°C。公告说清洁还要停几天。"
+        },
+        {
+          "day": 0,
+          "severity": 0.85,
+          "hint": "10°C。周边三条街的垃圾都没人运。"
+        },
+        {
+          "day": 1,
+          "severity": 0.9,
+          "hint": "9°C。楼道的垃圾桶溢了，有人自己往远搬。"
+        },
+        {
+          "day": 2,
+          "severity": 0.95,
+          "hint": "9°C。送水的车来了一趟，只够几户。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "9°C。有人把垃圾往空地上倒，没人管。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "9°C。下水道返了味，楼上楼下都闻得到。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "9°C。桶装水的价格涨了，还得抢。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "9°C。有人开始烧垃圾，烟飘了半条街。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "9°C。清洁恢复了半天，只清了主要街道。"
+        },
+        {
+          "day": 8,
+          "severity": 0.97,
+          "hint": "10°C。送煤的车绕了远路，还要加钱。"
+        },
+        {
+          "day": 9,
+          "severity": 0.95,
+          "hint": "10°C。有户人家自己把垃圾运到了城外。"
+        },
+        {
+          "day": 10,
+          "severity": 0.92,
+          "hint": "10°C。楼道里敢开窗的人少了。"
+        },
+        {
+          "day": 11,
+          "severity": 0.9,
+          "hint": "11°C。送水的班次恢复了一半。"
+        },
+        {
+          "day": 12,
+          "severity": 0.86,
+          "hint": "11°C。物流的车开始进城，货慢慢有了。"
+        },
+        {
+          "day": 13,
+          "severity": 0.82,
+          "hint": "12°C。收垃圾的车回来了，清了一整天。"
+        },
+        {
+          "day": 14,
+          "severity": 0.74,
+          "hint": "12°C。楼下清干净了。撑到今天就算过去了。"
+        }
+      ],
+      "counterIntuitive": "这一场最难的不是补货，是「扔不出去」：垃圾停运之后，家里堆的废料反过来成了卫生隐患，你囤得越多、产生的垃圾越多，越先出问题。",
+      "decisions": [
+        "垃圾没人收，攒着还是想办法自己运出去",
+        "送水车停了，桶装水的余量要按天重算",
+        "取暖的送货停了，钱要不要挪去买能烧的散煤"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/9（含 closedShopIds）/10/11/12/15/16，共 13 个。主打维度 15（healthRiskPerDay 2：垃圾与污水带来的卫生风险，不看玩家做什么）+ 2（spoilRate 1.6：没有清运，鲜食与垃圾一起坏）。与骚乱不撞：骚乱是人和供给的混乱；本场没人闹事，城市在正常地「停摆」，压力来自清洁与物流的停。"
+    },
+    {
+      "id": "requisition",
+      "name": "征用",
+      "family": "社会",
+      "level": "L3",
+      "tier": 3,
+      "axis": "官方征用物资，私人囤积被抽走",
+      "temperatures": {
+        "0": 9,
+        "3": 8,
+        "7": 8,
+        "11": 9,
+        "14": 10,
+        "-7": 12,
+        "-4": 11,
+        "-1": 10
+      },
+      "spoilRate": 1.3,
+      "dailyDrain": {
+        "fuel": 1
+      },
+      "priorityCategories": [
+        "fuel",
+        "water",
+        "luxury"
+      ],
+      "windowScene": "requisition-notice",
+      "shelterDecayPerDay": -1.5,
+      "restEfficiency": 0.7,
+      "carryFactor": 0.7,
+      "shopSupplyFactor": 0.55,
+      "closedShopIds": [
+        "hardware",
+        "wholesale"
+      ],
+      "priceSurcharge": 0.4,
+      "eventPoolWeights": {
+        "supply": 4,
+        "limit": 2
+      },
+      "npcVisitFactor": 1.5,
+      "categoryEfficiency": {
+        "food": 0.8
+      },
+      "healthRiskPerDay": 0.5,
+      "scoreWeights": {
+        "placement": 2
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "12°C。公告说要统一征用部分物资。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "11°C。居委会开始登记各家的大件。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "11°C。有人把油和工具挪到了楼上。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "10°C。征用的清单贴出来，写得很细。"
+        },
+        {
+          "day": -3,
+          "severity": 0.45,
+          "hint": "10°C。上门的人清点了冰箱和储物间。"
+        },
+        {
+          "day": -2,
+          "severity": 0.6,
+          "hint": "9°C。有人报少了数量，被对了一遍。"
+        },
+        {
+          "day": -1,
+          "severity": 0.78,
+          "hint": "9°C。第一批被拉走，是整箱的燃料。"
+        },
+        {
+          "day": 0,
+          "severity": 0.88,
+          "hint": "9°C。今天起按栋征用，挨家挨户登记。"
+        },
+        {
+          "day": 1,
+          "severity": 0.92,
+          "hint": "8°C。大件工具被列进清单，拉走了几件。"
+        },
+        {
+          "day": 2,
+          "severity": 0.95,
+          "hint": "8°C。散装的粮食留下了，整袋的被收了。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "8°C。有人把东西拆开，装进了不同的柜子。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "8°C。上门的人说下周还要清一次。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "8°C。批发站被征用，货不往零售走了。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "8°C。有人拿到一张收据，说以后补偿。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "8°C。楼里安静，没人愿意开门。"
+        },
+        {
+          "day": 8,
+          "severity": 0.98,
+          "hint": "9°C。清单加了一项，是桶装水。"
+        },
+        {
+          "day": 9,
+          "severity": 0.96,
+          "hint": "9°C。有人把燃料分装在饮料瓶里。"
+        },
+        {
+          "day": 10,
+          "severity": 0.94,
+          "hint": "9°C。被征走的货装了两车，走了。"
+        },
+        {
+          "day": 11,
+          "severity": 0.9,
+          "hint": "10°C。补偿的事没人再提。"
+        },
+        {
+          "day": 12,
+          "severity": 0.86,
+          "hint": "10°C。征用的频率低了，说是够了。"
+        },
+        {
+          "day": 13,
+          "severity": 0.82,
+          "hint": "11°C。剩下没被抽走的，反倒够撑一阵。"
+        },
+        {
+          "day": 14,
+          "severity": 0.72,
+          "hint": "11°C。今天没人上门。撑到今天就算过去了。"
+        }
+      ],
+      "counterIntuitive": "被抽走的东西里，最先走的不是吃的，是「看得见的整件」：登记的人按件清点，散装、拆开、藏起来的反而留下了，于是这一场里囤得越整齐越吃亏。",
+      "decisions": [
+        "登记要报数量，是如实报还是少报",
+        "大件的油和工具最容易被抽走，要不要提前拆散",
+        "上门的人来得更勤，配合还是想办法周旋"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/9（含 closedShopIds）/10/11/12/13/15/16，共 14 个。主打维度 12（npcVisitFactor 1.5：上门的人来得最勤）+ 9（shopSupplyFactor 0.55 + 关掉五金与批发：大宗货先被抽走）。与骚乱不撞：骚乱是混乱里被抢；本场有秩序、有清单、有登记，被拿走是「按规矩」的。与出城潮不撞：出城潮是人走空了没人来；本场是人不断地找上门。"
+    },
+    {
+      "id": "curfew_order",
+      "name": "宵禁",
+      "family": "社会",
+      "level": "L3",
+      "tier": 3,
+      "axis": "几点之后，街上不许有人",
+      "temperatures": {
+        "0": 10,
+        "3": 9,
+        "7": 8,
+        "11": 8,
+        "14": 9,
+        "-7": 13,
+        "-4": 12,
+        "-1": 11
+      },
+      "spoilRate": 1.4,
+      "dailyDrain": {
+        "food": 1
+      },
+      "priorityCategories": [
+        "food",
+        "water",
+        "medicine"
+      ],
+      "windowScene": "curfew-street",
+      "shelterDecayPerDay": -1.5,
+      "restEfficiency": 0.7,
+      "carryFactor": 0.75,
+      "actionPointDelta": -1,
+      "shopSupplyFactor": 0.65,
+      "closedShopIds": [
+        "market"
+      ],
+      "priceSurcharge": 0.45,
+      "eventPoolWeights": {
+        "dark": 3,
+        "limit": 3
+      },
+      "npcVisitFactor": 0.7,
+      "categoryEfficiency": {
+        "tool": 0.8
+      },
+      "healthRiskPerDay": 0.5,
+      "scoreWeights": {
+        "placement": 2
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "13°C。公告说入夜后主街要清场，先劝不强制。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "12°C。晚十点后路口设了岗，拦下几辆车。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "12°C。小区贴了张纸，写着晚上几点关大门。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "11°C。晚上街上几乎没人，只有路灯亮着。"
+        },
+        {
+          "day": -3,
+          "severity": 0.45,
+          "hint": "11°C。超市把营业时间缩到了白天。"
+        },
+        {
+          "day": -2,
+          "severity": 0.6,
+          "hint": "10°C。有人晚归被登记了名字，第二天被找上。"
+        },
+        {
+          "day": -1,
+          "severity": 0.78,
+          "hint": "10°C。公告说入夜后不许上街，违规要罚。"
+        },
+        {
+          "day": 0,
+          "severity": 0.85,
+          "hint": "10°C。今晚起七点后清场，喇叭车绕了两圈。"
+        },
+        {
+          "day": 1,
+          "severity": 0.9,
+          "hint": "9°C。白天店里全挤满，结账要排很久。"
+        },
+        {
+          "day": 2,
+          "severity": 0.94,
+          "hint": "9°C。有人白天没买到，晚上出不去。"
+        },
+        {
+          "day": 3,
+          "severity": 0.97,
+          "hint": "9°C。办证只开到下午三点，去晚就关。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "9°C。几件事都压进白天，一天跑不过来。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "9°C。夜里静得反常，街上看不见人。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "9°C。有人白天请了假，专门去排队办事。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "9°C。清场时间提前到了六点。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "9°C。白天的队伍从店门口排到路口。"
+        },
+        {
+          "day": 9,
+          "severity": 0.98,
+          "hint": "9°C。有人把东西托给白天出门的邻居带。"
+        },
+        {
+          "day": 10,
+          "severity": 0.95,
+          "hint": "10°C。公告说宵禁还要持续一周。"
+        },
+        {
+          "day": 11,
+          "severity": 0.92,
+          "hint": "10°C。白天的时间被办事和买货撑着。"
+        },
+        {
+          "day": 12,
+          "severity": 0.88,
+          "hint": "10°C。有人晚上翻墙出去，被劝了回来。"
+        },
+        {
+          "day": 13,
+          "severity": 0.84,
+          "hint": "11°C。清场时间往后挪了一个钟头。"
+        },
+        {
+          "day": 14,
+          "severity": 0.76,
+          "hint": "11°C。今晚街上有了人。撑到今天就算过去了。"
+        }
+      ],
+      "counterIntuitive": "宵禁之下所有事都挤进白天那几个能出门的钟头，于是这几天里真正吃紧的是白天，而不是夜里。",
+      "decisions": [
+        "几点之前必须回楼，白天的行动点要按宵禁时段重排",
+        "夜里不许上街，缺的东西要么白天买够，要么撑到明天",
+        "店和窗口只在白天开，几件事挤在一起，先办哪件"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/13/15/16，共 15 个。主打维度 8（actionPointDelta -1：能出门的时段被宵禁切掉一半）与 12（npcVisitFactor 0.7：夜里不许有人走动，串门几乎停了）。与骚乱不撞：骚乱是街上不安全、门被砸；本场街上没有冲突，压力是「几点之后不许有人」的时间管制，夜里街上清空。与封控不撞：封控是出不去小区，本场是白天还能出门、只是夜里被清空。"
+    },
+    {
+      "id": "comms_blackout",
+      "name": "通信中断",
+      "family": "社会",
+      "level": "L3",
+      "tier": 3,
+      "axis": "订不了、问不到、叫不应",
+      "temperatures": {
+        "0": 11,
+        "3": 10,
+        "7": 10,
+        "11": 11,
+        "14": 12,
+        "-7": 14,
+        "-4": 13,
+        "-1": 12
+      },
+      "spoilRate": 1.5,
+      "dailyDrain": {
+        "food": 1
+      },
+      "priorityCategories": [
+        "food",
+        "medicine",
+        "fuel"
+      ],
+      "windowScene": "dead-signal",
+      "shelterDecayPerDay": -1.5,
+      "restEfficiency": 0.7,
+      "carryFactor": 0.7,
+      "actionPointDelta": -1,
+      "shopSupplyFactor": 0.6,
+      "closedShopIds": [
+        "weekend_flea"
+      ],
+      "priceSurcharge": 0.5,
+      "eventPoolWeights": {
+        "panic": 3,
+        "market": 3
+      },
+      "npcVisitFactor": 1.2,
+      "healthRiskPerDay": 0.5,
+      "scoreWeights": {
+        "emergency": 3
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "14°C。手机没信号了，说是在抢修。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "13°C。外卖和下单的软件都打不开。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "13°C。有人站在楼下喊人，声音传不远。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "12°C。公告贴在墙上，说网络还要几天。"
+        },
+        {
+          "day": -3,
+          "severity": 0.42,
+          "hint": "12°C。问路的人变多了，只能当面打听。"
+        },
+        {
+          "day": -2,
+          "severity": 0.55,
+          "hint": "11°C。超市的补货单下不出去，货停在仓里。"
+        },
+        {
+          "day": -1,
+          "severity": 0.72,
+          "hint": "11°C。有人骑车挨家传话，说晚上开会。"
+        },
+        {
+          "day": 0,
+          "severity": 0.85,
+          "hint": "11°C。全城信号断了大半天，谁也联络不上。"
+        },
+        {
+          "day": 1,
+          "severity": 0.9,
+          "hint": "10°C。有人上门问消息，一天来了好几拨。"
+        },
+        {
+          "day": 2,
+          "severity": 0.94,
+          "hint": "10°C。叫车、叫修、叫医生都叫不来。"
+        },
+        {
+          "day": 3,
+          "severity": 0.97,
+          "hint": "10°C。买东西只能走店，不能下单了。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "10°C。有人走一天，只为当面问一句话。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "10°C。消息靠嘴传，越传越走样。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "10°C。药没订到，只能自己去城里找。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "10°C。有人夜里举着手机找信号，走很远。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "9°C。托人捎的话，有几句没传到。"
+        },
+        {
+          "day": 9,
+          "severity": 0.98,
+          "hint": "9°C。有人开始写纸条，挨家门口塞。"
+        },
+        {
+          "day": 10,
+          "severity": 0.96,
+          "hint": "9°C。信号断断续续，通一次算一次。"
+        },
+        {
+          "day": 11,
+          "severity": 0.93,
+          "hint": "10°C。修好了一部分，还要排队用。"
+        },
+        {
+          "day": 12,
+          "severity": 0.9,
+          "hint": "10°C。能打通的人多了，消息对得上了。"
+        },
+        {
+          "day": 13,
+          "severity": 0.86,
+          "hint": "11°C。信号恢复了大半，下单也通了。"
+        },
+        {
+          "day": 14,
+          "severity": 0.78,
+          "hint": "11°C。手机能用了。撑到今天就算过去了。"
+        }
+      ],
+      "counterIntuitive": "断网之后最值钱的是走路能到的那几个人：下单、叫车、叫医生这些远程手段一起作废，剩下的只有面对面，平时最省事的东西这一场全用不上。",
+      "decisions": [
+        "消息断了，缺什么得挨家当面问，行动点要按走的路算",
+        "叫不来人，独自办不了的事要提前合并成一趟",
+        "有人在门口传话，是跟着走还是自己核实"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/15/16，共 14 个。主打维度 11（panic:3 + market:3：消息断了，恐慌与市场事件一起变多）与 12（npcVisitFactor 1.2：电话打不通，人只能上门问）。与谣言不撞：谣言是消息太多、真假难分；本场是消息根本发不出去，压力来自「联络不上」。与断供不撞：断供是真的没货；本场货在仓里，缺的是把它订出来的那条线。"
+    },
+    {
+      "id": "black_market",
+      "name": "黑市",
+      "family": "社会",
+      "level": "L3",
+      "tier": 3,
+      "axis": "明面上限价，暗地里换东西",
+      "temperatures": {
+        "0": 9,
+        "3": 8,
+        "7": 8,
+        "11": 9,
+        "14": 10,
+        "-7": 12,
+        "-4": 11,
+        "-1": 10
+      },
+      "spoilRate": 1.4,
+      "dailyDrain": {
+        "fuel": 1
+      },
+      "priorityCategories": [
+        "food",
+        "luxury",
+        "fuel"
+      ],
+      "windowScene": "back-alley-trade",
+      "shelterDecayPerDay": -1,
+      "restEfficiency": 0.75,
+      "carryFactor": 0.8,
+      "actionPointDelta": -1,
+      "shopSupplyFactor": 0.5,
+      "closedShopIds": [
+        "market",
+        "community_store"
+      ],
+      "priceSurcharge": 0.6,
+      "eventPoolWeights": {
+        "market": 4,
+        "supply": 2
+      },
+      "npcVisitFactor": 1.3,
+      "categoryEfficiency": {
+        "luxury": 1.3
+      },
+      "healthRiskPerDay": 0.5,
+      "scoreWeights": {
+        "emergency": 2
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "12°C。公告把米价按住了，店里的米却没货。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "11°C。楼下有人小声问，要不要换点米。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "11°C。价签没变，货架一直是空的。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "10°C。有人拿两包烟，换回了一袋面。"
+        },
+        {
+          "day": -3,
+          "severity": 0.42,
+          "hint": "10°C。巷子深处聚了人，摆着东西换。"
+        },
+        {
+          "day": -2,
+          "severity": 0.55,
+          "hint": "9°C。金饰和手表开始有人收，价压得低。"
+        },
+        {
+          "day": -1,
+          "severity": 0.7,
+          "hint": "9°C。明面上买不到，暗地里能凑齐。"
+        },
+        {
+          "day": 0,
+          "severity": 0.85,
+          "hint": "9°C。限价单贴了一墙，换东西的人更多了。"
+        },
+        {
+          "day": 1,
+          "severity": 0.9,
+          "hint": "8°C。有人上门收货，出价比店里高。"
+        },
+        {
+          "day": 2,
+          "severity": 0.94,
+          "hint": "8°C。药也能在黑市上换到，价钱翻倍。"
+        },
+        {
+          "day": 3,
+          "severity": 0.97,
+          "hint": "8°C。有人拿家电换油，说留着没用。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "8°C。查价的来了，摊子一下就散了。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "8°C。明面上的价越压越低，货越少。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "8°C。有人专门收消息，知道哪条巷有货。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "8°C。换东西不问价，只问拿什么抵。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "9°C。有人把囤的奢侈品拿出来出手。"
+        },
+        {
+          "day": 9,
+          "severity": 1,
+          "hint": "9°C。黑市上的米比前一天又贵了一成。"
+        },
+        {
+          "day": 10,
+          "severity": 0.98,
+          "hint": "9°C。有人换到货，有人空手回来。"
+        },
+        {
+          "day": 11,
+          "severity": 0.96,
+          "hint": "9°C。店里的货回来了一些，限价还在。"
+        },
+        {
+          "day": 12,
+          "severity": 0.93,
+          "hint": "10°C。黑市的价格开始往下走。"
+        },
+        {
+          "day": 13,
+          "severity": 0.9,
+          "hint": "10°C。巷子里的摊子少了一半。"
+        },
+        {
+          "day": 14,
+          "severity": 0.8,
+          "hint": "10°C。今天不用再绕后巷了。撑到今天就算过去了。"
+        }
+      ],
+      "counterIntuitive": "这一场里钱最不好使：明面上限价的东西买不到，暗地里的东西不收钱、只收货，于是你囤的贵重品比现金管用得多。",
+      "decisions": [
+        "明面上限价买不到，暗地里的货要不要多花钱去拿",
+        "黑市只收货不收钱，值钱的物件要不要拿出来抵",
+        "收货的人来得勤，是换一点还是留着自己用"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/13/15/16，共 15 个。主打维度 10（priceSurcharge 0.6：明面限价、暗地加价）与 13（categoryEfficiency 奢侈 1.3：贵重品在黑市里最不经花、也最管用）。与抢购潮不撞：抢购潮是灾难前公开抢购；本场是灾难后明面限价与暗地交易并存。与配给登记不撞：配给登记是买得到但买不多、价格被压低；本场是明面买不到、暗地都要加价。"
+    },
+    {
+      "id": "shelter_overload",
+      "name": "避难所超载",
+      "family": "社会",
+      "level": "L3",
+      "tier": 3,
+      "axis": "有地方去，但一个铺位三个人",
+      "temperatures": {
+        "0": 8,
+        "3": 7,
+        "7": 7,
+        "11": 8,
+        "14": 9,
+        "-7": 11,
+        "-4": 10,
+        "-1": 9
+      },
+      "spoilRate": 1.5,
+      "dailyDrain": {
+        "food": 1,
+        "water": 1
+      },
+      "priorityCategories": [
+        "water",
+        "medicine",
+        "warmth"
+      ],
+      "windowScene": "packed-shelter",
+      "shelterDecayPerDay": -2.5,
+      "restEfficiency": 0.5,
+      "carryFactor": 0.6,
+      "actionPointDelta": -1,
+      "shopSupplyFactor": 0.75,
+      "priceSurcharge": 0.25,
+      "eventPoolWeights": {
+        "people": 4,
+        "neighbor": 2
+      },
+      "npcVisitFactor": 1.5,
+      "capacityFactor": 0.5,
+      "healthRiskPerDay": 1.5,
+      "scoreWeights": {
+        "placement": 3
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "11°C。体育馆门口开始登记，安排铺位。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "10°C。一个铺位挤了两个人，行李堆在过道。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "10°C。厕所排着队，水龙头一起用。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "9°C。又进来一批人，铺位不够分了。"
+        },
+        {
+          "day": -3,
+          "severity": 0.42,
+          "hint": "9°C。晚上有人打呼，隔壁铺的人翻来覆去。"
+        },
+        {
+          "day": -2,
+          "severity": 0.55,
+          "hint": "8°C。一个铺位三个人，行李只能抱在怀里。"
+        },
+        {
+          "day": -1,
+          "severity": 0.72,
+          "hint": "8°C。公告说还要再收一批，先到先得。"
+        },
+        {
+          "day": 0,
+          "severity": 0.85,
+          "hint": "8°C。今天人最多，过道也睡了人。"
+        },
+        {
+          "day": 1,
+          "severity": 0.9,
+          "hint": "7°C。有人咳嗽，一晚上没停。"
+        },
+        {
+          "day": 2,
+          "severity": 0.94,
+          "hint": "7°C。水不够用，洗漱要轮流。"
+        },
+        {
+          "day": 3,
+          "severity": 0.97,
+          "hint": "7°C。有人的东西在铺位上不见了。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "7°C。发了感冒药，说人挤着容易病。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "7°C。有人搬到了走廊，说睡不下。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "8°C。暖气不够，靠得近的人暖一点。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "8°C。铺位重新分了一次，还是挤。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "8°C。有人在门口等空位，等了一整天。"
+        },
+        {
+          "day": 9,
+          "severity": 1,
+          "hint": "8°C。分饭的队伍排到了楼外。"
+        },
+        {
+          "day": 10,
+          "severity": 0.98,
+          "hint": "8°C。有几户自己走了，空出两个铺。"
+        },
+        {
+          "day": 11,
+          "severity": 0.95,
+          "hint": "9°C。新来的人少了，铺位宽松了些。"
+        },
+        {
+          "day": 12,
+          "severity": 0.9,
+          "hint": "9°C。能每个人一个铺位了。"
+        },
+        {
+          "day": 13,
+          "severity": 0.85,
+          "hint": "9°C。有人陆陆续续搬回自己家。"
+        },
+        {
+          "day": 14,
+          "severity": 0.76,
+          "hint": "9°C。今天人少了一半。撑到今天就算过去了。"
+        }
+      ],
+      "counterIntuitive": "避难所里最先不够用的不是吃的，是能自己待着的地方：一个铺位三个人，你带来的东西没处放，连觉都睡不成，囤得再全也施展不开。",
+      "decisions": [
+        "铺位只有一半，东西是随身带着还是寄存在门口",
+        "人挤在一起，吃的和水按人头分，自家存货要不要拿出来",
+        "夜里睡不安稳，白天要不要补觉，行动点怎么排"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/8/9/10/11/12/14（capacityFactor）/15/16，共 15 个。主打维度 14（capacityFactor 0.5：可用的空间只有一半）与 6（restEfficiency 0.5：挤在一起睡不好）。与封控不撞：封控是出不去、人在自己家；本场是有地方去、但地方不够，人全被塞进同一处。与骚乱不撞：骚乱是街上危险、来的人要抢；本场来的人也是逃难的，不是来抢的，压力是空间与休息。"
+    },
+    {
+      "id": "fuel_ration",
+      "name": "燃油配给",
+      "family": "社会",
+      "level": "L3",
+      "tier": 3,
+      "axis": "车还在，油是按周给的",
+      "temperatures": {
+        "0": 10,
+        "3": 9,
+        "7": 9,
+        "11": 10,
+        "14": 11,
+        "-7": 13,
+        "-4": 12,
+        "-1": 11
+      },
+      "spoilRate": 1.3,
+      "dailyDrain": {
+        "fuel": 1
+      },
+      "priorityCategories": [
+        "fuel",
+        "food",
+        "tool"
+      ],
+      "windowScene": "ration-gas",
+      "shelterDecayPerDay": -1,
+      "restEfficiency": 0.8,
+      "carryFactor": 0.5,
+      "actionPointDelta": -1,
+      "shopSupplyFactor": 0.7,
+      "closedShopIds": [
+        "gas_station"
+      ],
+      "priceSurcharge": 0.5,
+      "eventPoolWeights": {
+        "supply": 3,
+        "limit": 2
+      },
+      "npcVisitFactor": 0.6,
+      "categoryEfficiency": {
+        "fuel": 0.5
+      },
+      "healthRiskPerDay": 0.5,
+      "scoreWeights": {
+        "emergency": 2
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "13°C。加油站贴了通知，按车牌限量。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "12°C。加一次油要排很久，还只给半箱。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "12°C。公告说油按周配给，凭本加。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "11°C。有人一次加了两个桶，被拦下来。"
+        },
+        {
+          "day": -3,
+          "severity": 0.42,
+          "hint": "11°C。车停得多了，跑一趟要算油。"
+        },
+        {
+          "day": -2,
+          "severity": 0.55,
+          "hint": "10°C。有人搭邻居的车去买东西。"
+        },
+        {
+          "day": -1,
+          "severity": 0.7,
+          "hint": "10°C。油站排到街口，半天才轮到。"
+        },
+        {
+          "day": 0,
+          "severity": 0.84,
+          "hint": "10°C。今天起按周发票，一周就这点。"
+        },
+        {
+          "day": 1,
+          "severity": 0.9,
+          "hint": "9°C。有人加了油不敢开，留着应急。"
+        },
+        {
+          "day": 2,
+          "severity": 0.94,
+          "hint": "9°C。车还在，油不够，只能少跑。"
+        },
+        {
+          "day": 3,
+          "severity": 0.97,
+          "hint": "9°C。有人拼车进城，一车捎三家的货。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "9°C。一趟要办的几件事，全得合并。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "9°C。有人的配额用完了，只能走路。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "9°C。油票被人拿去加价倒卖。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "9°C。有人在家门口自己存了一小桶。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "9°C。走路的多了，路上车少了。"
+        },
+        {
+          "day": 9,
+          "severity": 1,
+          "hint": "9°C。搬重东西只能借车，要记人情。"
+        },
+        {
+          "day": 10,
+          "severity": 0.98,
+          "hint": "10°C。公告说配额下周减半。"
+        },
+        {
+          "day": 11,
+          "severity": 0.95,
+          "hint": "10°C。有人把车停着不动，省着油。"
+        },
+        {
+          "day": 12,
+          "severity": 0.9,
+          "hint": "10°C。油站每天限时开，队伍更长了。"
+        },
+        {
+          "day": 13,
+          "severity": 0.85,
+          "hint": "11°C。配额恢复了一点，加一次能跑几天。"
+        },
+        {
+          "day": 14,
+          "severity": 0.76,
+          "hint": "11°C。今天加油没排太久。撑到今天就算过去了。"
+        }
+      ],
+      "counterIntuitive": "车还在、路也通，可它动不了：油按周给，一趟出门要把几件事全塞进去，于是这一场最缺的不是货，是能跑的次数。",
+      "decisions": [
+        "一周只有这点油，出门一次要把几件事合并",
+        "油票能换东西，是留着自己用还是拿出去换粮",
+        "车闲着不烧油，重活要不要改成用人力一趟趟搬"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/13/15/16，共 15 个。主打维度 7（carryFactor 0.5：车动得少，一趟能运的少）+ 13（categoryEfficiency 燃油 0.5：油怎么用都不够）。与出城潮不撞：出城潮是人和车一起走空；本场车和人都在，动不了是因为油按周给。与征用不撞：征用是按清单把货抽走；本场没被抽，是自己手里的油不够跑。"
+    },
+    {
+      "id": "unemployment",
+      "name": "失业潮",
+      "family": "社会",
+      "level": "L3",
+      "tier": 3,
+      "axis": "工资断了，钱只出不进",
+      "temperatures": {
+        "0": 11,
+        "3": 10,
+        "7": 10,
+        "11": 11,
+        "14": 12,
+        "-7": 14,
+        "-4": 13,
+        "-1": 12
+      },
+      "spoilRate": 1.4,
+      "dailyDrain": {
+        "food": 1
+      },
+      "priorityCategories": [
+        "food",
+        "luxury",
+        "tool"
+      ],
+      "windowScene": "idle-factory-gate",
+      "shelterDecayPerDay": -1.5,
+      "restEfficiency": 0.65,
+      "carryFactor": 0.8,
+      "actionPointDelta": -1,
+      "shopSupplyFactor": 0.6,
+      "closedShopIds": [
+        "community_store"
+      ],
+      "priceSurcharge": 0.15,
+      "eventPoolWeights": {
+        "market": 3,
+        "neighbor": 2
+      },
+      "npcVisitFactor": 1.2,
+      "categoryEfficiency": {
+        "luxury": 0.6
+      },
+      "healthRiskPerDay": 0.5,
+      "scoreWeights": {
+        "emergency": 2
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "14°C。厂门口贴了停工通知，工资先不发。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "13°C。上班的人少了一半，车间空了。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "13°C。有人的班排不上了，只能在家。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "12°C。群里有人问哪里还招短工。"
+        },
+        {
+          "day": -3,
+          "severity": 0.42,
+          "hint": "12°C。有人把家里不用的东西拿出来卖。"
+        },
+        {
+          "day": -2,
+          "severity": 0.55,
+          "hint": "11°C。东西不好卖，压价也没人要。"
+        },
+        {
+          "day": -1,
+          "severity": 0.7,
+          "hint": "11°C。公告说下月工资还要再拖。"
+        },
+        {
+          "day": 0,
+          "severity": 0.82,
+          "hint": "11°C。今天起大半的人没有活干。"
+        },
+        {
+          "day": 1,
+          "severity": 0.88,
+          "hint": "10°C。有人开始接零活，一天一结。"
+        },
+        {
+          "day": 2,
+          "severity": 0.92,
+          "hint": "10°C。市场上卖东西的多，买的人少。"
+        },
+        {
+          "day": 3,
+          "severity": 0.96,
+          "hint": "10°C。东西越卖越便宜，还是卖不动。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "10°C。有人上门问，要不要收他家的旧货。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "10°C。手头没现金，便宜东西也买不起。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "10°C。有人拿工具换粮，说留着也生不了钱。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "10°C。街上闲逛的人多了起来。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "9°C。有几户开始退租，往更小的房子搬。"
+        },
+        {
+          "day": 9,
+          "severity": 0.98,
+          "hint": "9°C。有人靠帮人跑腿换两顿饭。"
+        },
+        {
+          "day": 10,
+          "severity": 0.96,
+          "hint": "9°C。公告说复工还没有准信。"
+        },
+        {
+          "day": 11,
+          "severity": 0.93,
+          "hint": "10°C。有厂子招人，只要几个。"
+        },
+        {
+          "day": 12,
+          "severity": 0.9,
+          "hint": "10°C。东西的价格开始稳住，不再往下走。"
+        },
+        {
+          "day": 13,
+          "severity": 0.86,
+          "hint": "11°C。有人回了原来的班，工资补了一部分。"
+        },
+        {
+          "day": 14,
+          "severity": 0.78,
+          "hint": "11°C。今天不少人重新去上班了。撑到今天就算过去了。"
+        }
+      ],
+      "counterIntuitive": "这一场里东西会越来越便宜，你却越来越买不起：价格跟着没有工资的人一起往下走，可决定你能不能过下去的是手上的现金，不是货价。",
+      "decisions": [
+        "工资断了，手里的现金要按周重新分，先保吃还是先保用",
+        "东西越来越便宜却卖不动，闲钱要不要现在换成耐放的货",
+        "邻居上门收旧货，值钱的物件是趁早出手还是留着"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/13/15/16，共 15 个。主打维度 10（priceSurcharge 0.15：没人有钱买，价格反而往下走）与 13（categoryEfficiency 奢侈 0.6：奢侈品没人接盘，最不值钱）。与配给登记不撞：配给登记是货少、价稳、限购；本场是货不缺、价降、没人买得起。与黑市不撞：黑市是暗地加价；本场是明面降价、有价无市。"
+    },
+    {
+      "id": "security_vacuum",
+      "name": "治安真空",
+      "family": "社会",
+      "level": "L3",
+      "tier": 3,
+      "axis": "管的人没了，规则由最近的那群人定",
+      "temperatures": {
+        "0": 10,
+        "3": 9,
+        "7": 9,
+        "11": 10,
+        "14": 11,
+        "-7": 13,
+        "-4": 12,
+        "-1": 11
+      },
+      "spoilRate": 1.5,
+      "dailyDrain": {
+        "food": 1
+      },
+      "priorityCategories": [
+        "tool",
+        "medicine",
+        "water"
+      ],
+      "windowScene": "no-law-street",
+      "shelterDecayPerDay": -2,
+      "restEfficiency": 0.6,
+      "carryFactor": 0.6,
+      "actionPointDelta": -1,
+      "shopSupplyFactor": 0.55,
+      "closedShopIds": [
+        "market"
+      ],
+      "priceSurcharge": 0.5,
+      "eventPoolWeights": {
+        "people": 3,
+        "panic": 2
+      },
+      "npcVisitFactor": 1.3,
+      "categoryEfficiency": {
+        "tool": 1.3
+      },
+      "healthRiskPerDay": 1.5,
+      "scoreWeights": {
+        "emergency": 3
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "13°C。巡逻的车少了，路口没人站岗。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "12°C。有人夜里听见砸门声，没见人来。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "12°C。几家店提前关门，说守不住。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "11°C。楼里几户凑钱请人看门。"
+        },
+        {
+          "day": -3,
+          "severity": 0.42,
+          "hint": "11°C。有人说看见陌生人挨家敲门。"
+        },
+        {
+          "day": -2,
+          "severity": 0.55,
+          "hint": "10°C。有户人家被翻窗，东西少了一半。"
+        },
+        {
+          "day": -1,
+          "severity": 0.72,
+          "hint": "10°C。公告停了，管事的人也不露面了。"
+        },
+        {
+          "day": 0,
+          "severity": 0.85,
+          "hint": "10°C。今天起街上没人管，各管各。"
+        },
+        {
+          "day": 1,
+          "severity": 0.92,
+          "hint": "9°C。有人拿着工具在楼下转了一夜。"
+        },
+        {
+          "day": 2,
+          "severity": 0.96,
+          "hint": "9°C。几栋楼自己定了规矩，谁人多谁说了算。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "9°C。有人上门收东西，说不交就不好看。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "9°C。有人把家当搬到了楼上锁起来。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "9°C。楼下聚了一伙人，晚上不走。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "9°C。有人结伴出门，一个人不敢走远。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "9°C。有楼自己排了班，轮着守夜。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "9°C。被翻过的那户，东西一直没找回来。"
+        },
+        {
+          "day": 9,
+          "severity": 0.98,
+          "hint": "9°C。有人把值钱的都换成了能防身的东西。"
+        },
+        {
+          "day": 10,
+          "severity": 0.96,
+          "hint": "10°C。街口几个楼联合设了点。"
+        },
+        {
+          "day": 11,
+          "severity": 0.94,
+          "hint": "10°C。有人的伤一直没好，药也不够。"
+        },
+        {
+          "day": 12,
+          "severity": 0.9,
+          "hint": "10°C。来的外人少了，夜里安静了些。"
+        },
+        {
+          "day": 13,
+          "severity": 0.85,
+          "hint": "11°C。有人说管事的人回来了。"
+        },
+        {
+          "day": 14,
+          "severity": 0.78,
+          "hint": "11°C。今天路上有人巡逻了。撑到今天就算过去了。"
+        }
+      ],
+      "counterIntuitive": "管的人一走，规则不是消失，是被离你最近的那群人接了过去：谁人多谁定规矩，你囤的东西在他们眼里就成了可以分的。",
+      "decisions": [
+        "没人管了，东西是留着还是换成能防身的东西",
+        "楼里自己定规矩，出人守夜还是出物顶上",
+        "一个人不敢走远，出门要结伴，行动点按人头摊"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/13/15/16，共 15 个。主打维度 12（npcVisitFactor 1.3：来的不再是邻居，是来收东西的人）+ 13（categoryEfficiency 工具 1.3：能防身的工具这一场最有价值）。与骚乱不撞：骚乱是明面上的打砸，街上乱；本场没有骚乱，是管事的人退场后留下的空位，秩序被身边人接管。与巡逻不撞：巡逻是有人管、要登记；本场是没人管，规矩反过来。"
+    },
+    {
+      "id": "return_wave",
+      "name": "返乡潮",
+      "family": "社会",
+      "level": "L3",
+      "tier": 3,
+      "axis": "外来的人涌进来，本地的货不够分",
+      "temperatures": {
+        "0": 11,
+        "3": 10,
+        "7": 10,
+        "11": 11,
+        "14": 12,
+        "-7": 14,
+        "-4": 13,
+        "-1": 12
+      },
+      "spoilRate": 1.5,
+      "dailyDrain": {
+        "food": 1,
+        "water": 1
+      },
+      "priorityCategories": [
+        "food",
+        "water",
+        "fuel"
+      ],
+      "windowScene": "crowded-station",
+      "shelterDecayPerDay": -1.5,
+      "restEfficiency": 0.75,
+      "carryFactor": 0.7,
+      "actionPointDelta": -1,
+      "shopSupplyFactor": 0.45,
+      "closedShopIds": [
+        "market",
+        "community_store"
+      ],
+      "priceSurcharge": 0.5,
+      "eventPoolWeights": {
+        "people": 4,
+        "queue": 2
+      },
+      "npcVisitFactor": 1.5,
+      "categoryEfficiency": {
+        "food": 0.7
+      },
+      "healthRiskPerDay": 1,
+      "scoreWeights": {
+        "emergency": 2
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "14°C。车站里人多了，说外面也不好过。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "13°C。有人拖着行李回来，说是来找活干。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "13°C。小区里多了不少陌生面孔。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "12°C。超市的米面一到就空。"
+        },
+        {
+          "day": -3,
+          "severity": 0.42,
+          "hint": "12°C。有人在门口打听哪里能租到房。"
+        },
+        {
+          "day": -2,
+          "severity": 0.55,
+          "hint": "11°C。菜市场的人比平时多了一倍。"
+        },
+        {
+          "day": -1,
+          "severity": 0.72,
+          "hint": "11°C。有人开始在楼道里打地铺。"
+        },
+        {
+          "day": 0,
+          "severity": 0.85,
+          "hint": "11°C。今天起回来的人更多，货架一天空两次。"
+        },
+        {
+          "day": 1,
+          "severity": 0.9,
+          "hint": "10°C。买米要排队，每人限两份。"
+        },
+        {
+          "day": 2,
+          "severity": 0.94,
+          "hint": "10°C。有人在车站附近支了摊，卖吃的。"
+        },
+        {
+          "day": 3,
+          "severity": 0.97,
+          "hint": "10°C。本地的货不够分，价钱跟着涨。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "10°C。有户人家多了三口人住进来。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "10°C。水和电都不够用，晚上常停。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "10°C。有人开始和本地人抢活干。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "10°C。货架补了又空，店家也发愁。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "9°C。租房的价钱涨了，一间挤好几口。"
+        },
+        {
+          "day": 9,
+          "severity": 1,
+          "hint": "9°C。有人待不下去，买了车票又走。"
+        },
+        {
+          "day": 10,
+          "severity": 0.98,
+          "hint": "9°C。公告说会调货过来，让大家别挤。"
+        },
+        {
+          "day": 11,
+          "severity": 0.96,
+          "hint": "10°C。调来的货到了，队伍短了些。"
+        },
+        {
+          "day": 12,
+          "severity": 0.92,
+          "hint": "10°C。离开的人多了一些，街上的摊少了。"
+        },
+        {
+          "day": 13,
+          "severity": 0.87,
+          "hint": "11°C。买东西不用再抢，货架能撑到晚上。"
+        },
+        {
+          "day": 14,
+          "severity": 0.78,
+          "hint": "11°C。今天人少了些。撑到今天就算过去了。"
+        }
+      ],
+      "counterIntuitive": "涌进来的人不是来抢的，是来花钱的：本地货架被正常买搬空，比被抢空还快，因为你没有理由拦一笔正常的买卖。",
+      "decisions": [
+        "外来的人多了，吃住都要分，自家的存货要不要拿出来",
+        "货来得快、空得也快，补货的日子要提前算",
+        "租房和找活的人多起来，出手存货换现金值不值"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/13/15/16，共 15 个。主打维度 12（npcVisitFactor 1.5：来的人最勤，但大多是外来的生面孔）+ 9（shopSupplyFactor 0.45 并关掉农贸与社区店：本地的货被分薄）。与出城潮不撞：出城潮是本地人走空、没人来；本场正好相反，是人往里涌。与抢购潮不撞：抢购潮是本城人自己抢；本场是外来人口把本地货分薄，靠的是新增的人。"
+    }
+  ]
+}

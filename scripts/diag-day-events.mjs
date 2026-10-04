@@ -23,9 +23,31 @@
  *
  * 用法：node scripts/diag-day-events.mjs
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 
-const json = JSON.parse(readFileSync('content/事件/day-01.json', 'utf8'));
+/*
+ * ★ 扫**整个** `content/事件/` 里**白天事件**的那几个文件，而不是写死某一个文件名。
+ *
+ * 原来这里写的是 `content/事件/day-01.json` —— 那种写法在内容加了第二批
+ * （`白天-02.json`）、或者在文件改名之后就会**静默只看一半**：
+ * 工具照常输出、照常说"0 条"，而它根本没读到新的那批。
+ * 一份诊断工具"少看了一半还报 OK"比没有它更坏。
+ *
+ * ⚠ 只收 `白天-*.json`：这四条判据是**给白天事件**写的
+ * （它们读 `options[].effect` 里的 grab / stockCut / priceUp），
+ * 而夜间与突发事件的形状不同 —— 一并扫进来会在 `def.options` 上抛异常。
+ * 要查夜间事件请另写一份工具，不要把这四条判据套上去。
+ */
+const eventDir = 'content/事件';
+const dayFiles = readdirSync(eventDir).filter((f) => f.startsWith('白天-') && f.endsWith('.json'));
+const json = {
+  entries: dayFiles.flatMap((f) => {
+    const data = JSON.parse(readFileSync(join(eventDir, f), 'utf8'));
+    return (data.entries ?? []).map((e) => ({ ...e, __file: f }));
+  })
+};
+console.log(`扫了 ${dayFiles.length} 个白天事件文件（${dayFiles.join('、')}），共 ${json.entries.length} 条\n`);
 
 const says = (text, re) => re.test(text);
 

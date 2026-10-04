@@ -1,0 +1,2598 @@
+{
+  "kind": "disaster",
+  "batch": "灾难-组合",
+  "batchNote": "本族 15 场（由外援分批生成、后按家族合并）。\n\n· 大停电（blackout_winter）：冷与黑：寒潮的温度叠加断电，存货变成了限期任务\n· 酷暑断电（heat_blackout）：热与暗：停电让电扇空调同时停摆，屋里比屋外更闷，冰箱成了唯一在贬值的存货\n· 洪水疫情（flood_epidemic）：水与病：能取到的水都不能直接喝，收治病人的诊所却最先关门\n· 地震火灾（quake_fire）：裂与烧：地震先把路和管拆了，火才起来，能取到的水第一优先是浇火\n· 沙暴断水（sandstorm_nodraw）：尘与渴：断水逼你出门，沙暴又把你堵在屋里，屋顶接的雨水越攒越浑\n· 骚乱封路（riot_roadblock）：人与路：人来得更勤，路又走不通，离你最近的店反而最先空\n· 台风停水（typhoon_nowater）：风与水：风把屋顶掀了，也把水泵房灌了，风停的第二天才是没水喝的一天\n· 寒潮疫情（cold_epidemic）：暖与隔：取暖要把窗封死，防传染要把窗打开，两个动作在同一间屋里互相拆台\n· 洪水骚乱（flood_riot）：水与乱：水还没退，抢东西的人先来了，等水退时货架上剩下的不是泡坏的，是被搬走的\n· 火烤断电（heat_blackout_fire）：热与暗与火：火和热在抢同一桶水，而断电让水泵停摆，你要决定先给谁\n· 地震寒潮（quake_cold）：裂与寒：房子漏风又降温，补墙和取暖抢同一份体力\n· 霉雨断电（mold_blackout）：潮与暗：断电最要命的不是黑，是不能再烘干，越勤快洗东西坏得越快\n· 沙暴骚乱（sandstorm_riot）：尘与人：沙暴把能见度压到一条街，也把巡逻的人压回屋里，谁都看不清谁在门口\n· 寒潮沙暴（cold_sandstorm）：冷与尘：口罩和取暖费从同一个口袋掏，冷先把呼吸道磨薄，尘再补上一记\n· 停电骚乱（blackout_riot）：黑与人：黑暗没让人看不清路，是让人看不见彼此在做什么，来的人比有电时更勤\n\n## 生成时的说明（原样保留）\n\n标杆 3 场：热浪（温度 L2）/ 洪水（水 L3）/ 大停电（组合 L3）。三场两两比过：热浪主打搬运惩罚与水药刚需，洪水首次用 capacityFactor 废掉低处货架并废掉保暖品类，大停电首次用 actionPointDelta 且食物反升为刚需。新增维度用法：closedShopIds（洪水关五金店、大停电关超市）。最弱的一场：热浪（它是最'直'的一场，反直觉侧面靠夜间活动与冰箱耗电撑，建议作为合格线下限）。\n\n---\n\n本批 5 场，家族=组合。选题：每条都让两条压力轴同时上，且换掉样板「大停电」的组合。① 酷暑断电=热浪+停电，主打 8/9/11/13，断电把热从难受变成危险，冰箱存货变限期；② 洪水疫情=洪水+疫情，主打 9/14/15，水退后才最凶，收治的诊所先关门；③ 地震火灾=地震+火灾，主打 5/12/14，结构先断导致救援进不来，水先浇火；④ 沙暴断水=沙暴+断水，主打 11/12/15，出门一趟双重代价，屋顶雨水越攒越浑；⑤ 骚乱封路=骚乱+封路，主打 9/11/12，最近的店先空，走远才买得到。最弱的一场：骚乱封路。它与既有 riot_curfew 同属社会轴，主要靠维度 9（关批发与市场）和 12（npc 1.5 顶格）拉开，刚需与事件池的可辨度不如其余四场，是本批下限。\n\n---\n\n本批 5 场，家族=组合。① 台风停水=台风+停水，主打 9/14/15，风停的第二天才是最缺水的一天；② 寒潮疫情=寒潮+疫情，主打 13/15/16，取暖与通风互相拆台；③ 洪水骚乱=洪水+骚乱，主打 9/12，水没退秩序先退；④ 火烤断电=热浪+停电+火灾（唯一 L4），主打 8/9/11/14/16，三轴共抢同一桶水；⑤ 地震寒潮=地震+寒潮，主打 5/14/13，修墙与取暖抢同一份体力。最弱的一场：寒潮疫情。它和既有 outbreak_flu 共用「药品短缺」这条轴，在 5~16 维里只拉开了 5 处（关店不同、事件池不同、npc 0.7、med 0.55、healthRisk 1.8），是全 14 场里与已有场次最接近的一场，故为本批下限。\n\n---\n\n本批 4 场，家族=组合。① 霉雨断电=霉雨+停电，主打 2/9/13，断电最要命的不是黑是不能再烘干；② 沙暴骚乱=沙暴+骚乱，主打 11/12/15，能见度压到一条街时看不清谁在门口；③ 寒潮沙暴=寒潮+沙暴，主打 1/13/15，口罩和取暖从同一个口袋掏钱；④ 停电骚乱=停电+骚乱，主打 8/11/12，黑暗让夜里多了人少了见证。最弱的一场：停电骚乱。它是样板大停电的邻居，靠「人」这条轴（npc 1.5、dark+people 事件池）与它分开，反直觉侧面也依赖「黑暗减少见证」这一条，成立但不如另三场厚，故为本批下限。",
+  "entries": [
+    {
+      "id": "blackout_winter",
+      "name": "大停电",
+      "family": "组合",
+      "level": "L3",
+      "tier": 2,
+      "axis": "冷与黑：寒潮的温度叠加断电，存货变成了限期任务",
+      "temperatures": {
+        "0": -18,
+        "3": -21,
+        "7": -24,
+        "11": -27,
+        "14": -29,
+        "-7": 4,
+        "-4": 0,
+        "-1": -8
+      },
+      "spoilRate": 1.6,
+      "dailyDrain": {
+        "fuel": 3,
+        "food": 1
+      },
+      "priorityCategories": [
+        "fuel",
+        "food"
+      ],
+      "windowScene": "dark-city",
+      "shelterDecayPerDay": -2.5,
+      "restEfficiency": 0.55,
+      "carryFactor": 0.8,
+      "actionPointDelta": -1,
+      "shopSupplyFactor": 0.5,
+      "closedShopIds": [
+        "supermarket"
+      ],
+      "priceSurcharge": 0.35,
+      "eventPoolWeights": {
+        "cold": 3,
+        "dark": 2,
+        "neighbor": 2
+      },
+      "npcVisitFactor": 1.3,
+      "categoryEfficiency": {
+        "medicine": 0.8
+      },
+      "healthRiskPerDay": 1.5,
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "4°C。气象台挂了寒潮蓝色预警。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "2°C。电网公司发了负荷预警。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "0°C。窗上结了今年第一回霜。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "-2°C。隔壁楼昨晚停了一小时电。"
+        },
+        {
+          "day": -3,
+          "severity": 0.4,
+          "hint": "-5°C。五金店的蜡烛和电池卖空了。"
+        },
+        {
+          "day": -2,
+          "severity": 0.5,
+          "hint": "-6°C。物业通知各楼栋轮流限电。"
+        },
+        {
+          "day": -1,
+          "severity": 0.7,
+          "hint": "-8°C。风很大，电线在响。"
+        },
+        {
+          "day": 0,
+          "severity": 1,
+          "hint": "-18°C。凌晨两点，全城的灯一起灭了。"
+        },
+        {
+          "day": 1,
+          "severity": 1,
+          "hint": "-19°C。没有电。电梯停在了半层。"
+        },
+        {
+          "day": 2,
+          "severity": 1,
+          "hint": "-20°C。冰箱里的东西开始化，得先吃掉。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "-21°C。手机信号时有时无。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "-22°C。屋里 3°C，呼吸有白气。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "-22°C。邻居来敲门，问有没有蜡烛。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "-23°C。水管冻住了，要烧雪水。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "-24°C。来电了四十分钟，又灭了。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "-25°C。楼道里有人生了炭盆。"
+        },
+        {
+          "day": 9,
+          "severity": 1,
+          "hint": "-26°C。冰箱空了，要坏的都吃完了。"
+        },
+        {
+          "day": 10,
+          "severity": 1,
+          "hint": "-27°C。夜里能听见远处的发电机。"
+        },
+        {
+          "day": 11,
+          "severity": 1,
+          "hint": "-27°C。手露在外面十分钟就发麻。"
+        },
+        {
+          "day": 12,
+          "severity": 1,
+          "hint": "-28°C。有电的楼收留了几个老人。"
+        },
+        {
+          "day": 13,
+          "severity": 1,
+          "hint": "-29°C。天很晴，电还没有来。"
+        },
+        {
+          "day": 14,
+          "severity": 1,
+          "hint": "-29°C。凌晨来电了。灯亮时没人说话。"
+        }
+      ],
+      "counterIntuitive": "冰箱里的存货变成了限期任务，两天内吃不完就全坏；没电的夜反而让邻居走得更勤",
+      "decisions": [
+        "前 48 小时先清空冰箱吃掉要坏的，还是保燃料熬更冷的夜",
+        "行动点只剩两个，出门摸黑找燃料，还是在家把东西理好",
+        "邻居来得勤，人情能换回款，但每次开门都要分东西出去"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/13/15，共 14 个。spoilRate 1.6 的理由：室外虽冷但冰箱停机，室内冷藏链断裂。首次使用维度 8（行动点 -1）；食物反升为刚需（必须吃掉要坏的），刚需排序与寒潮相反，故不与寒潮撞车。"
+    },
+    {
+      "id": "heat_blackout",
+      "name": "酷暑断电",
+      "family": "组合",
+      "level": "L3",
+      "tier": 2,
+      "axis": "热与暗：停电让电扇空调同时停摆，屋里比屋外更闷，冰箱成了唯一在贬值的存货",
+      "temperatures": {
+        "0": 39,
+        "3": 40,
+        "7": 41,
+        "11": 41,
+        "14": 40,
+        "-7": 36,
+        "-4": 37,
+        "-1": 38
+      },
+      "spoilRate": 2.6,
+      "dailyDrain": {
+        "water": 3,
+        "medicine": 1
+      },
+      "priorityCategories": [
+        "water",
+        "fuel",
+        "medicine"
+      ],
+      "windowScene": "heat-blackout",
+      "shelterDecayPerDay": -1.8,
+      "restEfficiency": 0.5,
+      "carryFactor": 0.65,
+      "actionPointDelta": -1,
+      "shopSupplyFactor": 0.6,
+      "closedShopIds": [
+        "supermarket"
+      ],
+      "priceSurcharge": 0.4,
+      "eventPoolWeights": {
+        "heat": 3,
+        "dark": 3,
+        "water": 2
+      },
+      "npcVisitFactor": 1.25,
+      "categoryEfficiency": {
+        "food": 0.65
+      },
+      "healthRiskPerDay": 1.2,
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "36°C。气象台发了高温橙色预警。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "37°C。超市的矿泉水整箱往外搬。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "37°C。电网贴了错峰用电的通知。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "38°C。隔壁楼昨晚跳了几次闸。"
+        },
+        {
+          "day": -3,
+          "severity": 0.4,
+          "hint": "38°C。风扇卖到了断货。"
+        },
+        {
+          "day": -2,
+          "severity": 0.5,
+          "hint": "39°C。药店的藿香正气水没了。"
+        },
+        {
+          "day": -1,
+          "severity": 0.65,
+          "hint": "39°C。物业说这几天可能要限电。"
+        },
+        {
+          "day": 0,
+          "severity": 0.9,
+          "hint": "40°C。午后整片小区停了电。"
+        },
+        {
+          "day": 1,
+          "severity": 1,
+          "hint": "41°C。电扇不转，屋里比外面闷。"
+        },
+        {
+          "day": 2,
+          "severity": 1,
+          "hint": "41°C。冰箱停了，肉开始化。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "41°C。有人整夜坐在楼道里。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "41°C。龙头里出来的是温水。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "40°C。邻居来问有没有冰。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "41°C。冰箱里的东西当天吃完。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "42°C。白天没人出门。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "42°C。电还是没来。"
+        },
+        {
+          "day": 9,
+          "severity": 1,
+          "hint": "41°C。楼下分了两桶水。"
+        },
+        {
+          "day": 10,
+          "severity": 1,
+          "hint": "41°C。有人把床搬进了地下室。"
+        },
+        {
+          "day": 11,
+          "severity": 1,
+          "hint": "41°C。菜场下午就收了摊。"
+        },
+        {
+          "day": 12,
+          "severity": 0.95,
+          "hint": "40°C。天很晴，电迟迟没来。"
+        },
+        {
+          "day": 13,
+          "severity": 0.9,
+          "hint": "40°C。温度计晒得烫手。"
+        },
+        {
+          "day": 14,
+          "severity": 0.85,
+          "hint": "40°C。半夜来电了，没人开灯。"
+        }
+      ],
+      "counterIntuitive": "有电时热只是难受，断电之后热才开始伤人：电扇停转，屋里比屋外更闷，而冰箱里那点凉意是全屋唯一在快速贬值的存货，越早吃掉越值。这一场真正该抢的不是水，是冰箱。",
+      "decisions": [
+        "冰箱停机的头一天，是把要坏的先吃掉，还是留着解暑",
+        "行动点少一个，出门找水和在家守着存货只能挑一头",
+        "邻居来问有没有冰，人情能换东西，但每次开门都要分出去"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/13/15，共 14 个。热轴贡献 1/2/13（水消耗、腐坏加快、food 降效），电轴贡献 8/9/11（行动点 -1、关超市、dark 事件）。与热浪不撞：热浪腐坏 2.4、carry 0.7 且不关店；本场 2.6、carry 0.65 且关超市。与大停电不撞：那场是 cold+dark 主线、刚需是燃料食物，本场是 heat+water 主线、刚需是水与药品。"
+    },
+    {
+      "id": "flood_epidemic",
+      "name": "洪水疫情",
+      "family": "组合",
+      "level": "L3",
+      "tier": 3,
+      "axis": "水与病：能取到的水都不能直接喝，收治病人的诊所却最先关门",
+      "temperatures": {
+        "0": 22,
+        "3": 21,
+        "7": 20,
+        "11": 20,
+        "14": 21,
+        "-7": 25,
+        "-4": 24,
+        "-1": 23
+      },
+      "spoilRate": 2.2,
+      "dailyDrain": {
+        "water": 2,
+        "medicine": 2
+      },
+      "priorityCategories": [
+        "medicine",
+        "water",
+        "food"
+      ],
+      "windowScene": "flood-outbreak",
+      "shelterDecayPerDay": -3,
+      "restEfficiency": 0.65,
+      "carryFactor": 0.6,
+      "actionPointDelta": -1,
+      "shopSupplyFactor": 0.45,
+      "closedShopIds": [
+        "clinic",
+        "market"
+      ],
+      "priceSurcharge": 0.55,
+      "eventPoolWeights": {
+        "water": 3,
+        "panic": 3,
+        "neighbor": 2
+      },
+      "npcVisitFactor": 0.65,
+      "categoryEfficiency": {
+        "medicine": 0.55
+      },
+      "capacityFactor": 0.8,
+      "unusableShelfIds": [
+        "shelf_a"
+      ],
+      "healthRiskPerDay": 2,
+      "scoreWeights": {
+        "emergency": 3
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "25°C。雨停了，水还没退。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "24°C。一楼的住户在清淤泥。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "23°C。社区发了消毒片，一户两片。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "23°C。有人开始拉肚子，去了诊所。"
+        },
+        {
+          "day": -3,
+          "severity": 0.4,
+          "hint": "22°C。诊所门口贴了分诊的牌子。"
+        },
+        {
+          "day": -2,
+          "severity": 0.5,
+          "hint": "22°C。物业通知喝水必须烧开。"
+        },
+        {
+          "day": -1,
+          "severity": 0.65,
+          "hint": "21°C。食堂停了，说有人吃坏肚子。"
+        },
+        {
+          "day": 0,
+          "severity": 0.9,
+          "hint": "22°C。通报：水里检出致病菌。"
+        },
+        {
+          "day": 1,
+          "severity": 1,
+          "hint": "21°C。诊所改成只收发热的。"
+        },
+        {
+          "day": 2,
+          "severity": 1,
+          "hint": "21°C。药店的止泻药卖空了。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "20°C。有人把家具搬到楼下晒。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "20°C。楼道里一股消毒水味。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "20°C。邻居来换水，隔着门递。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "20°C。接水点排起了长队。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "20°C。诊所关了一半的门。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "20°C。又下了一天雨，地又湿了。"
+        },
+        {
+          "day": 9,
+          "severity": 1,
+          "hint": "20°C。有人开始发低烧。"
+        },
+        {
+          "day": 10,
+          "severity": 1,
+          "hint": "21°C。消毒片不够，按楼栋发。"
+        },
+        {
+          "day": 11,
+          "severity": 1,
+          "hint": "21°C。送水车一天来两趟。"
+        },
+        {
+          "day": 12,
+          "severity": 1,
+          "hint": "21°C。发热的人被隔在活动室。"
+        },
+        {
+          "day": 13,
+          "severity": 1,
+          "hint": "21°C。水里的菌数在往下走。"
+        },
+        {
+          "day": 14,
+          "severity": 1,
+          "hint": "21°C。水能喝了，药还紧着。"
+        }
+      ],
+      "counterIntuitive": "水退下去的那几天比进水时更危险：传染刚起步，而收治病人的诊所恰恰是最先关门的那个。于是这一场最缺的不是药本身，是把药送进去、把水烧开的干净水。",
+      "decisions": [
+        "诊所关了门，药要么去更远的地方找，要么靠邻居换",
+        "低处的格子进了脏水等于没有，东西往高处码时顺手位也得重排",
+        "干净水又重又占地方，消毒用的水和喝的水只能先顾一头"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/13/14（含 unusableShelfIds）/15/16，共 16 个。水轴贡献 5/14（建筑衰减、低处空间作废），疫轴贡献 9/13/15/16（关诊所与市场、med 降效、健康债、急救权重）。与洪水不撞：洪水刚需是水+药且不关诊所；本场关的是诊所、npc 掉到 0.65（隔离不串门）、加 healthRisk 2 与 emergency:3。与疫情不撞：疫情是 pure med 缺货，本场把洪水的水源污染叠上来。"
+    },
+    {
+      "id": "quake_fire",
+      "name": "地震火灾",
+      "family": "组合",
+      "level": "L3",
+      "tier": 3,
+      "axis": "裂与烧：地震先把路和管拆了，火才起来，能取到的水第一优先是浇火",
+      "temperatures": {
+        "0": 21,
+        "3": 20,
+        "7": 19,
+        "11": 19,
+        "14": 20,
+        "-7": 24,
+        "-4": 23,
+        "-1": 22
+      },
+      "spoilRate": 2,
+      "dailyDrain": {
+        "medicine": 2,
+        "water": 1
+      },
+      "priorityCategories": [
+        "medicine",
+        "tool",
+        "food"
+      ],
+      "windowScene": "quake-fire",
+      "shelterDecayPerDay": -3.5,
+      "restEfficiency": 0.55,
+      "carryFactor": 0.55,
+      "actionPointDelta": -1,
+      "shopSupplyFactor": 0.4,
+      "closedShopIds": [
+        "hardware",
+        "supermarket"
+      ],
+      "priceSurcharge": 0.35,
+      "eventPoolWeights": {
+        "panic": 3,
+        "people": 2,
+        "supply": 2
+      },
+      "npcVisitFactor": 0.9,
+      "categoryEfficiency": {
+        "tool": 1.3,
+        "food": 0.7
+      },
+      "capacityFactor": 0.7,
+      "unusableShelfIds": [
+        "shelf_c"
+      ],
+      "healthRiskPerDay": 1.5,
+      "scoreWeights": {
+        "placement": 3
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "24°C。凌晨晃了一下，碗柜响了。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "23°C。墙上有道细缝，物业来看了。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "23°C。有人把煤气罐搬到了楼下。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "22°C。燃气公司来查了管线。"
+        },
+        {
+          "day": -3,
+          "severity": 0.4,
+          "hint": "22°C。老楼的通知写着结构待定。"
+        },
+        {
+          "day": -2,
+          "severity": 0.5,
+          "hint": "21°C。夜里又晃了两回。"
+        },
+        {
+          "day": -1,
+          "severity": 0.65,
+          "hint": "21°C。消防车在小区里转了一圈。"
+        },
+        {
+          "day": 0,
+          "severity": 0.9,
+          "hint": "21°C。余震把燃气管扯断了。"
+        },
+        {
+          "day": 1,
+          "severity": 1,
+          "hint": "20°C。三号楼起了火，烟很黑。"
+        },
+        {
+          "day": 2,
+          "severity": 1,
+          "hint": "20°C。路被塌下的墙堵了半条。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "19°C。消防车进不来，接了水管。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "19°C。能喝的水先去浇火。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "19°C。有人被烟呛得直咳。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "19°C。楼道里全是灰。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "19°C。水压不够，火压下去又起来。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "19°C。邻居搬到了空地上。"
+        },
+        {
+          "day": 9,
+          "severity": 1,
+          "hint": "19°C。超市的货架倒了一排。"
+        },
+        {
+          "day": 10,
+          "severity": 1,
+          "hint": "19°C。有人拿着撬棍在挖东西。"
+        },
+        {
+          "day": 11,
+          "severity": 1,
+          "hint": "19°C。火灭了两处，还剩一处。"
+        },
+        {
+          "day": 12,
+          "severity": 1,
+          "hint": "19°C。抢修队在断墙边拉线。"
+        },
+        {
+          "day": 13,
+          "severity": 1,
+          "hint": "20°C。灰落了，屋里还是呛。"
+        },
+        {
+          "day": 14,
+          "severity": 1,
+          "hint": "20°C。明火全灭了，水管还在漏。"
+        }
+      ],
+      "counterIntuitive": "把人困住的不是火，是地震先一步拆掉的那条路：路在的时候，火只是隔壁的事；路断了，水和药都到不了。这一场最缺的其实是能打通通道的工具，而不是灭火的水。",
+      "decisions": [
+        "工具在这一场比水贵，撬棍是拿去挖人还是先清出通道",
+        "低处和一面墙的货架都塌了，东西往哪儿码才不会被二次余震埋",
+        "火没灭之前，水和药先供救火还是先留给被砸伤的人"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/13/14（含 unusableShelfIds）/15/16，共 16 个。震轴贡献 5/7/14（衰减、搬运、空间坍缩），火轴贡献 1/13/16（药与水消耗、tool 升值、placement 换口径）。与地震不撞：地震是纯空间损失、不关五金店；本场关五金店（工具最缺却关门）、tool 反而 1.3 升值、加火导致的水药消耗与 healthRisk 1.5。与洪水不撞：水是浇火用的，不是污染轴。"
+    },
+    {
+      "id": "sandstorm_nodraw",
+      "name": "沙暴断水",
+      "family": "组合",
+      "level": "L3",
+      "tier": 2,
+      "axis": "尘与渴：断水逼你出门，沙暴又把你堵在屋里，屋顶接的雨水越攒越浑",
+      "temperatures": {
+        "0": 25,
+        "3": 24,
+        "7": 24,
+        "11": 25,
+        "14": 26,
+        "-7": 28,
+        "-4": 27,
+        "-1": 26
+      },
+      "spoilRate": 1.9,
+      "dailyDrain": {
+        "water": 3,
+        "medicine": 1
+      },
+      "priorityCategories": [
+        "water",
+        "tool",
+        "food"
+      ],
+      "windowScene": "dust-drought",
+      "shelterDecayPerDay": -1.5,
+      "restEfficiency": 0.6,
+      "carryFactor": 0.55,
+      "actionPointDelta": -1,
+      "shopSupplyFactor": 0.5,
+      "closedShopIds": [
+        "market"
+      ],
+      "priceSurcharge": 0.45,
+      "eventPoolWeights": {
+        "water": 3,
+        "limit": 3,
+        "supply": 2
+      },
+      "npcVisitFactor": 0.6,
+      "categoryEfficiency": {
+        "water": 0.7,
+        "tool": 1.2
+      },
+      "healthRiskPerDay": 2.2,
+      "scoreWeights": {
+        "fefo": 2
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "28°C。水库的水位又在往下走。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "27°C。供水时段缩到了每天两小时。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "26°C。天边起了一道黄线。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "26°C。风里开始有土味。"
+        },
+        {
+          "day": -3,
+          "severity": 0.4,
+          "hint": "25°C。能见度不到两条街。"
+        },
+        {
+          "day": -2,
+          "severity": 0.5,
+          "hint": "25°C。送水车说来不了。"
+        },
+        {
+          "day": -1,
+          "severity": 0.65,
+          "hint": "24°C。水龙头一天只来两小时。"
+        },
+        {
+          "day": 0,
+          "severity": 0.9,
+          "hint": "25°C。沙暴到了，屋里也进土。"
+        },
+        {
+          "day": 1,
+          "severity": 1,
+          "hint": "24°C。出门一趟回来满嘴沙。"
+        },
+        {
+          "day": 2,
+          "severity": 1,
+          "hint": "24°C。窗缝堵了，土还是进来。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "24°C。桶里的水见了底。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "23°C。有人把屋顶的雨水收着。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "24°C。雨水里有沙，越放越浑。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "24°C。口罩和水分着两天用。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "24°C。白天出不去，晚上也难出门。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "25°C。排队接水的人戴着口罩。"
+        },
+        {
+          "day": 9,
+          "severity": 1,
+          "hint": "25°C。风小了一阵，又起了。"
+        },
+        {
+          "day": 10,
+          "severity": 1,
+          "hint": "25°C。屋里地上扫出一堆土。"
+        },
+        {
+          "day": 11,
+          "severity": 1,
+          "hint": "25°C。水车来了，一人一桶。"
+        },
+        {
+          "day": 12,
+          "severity": 1,
+          "hint": "25°C。有人开始咳，说是进了土。"
+        },
+        {
+          "day": 13,
+          "severity": 1,
+          "hint": "26°C。风弱了，天还是黄的。"
+        },
+        {
+          "day": 14,
+          "severity": 1,
+          "hint": "26°C。沙落了，水的账还没完。"
+        }
+      ],
+      "counterIntuitive": "这一场最难受的地方是屋顶那点雨水：断水逼你攒水，沙暴又让每一次下雨都夹着土，于是你越勤快地接，手里的水越不能喝。真正的取水口在风里，不在雨里。",
+      "decisions": [
+        "出门接水要顶沙，行动点少一个，一趟够不够撑过一天",
+        "口罩和滤水的工具抢同一份钱，先买哪样决定你能出门还是能喝水",
+        "屋顶接的雨水一天比一天浑，是留着沉淀还是直接倒掉"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/13/15/16，共 15 个。尘轴贡献 7/15/13（搬运、健康债、water 降效），水轴贡献 1/9/11（水消耗、关市场、limit 事件）。与沙暴不撞：沙暴是空气主轴、水质不是问题；本场把断水叠上，npc 掉到 0.6、加 limit 事件与 tool 1.2。与断水不撞：断水是排队取水，本场是取水口本身在沙里，carry 压到 0.55。"
+    },
+    {
+      "id": "riot_roadblock",
+      "name": "骚乱封路",
+      "family": "组合",
+      "level": "L3",
+      "tier": 3,
+      "axis": "人与路：人来得更勤，路又走不通，离你最近的店反而最先空",
+      "temperatures": {
+        "0": 19,
+        "3": 18,
+        "7": 18,
+        "11": 19,
+        "14": 20,
+        "-7": 22,
+        "-4": 21,
+        "-1": 20
+      },
+      "spoilRate": 1.7,
+      "dailyDrain": {
+        "food": 1,
+        "fuel": 1
+      },
+      "priorityCategories": [
+        "food",
+        "fuel",
+        "tool"
+      ],
+      "windowScene": "blocked-street-riot",
+      "shelterDecayPerDay": -2,
+      "restEfficiency": 0.6,
+      "carryFactor": 0.6,
+      "actionPointDelta": -1,
+      "shopSupplyFactor": 0.4,
+      "closedShopIds": [
+        "market",
+        "wholesale"
+      ],
+      "priceSurcharge": 0.6,
+      "eventPoolWeights": {
+        "people": 3,
+        "panic": 3,
+        "supply": 2
+      },
+      "npcVisitFactor": 1.5,
+      "categoryEfficiency": {
+        "food": 0.75
+      },
+      "healthRiskPerDay": 1.2,
+      "scoreWeights": {
+        "emergency": 2
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "22°C。主路上围了栏杆，车绕行。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "21°C。菜场的进货少了一半。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "20°C。有人说前面几个路口封了。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "20°C。超市的货架空了一层。"
+        },
+        {
+          "day": -3,
+          "severity": 0.4,
+          "hint": "19°C。夜里有人在街上喊。"
+        },
+        {
+          "day": -2,
+          "severity": 0.5,
+          "hint": "19°C。邻居把门反锁了。"
+        },
+        {
+          "day": -1,
+          "severity": 0.65,
+          "hint": "18°C。公告说主干道暂时不通。"
+        },
+        {
+          "day": 0,
+          "severity": 0.9,
+          "hint": "19°C。街口堵了，人越聚越多。"
+        },
+        {
+          "day": 1,
+          "severity": 1,
+          "hint": "18°C。最近的店先空了。"
+        },
+        {
+          "day": 2,
+          "severity": 1,
+          "hint": "18°C。补货车被拦在了城外。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "18°C。有人隔着栏杆吵架。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "18°C。楼下的门市提前关了。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "18°C。走远两条街才买到米。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "18°C。夜里又有玻璃碎的声音。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "18°C。有人结伴才敢出门。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "19°C。栏杆加高了一层。"
+        },
+        {
+          "day": 9,
+          "severity": 1,
+          "hint": "19°C。批发市场的门开着，货没到。"
+        },
+        {
+          "day": 10,
+          "severity": 1,
+          "hint": "19°C。有人在楼栋里登记谁家有多的。"
+        },
+        {
+          "day": 11,
+          "severity": 1,
+          "hint": "19°C。主路清了一半，路口还站着人。"
+        },
+        {
+          "day": 12,
+          "severity": 1,
+          "hint": "19°C。补货车进了城，排了很久。"
+        },
+        {
+          "day": 13,
+          "severity": 1,
+          "hint": "20°C。路通了，货还是少。"
+        },
+        {
+          "day": 14,
+          "severity": 1,
+          "hint": "20°C。街口空了，货架慢慢填上。"
+        }
+      ],
+      "counterIntuitive": "封路挡住了补货车，也挡住了更远街区的人：这一场离你最近的店最先空，因为最先到的人只够搬空最近的货架。走远反而可能买到东西，前提是你敢走。",
+      "decisions": [
+        "最近的店已经空了，是走远两条街，还是在家等补货车",
+        "行动点少一个，出门一趟既要绕路又要提防人群，值不值",
+        "邻居来敲门换东西，接了是人情也多了暴露，隔不隔"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/13/15/16，共 15 个。人轴贡献 11/12/15（people 与 panic 事件、npc 1.5、健康债），路轴贡献 9/10（关批发与市场、涨价）。与骚乱不撞：骚乱关的是市场、npc 1.4、没说路断；本场加批发也关、npc 顶到 1.5、加 fuel 消耗（绕路烧油）与 emergency 权重。与本族酷暑断电不撞：那场是 heat+dark，本场无热无暗。"
+    },
+    {
+      "id": "typhoon_nowater",
+      "name": "台风停水",
+      "family": "组合",
+      "level": "L3",
+      "tier": 2,
+      "axis": "风与水：风把屋顶掀了，也把水泵房灌了，风停的第二天才是没水喝的一天",
+      "temperatures": {
+        "0": 24,
+        "3": 23,
+        "7": 23,
+        "11": 24,
+        "14": 25,
+        "-7": 27,
+        "-4": 26,
+        "-1": 25
+      },
+      "spoilRate": 1.8,
+      "dailyDrain": {
+        "water": 3,
+        "fuel": 1
+      },
+      "priorityCategories": [
+        "water",
+        "tool",
+        "medicine"
+      ],
+      "windowScene": "typhoon-dry-tap",
+      "shelterDecayPerDay": -3,
+      "restEfficiency": 0.55,
+      "carryFactor": 0.6,
+      "actionPointDelta": 0,
+      "shopSupplyFactor": 0.5,
+      "closedShopIds": [
+        "market",
+        "gas_station"
+      ],
+      "priceSurcharge": 0.4,
+      "eventPoolWeights": {
+        "water": 3,
+        "supply": 3,
+        "queue": 2
+      },
+      "npcVisitFactor": 0.8,
+      "categoryEfficiency": {
+        "water": 0.7
+      },
+      "capacityFactor": 0.85,
+      "unusableShelfIds": [
+        "shelf_a"
+      ],
+      "healthRiskPerDay": 1.5,
+      "scoreWeights": {
+        "emergency": 2
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "27°C。台风预警挂到了黄色。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "26°C。超市的水和电池被人整箱买走。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "26°C。风把楼下的广告牌吹倒了。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "25°C。雨点打在窗上，风越来越大。"
+        },
+        {
+          "day": -3,
+          "severity": 0.4,
+          "hint": "25°C。物业通知把阳台的东西收进屋。"
+        },
+        {
+          "day": -2,
+          "severity": 0.5,
+          "hint": "24°C。半夜风最大，窗户一直在响。"
+        },
+        {
+          "day": -1,
+          "severity": 0.65,
+          "hint": "24°C。水厂说泵站进了水。"
+        },
+        {
+          "day": 0,
+          "severity": 0.9,
+          "hint": "24°C。台风登陆，街上没人。"
+        },
+        {
+          "day": 1,
+          "severity": 1,
+          "hint": "23°C。风停了，水压没了。"
+        },
+        {
+          "day": 2,
+          "severity": 1,
+          "hint": "23°C。龙头里一滴水也没有。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "23°C。送水车停在路口，队伍很长。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "23°C。有人提桶去隔壁小区接水。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "23°C。超市开门，水架是空的。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "24°C。抢修队挖开路面的管子。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "24°C。水管里出来的是黄的。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "24°C。有人把浴缸先放满了。"
+        },
+        {
+          "day": 9,
+          "severity": 1,
+          "hint": "24°C。送水车一天来两趟。"
+        },
+        {
+          "day": 10,
+          "severity": 1,
+          "hint": "24°C。邻居来问有没有多的桶。"
+        },
+        {
+          "day": 11,
+          "severity": 1,
+          "hint": "25°C。水压回来了一半。"
+        },
+        {
+          "day": 12,
+          "severity": 1,
+          "hint": "25°C。高层还停水，往下打水。"
+        },
+        {
+          "day": 13,
+          "severity": 1,
+          "hint": "25°C。通知说还要烧开再喝。"
+        },
+        {
+          "day": 14,
+          "severity": 1,
+          "hint": "25°C。水清了，泵站还在修。"
+        }
+      ],
+      "counterIntuitive": "这一场最缺水的日子不是刮风那两天，是风停的第二天：台风时你躲在家里不消耗，等风一停，水泵房的电还没恢复，水箱也见了底，才轮到所有人一起排队。风最大时最安全，风停了才要出门。",
+      "decisions": [
+        "风还没停的时候把浴缸和桶放满，还是等通知说停水再抢",
+        "行动点不减但队伍很长，排队接水占掉半天值不值",
+        "桶和容器在这一场比水先缺，先囤容器还是先囤水"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/9（含 closedShopIds）/10/11/12/13/14（含 unusableShelfIds）/15/16，共 15 个。风轴贡献 5/14（建筑与低处受损），水轴贡献 1/9/11/13（水消耗、关市场与加油站、supply 与 queue、water 降效）。行动点刻意留 0（与台风不同、与断水不同）。与台风不撞：台风关的是周末集市与市场、主打 panic；本场关市场与加油站、主打 supply+queue 且 healthRisk 1.5。与断水不撞：断水是逐步降压，本场是一次性停摆且叠加风损。"
+    },
+    {
+      "id": "cold_epidemic",
+      "name": "寒潮疫情",
+      "family": "组合",
+      "level": "L3",
+      "tier": 3,
+      "axis": "暖与隔：取暖要把窗封死，防传染要把窗打开，两个动作在同一间屋里互相拆台",
+      "temperatures": {
+        "0": -8,
+        "3": -10,
+        "7": -11,
+        "11": -10,
+        "14": -8,
+        "-7": 2,
+        "-4": 0,
+        "-1": -4
+      },
+      "spoilRate": 0.8,
+      "dailyDrain": {
+        "fuel": 3,
+        "medicine": 2
+      },
+      "priorityCategories": [
+        "warmth",
+        "medicine",
+        "food"
+      ],
+      "windowScene": "cold-quarantine",
+      "shelterDecayPerDay": -1.5,
+      "restEfficiency": 0.6,
+      "carryFactor": 0.7,
+      "actionPointDelta": -1,
+      "shopSupplyFactor": 0.5,
+      "closedShopIds": [
+        "pharmacy",
+        "community_store"
+      ],
+      "priceSurcharge": 0.5,
+      "eventPoolWeights": {
+        "cold": 3,
+        "panic": 2,
+        "limit": 2
+      },
+      "npcVisitFactor": 0.7,
+      "categoryEfficiency": {
+        "medicine": 0.55
+      },
+      "healthRiskPerDay": 1.8,
+      "scoreWeights": {
+        "emergency": 3
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "2°C。寒潮预警挂了，还带一条流感通报。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "0°C。社区开始发口罩，一人两个。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "-2°C。有人说诊所里发热的人多了。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "-4°C。楼道里开始有人咳嗽。"
+        },
+        {
+          "day": -3,
+          "severity": 0.4,
+          "hint": "-5°C。药店门口的队排到了街边。"
+        },
+        {
+          "day": -2,
+          "severity": 0.5,
+          "hint": "-6°C。物业通知屋里要多通风。"
+        },
+        {
+          "day": -1,
+          "severity": 0.65,
+          "hint": "-7°C。窗上结了霜，还是得留一条缝。"
+        },
+        {
+          "day": 0,
+          "severity": 0.9,
+          "hint": "-8°C。寒潮到了，发热的人也在涨。"
+        },
+        {
+          "day": 1,
+          "severity": 1,
+          "hint": "-10°C。屋里烧着炉子，窗不敢开。"
+        },
+        {
+          "day": 2,
+          "severity": 1,
+          "hint": "-10°C。诊所改成只收发热的。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "-11°C。有人咳了一夜。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "-11°C。邻居隔着门放下一包药。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "-11°C。药店的退烧药断了。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "-10°C。屋里暖，人多，咳声密。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "-10°C。有人把老人单独挪到了一间。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "-10°C。通风和取暖只能选一个。"
+        },
+        {
+          "day": 9,
+          "severity": 1,
+          "hint": "-9°C。楼道里喷了消毒水。"
+        },
+        {
+          "day": 10,
+          "severity": 1,
+          "hint": "-9°C。送药的志愿者来了两趟。"
+        },
+        {
+          "day": 11,
+          "severity": 1,
+          "hint": "-8°C。发热的人开始退烧。"
+        },
+        {
+          "day": 12,
+          "severity": 1,
+          "hint": "-8°C。诊所重新开门。"
+        },
+        {
+          "day": 13,
+          "severity": 1,
+          "hint": "-8°C。窗户能开大一点了。"
+        },
+        {
+          "day": 14,
+          "severity": 1,
+          "hint": "-7°C。天冷，屋里安静了。"
+        }
+      ],
+      "counterIntuitive": "要取暖就得把窗缝堵死，要防传染就得把窗打开，这两个动作在同一间屋里互相拆台：你越舍得烧燃料，屋里的人越聚得紧，传染也越顺。这一场省燃料和省药是同一笔账，省哪头都亏。",
+      "decisions": [
+        "封窗保暖和开窗通风只能选一样，家中有人发热时怎么排",
+        "药店断了退烧药，是冒着冷去更远的地方找，还是靠邻居换",
+        "行动点少一个，白天补觉还是出门找药，体力本身也是药"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/13/15/16，共 15 个。寒轴贡献 1/2（燃料消耗、腐坏变慢），疫轴贡献 9/13/15/16（关药店与便利店、med 降效、健康债、急救权重）。与寒潮不撞：寒潮刚需是燃料+保暖、腐坏 0.5、不关店；本场腐坏 0.8、加药刚需、关药店（最需要药却买不到）。与疫情不撞：疫情是常温、不烧燃料；本场把寒潮的燃料账压上来，npc 掉到 0.7（隔离）。"
+    },
+    {
+      "id": "flood_riot",
+      "name": "洪水骚乱",
+      "family": "组合",
+      "level": "L3",
+      "tier": 3,
+      "axis": "水与乱：水还没退，抢东西的人先来了，等水退时货架上剩下的不是泡坏的，是被搬走的",
+      "temperatures": {
+        "0": 21,
+        "3": 20,
+        "7": 20,
+        "11": 21,
+        "14": 22,
+        "-7": 24,
+        "-4": 23,
+        "-1": 22
+      },
+      "spoilRate": 2.3,
+      "dailyDrain": {
+        "water": 2,
+        "medicine": 1
+      },
+      "priorityCategories": [
+        "food",
+        "water",
+        "tool"
+      ],
+      "windowScene": "flood-riot",
+      "shelterDecayPerDay": -3,
+      "restEfficiency": 0.55,
+      "carryFactor": 0.55,
+      "actionPointDelta": -1,
+      "shopSupplyFactor": 0.4,
+      "closedShopIds": [
+        "market",
+        "community_store",
+        "supermarket"
+      ],
+      "priceSurcharge": 0.65,
+      "eventPoolWeights": {
+        "water": 3,
+        "people": 3,
+        "panic": 2
+      },
+      "npcVisitFactor": 1.45,
+      "categoryEfficiency": {
+        "warmth": 0.6
+      },
+      "capacityFactor": 0.75,
+      "unusableShelfIds": [
+        "shelf_b"
+      ],
+      "healthRiskPerDay": 1.8,
+      "scoreWeights": {
+        "emergency": 2
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "24°C。水还在街上，退了半掌。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "23°C。一楼的店都关了门。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "22°C。有人趟水去搬东西。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "22°C。夜里有人在水边转。"
+        },
+        {
+          "day": -3,
+          "severity": 0.4,
+          "hint": "21°C。楼下的仓库被撬了。"
+        },
+        {
+          "day": -2,
+          "severity": 0.5,
+          "hint": "21°C。邻居说昨天有人抢水。"
+        },
+        {
+          "day": -1,
+          "severity": 0.65,
+          "hint": "21°C。公告说低处不要单独去。"
+        },
+        {
+          "day": 0,
+          "severity": 0.9,
+          "hint": "21°C。水没退，抢东西的先来了。"
+        },
+        {
+          "day": 1,
+          "severity": 1,
+          "hint": "20°C。货架倒了，东西散了一地。"
+        },
+        {
+          "day": 2,
+          "severity": 1,
+          "hint": "20°C。店门开着，人比货多。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "20°C。有人结伴守着楼道口。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "20°C。送水车迟了，围着的人更多。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "20°C。水退了半米，泥留在了路上。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "20°C。有人趁夜搬空了对门的库房。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "20°C。楼栋里排了班守夜。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "20°C。能走的路多了，人也散了。"
+        },
+        {
+          "day": 9,
+          "severity": 1,
+          "hint": "20°C。第一批货卸在了路口。"
+        },
+        {
+          "day": 10,
+          "severity": 1,
+          "hint": "21°C。有人拿工具去换水。"
+        },
+        {
+          "day": 11,
+          "severity": 1,
+          "hint": "21°C。水位在降，店在慢慢开。"
+        },
+        {
+          "day": 12,
+          "severity": 1,
+          "hint": "21°C。货架填了一半。"
+        },
+        {
+          "day": 13,
+          "severity": 1,
+          "hint": "21°C。守夜的班撤了。"
+        },
+        {
+          "day": 14,
+          "severity": 1,
+          "hint": "22°C。水全退了，门口还留着木板。"
+        }
+      ],
+      "counterIntuitive": "水退之后你才发现，被泡坏的货没那么多，被人搬走的更多：抢的人比水走得快，也走得早。这一场真正该防的不是水，是水还没有退完的那几个小时。",
+      "decisions": [
+        "低处还泡着水，是现在就去搬货，还是等人多了一起去更安全",
+        "货架被抢空，剩下的是工具和零件，要不要拿工具去换水换粮",
+        "夜里要不要排班守楼口，守夜的人第二天出不了门"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/13/14（含 unusableShelfIds）/15/16，共 16 个。水轴贡献 5/13/14（建筑衰减、warmth 失效、空间作废），乱轴贡献 9/11/12（连关三家店、people 事件、npc 1.45）。与洪水不撞：洪水 npr 1.2、只关五金店；本场连关超市市场与便利店、npc 1.45、涨价 0.65。与骚乱不撞：骚乱是干地、关市场、npc 1.4；本场把水的空间损失叠上来。"
+    },
+    {
+      "id": "heat_blackout_fire",
+      "name": "火烤断电",
+      "family": "组合",
+      "level": "L4",
+      "tier": 4,
+      "axis": "热与暗与火：火和热在抢同一桶水，而断电让水泵停摆，你要决定先给谁",
+      "temperatures": {
+        "0": 42,
+        "3": 43,
+        "7": 44,
+        "11": 43,
+        "14": 42,
+        "-7": 38,
+        "-4": 39,
+        "-1": 40
+      },
+      "spoilRate": 3,
+      "dailyDrain": {
+        "water": 3,
+        "medicine": 2
+      },
+      "priorityCategories": [
+        "water",
+        "medicine",
+        "fuel"
+      ],
+      "windowScene": "fire-heat-blackout",
+      "shelterDecayPerDay": -3.5,
+      "restEfficiency": 0.45,
+      "carryFactor": 0.5,
+      "actionPointDelta": -1,
+      "shopSupplyFactor": 0.4,
+      "closedShopIds": [
+        "supermarket",
+        "hardware",
+        "gas_station"
+      ],
+      "priceSurcharge": 0.7,
+      "eventPoolWeights": {
+        "heat": 3,
+        "dark": 2,
+        "panic": 3,
+        "water": 2
+      },
+      "npcVisitFactor": 1.3,
+      "categoryEfficiency": {
+        "food": 0.6,
+        "medicine": 0.7
+      },
+      "capacityFactor": 0.6,
+      "unusableShelfIds": [
+        "shelf_c"
+      ],
+      "healthRiskPerDay": 2.5,
+      "scoreWeights": {
+        "fefo": 3,
+        "emergency": 2
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "38°C。高温红色预警，电网也在提醒。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "39°C。林区挂了火险最高的牌子。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "39°C。有人往楼顶搬了水箱。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "40°C。消防通道被杂物占了。"
+        },
+        {
+          "day": -3,
+          "severity": 0.4,
+          "hint": "40°C。小区外的山坡干得发白。"
+        },
+        {
+          "day": -2,
+          "severity": 0.5,
+          "hint": "41°C。电网说要拉闸限电。"
+        },
+        {
+          "day": -1,
+          "severity": 0.65,
+          "hint": "42°C。风大，天边有烟。"
+        },
+        {
+          "day": 0,
+          "severity": 0.9,
+          "hint": "44°C。火从坡上过来了，电也断了。"
+        },
+        {
+          "day": 1,
+          "severity": 1,
+          "hint": "43°C。消防泵没电，接不上水。"
+        },
+        {
+          "day": 2,
+          "severity": 1,
+          "hint": "43°C。水先浇火，喝的排在后面。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "42°C。屋里比外面更闷，电扇不转。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "42°C。冰箱停了，肉在化。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "42°C。有人整夜守在楼下的水桶边。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "42°C。烟压下来，楼道里看不清。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "42°C。火压下去一处，又起一处。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "42°C。水和药都不够两头用。"
+        },
+        {
+          "day": 9,
+          "severity": 1,
+          "hint": "42°C。有人把老人挪到了河堤上。"
+        },
+        {
+          "day": 10,
+          "severity": 1,
+          "hint": "42°C。送水车来了一趟，围了很多人。"
+        },
+        {
+          "day": 11,
+          "severity": 1,
+          "hint": "42°C。电没来，火还在冒烟。"
+        },
+        {
+          "day": 12,
+          "severity": 1,
+          "hint": "42°C。风转了向，火往回退。"
+        },
+        {
+          "day": 13,
+          "severity": 1,
+          "hint": "42°C。火线撤了，人还在咳。"
+        },
+        {
+          "day": 14,
+          "severity": 1,
+          "hint": "42°C。明火灭了，电还没有。"
+        }
+      ],
+      "counterIntuitive": "三条轴里最致命的一条不是火，是停电：没有电就没有水泵，火没水浇，热也没法降，火和热在同一桶水前排队。所以这一场你要决定的不是买什么，是先给火还是先给人。",
+      "decisions": [
+        "同一桶水要先浇火还是先喝，给错一次就有一头失控",
+        "行动点只剩一个，出门找水还是在楼里清出防火带",
+        "冰箱里的东西当天吃完，还是留一点给被烟呛到的人"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/13/14（含 unusableShelfIds）/15/16，共 16 个，L4 用 1~16 凑满。热轴贡献 1/2/13，电轴贡献 8/9/11，火轴贡献 5/14/15/16。三轴各有分工：热压水与腐坏、电压行动点与商店、火压空间与健康。与酷暑断电不撞：那场 L3 只两条轴、fire 未上线；本场关三家店、capacity 0.6、healthRisk 2.5、fefo:3。与大停电不撞：那场是 cold+dark 无火。"
+    },
+    {
+      "id": "quake_cold",
+      "name": "地震寒潮",
+      "family": "组合",
+      "level": "L3",
+      "tier": 3,
+      "axis": "裂与寒：房子漏风又降温，补墙和取暖抢同一份体力",
+      "temperatures": {
+        "0": -12,
+        "3": -15,
+        "7": -16,
+        "11": -15,
+        "14": -12,
+        "-7": 0,
+        "-4": -3,
+        "-1": -7
+      },
+      "spoilRate": 0.7,
+      "dailyDrain": {
+        "fuel": 3,
+        "food": 1
+      },
+      "priorityCategories": [
+        "warmth",
+        "fuel",
+        "tool"
+      ],
+      "windowScene": "quake-cold",
+      "shelterDecayPerDay": -3.5,
+      "restEfficiency": 0.5,
+      "carryFactor": 0.6,
+      "actionPointDelta": -1,
+      "shopSupplyFactor": 0.45,
+      "closedShopIds": [
+        "hardware",
+        "wholesale"
+      ],
+      "priceSurcharge": 0.35,
+      "eventPoolWeights": {
+        "cold": 3,
+        "supply": 3,
+        "neighbor": 2
+      },
+      "npcVisitFactor": 0.9,
+      "categoryEfficiency": {
+        "tool": 1.25,
+        "warmth": 0.7
+      },
+      "capacityFactor": 0.65,
+      "unusableShelfIds": [
+        "shelf_c"
+      ],
+      "healthRiskPerDay": 1.5,
+      "scoreWeights": {
+        "placement": 2
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "0°C。寒潮预警和一条余震消息同时来。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "-1°C。老楼的墙上多了道新缝。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "-3°C。有人先用胶带把门窗缝贴上。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "-5°C。夜里又晃了一下，窗户在响。"
+        },
+        {
+          "day": -3,
+          "severity": 0.4,
+          "hint": "-6°C。煤和胶带都涨了价。"
+        },
+        {
+          "day": -2,
+          "severity": 0.5,
+          "hint": "-8°C。屋里的温度比外面高不了多少。"
+        },
+        {
+          "day": -1,
+          "severity": 0.65,
+          "hint": "-10°C。物业说墙上的洞暂时没人修。"
+        },
+        {
+          "day": 0,
+          "severity": 0.9,
+          "hint": "-12°C。余震把外墙扯开了。"
+        },
+        {
+          "day": 1,
+          "severity": 1,
+          "hint": "-14°C。屋里灌风，炉子烧不热。"
+        },
+        {
+          "day": 2,
+          "severity": 1,
+          "hint": "-15°C。有人先补窗，有人先烧炭。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "-16°C。补墙的料不够，先堵了主屋。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "-16°C。水管冻裂，屋里进了冰。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "-16°C。抢修的和取暖的抢同一份柴。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "-16°C。有人把床挪到了没裂缝的一间。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "-16°C。墙补了一半，风小了一点。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "-15°C。邻居来借工具和炭。"
+        },
+        {
+          "day": 9,
+          "severity": 1,
+          "hint": "-15°C。外面零下，屋里也在零下。"
+        },
+        {
+          "day": 10,
+          "severity": 1,
+          "hint": "-15°C。送炭的车来了一趟。"
+        },
+        {
+          "day": 11,
+          "severity": 1,
+          "hint": "-14°C。裂缝堵住了大半。"
+        },
+        {
+          "day": 12,
+          "severity": 1,
+          "hint": "-13°C。屋里能烧热一小块地方。"
+        },
+        {
+          "day": 13,
+          "severity": 1,
+          "hint": "-13°C。余震停了，墙还敞着一道。"
+        },
+        {
+          "day": 14,
+          "severity": 1,
+          "hint": "-12°C。天回暖了一点，人还没缓过来。"
+        }
+      ],
+      "counterIntuitive": "修房子和取暖抢的不是钱，是同一份体力：墙上的洞补上之前，烧多少燃料都是白烧，热气顺着裂缝就走。可补洞的那几个小时，恰好又冷得伸不出手，于是越冷越修不动，越修不动越冷。",
+      "decisions": [
+        "柴先烧来取暖，还是先用来烧水拌补墙的料，两者都要火",
+        "低处和一面墙的货架都塌了，剩下的空间先放柴还是先放工具",
+        "邻居来借工具和炭，借出去自己的墙就晚一天补，借不借"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/13/14（含 unusableShelfIds）/15/16，共 16 个。震轴贡献 5/7/14（衰减、搬运、空间损失），寒轴贡献 1/2（燃料消耗、腐坏变慢）。与地震不撞：地震不烧燃料、warmth 无害；本场 warmth 0.7（漏风失效）、关五金店与批发、cold 事件为主。与寒潮不撞：寒潮不关店、不损失空间、腐坏 0.5；本场腐坏 0.7、capacity 0.65、tool 1.25。"
+    },
+    {
+      "id": "mold_blackout",
+      "name": "霉雨断电",
+      "family": "组合",
+      "level": "L3",
+      "tier": 2,
+      "axis": "潮与暗：断电最要命的不是黑，是不能再烘干，越勤快洗东西坏得越快",
+      "temperatures": {
+        "0": 25,
+        "3": 24,
+        "7": 24,
+        "11": 25,
+        "14": 26,
+        "-7": 28,
+        "-4": 27,
+        "-1": 26
+      },
+      "spoilRate": 2.8,
+      "dailyDrain": {
+        "medicine": 1,
+        "fuel": 1
+      },
+      "priorityCategories": [
+        "food",
+        "warmth",
+        "tool"
+      ],
+      "windowScene": "mold-blackout",
+      "shelterDecayPerDay": -2.5,
+      "restEfficiency": 0.6,
+      "carryFactor": 0.7,
+      "actionPointDelta": -1,
+      "shopSupplyFactor": 0.6,
+      "closedShopIds": [
+        "supermarket",
+        "hardware"
+      ],
+      "priceSurcharge": 0.35,
+      "eventPoolWeights": {
+        "dark": 3,
+        "water": 2,
+        "market": 2
+      },
+      "npcVisitFactor": 0.8,
+      "categoryEfficiency": {
+        "food": 0.6,
+        "warmth": 0.6
+      },
+      "capacityFactor": 0.8,
+      "unusableShelfIds": [
+        "shelf_b"
+      ],
+      "healthRiskPerDay": 1.5,
+      "scoreWeights": {
+        "fefo": 3
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "28°C。雨下了三天，墙面发潮。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "27°C。晾在阳台的衣服两天没干。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "26°C。有人说昨晚跳了好几次闸。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "26°C。米缸的盖子内侧起了水珠。"
+        },
+        {
+          "day": -3,
+          "severity": 0.4,
+          "hint": "25°C。干货开始返潮，饼干软了。"
+        },
+        {
+          "day": -2,
+          "severity": 0.5,
+          "hint": "25°C。除湿机开着，电表走得快。"
+        },
+        {
+          "day": -1,
+          "severity": 0.65,
+          "hint": "25°C。物业说可能要拉闸。"
+        },
+        {
+          "day": 0,
+          "severity": 0.9,
+          "hint": "25°C。停电了，除湿机停了。"
+        },
+        {
+          "day": 1,
+          "severity": 1,
+          "hint": "24°C。屋里潮得能拧出水。"
+        },
+        {
+          "day": 2,
+          "severity": 1,
+          "hint": "24°C。面粉结了块，衣服有霉点。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "24°C。有人把粮食摊在地上晾。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "24°C。晾了一夜的鞋还是湿的。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "24°C。墙角长出了黑毛。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "24°C。干货按天数一件件坏。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "24°C。有人想生火烘干，柴不够。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "24°C。米袋底部的米发了霉。"
+        },
+        {
+          "day": 9,
+          "severity": 1,
+          "hint": "24°C。有人开始咳，说屋里太潮。"
+        },
+        {
+          "day": 10,
+          "severity": 1,
+          "hint": "24°C。电来了一小时，又断了。"
+        },
+        {
+          "day": 11,
+          "severity": 1,
+          "hint": "25°C。晒了半天，被子还是潮的。"
+        },
+        {
+          "day": 12,
+          "severity": 1,
+          "hint": "25°C。有人把粮食搬到了楼道。"
+        },
+        {
+          "day": 13,
+          "severity": 1,
+          "hint": "25°C。霉味在屋里散不掉。"
+        },
+        {
+          "day": 14,
+          "severity": 1,
+          "hint": "26°C。天晴了，电还没来。"
+        }
+      ],
+      "counterIntuitive": "断电在霉雨天里最要命的不是黑，是不能再烘干：除湿机和烘干机一停，水汽就只能留在屋里，而霉是靠水汽繁殖的。所以你越勤快地洗衣服、摊开晾，东西坏得越快，这一场该做的是少洗、少开门。",
+      "decisions": [
+        "除湿机和烘干机停了，是生火烘干还是干脆少洗少用",
+        "干货按天数一件件坏，是先吃掉要坏的还是摊开赌天晴",
+        "低处的格子返潮最重，东西往高处码时顺手位怎么排"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/13/14（含 unusableShelfIds）/15/16，共 16 个。潮轴贡献 2/5/13/16（腐坏 2.8、建筑返潮、food 与 warmth 双降效、fefo:3），电轴贡献 8/9/11（行动点 -1、关超市与五金、dark 事件）。与霉雨不撞：霉雨不关店、npc 0.9、腐坏靠环境；本场关超市与五金、腐坏 2.8、warmth 也降效（衣物潮）。与大停电不撞：那场是 cold+dark、腐坏 1.6；本场是水汽主轴、腐坏 2.8。"
+    },
+    {
+      "id": "sandstorm_riot",
+      "name": "沙暴骚乱",
+      "family": "组合",
+      "level": "L3",
+      "tier": 3,
+      "axis": "尘与人：沙暴把能见度压到一条街，也把巡逻的人压回屋里，谁都看不清谁在门口",
+      "temperatures": {
+        "0": 23,
+        "3": 23,
+        "7": 22,
+        "11": 23,
+        "14": 24,
+        "-7": 26,
+        "-4": 25,
+        "-1": 24
+      },
+      "spoilRate": 2,
+      "dailyDrain": {
+        "medicine": 1,
+        "water": 2
+      },
+      "priorityCategories": [
+        "water",
+        "medicine",
+        "tool"
+      ],
+      "windowScene": "dust-riot",
+      "shelterDecayPerDay": -2,
+      "restEfficiency": 0.55,
+      "carryFactor": 0.55,
+      "actionPointDelta": -1,
+      "shopSupplyFactor": 0.45,
+      "closedShopIds": [
+        "market",
+        "weekend_flea"
+      ],
+      "priceSurcharge": 0.6,
+      "eventPoolWeights": {
+        "people": 3,
+        "panic": 2,
+        "supply": 2
+      },
+      "npcVisitFactor": 1.4,
+      "categoryEfficiency": {
+        "medicine": 0.7
+      },
+      "healthRiskPerDay": 2.5,
+      "scoreWeights": {
+        "emergency": 3
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "26°C。天边是黄的，风也起来了。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "25°C。街上的人比平时少。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "24°C。超市的面粉被人搬走几袋。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "24°C。能见度越来越差。"
+        },
+        {
+          "day": -3,
+          "severity": 0.4,
+          "hint": "23°C。有人说昨晚门市被砸了。"
+        },
+        {
+          "day": -2,
+          "severity": 0.5,
+          "hint": "23°C。邻居把铁门加固了。"
+        },
+        {
+          "day": -1,
+          "severity": 0.65,
+          "hint": "22°C。公告说风大时别出门。"
+        },
+        {
+          "day": 0,
+          "severity": 0.9,
+          "hint": "23°C。沙暴到了，巡逻的人也躲了。"
+        },
+        {
+          "day": 1,
+          "severity": 1,
+          "hint": "22°C。看不清谁在街上走。"
+        },
+        {
+          "day": 2,
+          "severity": 1,
+          "hint": "22°C。货架在风里又空了一排。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "22°C。有人趁乱搬走了门口的货。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "22°C。屋里积土，人也不敢开窗。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "22°C。排队的人戴着口罩，看不清脸。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "23°C。夜里有人敲门，没看清是谁。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "23°C。楼栋里排了班轮流看门。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "23°C。风小了点，街上多了人。"
+        },
+        {
+          "day": 9,
+          "severity": 1,
+          "hint": "23°C。丢东西的在楼下对账。"
+        },
+        {
+          "day": 10,
+          "severity": 1,
+          "hint": "23°C。有人拿工具去换水。"
+        },
+        {
+          "day": 11,
+          "severity": 1,
+          "hint": "23°C。能见度回来了。"
+        },
+        {
+          "day": 12,
+          "severity": 1,
+          "hint": "24°C。货架慢慢填上。"
+        },
+        {
+          "day": 13,
+          "severity": 1,
+          "hint": "24°C。天还是灰的。"
+        },
+        {
+          "day": 14,
+          "severity": 1,
+          "hint": "24°C。沙落了，谁家少了什么也说不清。"
+        }
+      ],
+      "counterIntuitive": "沙暴不只是挡了你的路，它还替趁乱的人挡了目击：能见度压到一条街时，巡逻的躲了，你隔着面罩看不清对面是谁，许多损失是在白天大大方方发生的。这一场最贵的不是口罩，是认识你的邻居。",
+      "decisions": [
+        "风大时看不远，货物放门口还是立刻收进屋",
+        "口罩挡住的不只是土，也挡住了熟人的脸，认人要怎么做",
+        "巡逻的人少了，是自家排班看门还是把货藏得更深"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/13/15/16，共 15 个。尘轴贡献 7/13/15（搬运、medicine 降效、健康债 2.5），乱轴贡献 9/11/12（关市场与集市、people 事件、npc 1.4）。与沙暴不撞：沙暴 npr 0.6（没人出门）、关周末集市；本场 npr 1.4、连关市场、加 people 与 panic。与骚乱不撞：骚乱不涉空气、healthRisk 无；本场健康债 2.5 是主压。"
+    },
+    {
+      "id": "cold_sandstorm",
+      "name": "寒潮沙暴",
+      "family": "组合",
+      "level": "L3",
+      "tier": 3,
+      "axis": "冷与尘：口罩和取暖费从同一个口袋掏，冷先把呼吸道磨薄，尘再补上一记",
+      "temperatures": {
+        "0": -6,
+        "3": -8,
+        "7": -9,
+        "11": -8,
+        "14": -6,
+        "-7": 1,
+        "-4": -1,
+        "-1": -4
+      },
+      "spoilRate": 0.9,
+      "dailyDrain": {
+        "fuel": 3,
+        "medicine": 1
+      },
+      "priorityCategories": [
+        "warmth",
+        "fuel",
+        "water"
+      ],
+      "windowScene": "cold-dust",
+      "shelterDecayPerDay": -2,
+      "restEfficiency": 0.55,
+      "carryFactor": 0.6,
+      "actionPointDelta": 0,
+      "shopSupplyFactor": 0.55,
+      "closedShopIds": [
+        "hardware"
+      ],
+      "priceSurcharge": 0.4,
+      "eventPoolWeights": {
+        "cold": 3,
+        "limit": 2,
+        "supply": 2
+      },
+      "npcVisitFactor": 0.55,
+      "categoryEfficiency": {
+        "medicine": 0.8
+      },
+      "healthRiskPerDay": 2.2,
+      "scoreWeights": {
+        "fefo": 2
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "1°C。寒潮预警和沙尘预报一起来了。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "0°C。口罩和取暖器都开始涨价。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "-2°C。风里带了土，天变黄了。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "-3°C。有人堵了窗缝，屋里还是进土。"
+        },
+        {
+          "day": -3,
+          "severity": 0.4,
+          "hint": "-4°C。出门一趟，鼻子里全是灰。"
+        },
+        {
+          "day": -2,
+          "severity": 0.5,
+          "hint": "-5°C。柴和口罩在同一天涨价。"
+        },
+        {
+          "day": -1,
+          "severity": 0.65,
+          "hint": "-5°C。风把土刮得看不见路。"
+        },
+        {
+          "day": 0,
+          "severity": 0.9,
+          "hint": "-6°C。冷和沙一起来了。"
+        },
+        {
+          "day": 1,
+          "severity": 1,
+          "hint": "-8°C。屋里烧着炉子，窗不敢开。"
+        },
+        {
+          "day": 2,
+          "severity": 1,
+          "hint": "-8°C。有人咳得停不下来。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "-9°C。口罩一天换两个也不够。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "-9°C。柴烧得快，土还是进得来。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "-9°C。有人在屋里也戴上了口罩。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "-9°C。邻居来借柴，顺带要了两个口罩。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "-9°C。窗缝堵死了，屋里还是有一层土。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "-9°C。风把院里的柴吹得到处都是。"
+        },
+        {
+          "day": 9,
+          "severity": 1,
+          "hint": "-8°C。有人咳了几天，去看了医生。"
+        },
+        {
+          "day": 10,
+          "severity": 1,
+          "hint": "-8°C。送柴的车戴着头灯进城。"
+        },
+        {
+          "day": 11,
+          "severity": 1,
+          "hint": "-7°C。风小了，天还是黄的。"
+        },
+        {
+          "day": 12,
+          "severity": 1,
+          "hint": "-7°C。能开一小会儿窗了。"
+        },
+        {
+          "day": 13,
+          "severity": 1,
+          "hint": "-7°C。屋里扫出一层细土。"
+        },
+        {
+          "day": 14,
+          "severity": 1,
+          "hint": "-6°C。天晴了，柴也快见底。"
+        }
+      ],
+      "counterIntuitive": "防尘的口罩和取暖的燃料在同一笔钱里抢，但真正贵的是顺序：先买燃料能熬过夜，先买口罩能熬过白天，两者都缺的那几天恰好是风最硬的时候。而这一场冷和尘是加法的，冷把气管先磨薄，尘只负责让它更疼。",
+      "decisions": [
+        "预算只够一样，先买燃料过夜还是先买口罩出门",
+        "风把院里的柴吹散，是冒着沙去捡还是眼看着烧完",
+        "屋顶和窗缝都堵了土还是进得来，清扫要占掉多少行动点"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/9（含 closedShopIds）/10/11/12/13/15/16，共 15 个。寒轴贡献 1/2（燃料、腐坏变慢），尘轴贡献 13/15（medicine 0.8、健康债 2.2）。行动点刻意留 0（冷与尘都不直接断腿，压的是钱与健康）。与寒潮不撞：寒潮无健康债、无尘、npr 高；本场 npr 0.55、healthRisk 2.2。与沙暴不撞：沙暴是常温、npr 0.6；本场烧 3 份燃料、腐坏 0.9。"
+    },
+    {
+      "id": "blackout_riot",
+      "name": "停电骚乱",
+      "family": "组合",
+      "level": "L3",
+      "tier": 3,
+      "axis": "黑与人：黑暗没让人看不清路，是让人看不见彼此在做什么，来的人比有电时更勤",
+      "temperatures": {
+        "0": 15,
+        "3": 14,
+        "7": 14,
+        "11": 15,
+        "14": 16,
+        "-7": 18,
+        "-4": 17,
+        "-1": 16
+      },
+      "spoilRate": 2,
+      "dailyDrain": {
+        "food": 1,
+        "water": 1
+      },
+      "priorityCategories": [
+        "food",
+        "fuel",
+        "medicine"
+      ],
+      "windowScene": "black-riot",
+      "shelterDecayPerDay": -2,
+      "restEfficiency": 0.5,
+      "carryFactor": 0.7,
+      "actionPointDelta": -1,
+      "shopSupplyFactor": 0.45,
+      "closedShopIds": [
+        "supermarket",
+        "market"
+      ],
+      "priceSurcharge": 0.55,
+      "eventPoolWeights": {
+        "dark": 3,
+        "people": 3,
+        "panic": 2
+      },
+      "npcVisitFactor": 1.5,
+      "categoryEfficiency": {
+        "tool": 0.8
+      },
+      "healthRiskPerDay": 1.8,
+      "scoreWeights": {
+        "emergency": 2
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "18°C。电费单和一条治安消息一起到。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "17°C。小区门口多了几个人守着。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "16°C。超市的货架被搬得快。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "16°C。有人说主路那边打起来了。"
+        },
+        {
+          "day": -3,
+          "severity": 0.4,
+          "hint": "15°C。物业把大门的灯换成应急灯。"
+        },
+        {
+          "day": -2,
+          "severity": 0.5,
+          "hint": "15°C。夜里有人挨家问有没有吃的。"
+        },
+        {
+          "day": -1,
+          "severity": 0.65,
+          "hint": "14°C。电网说要拉闸。"
+        },
+        {
+          "day": 0,
+          "severity": 0.9,
+          "hint": "15°C。全黑了，楼下有人吵起来。"
+        },
+        {
+          "day": 1,
+          "severity": 1,
+          "hint": "14°C。没有灯，看不清谁在门口。"
+        },
+        {
+          "day": 2,
+          "severity": 1,
+          "hint": "14°C。冰箱停了，肉在化。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "14°C。夜里敲门的人比往常多。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "14°C。有人举着手电在楼道里转。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "14°C。邻居结伴守住了楼口。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "14°C。超市提前关了门，货没了。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "14°C。手电和蜡烛成了硬货。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "15°C。有人趁黑搬走了外面的东西。"
+        },
+        {
+          "day": 9,
+          "severity": 1,
+          "hint": "15°C。来电了十分钟，又灭了。"
+        },
+        {
+          "day": 10,
+          "severity": 1,
+          "hint": "15°C。楼栋里排了守夜的班。"
+        },
+        {
+          "day": 11,
+          "severity": 1,
+          "hint": "15°C。街上安静了一点。"
+        },
+        {
+          "day": 12,
+          "severity": 1,
+          "hint": "15°C。电来得勤了一些。"
+        },
+        {
+          "day": 13,
+          "severity": 1,
+          "hint": "16°C。夜里能看清路了。"
+        },
+        {
+          "day": 14,
+          "severity": 1,
+          "hint": "16°C。电稳住了，门口的岗还留着。"
+        }
+      ],
+      "counterIntuitive": "黑暗真正的作用不是遮住路，是遮住见证：有灯的时候，谁进了楼道、谁搬了东西都有人看着；一停电，来的人反而比有电时更勤，因为没人看得见。这一场手电和蜡烛不是照明，是给邻居看的证明。",
+      "decisions": [
+        "把手电和蜡烛拿出来当照明，还是当给邻居看的证明",
+        "夜里敲门的人变多，开门分东西还是装没人",
+        "冰箱停了要尽快吃掉，但分给守夜的人就意味着自己少吃一顿"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/13/15/16，共 15 个。电轴贡献 8/9（行动点 -1、关超市与市场），人轴贡献 11/12/15（dark+people 事件、npc 1.5 顶格、健康债 1.8）。与骚乱不撞：骚乱是白天默认、关市场、npc 1.4；本场加 dark 事件、连关超市、npc 1.5。与大停电不撞：大停电是 cold+dark、刚需是燃料食物、腐坏 1.6；本场无寒潮、腐坏 2.0、把 people 轴拉满（npc 1.5 与大停电的 1.3 不同）。"
+    }
+  ]
+}

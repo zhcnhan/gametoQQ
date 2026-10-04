@@ -1,0 +1,2755 @@
+{
+  "kind": "disaster",
+  "batch": "灾难-生物",
+  "batchNote": "本族 16 场（由外援分批生成、后按家族合并）。\n\n· 霉雨（mold_rain）：湿与霉：东西不是不够，是留不住\n· 鼠患（rat_infest）：仓储与食品链一起爆鼠：批发货场、菜场后仓、小区垃圾站，货在源头就被咬穿\n· 疫情（outbreak_flu）：人际传染：有人病了，人就不敢来了，医疗最先见底\n· 菌痢（dysentery_water）：水里有菌，喝下去就病，饮水与医疗一起紧\n· 胡蜂（wasp_swarm）：全城蜂害：屋檐、工地、晾晒面全成了高危区，户外作业与晾晒一起停\n· 蚊虫（mosquito_swarm）：全城虫媒疫情：被叮的每一下都在换健康，水和药一起吃紧\n· 白蚁（termite_damage）：成片木结构被从里面啃空，房屋与货架一起失稳，能放货的地方先塌\n· 蝇蛆（fly_maggot）：垃圾清运停摆，城区卫生先崩，厨余在楼里发酵，存粮跟着一起废\n· 蜱虫（tick_grass）：区域蜱传病流行，户外作业与采集全面受限，上山整片被封\n· 藻华（algae_bloom）：水源起了藻，水有味不能直接喝，水和药一起吃紧\n· 腐生菌（saprophyte）：包装与容器材料全面失效：装东西的家什比里面的东西先烂，供应链级损失\n· 蝗灾（locust_swarm）：绿色的东西在一周内消失：绿化带、菜地和饲料一起被啃光\n· 畜疫（livestock_plague）：能下蛋能产肉的都在被扑杀：防疫清的是整片，不问这一头\n· 赤潮（red_tide）：海还在，海里的东西不能吃：近海赤潮，海产被检测整片拦下\n· 森林虫灾（forest_pest）：山变秃，是虫干的：成片山林被啃，木材、柴火、山货一起断\n· 粮食霉变（grain_mold）：粮还在，毒素进了供应链：全城粮库受潮霉变，看着完好的也不能吃\n\n## 生成时的说明（原样保留）\n\n标杆 4 场（手写），按 §10B.8 的 5c 写的：每场主打一个**还没被覆盖的家族与机制**，它们是后面批量生成的**口径样板**。选题理由：① 骚乱走「社会」家族，全案第一次让 NPC 行为成为主要压力（人来得更勤、要的是吃的）；② 沙暴走「空气」家族，第一次用 healthRiskPerDay 。那个维度是唯一一个「不看玩家做了什么也在掉血」的；③ 地震走「结构」家族，第一次用 unusableShelfIds（整块家具没了，不是「小一圈」）；④ 霉雨走「生物」家族，第一次用 categoryEfficiency 打主食。四场都刻意避开『把敌人血量乘 1.5』那种写法：每一场的 pressure 都换了一条轴。\n\n---\n\n本批 3 场，家族=生物。移出 2 场（米象、蚁害，都降为事件）；重写 1 场（鼠患升尺度为『仓储与食品链的鼠害爆发』，批发货场、菜场后仓、小区垃圾站一起）；疫情、菌痢保留未动。各场压力轴：鼠患=食品链在源头被咬穿（closedShopIds 关掉 wholesale/market/community_store，categoryEfficiency 打 food 与 tool）；疫情=人际传染、人不敢来（npcVisitFactor 0.5 全案最低）；菌痢=水里有菌、饮水与医疗一起紧（healthRiskPerDay 2）。最弱的一场：菌痢。理由：它保留未动，维度 14 个，且与藻华同打 water 效率，虽健康风险更高，但在『水不能直接喝』的体感上仍与藻华最近，只能靠『水里带菌、盯补液』来区分。\n\n---\n\n本批 3 场，家族=生物。移出 2 场（跳蚤、蛾害，都降为事件）；重写 3 场：胡蜂升尺度为『全城蜂害、户外作业与晾晒全面停摆』并带上被蜇后的就医潮，蚊虫升尺度为『虫媒疫情』（登革热式），白蚁升尺度为『建筑群木结构被啃空、成片房屋与货架同时失稳』。各场压力轴：胡蜂=户外按高度封闭、搬运与作业停（carryFactor 0.55，tool 反向 1.2）；蚊虫=全城虫媒病、水和药一起紧（healthRiskPerDay 2.5）；白蚁=成片木结构承重垮、空间消失（shelterDecayPerDay -3.5 + capacityFactor 0.7 + 摘掉一块架）。最弱的一场：白蚁。理由：它与结构族的地震在『空间没了』上最近，维度虽到 16 个，但 categoryEfficiency 只打 tool 一项、且健康风险最低（0.5），只能靠『从内部掏空的慢性损失』与『成片建筑群』来区分。\n\n---\n\n本批 4 场，家族=生物。无移出（蝇蛆、蜱虫、腐生菌重写升尺度，藻华保留）。重写 3 场：蝇蛆升尺度为『垃圾清运停摆导致的城区卫生崩』；蜱虫升尺度为『区域蜱传病流行、户外作业与采集全面受限』；腐生菌升尺度为『包装与容器材料全面失效』（供应链级）。各场压力轴：蝇蛆=清运停摆、卫生崩（spoilRate 3.2、关掉三家店）；蜱虫=区域虫媒病、上山整片封（healthRiskPerDay 2.5 + actionPointDelta -1）；藻华=水源起藻、要滤要烧（water 效率 0.5 全案最低）；腐生菌=装东西的家什先烂（categoryEfficiency 打 tool 0.55）。最弱的一场：藻华。理由：它保留未动，维度 14 个，且与菌痢在『水不能直接喝』上最近，只能靠『烧开只去味不去毒』与盯燃料来区分。\n\n---\n\n本批 5 场，家族=生物（新增）。把生物族从『你家的事』拉到全城/区域级，五场各走一条『东西留不住』的不同路：蝗灾=被吃掉（鲜食层被啃光，priceSurcharge 0.55）；畜疫=被扑杀（肉蛋奶整类断，priceSurcharge 0.7 全场最高）；赤潮=不能吃（海产被检测整片拦下，food+water 效率齐降）；森林虫灾=被蛀空（柴火与山货断，fuel 效率 0.6）；粮食霉变=有毒（粮还在、毒素进供应链，spoilRate 3.5 全族最快）。全部 L3、tier 3，维度都 ≥14。最弱的一场：赤潮。理由：它维度 14 个，是五场里唯一不压休息也不压行动点的（restEfficiency 0.85、actionPointDelta 0），压力主要落在物价与海产通路两项上，与藻华在『水/水生食物出问题』的体感上最近，只能靠『海里的东西被判定不能吃』与『检测单卡住渔港』来区分。",
+  "entries": [
+    {
+      "id": "mold_rain",
+      "name": "霉雨",
+      "family": "生物",
+      "level": "L3",
+      "tier": 2,
+      "axis": "湿与霉：东西不是不够，是留不住",
+      "temperatures": {
+        "0": 20,
+        "3": 21,
+        "7": 22,
+        "11": 22,
+        "14": 21,
+        "-7": 18,
+        "-4": 18,
+        "-1": 19
+      },
+      "spoilRate": 3,
+      "dailyDrain": {
+        "food": 1,
+        "medicine": 1
+      },
+      "priorityCategories": [
+        "food",
+        "medicine"
+      ],
+      "windowScene": "damp-wall",
+      "shelterDecayPerDay": -2,
+      "restEfficiency": 0.7,
+      "carryFactor": 0.75,
+      "actionPointDelta": 0,
+      "shopSupplyFactor": 0.7,
+      "priceSurcharge": 0.2,
+      "eventPoolWeights": {
+        "water": 3,
+        "supply": 2
+      },
+      "npcVisitFactor": 0.9,
+      "categoryEfficiency": {
+        "food": 0.7,
+        "warmth": 0.7
+      },
+      "scoreWeights": {
+        "fefo": 3
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "18°C。雨从昨天起就没停过。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "18°C。晾在阳台的衣服三天没干。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "18°C。墙上开始有水汽，摸着是凉的。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "19°C。米袋底下有点潮。"
+        },
+        {
+          "day": -3,
+          "severity": 0.4,
+          "hint": "19°C。鞋柜里长了白毛。"
+        },
+        {
+          "day": -2,
+          "severity": 0.5,
+          "hint": "20°C。有人说这雨要下一整周。"
+        },
+        {
+          "day": -1,
+          "severity": 0.7,
+          "hint": "20°C。纸箱摸上去是软的。"
+        },
+        {
+          "day": 0,
+          "severity": 0.85,
+          "hint": "20°C。厨房角落的霉斑一天扩了一圈。"
+        },
+        {
+          "day": 1,
+          "severity": 0.95,
+          "hint": "21°C。面粉结块了，掰开里面有丝。"
+        },
+        {
+          "day": 2,
+          "severity": 1,
+          "hint": "21°C。屋里有股闷味，开窗也一样。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "22°C。挂面放了两天就发黏。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "22°C。棉被摸着是潮的，盖着不暖。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "22°C。罐头是这一场里唯一不坏的。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "22°C。药盒上的字洇开了。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "22°C。冰箱门一开一关，里面也是潮的。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "22°C。有人说吃点霉的会拉肚子。"
+        },
+        {
+          "day": 9,
+          "severity": 1,
+          "hint": "22°C。地板缝里冒出了小蘑菇。"
+        },
+        {
+          "day": 10,
+          "severity": 0.95,
+          "hint": "22°C。雨小了一阵，屋里反而更闷。"
+        },
+        {
+          "day": 11,
+          "severity": 0.9,
+          "hint": "22°C。开始有人把东西搬到楼道里晾。"
+        },
+        {
+          "day": 12,
+          "severity": 0.85,
+          "hint": "21°C。雨停了半天，又下起来。"
+        },
+        {
+          "day": 13,
+          "severity": 0.8,
+          "hint": "21°C。天气预报说明天转晴。"
+        },
+        {
+          "day": 14,
+          "severity": 0.75,
+          "hint": "21°C。早上出了太阳。撑到今天就算过去了。"
+        }
+      ],
+      "counterIntuitive": "这一场不是「不够吃」，是「留不住」。 你囤得越多，坏掉的绝对量越大；而最耐放的东西（罐头）偏偏最重，车载一次装不了几件",
+      "decisions": [
+        "东西烂得比平常快三倍，临期优先在这一场从「加分项」变成「保命项」",
+        "主食的消耗反而更快（受潮结块的只能先吃），但囤粮这件事本身在这一场更不值",
+        "棉被吸了潮就不顶用，保暖品要不要现在就换成更耐放的"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/9/10/11/12/13/16，共 13 个。主打维度 2（spoilRate 3 。 全案最快，与寒潮的 0.5 正好是对立的两端）与 13（categoryEfficiency 打主食 0.7：能吃的变少，于是「够不够」的账要在更短的周期里重算）。与热浪不撞：热浪的腐坏倍率 2.4 且主线是水与药，本场 3.0 且主线是「湿度让所有干货失效」，并且它第一次让 categoryEfficiency 作用在 food 上（热浪打的是 water/medicine 的消耗）。"
+    },
+    {
+      "id": "rat_infest",
+      "name": "鼠患",
+      "family": "生物",
+      "level": "L3",
+      "tier": 3,
+      "axis": "仓储与食品链一起爆鼠：批发货场、菜场后仓、小区垃圾站，货在源头就被咬穿",
+      "temperatures": {
+        "0": 13,
+        "3": 12,
+        "7": 12,
+        "11": 13,
+        "14": 14,
+        "-7": 14,
+        "-4": 14,
+        "-1": 13
+      },
+      "spoilRate": 1.9,
+      "dailyDrain": {
+        "food": 1,
+        "medicine": 1
+      },
+      "priorityCategories": [
+        "food",
+        "tool",
+        "medicine"
+      ],
+      "windowScene": "warehouse-rats",
+      "shelterDecayPerDay": -2.5,
+      "restEfficiency": 0.6,
+      "carryFactor": 0.7,
+      "actionPointDelta": -1,
+      "shopSupplyFactor": 0.55,
+      "closedShopIds": [
+        "wholesale",
+        "market",
+        "community_store"
+      ],
+      "priceSurcharge": 0.35,
+      "eventPoolWeights": {
+        "supply": 3,
+        "market": 2,
+        "panic": 2
+      },
+      "npcVisitFactor": 0.7,
+      "categoryEfficiency": {
+        "food": 0.6,
+        "tool": 0.8
+      },
+      "healthRiskPerDay": 1.5,
+      "scoreWeights": {
+        "placement": 3
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "14°C。批发货场的墙角堆了一排空米袋。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "14°C。菜场后仓的挂面被咬穿了一箱。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "13°C。垃圾站旁的老鼠白天跑了出来。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "13°C。批发商说这周全城的货要过筛。"
+        },
+        {
+          "day": -3,
+          "severity": 0.4,
+          "hint": "12°C。小区垃圾站三天没清，边上踩出一圈。"
+        },
+        {
+          "day": -2,
+          "severity": 0.5,
+          "hint": "12°C。有人在货场下了整片鼠药。"
+        },
+        {
+          "day": -1,
+          "severity": 0.7,
+          "hint": "13°C。靠墙的米袋被咬穿，粉洒了半尺高。"
+        },
+        {
+          "day": 0,
+          "severity": 0.85,
+          "hint": "13°C。货场一夜咬坏了几十袋。"
+        },
+        {
+          "day": 1,
+          "severity": 0.95,
+          "hint": "12°C。菜场的米面区开始按箱卖。"
+        },
+        {
+          "day": 2,
+          "severity": 1,
+          "hint": "12°C。批发站关门，说货被咬得没法发。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "12°C。社区小店的货架空了一整排。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "12°C。有人把整箱货垫高，离地半米。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "12°C。垃圾清运停了，鼠开始往楼里走。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "12°C。墙根的水泥缝被啃出了洞。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "12°C。药店的鼠药和粘板一起卖空。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "12°C。灭鼠后安静了几天，又吵起来。"
+        },
+        {
+          "day": 9,
+          "severity": 1,
+          "hint": "13°C。批发站复秤，退回去的货堆成山。"
+        },
+        {
+          "day": 10,
+          "severity": 1,
+          "hint": "13°C。有人家的米缸爬进了老鼠。"
+        },
+        {
+          "day": 11,
+          "severity": 0.95,
+          "hint": "13°C。全城的垃圾站开始集中清运。"
+        },
+        {
+          "day": 12,
+          "severity": 0.9,
+          "hint": "13°C。货场的鼠洞被灌了水泥。"
+        },
+        {
+          "day": 13,
+          "severity": 0.85,
+          "hint": "13°C。包装换成铁皮箱，进货慢了一半。"
+        },
+        {
+          "day": 14,
+          "severity": 0.8,
+          "hint": "14°C。撑到今天就算过去了。"
+        }
+      ],
+      "counterIntuitive": "这一场最贵的是包装，不是粮食。鼠咬走的量很少，但破口的整批货进不了正规渠道，批发商只收未拆封的箱子。损失发生在纸箱上，粮袋里往往还剩大半。",
+      "decisions": [
+        "垃圾站没人清，是先把自家垃圾找出路，还是先堵家里的墙缝",
+        "批发断了，是去零售高价补货，还是靠现有存货压着吃",
+        "撒药能压鼠，但药会被猫和鸟带走，先保货还是先保天敌",
+        "货要垫高离墙才躲得开鼠道，垫高费时间，先垫哪一层架"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/13/15/16，共 15 个（L3）。主打维度 9：closedShopIds 一次关掉 wholesale、market、community_store 三家，把压力抬到『食品链在源头就断』的尺度；维度 13 打 food 0.6 与 tool 0.8，被咬破的货和用来封堵的工具一起掉效率。与霉雨不撞：霉雨是湿度让干货从内部结块（spoilRate 3、动 warmth），本场是外力咬穿包装、沿仓储与垃圾线扩散，还叠加鼠药与鼠传病的健康风险。与菌痢不撞：菌痢盯水里的菌，本场盯货架与批发通路。"
+    },
+    {
+      "id": "outbreak_flu",
+      "name": "疫情",
+      "family": "生物",
+      "level": "L3",
+      "tier": 3,
+      "axis": "人际传染：有人病了，人就不敢来了，医疗最先见底",
+      "temperatures": {
+        "0": 6,
+        "3": 6,
+        "7": 5,
+        "11": 6,
+        "14": 7,
+        "-7": 9,
+        "-4": 8,
+        "-1": 7
+      },
+      "spoilRate": 1.1,
+      "dailyDrain": {
+        "medicine": 2,
+        "food": 1
+      },
+      "priorityCategories": [
+        "medicine",
+        "warmth",
+        "luxury"
+      ],
+      "windowScene": "closed-doors",
+      "shelterDecayPerDay": -1.5,
+      "restEfficiency": 0.6,
+      "carryFactor": 0.7,
+      "actionPointDelta": -1,
+      "shopSupplyFactor": 0.5,
+      "closedShopIds": [
+        "clinic",
+        "market",
+        "weekend_flea"
+      ],
+      "priceSurcharge": 0.5,
+      "eventPoolWeights": {
+        "panic": 3,
+        "people": 2
+      },
+      "npcVisitFactor": 0.5,
+      "categoryEfficiency": {
+        "medicine": 0.6
+      },
+      "healthRiskPerDay": 1.5,
+      "scoreWeights": {
+        "emergency": 3
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "9°C。附近门诊排起了队，说是流感。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "8°C。学校提前放假，家长在群里问。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "8°C。药店的感冒药开始限购。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "7°C。单位让有症状的别来上班。"
+        },
+        {
+          "day": -3,
+          "severity": 0.4,
+          "hint": "7°C。楼下诊所挂上了停诊的牌子。"
+        },
+        {
+          "day": -2,
+          "severity": 0.5,
+          "hint": "6°C。超市里的人都戴上了口罩。"
+        },
+        {
+          "day": -1,
+          "severity": 0.7,
+          "hint": "6°C。邻居敲门借药，你没开门。"
+        },
+        {
+          "day": 0,
+          "severity": 0.85,
+          "hint": "6°C。对面楼两户人家窗子一直关着。"
+        },
+        {
+          "day": 1,
+          "severity": 0.95,
+          "hint": "5°C。诊所的队伍排到了马路上。"
+        },
+        {
+          "day": 2,
+          "severity": 1,
+          "hint": "5°C。敲门的人少了，都隔着门说话。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "5°C。药店的退烧药一早卖空。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "5°C。楼道里有人咳嗽，走得很急。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "5°C。有户人家门口贴了张纸，谢客。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "5°C。市场只留一个口进出。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "6°C。你在家待到第五天，米见了底。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "6°C。有人把药挂在门口换口粮。"
+        },
+        {
+          "day": 9,
+          "severity": 1,
+          "hint": "6°C。诊所贴出通知，只收重症。"
+        },
+        {
+          "day": 10,
+          "severity": 1,
+          "hint": "6°C。楼道里两户人家没再开门。"
+        },
+        {
+          "day": 11,
+          "severity": 0.95,
+          "hint": "6°C。菜场的摊位空了一半。"
+        },
+        {
+          "day": 12,
+          "severity": 0.9,
+          "hint": "7°C。街上的人慢慢多起来了。"
+        },
+        {
+          "day": 13,
+          "severity": 0.85,
+          "hint": "7°C。药店补货了，队还是长。"
+        },
+        {
+          "day": 14,
+          "severity": 0.8,
+          "hint": "7°C。撑到今天就算过去了。"
+        }
+      ],
+      "counterIntuitive": "热闹在这一场是负资产。串门越多，链条拉得越长，把门关上的那户反而撑得久。另一个反直觉是，最缺的不是药，是敢去药店和诊所这件事，门都关着，队排到街上。",
+      "decisions": [
+        "邻居敲门借药，开门可能把病带进来，开还是不开",
+        "医疗优先，但诊所已经排到街上，是排队等还是靠家里的存货扛",
+        "人都不敢来往之后消息也断了，要不要冒险出门换一次消息"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/13/15/16，共 15 个（L3）。主打维度 12：npcVisitFactor 0.5 是全案最低，把『没人来』写成压力轴，与骚乱的 1.4 正好相反；维度 9 一次关掉 clinic、market、weekend_flea 三家。维度 13 打 medicine 0.6：药在这一场自己也难保住。与霉雨不撞：霉雨是东西留不住，本场是『人不敢来、医疗先崩』，压力完全在人际与供给。"
+    },
+    {
+      "id": "dysentery_water",
+      "name": "菌痢",
+      "family": "生物",
+      "level": "L3",
+      "tier": 3,
+      "axis": "水里有菌，喝下去就病，饮水与医疗一起紧",
+      "temperatures": {
+        "0": 22,
+        "3": 21,
+        "7": 21,
+        "11": 22,
+        "14": 23,
+        "-7": 24,
+        "-4": 23,
+        "-1": 22
+      },
+      "spoilRate": 1.7,
+      "dailyDrain": {
+        "water": 1,
+        "medicine": 1
+      },
+      "priorityCategories": [
+        "water",
+        "tool",
+        "luxury"
+      ],
+      "windowScene": "brown-tap",
+      "shelterDecayPerDay": -1,
+      "restEfficiency": 0.6,
+      "carryFactor": 0.7,
+      "shopSupplyFactor": 0.55,
+      "closedShopIds": [
+        "market",
+        "clinic"
+      ],
+      "priceSurcharge": 0.35,
+      "eventPoolWeights": {
+        "water": 3,
+        "panic": 2
+      },
+      "npcVisitFactor": 0.8,
+      "categoryEfficiency": {
+        "water": 0.6
+      },
+      "healthRiskPerDay": 2,
+      "scoreWeights": {
+        "emergency": 2,
+        "fefo": 2
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "24°C。水管里放出来的水有点发黄。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "23°C。楼下有人说喝了水在拉肚子。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "23°C。物业通知，水要烧开再喝。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "22°C。超市的瓶装水开始限购。"
+        },
+        {
+          "day": -3,
+          "severity": 0.4,
+          "hint": "22°C。诊所来了好几个上吐下泻的。"
+        },
+        {
+          "day": -2,
+          "severity": 0.5,
+          "hint": "22°C。有人说净水片能顶一阵。"
+        },
+        {
+          "day": -1,
+          "severity": 0.7,
+          "hint": "21°C。桶装水订不到，得自己去搬。"
+        },
+        {
+          "day": 0,
+          "severity": 0.85,
+          "hint": "21°C。一整天跑了七八趟厕所。"
+        },
+        {
+          "day": 1,
+          "severity": 0.95,
+          "hint": "21°C。瓶装水的货架空了一排。"
+        },
+        {
+          "day": 2,
+          "severity": 1,
+          "hint": "22°C。诊所门口排满了人，打点滴。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "22°C。有人把水烧了又烧，还是不放心。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "22°C。菜场的卤味摊全撤了。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "22°C。净水片限购，一次只卖两板。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "22°C。你把每桶水都滤一遍才敢用。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "22°C。有人脱水，被送到了诊所。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "23°C。楼下开始发消毒片。"
+        },
+        {
+          "day": 9,
+          "severity": 1,
+          "hint": "23°C。水里的味道淡了些。"
+        },
+        {
+          "day": 10,
+          "severity": 1,
+          "hint": "23°C。诊所的补液盐卖完了。"
+        },
+        {
+          "day": 11,
+          "severity": 0.95,
+          "hint": "23°C。说水源那边查出了原因。"
+        },
+        {
+          "day": 12,
+          "severity": 0.9,
+          "hint": "23°C。水管冲洗了一遍，水清了。"
+        },
+        {
+          "day": 13,
+          "severity": 0.85,
+          "hint": "23°C。还有人不敢喝自来水。"
+        },
+        {
+          "day": 14,
+          "severity": 0.8,
+          "hint": "23°C。撑到今天就算过去了。"
+        }
+      ],
+      "counterIntuitive": "这一场里多喝水成了陷阱：拉肚子要补水，可当地的水正是病源，喝得多的人反而先躺下。净水的东西比水本身更金贵，它决定你手里的水能不能入口。",
+      "decisions": [
+        "水要省着喝又要烧开喝，燃料和存水的账得一起算",
+        "补液和净水都在抢，先保能喝的水，还是先保能止泻的药",
+        "菜场的熟食看着省事，但这一场里生冷是最危险的一口"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/9（含 closedShopIds）/10/11/12/13/15/16，共 14 个（L3）。主打维度 15：healthRiskPerDay 2，喝不干净的水会持续掉健康；维度 13 打 water 0.6，水这一场自身掉效率。与藻华不撞：藻华是水有味、要过滤与烧开（打 water 0.5 且盯 fuel），本场是水里带菌、盯的是医疗与补液的连锁，健康风险更高。"
+    },
+    {
+      "id": "wasp_swarm",
+      "name": "胡蜂",
+      "family": "生物",
+      "level": "L3",
+      "tier": 3,
+      "axis": "全城蜂害：屋檐、工地、晾晒面全成了高危区，户外作业与晾晒一起停",
+      "temperatures": {
+        "0": 30,
+        "3": 31,
+        "7": 32,
+        "11": 31,
+        "14": 30,
+        "-7": 28,
+        "-4": 28,
+        "-1": 29
+      },
+      "spoilRate": 1.6,
+      "dailyDrain": {
+        "medicine": 1,
+        "food": 1
+      },
+      "priorityCategories": [
+        "medicine",
+        "tool"
+      ],
+      "windowScene": "wasp-city",
+      "shelterDecayPerDay": -1,
+      "restEfficiency": 0.75,
+      "carryFactor": 0.55,
+      "actionPointDelta": -1,
+      "shopSupplyFactor": 0.7,
+      "closedShopIds": [
+        "weekend_flea",
+        "community_store"
+      ],
+      "priceSurcharge": 0.3,
+      "eventPoolWeights": {
+        "people": 3,
+        "queue": 2,
+        "panic": 2
+      },
+      "npcVisitFactor": 0.8,
+      "categoryEfficiency": {
+        "tool": 1.2
+      },
+      "healthRiskPerDay": 1.5,
+      "scoreWeights": {
+        "emergency": 3
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "28°C。全城的屋檐下开始出现泥巢。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "28°C。园林工人被蜇，清扫停在半路。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "29°C。晾在楼下的被子没人敢收。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "29°C。工地停了高处的活，说蜂太多。"
+        },
+        {
+          "day": -3,
+          "severity": 0.4,
+          "hint": "30°C。诊所一天来了十几个被蜇的。"
+        },
+        {
+          "day": -2,
+          "severity": 0.5,
+          "hint": "30°C。抗过敏药开始限购。"
+        },
+        {
+          "day": -1,
+          "severity": 0.7,
+          "hint": "31°C。窗台的作业面全部清空。"
+        },
+        {
+          "day": 0,
+          "severity": 0.85,
+          "hint": "31°C。清晨五点才有人出门干活。"
+        },
+        {
+          "day": 1,
+          "severity": 0.95,
+          "hint": "31°C。被蜇的人排到了诊所门口。"
+        },
+        {
+          "day": 2,
+          "severity": 1,
+          "hint": "32°C。晾衣杆空了三天，衣服堆在屋里。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "32°C。喷剂和长杆一起卖断货。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "31°C。城里的快递停了午后那趟。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "31°C。有人自己捅巢，被蜇进了医院。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "31°C。全城组了清巢队，排期到一周后。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "31°C。蜂在楼道灯罩下又做了新巢。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "30°C。烟熏压在巢边，人得躲出去半天。"
+        },
+        {
+          "day": 9,
+          "severity": 1,
+          "hint": "30°C。重体力的活全挪到了天黑后。"
+        },
+        {
+          "day": 10,
+          "severity": 1,
+          "hint": "30°C。被蜇的人还在增加，孩子居多。"
+        },
+        {
+          "day": 11,
+          "severity": 0.95,
+          "hint": "30°C。天凉了点，蜂不那么爱动。"
+        },
+        {
+          "day": 12,
+          "severity": 0.9,
+          "hint": "30°C。专业队一天摘掉几十个巢。"
+        },
+        {
+          "day": 13,
+          "severity": 0.85,
+          "hint": "30°C。晾衣杆重新挂上，先看一圈天。"
+        },
+        {
+          "day": 14,
+          "severity": 0.8,
+          "hint": "29°C。撑到今天就算过去了。"
+        }
+      ],
+      "counterIntuitive": "蜂不追人，它守巢。真正停摆的不是野外，是窗台、晾衣杆和一切高过头的作业面。于是这场灾难把户外按高度分了层：蹲着干的活能干，一抬手就得停。",
+      "decisions": [
+        "全城清巢要排队一周，是自己动手还是等专业的",
+        "晾晒全停，衣服在屋里阴干，还是冒险挂出去一趟",
+        "抗过敏药和驱蜂装备抢同一份钱，先买哪样",
+        "白天的活干不了，是趁清晨那几个小时抢工，还是整天空着"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/13/15/16，共 15 个（L3）。主打维度 7：carryFactor 0.55，把『户外按高度封闭』写成搬运与作业的硬约束；维度 15 取 1.5 承接蜇伤与就医潮，维度 13 反向取 tool 1.2，防护与驱蜂工具比平时更管用。与疫情不撞：疫情是人际传染、人不敢来；本场是人照来、但户外干不了活。与蝇蛆不撞：蝇蛆盯卫生与水，本场盯户外作业面。原来的胡蜂只写了『阳台和楼道』，本场抬到全城的屋檐、工地、晾晒面与清巢队。"
+    },
+    {
+      "id": "mosquito_swarm",
+      "name": "蚊虫",
+      "family": "生物",
+      "level": "L3",
+      "tier": 3,
+      "axis": "全城虫媒疫情：被叮的每一下都在换健康，水和药一起吃紧",
+      "temperatures": {
+        "0": 30,
+        "3": 31,
+        "7": 31,
+        "11": 30,
+        "14": 29,
+        "-7": 29,
+        "-4": 29,
+        "-1": 30
+      },
+      "spoilRate": 1.7,
+      "dailyDrain": {
+        "medicine": 1,
+        "water": 1
+      },
+      "priorityCategories": [
+        "medicine",
+        "water"
+      ],
+      "windowScene": "dengue-city",
+      "shelterDecayPerDay": -1.5,
+      "restEfficiency": 0.6,
+      "carryFactor": 0.7,
+      "actionPointDelta": -1,
+      "shopSupplyFactor": 0.55,
+      "closedShopIds": [
+        "clinic",
+        "community_store"
+      ],
+      "priceSurcharge": 0.4,
+      "eventPoolWeights": {
+        "panic": 3,
+        "water": 2,
+        "people": 2
+      },
+      "npcVisitFactor": 0.6,
+      "categoryEfficiency": {
+        "medicine": 0.6,
+        "water": 0.7
+      },
+      "healthRiskPerDay": 2.5,
+      "scoreWeights": {
+        "emergency": 3
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "29°C。社区开始登记发热的人。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "29°C。楼下积水里有了孑孓。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "30°C。附近医院报了几例蚊媒病。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "30°C。全城在清积水，一处一处倒。"
+        },
+        {
+          "day": -3,
+          "severity": 0.4,
+          "hint": "31°C。纱窗和蚊帐涨了价。"
+        },
+        {
+          "day": -2,
+          "severity": 0.5,
+          "hint": "31°C。发热门诊排起了长队。"
+        },
+        {
+          "day": -1,
+          "severity": 0.7,
+          "hint": "30°C。有人把敞口的储水桶盖上了。"
+        },
+        {
+          "day": 0,
+          "severity": 0.85,
+          "hint": "30°C。病例数一天比一天多。"
+        },
+        {
+          "day": 1,
+          "severity": 0.95,
+          "hint": "31°C。退烧药和补液盐一起限购。"
+        },
+        {
+          "day": 2,
+          "severity": 1,
+          "hint": "31°C。小区门口贴了防蚊的通知。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "31°C。有人在白天就开始点蚊香。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "31°C。医院只收重症，轻症回家隔离。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "31°C。全城喷药，晚上味道很大。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "31°C。储水的人家开始一群群地倒水。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "30°C。孩子发烧，家里不敢出门。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "30°C。驱蚊水兑着用，还是不够。"
+        },
+        {
+          "day": 9,
+          "severity": 1,
+          "hint": "30°C。喷药车一天绕城两趟。"
+        },
+        {
+          "day": 10,
+          "severity": 1,
+          "hint": "30°C。病例涨得慢了，诊所还在忙。"
+        },
+        {
+          "day": 11,
+          "severity": 0.95,
+          "hint": "30°C。天凉了，蚊子少了些。"
+        },
+        {
+          "day": 12,
+          "severity": 0.9,
+          "hint": "29°C。积水清完一轮，孑孓少多了。"
+        },
+        {
+          "day": 13,
+          "severity": 0.85,
+          "hint": "29°C。医院开始腾出普通病房。"
+        },
+        {
+          "day": 14,
+          "severity": 0.8,
+          "hint": "29°C。撑到今天就算过去了。"
+        }
+      ],
+      "counterIntuitive": "防蚊药很快被抢空，真正压住疫情的是把水倒掉。蚊子繁殖的地方，正是你为了防断水囤起来的那些水。囤水和防蚊在这一场里互相拆台。",
+      "decisions": [
+        "囤的水要盖严，敞口的水桶是蚊子的窝，先处理哪一处",
+        "全城在清积水，自家储水正是病媒源头，要不要倒掉一部分",
+        "门诊排不上，是靠家里的退烧药扛，还是去挤定点医院",
+        "纱窗和蚊帐都缺货，先护孩子睡的那间，还是先护白天的活动区"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/13/15/16，共 15 个（L3）。主打维度 15：healthRiskPerDay 2.5，把『被叮的每一下都在换健康』写成全城虫媒病；维度 13 同时打 medicine 0.6 与 water 0.7，药与水一起吃紧；维度 8 取 -1，病人多、行动被压。与疫情不撞：疫情是人际传染、npcVisitFactor 0.5，本场是人来不来都挡不住、病媒在环境里；与胡蜂不撞：胡蜂占白天户外，本场是全天候的病媒扩散。原蚊虫只写『夜里睡不好』，本场抬到全城登革热式的疫情。"
+    },
+    {
+      "id": "termite_damage",
+      "name": "白蚁",
+      "family": "生物",
+      "level": "L3",
+      "tier": 3,
+      "axis": "成片木结构被从里面啃空，房屋与货架一起失稳，能放货的地方先塌",
+      "temperatures": {
+        "0": 25,
+        "3": 26,
+        "7": 26,
+        "11": 25,
+        "14": 24,
+        "-7": 24,
+        "-4": 24,
+        "-1": 25
+      },
+      "spoilRate": 1.3,
+      "dailyDrain": {
+        "tool": 1,
+        "warmth": 1
+      },
+      "priorityCategories": [
+        "warmth",
+        "tool",
+        "medicine"
+      ],
+      "windowScene": "hollow-blocks",
+      "shelterDecayPerDay": -3.5,
+      "restEfficiency": 0.7,
+      "carryFactor": 0.65,
+      "actionPointDelta": -1,
+      "shopSupplyFactor": 0.6,
+      "closedShopIds": [
+        "hardware",
+        "market",
+        "wholesale"
+      ],
+      "priceSurcharge": 0.4,
+      "eventPoolWeights": {
+        "supply": 3,
+        "neighbor": 2,
+        "panic": 2
+      },
+      "npcVisitFactor": 1.1,
+      "categoryEfficiency": {
+        "tool": 0.7
+      },
+      "capacityFactor": 0.7,
+      "unusableShelfIds": [
+        "shelf_a"
+      ],
+      "healthRiskPerDay": 0.5,
+      "scoreWeights": {
+        "placement": 3
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "24°C。一整片老楼的木门框一按就软。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "24°C。屋里的木地板踩上去发空。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "25°C。有人家的货架腿断了，货撒一地。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "25°C。鉴定的人进了三栋木结构楼。"
+        },
+        {
+          "day": -3,
+          "severity": 0.4,
+          "hint": "26°C。整排木货架的背板一抠就掉。"
+        },
+        {
+          "day": -2,
+          "severity": 0.5,
+          "hint": "26°C。师傅说这几栋得整片治。"
+        },
+        {
+          "day": -1,
+          "severity": 0.7,
+          "hint": "25°C。街道通知靠墙那排柜子先清空。"
+        },
+        {
+          "day": 0,
+          "severity": 0.85,
+          "hint": "25°C。凌晨一栋楼的木楼梯塌了半截。"
+        },
+        {
+          "day": 1,
+          "severity": 0.95,
+          "hint": "26°C。两栋楼贴了腾空的告示。"
+        },
+        {
+          "day": 2,
+          "severity": 1,
+          "hint": "26°C。货架塌了两排，东西挤到地上。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "26°C。治蚁要闷药，人和货都得撤。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "25°C。五金店的水泥和角铁卖空了。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "25°C。有人把木家具全搬到了空地。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "25°C。地板撬开一块，底下全是空的。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "25°C。剩下的货架都改成了铁脚。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "25°C。又查出三栋楼有虫道。"
+        },
+        {
+          "day": 9,
+          "severity": 1,
+          "hint": "24°C。能放货的地方少了一整片。"
+        },
+        {
+          "day": 10,
+          "severity": 1,
+          "hint": "24°C。木头的东西都垫高了，靠不住墙。"
+        },
+        {
+          "day": 11,
+          "severity": 0.95,
+          "hint": "24°C。药闷过一遍，地上还是落木屑。"
+        },
+        {
+          "day": 12,
+          "severity": 0.9,
+          "hint": "24°C。新的塌点没再出现。"
+        },
+        {
+          "day": 13,
+          "severity": 0.85,
+          "hint": "24°C。腾空的楼还没让人回去。"
+        },
+        {
+          "day": 14,
+          "severity": 0.8,
+          "hint": "24°C。撑到今天就算过去了。"
+        }
+      ],
+      "counterIntuitive": "白蚁啃空的是房子的承重，不是你的货。货一件没少，能放货的地方先塌了；而楼里最先出事的是靠墙、近地那圈木结构，正好是全楼码货的位置。",
+      "decisions": [
+        "成片楼要腾空，是搬走还是留人守货，风险怎么摊",
+        "货架塌了一整块，东西要往剩下地方挤，先搬重的还是先搬吃的",
+        "治蚁要整片闷药，人和货都得撤两天，撤到哪",
+        "木家具扔了没处放东西，留着靠不住，怎么选"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/13/14（含 capacityFactor 与 unusableShelfIds）/15/16，共 16 个（L3）。主打维度 14 与维度 5：摘掉一整块 shelf_a、capacityFactor 0.7，并把 shelterDecayPerDay 压到 -3.5，让『成片建筑的承重』一起垮；维度 13 打 tool 0.7。与地震不撞：地震是一次性崩塌、损失立刻可见，本场是从内部掏空的慢性损失、以天为单位累积。与原白蚁不撞：原白蚁只写『你家货架和家具』，本场抬到成片木结构建筑群与街道腾空。"
+    },
+    {
+      "id": "fly_maggot",
+      "name": "蝇蛆",
+      "family": "生物",
+      "level": "L3",
+      "tier": 3,
+      "axis": "垃圾清运停摆，城区卫生先崩，厨余在楼里发酵，存粮跟着一起废",
+      "temperatures": {
+        "0": 31,
+        "3": 32,
+        "7": 32,
+        "11": 31,
+        "14": 30,
+        "-7": 30,
+        "-4": 30,
+        "-1": 31
+      },
+      "spoilRate": 3.2,
+      "dailyDrain": {
+        "food": 1,
+        "medicine": 1,
+        "water": 1
+      },
+      "priorityCategories": [
+        "food",
+        "medicine",
+        "water"
+      ],
+      "windowScene": "garbage-city",
+      "shelterDecayPerDay": -2.5,
+      "restEfficiency": 0.65,
+      "carryFactor": 0.7,
+      "actionPointDelta": -1,
+      "shopSupplyFactor": 0.5,
+      "closedShopIds": [
+        "market",
+        "weekend_flea",
+        "community_store"
+      ],
+      "priceSurcharge": 0.45,
+      "eventPoolWeights": {
+        "market": 3,
+        "supply": 2,
+        "panic": 2
+      },
+      "npcVisitFactor": 0.6,
+      "categoryEfficiency": {
+        "food": 0.55,
+        "medicine": 0.7
+      },
+      "healthRiskPerDay": 2.5,
+      "scoreWeights": {
+        "emergency": 3,
+        "fefo": 2
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "30°C。清运车两天没来，垃圾桶满了。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "30°C。菜场后面的烂菜叶堆成了小山。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "31°C。垃圾站的味道飘进了整条街。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "31°C。楼道里有人开始往下扔厨余。"
+        },
+        {
+          "day": -3,
+          "severity": 0.4,
+          "hint": "32°C。一袋厨余放一夜，袋口全是蛆。"
+        },
+        {
+          "day": -2,
+          "severity": 0.5,
+          "hint": "32°C。物业说清运车只够跑一半的线。"
+        },
+        {
+          "day": -1,
+          "severity": 0.7,
+          "hint": "31°C。纱窗上落的苍蝇，擦一层又来一层。"
+        },
+        {
+          "day": 0,
+          "severity": 0.85,
+          "hint": "31°C。垃圾桶一掀，底下全是蛆在动。"
+        },
+        {
+          "day": 1,
+          "severity": 0.95,
+          "hint": "32°C。菜场的熟食摊全撤了。"
+        },
+        {
+          "day": 2,
+          "severity": 1,
+          "hint": "32°C。诊所来了好几个闹肚子的。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "32°C。垃圾堆到了花坛边，占了一条道。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "32°C。剩饭不敢留，一顿一扔。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "32°C。灭蝇的药水和消毒水都卖空。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "31°C。厨房的东西全盖上了罩子。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "31°C。有人一天拎三趟垃圾下楼。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "31°C。冷库里的肉也不敢多放。"
+        },
+        {
+          "day": 9,
+          "severity": 1,
+          "hint": "31°C。环卫的人来查了一趟垃圾站。"
+        },
+        {
+          "day": 10,
+          "severity": 1,
+          "hint": "30°C。临时清运点排起了长队。"
+        },
+        {
+          "day": 11,
+          "severity": 0.95,
+          "hint": "30°C。清运车开始加班跑。"
+        },
+        {
+          "day": 12,
+          "severity": 0.9,
+          "hint": "30°C。垃圾站冲了一遍，味淡了。"
+        },
+        {
+          "day": 13,
+          "severity": 0.85,
+          "hint": "30°C。屋里打了两天药，蝇少了。"
+        },
+        {
+          "day": 14,
+          "severity": 0.8,
+          "hint": "30°C。撑到今天就算过去了。"
+        }
+      ],
+      "counterIntuitive": "这一场真正吃掉存粮的不是人，是苍蝇。清运一停，厨余在楼道里发酵，蝇在楼里繁殖，你囤在家里的粮跟着一起废掉。断供反而是次要的那一头。",
+      "decisions": [
+        "垃圾没处扔，堆楼道会招蝇，是走远路去城边倒，还是先堆着",
+        "厨余是蝇源，一天两趟拎出去要花行动点，先清厨余还是先补货",
+        "被蝇沾过的吃食只能扔，先吃新鲜的还是先把冰箱腾空",
+        "消毒水和药抢同一份钱，先买消毒还是先买药"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/13/15/16，共 15 个（L3）。主打维度 2：spoilRate 3.2，全城垃圾在高温里成片发酵；维度 9 一次关掉 market、weekend_flea、community_store 三家，把『清运停摆』写成整条供给的塌方；维度 15 取 2.5 承接肠道病。与霉雨不撞：霉雨靠湿度让干货从内部结块，本场靠清运停摆把病菌带到整片城区；与菌痢不撞：菌痢盯水源，本场盯垃圾与厨余这条线。原蝇蛆只写『楼下垃圾桶』，本场抬到城区卫生体系崩、清运线瘫痪。"
+    },
+    {
+      "id": "tick_grass",
+      "name": "蜱虫",
+      "family": "生物",
+      "level": "L3",
+      "tier": 3,
+      "axis": "区域蜱传病流行，户外作业与采集全面受限，上山整片被封",
+      "temperatures": {
+        "0": 23,
+        "3": 24,
+        "7": 24,
+        "11": 23,
+        "14": 22,
+        "-7": 22,
+        "-4": 22,
+        "-1": 23
+      },
+      "spoilRate": 1.2,
+      "dailyDrain": {
+        "medicine": 1
+      },
+      "priorityCategories": [
+        "medicine",
+        "warmth"
+      ],
+      "windowScene": "tick-field",
+      "shelterDecayPerDay": -1,
+      "restEfficiency": 0.8,
+      "carryFactor": 0.6,
+      "actionPointDelta": -1,
+      "shopSupplyFactor": 0.6,
+      "closedShopIds": [
+        "community_store",
+        "hardware"
+      ],
+      "priceSurcharge": 0.35,
+      "eventPoolWeights": {
+        "people": 3,
+        "supply": 2,
+        "panic": 2
+      },
+      "npcVisitFactor": 0.9,
+      "categoryEfficiency": {
+        "medicine": 0.7
+      },
+      "healthRiskPerDay": 2.5,
+      "scoreWeights": {
+        "emergency": 3
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "22°C。郊外的草没人割，长得没过膝盖。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "22°C。有人上山采野菜，回来腿上起了红点。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "23°C。卫生院报了几例蜱传病。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "23°C。放牧的人被咬后发烧，住了院。"
+        },
+        {
+          "day": -3,
+          "severity": 0.4,
+          "hint": "24°C。郊野公园拉了警戒线。"
+        },
+        {
+          "day": -2,
+          "severity": 0.5,
+          "hint": "24°C。村里通知上山要扎紧裤脚。"
+        },
+        {
+          "day": -1,
+          "severity": 0.7,
+          "hint": "23°C。孩子从草地回来，身上摸到一只。"
+        },
+        {
+          "day": 0,
+          "severity": 0.85,
+          "hint": "23°C。被咬的地方不疼，第二天才红。"
+        },
+        {
+          "day": 1,
+          "severity": 0.95,
+          "hint": "24°C。卫生院多了几个发烧的病人。"
+        },
+        {
+          "day": 2,
+          "severity": 1,
+          "hint": "24°C。驱虫药水开始限购。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "24°C。采野菜和捡柴的活全停了。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "24°C。出门都换上了长衣长裤。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "23°C。有人被咬后住进了城里医院。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "23°C。草深的地方不让进了。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "23°C。家里在翻找有没有带回来的蜱。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "23°C。放牧改成了圈养，草料不够。"
+        },
+        {
+          "day": 9,
+          "severity": 1,
+          "hint": "23°C。镊子和酒精卖得很快。"
+        },
+        {
+          "day": 10,
+          "severity": 1,
+          "hint": "22°C。有人发烧几天了，还没退。"
+        },
+        {
+          "day": 11,
+          "severity": 0.95,
+          "hint": "22°C。天凉了，草里的蜱少了。"
+        },
+        {
+          "day": 12,
+          "severity": 0.9,
+          "hint": "22°C。郊外的草被割短了一段。"
+        },
+        {
+          "day": 13,
+          "severity": 0.85,
+          "hint": "22°C。被咬的人退了烧，还在观察。"
+        },
+        {
+          "day": 14,
+          "severity": 0.8,
+          "hint": "22°C。撑到今天就算过去了。"
+        }
+      ],
+      "counterIntuitive": "蜱咬的那口不疼不痒，被咬的人当天照常出门，把病带到下一片草地。真正的传染源不是蜱，是不知道自己被咬的人。",
+      "decisions": [
+        "郊外能挖野菜也能捡柴，去还是不去，值不值得裹严一身",
+        "被咬当天没感觉，是每天回来自查一遍，还是先做手头的事",
+        "驱虫药快用完，是省着喷，还是把上山趟数压掉",
+        "牲畜圈起来费草料，放出去有风险，圈还是放"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/13/15/16，共 15 个（L3）。主打维度 15：healthRiskPerDay 2.5 承接区域蜱传病，配合维度 8 的 actionPointDelta -1 与维度 7 的 carryFactor 0.6，把『上山』整片封掉；维度 13 轻打 medicine 0.7。与蚊虫不撞：蚊虫是全城蚊媒、病人多到行动点被压，本场是郊野与山货这条线被切断、入口在『被咬当天无感』。与原蜱虫不撞：原蜱虫只写『公园草地』，本场抬到区域流行的疫区与放牧采集全面受限。"
+    },
+    {
+      "id": "algae_bloom",
+      "name": "藻华",
+      "family": "生物",
+      "level": "L3",
+      "tier": 3,
+      "axis": "水源起了藻，水有味不能直接喝，水和药一起吃紧",
+      "temperatures": {
+        "0": 27,
+        "3": 28,
+        "7": 29,
+        "11": 28,
+        "14": 27,
+        "-7": 25,
+        "-4": 25,
+        "-1": 26
+      },
+      "spoilRate": 1.3,
+      "dailyDrain": {
+        "water": 1,
+        "fuel": 1
+      },
+      "priorityCategories": [
+        "water",
+        "fuel",
+        "medicine"
+      ],
+      "windowScene": "green-water",
+      "shelterDecayPerDay": -1,
+      "restEfficiency": 0.7,
+      "carryFactor": 0.75,
+      "shopSupplyFactor": 0.5,
+      "closedShopIds": [
+        "market"
+      ],
+      "priceSurcharge": 0.35,
+      "eventPoolWeights": {
+        "water": 3,
+        "people": 2
+      },
+      "npcVisitFactor": 0.9,
+      "categoryEfficiency": {
+        "water": 0.5
+      },
+      "healthRiskPerDay": 1.5,
+      "scoreWeights": {
+        "emergency": 2
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "25°C。自来水有一股土腥味。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "25°C。河面上浮了一层绿色的膜。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "26°C。有人说水房的储水罐该洗了。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "26°C。烧开的水还是有股味道。"
+        },
+        {
+          "day": -3,
+          "severity": 0.4,
+          "hint": "27°C。超市的瓶装水卖得比平时快。"
+        },
+        {
+          "day": -2,
+          "severity": 0.5,
+          "hint": "27°C。物业通知，水要先滤再烧。"
+        },
+        {
+          "day": -1,
+          "severity": 0.7,
+          "hint": "27°C。有人喝了水，说胃里不舒服。"
+        },
+        {
+          "day": 0,
+          "severity": 0.85,
+          "hint": "28°C。水龙头放出来的水发绿。"
+        },
+        {
+          "day": 1,
+          "severity": 0.95,
+          "hint": "28°C。桶装水订不到，得去远处拉。"
+        },
+        {
+          "day": 2,
+          "severity": 1,
+          "hint": "28°C。净水的滤芯换了一茬又一茬。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "29°C。烧水要烧得更久，味才淡。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "29°C。有人开始上吐下泻，去了诊所。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "29°C。瓶装水限购，一人两瓶。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "29°C。有人说烧开的水喝着放心些。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "28°C。河边的取水口被封了。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "28°C。水里的味越来越重。"
+        },
+        {
+          "day": 9,
+          "severity": 1,
+          "hint": "28°C。诊所来了几个脱水的人。"
+        },
+        {
+          "day": 10,
+          "severity": 1,
+          "hint": "28°C。居民排队接净化车的水。"
+        },
+        {
+          "day": 11,
+          "severity": 0.95,
+          "hint": "27°C。上游开始清理水面。"
+        },
+        {
+          "day": 12,
+          "severity": 0.9,
+          "hint": "27°C。水里的绿淡了些，味还在。"
+        },
+        {
+          "day": 13,
+          "severity": 0.85,
+          "hint": "27°C。还有人只喝自己滤过的水。"
+        },
+        {
+          "day": 14,
+          "severity": 0.8,
+          "hint": "27°C。撑到今天就算过去了。"
+        }
+      ],
+      "counterIntuitive": "水一烧开就没味，于是喝得更多。可藻毒素不怕热，烧掉的只是味，不是毒。这一场里越觉得水干净的人，越可能先倒下。",
+      "decisions": [
+        "烧开只去味不去毒，是继续烧，还是去找别的水源",
+        "水和燃料同时紧，是省水还是省火，两笔账一起算",
+        "水有味，是跑远路打新水，还是在家滤一遍凑合"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/9（含 closedShopIds）/10/11/12/13/15/16，共 14 个（L3）。主打维度 13：categoryEfficiency 打 water 0.5，是全案最低的水效；维度 1 的 dailyDrain 同时吃 water 与 fuel，把『烧开』写成一条燃料账；维度 15 取 1.5 承接藻毒的持续风险。与 disaster-10 的菌痢不撞：菌痢是水里带菌、盯医疗与补液的连锁（healthRiskPerDay 2），本场盯的是水要滤要烧带来的燃料吃紧，健康风险更低但水效更差。与霉雨不撞：霉雨是空气湿、东西受潮，本场是水源本身起藻。"
+    },
+    {
+      "id": "saprophyte",
+      "name": "腐生菌",
+      "family": "生物",
+      "level": "L3",
+      "tier": 3,
+      "axis": "包装与容器材料全面失效：装东西的家什比里面的东西先烂，供应链级损失",
+      "temperatures": {
+        "0": 25,
+        "3": 26,
+        "7": 26,
+        "11": 25,
+        "14": 24,
+        "-7": 24,
+        "-4": 24,
+        "-1": 25
+      },
+      "spoilRate": 2.4,
+      "dailyDrain": {
+        "food": 1
+      },
+      "priorityCategories": [
+        "food",
+        "tool",
+        "luxury"
+      ],
+      "windowScene": "packaging-fail",
+      "shelterDecayPerDay": -3,
+      "restEfficiency": 0.8,
+      "carryFactor": 0.75,
+      "actionPointDelta": 0,
+      "shopSupplyFactor": 0.5,
+      "closedShopIds": [
+        "hardware",
+        "wholesale"
+      ],
+      "priceSurcharge": 0.4,
+      "eventPoolWeights": {
+        "supply": 3,
+        "market": 2,
+        "neighbor": 2
+      },
+      "npcVisitFactor": 1,
+      "categoryEfficiency": {
+        "tool": 0.55,
+        "food": 0.75
+      },
+      "capacityFactor": 0.7,
+      "unusableShelfIds": [
+        "shelf_b"
+      ],
+      "healthRiskPerDay": 0.5,
+      "scoreWeights": {
+        "placement": 3
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "24°C。仓库里的纸箱一摞摞塌下来。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "24°C。木托盘的角一按就碎。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "25°C。米袋底下黏在架上，揭不开。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "25°C。真空包装没破，封口先烂了。"
+        },
+        {
+          "day": -3,
+          "severity": 0.4,
+          "hint": "26°C。铁皮盒的接缝锈得发黑。"
+        },
+        {
+          "day": -2,
+          "severity": 0.5,
+          "hint": "26°C。批发商说这周退回来一整批货。"
+        },
+        {
+          "day": -1,
+          "severity": 0.7,
+          "hint": "25°C。塑料桶的内壁开始发毛。"
+        },
+        {
+          "day": 0,
+          "severity": 0.85,
+          "hint": "25°C。一批罐头没吃，盖子先锈穿。"
+        },
+        {
+          "day": 1,
+          "severity": 0.95,
+          "hint": "26°C。仓库的货架整排往下掉。"
+        },
+        {
+          "day": 2,
+          "severity": 1,
+          "hint": "26°C。散装的干货反而没大碍。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "26°C。装东西的桶比里面的东西先坏。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "25°C。五金店的密封罐卖空了。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "25°C。有人把粮全换进了玻璃罐。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "25°C。整批货的包装在同时失效。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "25°C。批发站改了只收散装的路子。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "25°C。玻璃和陶器一下成了硬通货。"
+        },
+        {
+          "day": 9,
+          "severity": 1,
+          "hint": "24°C。坏掉的容器清了满满一车。"
+        },
+        {
+          "day": 10,
+          "severity": 1,
+          "hint": "24°C。有人开始用布把容器擦干。"
+        },
+        {
+          "day": 11,
+          "severity": 0.95,
+          "hint": "24°C。锈蚀的势头慢了下来。"
+        },
+        {
+          "day": 12,
+          "severity": 0.9,
+          "hint": "24°C。新的包装换成了铁皮和玻璃。"
+        },
+        {
+          "day": 13,
+          "severity": 0.85,
+          "hint": "24°C。退回去的货还是压在仓库。"
+        },
+        {
+          "day": 14,
+          "severity": 0.8,
+          "hint": "24°C。撑到今天就算过去了。"
+        }
+      ],
+      "counterIntuitive": "这一场先报废的是包装，不是食物。罐头没坏，罐盖先锈穿；真空袋没漏，封口先黏烂。散装的干货反而因为常翻动损失更小，于是囤得越久越亏，装着不动的那些最先烂。",
+      "decisions": [
+        "容器比内容物先坏，是先抢救吃的，还是先找能装的罐子",
+        "整批货的包装在失效，是赶紧转手换现货，还是自己重新分装",
+        "密封罐和干燥剂都被抢，是省着囤，还是把现有容器重新擦一遍"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/9（含 closedShopIds）/10/11/12/13/14（含 capacityFactor 与 unusableShelfIds）/15/16，共 15 个（L3）。主打维度 13：categoryEfficiency 打 tool 0.55，全族最低，把『装东西的家什自己失效』写成供应链级损失；维度 14 摘掉 shelf_b、capacityFactor 0.7，维度 5 取 -3 承接材料在成片腐蚀。与霉雨不撞：霉雨是湿度让干货从内部结块、可食的变少，本场是黏菌分解包装与容器、能吃的东西往往还在却不安全；与原腐生菌不撞：原场只写『表面黏菌腐蚀容器』，本场抬到整条供应链的包装与容器材料一起失效。"
+    },
+    {
+      "id": "locust_swarm",
+      "name": "蝗灾",
+      "family": "生物",
+      "level": "L3",
+      "tier": 3,
+      "axis": "绿色的东西在一周内消失：绿化带、菜地和饲料一起被啃光",
+      "temperatures": {
+        "0": 29,
+        "3": 30,
+        "7": 31,
+        "11": 30,
+        "14": 29,
+        "-7": 26,
+        "-4": 27,
+        "-1": 28
+      },
+      "spoilRate": 1.5,
+      "dailyDrain": {
+        "food": 1
+      },
+      "priorityCategories": [
+        "food",
+        "tool"
+      ],
+      "windowScene": "locust-sky",
+      "shelterDecayPerDay": -1.5,
+      "restEfficiency": 0.85,
+      "carryFactor": 0.75,
+      "actionPointDelta": -1,
+      "shopSupplyFactor": 0.6,
+      "closedShopIds": [
+        "market",
+        "wholesale"
+      ],
+      "priceSurcharge": 0.55,
+      "eventPoolWeights": {
+        "market": 3,
+        "supply": 3,
+        "panic": 2
+      },
+      "npcVisitFactor": 1.1,
+      "categoryEfficiency": {
+        "food": 0.6
+      },
+      "healthRiskPerDay": 0.5,
+      "scoreWeights": {
+        "emergency": 3
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "26°C。田边有人说起北边起了蝗。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "27°C。菜市场的菜价开始往上走。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "28°C。郊外的绿地上落了一层蝗。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "28°C。菜农说一宿吃掉半亩菜。"
+        },
+        {
+          "day": -3,
+          "severity": 0.4,
+          "hint": "29°C。绿化带的花和叶只剩杆。"
+        },
+        {
+          "day": -2,
+          "severity": 0.5,
+          "hint": "29°C。有人在楼下点了烟熏。"
+        },
+        {
+          "day": -1,
+          "severity": 0.7,
+          "hint": "30°C。鲜菜摊空了一半，摆的是干货。"
+        },
+        {
+          "day": 0,
+          "severity": 0.85,
+          "hint": "30°C。蝗群压过来，路灯下黑了一层。"
+        },
+        {
+          "day": 1,
+          "severity": 0.95,
+          "hint": "31°C。全日光下，路上踩得发黏。"
+        },
+        {
+          "day": 2,
+          "severity": 1,
+          "hint": "31°C。农田成片变黄，一眼望到头。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "31°C。运菜的货车停在城外不敢进。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "31°C。肉蛋开始涨，因为饲料先没了。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "31°C。有人囤耐放的，把鲜菜往外转。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "30°C。全城在喷药，风一吹又回来。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "30°C。绿化带补种的通知贴了出来。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "30°C。菜价是平时的三倍。"
+        },
+        {
+          "day": 9,
+          "severity": 1,
+          "hint": "29°C。蝗群往南走了，留一地光杆。"
+        },
+        {
+          "day": 10,
+          "severity": 1,
+          "hint": "29°C。补种的菜还要等一个多月。"
+        },
+        {
+          "day": 11,
+          "severity": 0.95,
+          "hint": "29°C。干货和罐头卖得最快。"
+        },
+        {
+          "day": 12,
+          "severity": 0.9,
+          "hint": "29°C。运菜的车开始从外地进来。"
+        },
+        {
+          "day": 13,
+          "severity": 0.85,
+          "hint": "29°C。菜价没降，货架满了一点。"
+        },
+        {
+          "day": 14,
+          "severity": 0.8,
+          "hint": "28°C。撑到今天就算过去了。"
+        }
+      ],
+      "counterIntuitive": "蝗虫不吃你囤的干粮，它吃的是喂牲畜和补城里鲜食的那一层。于是最先空的是菜，最后才是米；而肉蛋比菜更早涨价，因为饲料断在更前面。",
+      "decisions": [
+        "绿化带和菜地一起被啃，去抢最后一批鲜菜，还是换成耐放的",
+        "蝗群怕风不怕药，等风向变，还是继续喷药",
+        "饲料断供让肉蛋先涨，是趁高价出存货，还是留着自用"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/13/15/16，共 15 个（L3）。主打维度 10：priceSurcharge 0.55 把『鲜食层被吃掉』写成物价跳涨；维度 13 打 food 0.6，鲜菜与饲料一起失效；维度 9 关掉 market 与 wholesale，本地鲜食的进货通路断在源头。与粮食霉变不撞：霉变的粮还在、毒素进了链条，本场是绿色的作物整片消失、能吃的东西从地里就没了；与森林虫灾不撞：森林虫灾啃的是木材与山货，本场啃的是菜与饲料。"
+    },
+    {
+      "id": "livestock_plague",
+      "name": "畜疫",
+      "family": "生物",
+      "level": "L3",
+      "tier": 3,
+      "axis": "能下蛋能产肉的都在被扑杀：防疫清的是整片，不问这一头",
+      "temperatures": {
+        "0": 10,
+        "3": 9,
+        "7": 9,
+        "11": 10,
+        "14": 11,
+        "-7": 12,
+        "-4": 11,
+        "-1": 10
+      },
+      "spoilRate": 1.3,
+      "dailyDrain": {
+        "food": 1,
+        "medicine": 1
+      },
+      "priorityCategories": [
+        "food",
+        "medicine",
+        "warmth"
+      ],
+      "windowScene": "cull-line",
+      "shelterDecayPerDay": -1.5,
+      "restEfficiency": 0.8,
+      "carryFactor": 0.8,
+      "actionPointDelta": -1,
+      "shopSupplyFactor": 0.5,
+      "closedShopIds": [
+        "market",
+        "wholesale",
+        "community_store"
+      ],
+      "priceSurcharge": 0.7,
+      "eventPoolWeights": {
+        "supply": 3,
+        "panic": 3,
+        "market": 2
+      },
+      "npcVisitFactor": 0.7,
+      "categoryEfficiency": {
+        "food": 0.55
+      },
+      "healthRiskPerDay": 1.5,
+      "scoreWeights": {
+        "emergency": 3,
+        "fefo": 2
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "12°C。附近养殖场报了几头病畜。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "11°C。防疫的人进场，先拉了警戒线。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "10°C。整片栏舍开始清空，活的不放出来。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "10°C。镇上设了进出城的消毒点。"
+        },
+        {
+          "day": -3,
+          "severity": 0.4,
+          "hint": "9°C。市场里的肉摊关了一半。"
+        },
+        {
+          "day": -2,
+          "severity": 0.5,
+          "hint": "9°C。冷柜前的人排起了队。"
+        },
+        {
+          "day": -1,
+          "severity": 0.7,
+          "hint": "10°C。肉价一天一个价，早上又涨了。"
+        },
+        {
+          "day": 0,
+          "severity": 0.85,
+          "hint": "10°C。城外几个养殖区全封了。"
+        },
+        {
+          "day": 1,
+          "severity": 0.95,
+          "hint": "9°C。散养的活禽也上了名单。"
+        },
+        {
+          "day": 2,
+          "severity": 1,
+          "hint": "9°C。鸡蛋在货架上一天就空了。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "9°C。有人说肉不够，只能多备豆制品。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "9°C。防疫的车一趟趟往城外开。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "10°C。奶粉和蛋奶一样限购。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "10°C。冷库的肉被统一登记。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "10°C。饲料也停了，留下的牲畜在掉膘。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "10°C。肉价是平时的两倍多。"
+        },
+        {
+          "day": 9,
+          "severity": 1,
+          "hint": "10°C。有人开始学着自己腌肉保存。"
+        },
+        {
+          "day": 10,
+          "severity": 1,
+          "hint": "11°C。防疫的人说还要再清一轮。"
+        },
+        {
+          "day": 11,
+          "severity": 0.95,
+          "hint": "11°C。城里的肉摊慢慢开了几个。"
+        },
+        {
+          "day": 12,
+          "severity": 0.9,
+          "hint": "11°C。补栏的种畜还没到位。"
+        },
+        {
+          "day": 13,
+          "severity": 0.85,
+          "hint": "11°C。蛋价没落，货架还是空的。"
+        },
+        {
+          "day": 14,
+          "severity": 0.8,
+          "hint": "11°C。撑到今天就算过去了。"
+        }
+      ],
+      "counterIntuitive": "防疫清的是整片，不问这头有没有病。于是最先清空的是最集中、最规范的大场；能撑久一点的，反而是自家散养的那几只。而城里人只看到肉价一天一涨。",
+      "decisions": [
+        "肉蛋一天一个价，是趁早买满冷冻，还是把钱留给耐放的替代品",
+        "散养的活禽可能留着，也可能带病，杀还是留",
+        "防疫队进场要封路，是抢在封路前补一趟货，还是在家等通知",
+        "饲料和药抢同一份钱，先保吃还是先保病"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/13/15/16，共 15 个（L3）。主打维度 10：priceSurcharge 0.7，全族最高，把『肉蛋断供』写成价格与限购；维度 13 打 food 0.55，肉蛋奶整类掉效率；维度 9 关掉 market、wholesale、community_store 三家。与疫情不撞：疫情是人际传染病，本场是畜间疫、人不会得、但餐桌先空；与蝗灾不撞：蝗灾从鲜菜与饲料那头断，本场从肉蛋奶这头清。"
+    },
+    {
+      "id": "red_tide",
+      "name": "赤潮",
+      "family": "生物",
+      "level": "L3",
+      "tier": 3,
+      "axis": "海还在，海里的东西不能吃：近海赤潮，海产被检测整片拦下",
+      "temperatures": {
+        "0": 26,
+        "3": 27,
+        "7": 28,
+        "11": 27,
+        "14": 26,
+        "-7": 24,
+        "-4": 25,
+        "-1": 26
+      },
+      "spoilRate": 1.9,
+      "dailyDrain": {
+        "food": 1,
+        "water": 1
+      },
+      "priorityCategories": [
+        "food",
+        "water"
+      ],
+      "windowScene": "red-sea",
+      "shelterDecayPerDay": -1,
+      "restEfficiency": 0.85,
+      "carryFactor": 0.8,
+      "actionPointDelta": 0,
+      "shopSupplyFactor": 0.55,
+      "closedShopIds": [
+        "market",
+        "weekend_flea"
+      ],
+      "priceSurcharge": 0.5,
+      "eventPoolWeights": {
+        "market": 3,
+        "water": 3,
+        "supply": 2
+      },
+      "npcVisitFactor": 0.9,
+      "categoryEfficiency": {
+        "food": 0.6,
+        "water": 0.7
+      },
+      "healthRiskPerDay": 1,
+      "scoreWeights": {
+        "emergency": 2,
+        "fefo": 2
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "24°C。近岸的水面上起了大片的红。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "25°C。渔港说当天的鱼先不收了。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "26°C。海货摊上的货越摆越少。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "26°C。抽检的船出去了一整天。"
+        },
+        {
+          "day": -3,
+          "severity": 0.4,
+          "hint": "27°C。码头上腥味重，贝类先停卖。"
+        },
+        {
+          "day": -2,
+          "severity": 0.5,
+          "hint": "27°C。有人在退前几天买的冻虾。"
+        },
+        {
+          "day": -1,
+          "severity": 0.7,
+          "hint": "28°C。海货的价格一天翻了一倍。"
+        },
+        {
+          "day": 0,
+          "severity": 0.85,
+          "hint": "28°C。整片近海拉起警戒线。"
+        },
+        {
+          "day": 1,
+          "severity": 0.95,
+          "hint": "28°C。渔港的秤停了一整天。"
+        },
+        {
+          "day": 2,
+          "severity": 1,
+          "hint": "28°C。冷库里的存鱼被逐批抽检。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "27°C。海带和紫菜也跟着停卖。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "27°C。有人转去买河鲜和淡水鱼。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "27°C。河鲜价跟着涨，货也不够。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "27°C。近海的水色还是红的。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "27°C。有批货检测没过，整批退港。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "26°C。卖海产的摊位空了一排。"
+        },
+        {
+          "day": 9,
+          "severity": 1,
+          "hint": "26°C。有人开始囤罐头和干货。"
+        },
+        {
+          "day": 10,
+          "severity": 1,
+          "hint": "26°C。水也跟着涨，说沿海水厂在查。"
+        },
+        {
+          "day": 11,
+          "severity": 0.95,
+          "hint": "26°C。红潮淡了些，检测还没过。"
+        },
+        {
+          "day": 12,
+          "severity": 0.9,
+          "hint": "26°C。渔港的船开始有限度出海。"
+        },
+        {
+          "day": 13,
+          "severity": 0.85,
+          "hint": "26°C。海货慢慢回摊，价格还高。"
+        },
+        {
+          "day": 14,
+          "severity": 0.8,
+          "hint": "26°C。撑到今天就算过去了。"
+        }
+      ],
+      "counterIntuitive": "赤潮不是海里没鱼，是鱼还活着但没人敢收。抽检一天不放过，渔港就一天不能开秤。于是这一场最贵的是那张检测单，不是鱼本身。",
+      "decisions": [
+        "海货全停卖，是囤冷冻海产赌检测通过，还是换内陆的东西",
+        "海边还能捡到没死的贝类，捡还是不捡",
+        "水和海产同时涨价，先保饮水还是先保吃的"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/9（含 closedShopIds）/10/11/12/13/15/16，共 14 个（L3）。主打维度 13：categoryEfficiency 同时打 food 0.6 与 water 0.7，海产与沿海供水一起掉效率；维度 15 取 1，承接藻毒的持续风险；维度 9 关掉 market 与 weekend_flea，海产通路断在检测这一关。与藻华不撞：藻华是城市水源起藻、盯燃料与滤水，本场是近海的渔获被整片拦下、盯的是海货与沿海供水，且压力落在物价而非烧水。与粮食霉变不撞：霉变是粮还在毒素进了链，本场是海里的东西被判定不能吃。"
+    },
+    {
+      "id": "forest_pest",
+      "name": "森林虫灾",
+      "family": "生物",
+      "level": "L3",
+      "tier": 3,
+      "axis": "山变秃，是虫干的：成片山林被啃，木材、柴火、山货一起断",
+      "temperatures": {
+        "0": 24,
+        "3": 25,
+        "7": 26,
+        "11": 25,
+        "14": 24,
+        "-7": 22,
+        "-4": 23,
+        "-1": 24
+      },
+      "spoilRate": 1.4,
+      "dailyDrain": {
+        "fuel": 1,
+        "food": 1
+      },
+      "priorityCategories": [
+        "fuel",
+        "food",
+        "tool"
+      ],
+      "windowScene": "bare-hills",
+      "shelterDecayPerDay": -1.5,
+      "restEfficiency": 0.8,
+      "carryFactor": 0.65,
+      "actionPointDelta": -1,
+      "shopSupplyFactor": 0.6,
+      "closedShopIds": [
+        "hardware",
+        "weekend_flea"
+      ],
+      "priceSurcharge": 0.45,
+      "eventPoolWeights": {
+        "supply": 3,
+        "market": 2,
+        "people": 2
+      },
+      "npcVisitFactor": 1,
+      "categoryEfficiency": {
+        "fuel": 0.6,
+        "food": 0.8
+      },
+      "healthRiskPerDay": 1,
+      "scoreWeights": {
+        "emergency": 2
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "22°C。山上的松树成片发黄。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "23°C。林子里落了一层绿虫。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "24°C。护林的人说这片得整片治。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "24°C。山下堆着被啃秃的枝叶。"
+        },
+        {
+          "day": -3,
+          "severity": 0.4,
+          "hint": "25°C。进山捡柴的路封了。"
+        },
+        {
+          "day": -2,
+          "severity": 0.5,
+          "hint": "25°C。木材的价格一天一涨。"
+        },
+        {
+          "day": -1,
+          "severity": 0.7,
+          "hint": "26°C。山货摊上的菌子先没了。"
+        },
+        {
+          "day": 0,
+          "severity": 0.85,
+          "hint": "26°C。从高处看，山露出了一片土黄。"
+        },
+        {
+          "day": 1,
+          "severity": 0.95,
+          "hint": "26°C。护林队一天清掉一车枯木。"
+        },
+        {
+          "day": 2,
+          "severity": 1,
+          "hint": "26°C。纸和木料跟着一起涨。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "25°C。柴火断了，有人改烧煤和电。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "25°C。山外的木材车排到了路口。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "25°C。放养的蜂场也挪了地方。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "25°C。山脚下的空气里全是药味。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "25°C。能捡的枯木都得登记。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "24°C。有人上山偷偷捡枯木。"
+        },
+        {
+          "day": 9,
+          "severity": 1,
+          "hint": "24°C。补种的苗要等好几年。"
+        },
+        {
+          "day": 10,
+          "severity": 1,
+          "hint": "24°C。山货的价格没降下来。"
+        },
+        {
+          "day": 11,
+          "severity": 0.95,
+          "hint": "24°C。虫口淡了，秃的地方还秃着。"
+        },
+        {
+          "day": 12,
+          "severity": 0.9,
+          "hint": "24°C。木材从外地调，价高还慢。"
+        },
+        {
+          "day": 13,
+          "severity": 0.85,
+          "hint": "24°C。山脚下的路重新开了。"
+        },
+        {
+          "day": 14,
+          "severity": 0.8,
+          "hint": "24°C。撑到今天就算过去了。"
+        }
+      ],
+      "counterIntuitive": "虫灾过后山是秃的，但最直接断掉的不是木材，是柴火和山货这些过去不花钱的东西。城里人靠山省下的那部分开销，这一场要全额用钱买回来，而且正赶上物价在涨。",
+      "decisions": [
+        "山封了，柴火和山货都断了，是花钱买燃料还是省着烧",
+        "枯木还能捡，但林区在喷药，捡还是不去",
+        "木材和纸一起涨价，先囤燃料还是先囤能当柴烧的东西"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/8/9（含 closedShopIds）/10/11/12/13/15/16，共 15 个（L3）。主打维度 13：categoryEfficiency 打 fuel 0.6 与 food 0.8，柴火与山货一起失效；维度 10 取 0.45 承载木材与纸的连带涨价；维度 9 关掉 hardware 与 weekend_flea。与蝗灾不撞：蝗灾啃的是菜与饲料，落点在餐桌鲜食；森林虫灾啃的是林子，落点在燃料、木料与山货。与赤潮不撞：赤潮盯海产与沿海供水，本场盯山林与山货。"
+    },
+    {
+      "id": "grain_mold",
+      "name": "粮食霉变",
+      "family": "生物",
+      "level": "L3",
+      "tier": 3,
+      "axis": "粮还在，毒素进了供应链：全城粮库受潮霉变，看着完好的也不能吃",
+      "temperatures": {
+        "0": 24,
+        "3": 24,
+        "7": 25,
+        "11": 24,
+        "14": 23,
+        "-7": 22,
+        "-4": 23,
+        "-1": 23
+      },
+      "spoilRate": 3.5,
+      "dailyDrain": {
+        "food": 1,
+        "medicine": 1
+      },
+      "priorityCategories": [
+        "food",
+        "medicine",
+        "luxury"
+      ],
+      "windowScene": "mold-silo",
+      "shelterDecayPerDay": -2.5,
+      "restEfficiency": 0.75,
+      "carryFactor": 0.75,
+      "actionPointDelta": 0,
+      "shopSupplyFactor": 0.55,
+      "closedShopIds": [
+        "wholesale",
+        "market"
+      ],
+      "priceSurcharge": 0.45,
+      "eventPoolWeights": {
+        "supply": 3,
+        "market": 2,
+        "panic": 2
+      },
+      "npcVisitFactor": 0.9,
+      "categoryEfficiency": {
+        "food": 0.6
+      },
+      "healthRiskPerDay": 2,
+      "scoreWeights": {
+        "fefo": 3,
+        "emergency": 2
+      },
+      "calendar": [
+        {
+          "day": -7,
+          "severity": 0.1,
+          "hint": "22°C。粮库的墙角返了潮。"
+        },
+        {
+          "day": -6,
+          "severity": 0.15,
+          "hint": "23°C。有人买的米闻着有股味。"
+        },
+        {
+          "day": -5,
+          "severity": 0.2,
+          "hint": "23°C。一批粮被单独堆在仓库一角。"
+        },
+        {
+          "day": -4,
+          "severity": 0.3,
+          "hint": "24°C。批发站开始一天的抽检。"
+        },
+        {
+          "day": -3,
+          "severity": 0.4,
+          "hint": "24°C。米袋里结了小团，掰开是黄的。"
+        },
+        {
+          "day": -2,
+          "severity": 0.5,
+          "hint": "25°C。有人说洗一洗还能吃。"
+        },
+        {
+          "day": -1,
+          "severity": 0.7,
+          "hint": "25°C。整仓的粮开始按批退。"
+        },
+        {
+          "day": 0,
+          "severity": 0.85,
+          "hint": "24°C。低价粮忽然多了起来。"
+        },
+        {
+          "day": 1,
+          "severity": 0.95,
+          "hint": "24°C。诊所来了几个吃坏肚子的。"
+        },
+        {
+          "day": 2,
+          "severity": 1,
+          "hint": "25°C。货架上的散粮换成了新包装。"
+        },
+        {
+          "day": 3,
+          "severity": 1,
+          "hint": "25°C。有人把粮全换成了罐头。"
+        },
+        {
+          "day": 4,
+          "severity": 1,
+          "hint": "24°C。抽检的队伍排到了库房外。"
+        },
+        {
+          "day": 5,
+          "severity": 1,
+          "hint": "24°C。米价没跌，能吃的贵了。"
+        },
+        {
+          "day": 6,
+          "severity": 1,
+          "hint": "24°C。仓库开始整片通风晾晒。"
+        },
+        {
+          "day": 7,
+          "severity": 1,
+          "hint": "24°C。有人开始挑明显没霉的囤。"
+        },
+        {
+          "day": 8,
+          "severity": 1,
+          "hint": "23°C。洗过的粮还是有味。"
+        },
+        {
+          "day": 9,
+          "severity": 1,
+          "hint": "23°C。罐头和真空装涨得最凶。"
+        },
+        {
+          "day": 10,
+          "severity": 1,
+          "hint": "23°C。毒素的检测说洗煮都不行。"
+        },
+        {
+          "day": 11,
+          "severity": 0.95,
+          "hint": "23°C。退回的粮堆在城边的仓。"
+        },
+        {
+          "day": 12,
+          "severity": 0.9,
+          "hint": "23°C。新到的粮贵，量也少。"
+        },
+        {
+          "day": 13,
+          "severity": 0.85,
+          "hint": "23°C。有人把陈粮全拿去换了货。"
+        },
+        {
+          "day": 14,
+          "severity": 0.8,
+          "hint": "23°C。撑到今天就算过去了。"
+        }
+      ],
+      "counterIntuitive": "霉粮的毒素洗不掉、煮不掉，长了毛的那块掐掉，整袋照样有问题。于是这一场里看着完好的粮比明显发霉的更危险，因为它会直接进锅，而发霉的至少一眼能看出来。",
+      "decisions": [
+        "低价粮看着正常，是赌一把买进来，还是只认有抽检的",
+        "受潮的粮晒一晒还能吃，晒还是直接扔",
+        "毒素进了供应链，是提前换成罐头这类耐放的，还是省着吃现有的"
+      ],
+      "notes": "用到维度 1/2/3/4/5/6/7/9（含 closedShopIds）/10/11/12/13/15/16，共 14 个（L3）。主打维度 2：spoilRate 3.5，全族最快，把『粮还在但留不住』推到极端；维度 15 取 2 承接毒素的持续风险；维度 13 打 food 0.6，粮这一场自己掉效率。与霉雨不撞：霉雨是环境湿度让家里的干货受潮，本场是粮库与供应链里的毒素，压力落在抽检、退货与『看得见的合格』上。与蝗灾不撞：蝗灾是绿色的东西整片消失，本场是粮还在、但不能吃。"
+    }
+  ]
+}

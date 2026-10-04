@@ -233,7 +233,7 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
       tier: 1
     }
   },
-  // ═══ 生成内容 day-01 起（scripts/merge-content.mjs 插入，别手改这一段） ═══
+  // ═══ 生成内容 白天-01 起（scripts/merge-content.mjs 插入，别手改这一段） ═══
   {
     weight: 1.0,
     def:   {
@@ -897,8 +897,8 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
       tags: ["panic", "supply"]
     }
   },
-  // ═══ 生成内容 day-01 止 ═══,
-  // ═══ 生成内容 day-02 起（scripts/merge-content.mjs 插入，别手改这一段） ═══
+  // ═══ 生成内容 白天-01 止 ═══,
+  // ═══ 生成内容 白天-02 起（scripts/merge-content.mjs 插入，别手改这一段） ═══
   {
     weight: 1.0,
     def:   {
@@ -1285,7 +1285,7 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
       tags: ["people", "queue", "supply"]
     }
   },
-  // ═══ 生成内容 day-02 止 ═══
+  // ═══ 生成内容 白天-02 止 ═══
 ];
 
 export const DAY_EVENT_DEFS: readonly DayEventDef[] = WEIGHTED.map((w) => w.def);

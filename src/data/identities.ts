@@ -37,7 +37,7 @@ export const IDENTITY_DEFS: readonly IdentityDef[] = [
     perkRule: { kind: 'categoryDiscount', categories: ['fuel', 'tool'], rate: 0.2 },
     tier: 1
   },
-  // ═══ 生成内容 identity-01 起（scripts/merge-content.mjs 插入，别手改这一段） ═══
+  // ═══ 生成内容 身份 起（scripts/merge-content.mjs 插入，别手改这一段） ═══
 {
     id: "nurse",
     name: "夜班护士",
@@ -134,7 +134,7 @@ export const IDENTITY_DEFS: readonly IdentityDef[] = [
     tier: 2,
     decision: "保暖最便宜但手提小，这局要把'冷'这件事用钱解决"
   },
-  // ═══ 生成内容 identity-01 止 ═══
+  // ═══ 生成内容 身份 止 ═══
 ];
 
 const IDENTITY_BY_ID: ReadonlyMap<string, IdentityDef> = new Map(IDENTITY_DEFS.map((d) => [d.id, d]));

@@ -1,6 +1,6 @@
 {
   "kind": "identity",
-  "batch": "identity-01",
+  "batch": "身份",
   "batchNote": "本批 6 个身份（全部 tier 1，开局可选）。打法分布：精算 2（nurse / tailor）/ 门路 1（delivery_rider）/ 搬运 1（warehouse_porter）/ 交际 1（security_guard）/ 谨慎收藏 1（teacher_retired）。每个都能用'X 多 vs Y 少'概括，且对照现有两个身份均非全面更强。最弱的一个：security_guard（'什么都会一点'的定位最容易写成平庸，靠独占的 水+保暖 折扣组合撑差异）。 【M3 第 3 步修订】按\"上手难度\"分批：tier 1 三个（开局三选一，定位最直白），tier 2 四个（要先玩过一局才看得懂），tier 3 两个（极端定位）。这不是强度分层 —— 身份的红线仍是\"必须是取舍，不是强弱\"。",
   "entries": [
     {
