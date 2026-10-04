@@ -1,0 +1,475 @@
+{
+  "kind": "nightEvent",
+  "batch": "夜间-03",
+  "batchNote": "本批 26 条，把夜间事件从 34 条补到 60 条（目标 60~100，进入区间）。\n\n★ 夜间的处境与白天**不是同一批**：白天是\"在外面遇到什么\"，夜间是\"一个人待着的时候会想到什么\"。\n前 34 条已经把\"身体疼 / 邻里 / 物资变故\"写得比较厚，所以这一批刻意往这四类走：\n\n  · **声音** —— 墙里的水声、楼上的脚步、远处的闷响。夜里最吓人的是听得见但看不见；\n  · **光** —— 蜡烛快烧完、手电只剩一格、摸黑找东西。它把\"燃料\"与\"工具\"两格的账\n    第一次真正算进\"睡前\"这个场景；\n  · **独处** —— 反复看手机、翻旧照片、把明天要做的事想一遍。没有外部事件，只有自己；\n  · **身体的小信号** —— 手指发麻、耳朵疼、心跳快。它们在灾难里都是\"会不会变大\"的问题。\n\n★ 选项硬约束（与白天同源，`check-content` 强制）：每个选项**净收益必须为正** ——\n\"喝热水\"算收益，\"忍一忍\"也得给点什么（心情或体力）。只有代价的选项不许有。\n\n★ 夜间效果的范围是 `cash/health/mood/stamina/shelter/boxDefId` —— **没有 grab**。\n所以夜里拿东西只能走 `boxDefId`（一箱货），不能\"拿两件\"。",
+  "entries": [
+    {
+      "id": "n_wall_pipe",
+      "text": "墙里传来一阵水流声，之后就再没动静了。你把手贴在墙上，是凉的。",
+      "tier": 1,
+      "decision": "起来查一遍水管，还是先睡（明天再说可能就冻裂了）",
+      "options": [
+        {
+          "label": "起来查一遍",
+          "outcome": "你顺着管子摸到总阀，发现只是外面的风声。回床上时手脚都凉了，但心里踏实。",
+          "effect": { "stamina": -3, "mood": 4 }
+        },
+        {
+          "label": "先睡",
+          "outcome": "你翻了个身。那声音又响了一次，然后没了。",
+          "effect": { "stamina": 2, "mood": 1 }
+        }
+      ]
+    },
+    {
+      "id": "n_upstairs_steps",
+      "text": "楼上有人来回走，从十一点走到现在。那户人家上个月就搬走了。",
+      "tier": 2,
+      "decision": "上去看一眼（费体力），还是当没听见（心里不踏实）",
+      "options": [
+        {
+          "label": "上去看一眼",
+          "outcome": "是楼上的门没关严，风在推它。你替他们带上了，回来路上脚步轻了些。",
+          "effect": { "stamina": -4, "mood": 5 }
+        },
+        {
+          "label": "当没听见",
+          "outcome": "你把被子拉到耳朵上。那声音到半夜才停。",
+          "effect": { "stamina": 1, "mood": -1, "shelter": 1 }
+        }
+      ]
+    },
+    {
+      "id": "n_far_rumble",
+      "text": "远处传来一声闷响，像什么东西塌了。窗户震了一下，然后安静下来。",
+      "tier": 2,
+      "decision": "出去看看（危险但可能有用），还是留在屋里（安全但不知道发生了什么）",
+      "options": [
+        {
+          "label": "出去看看",
+          "outcome": "是路口那栋楼的外墙掉了一角。你在那儿站了一会儿，记住了这条路的样子，也记住了哪面墙不能靠。",
+          "effect": { "stamina": -4, "mood": 5, "shelter": 2 }
+        },
+        {
+          "label": "留在屋里",
+          "outcome": "你检查了一遍门锁和窗户。什么都没发生，你也睡不着了。",
+          "effect": { "shelter": 3, "mood": 1 }
+        }
+      ]
+    },
+    {
+      "id": "n_last_candle",
+      "text": "蜡烛烧到了底，火苗在蜡油里晃。桌上还有半页没写完的清单。",
+      "tier": 1,
+      "decision": "点新的（费燃料），还是明天再说（清单只写了一半）",
+      "options": [
+        {
+          "label": "再点一根",
+          "outcome": "清单写完了。你把纸压在罐头底下，吹灭了火。",
+          "effect": { "mood": 3, "stamina": -1 }
+        },
+        {
+          "label": "明天再说",
+          "outcome": "你把纸折起来塞进兜里，摸着黑上了床。",
+          "effect": { "stamina": 2, "mood": 1 }
+        }
+      ]
+    },
+    {
+      "id": "n_torch_dim",
+      "text": "手电的光只剩一圈黄。电池是上个月换的，你记得清楚。",
+      "tier": 1,
+      "decision": "换电池（用掉备用的），还是省着用（明天可能要摸黑）",
+      "options": [
+        {
+          "label": "换新的",
+          "outcome": "白光重新亮起来，屋里一下清楚了很多。备用那板少了两节。",
+          "effect": { "mood": 3, "stamina": -1 }
+        },
+        {
+          "label": "省着用",
+          "outcome": "你把光调暗，摸黑把该做的做完了。",
+          "effect": { "stamina": 1, "mood": 2 }
+        }
+      ]
+    },
+    {
+      "id": "n_blackout_fumble",
+      "text": "整栋楼都黑了。你摸到桌边，手碰倒了什么东西，它滚到了地上。",
+      "tier": 1,
+      "decision": "划根火柴找（费一根），还是明天再捡（地上可能碎了）",
+      "options": [
+        {
+          "label": "划火柴找",
+          "outcome": "是那只空罐头，没碎。你把它捡起来放回原处，顺手把桌边东西归了位。",
+          "effect": { "mood": 3, "stamina": -2 }
+        },
+        {
+          "label": "明天再捡",
+          "outcome": "你绕开那个方向上了床，竖着耳朵听了一会儿。",
+          "effect": { "stamina": 2, "mood": -1, "shelter": 1 }
+        }
+      ]
+    },
+    {
+      "id": "n_phone_again",
+      "text": "你第七次点开手机。信号只剩一格，上面还是昨天那几条。",
+      "tier": 1,
+      "decision": "关掉它睡（省电、也省心），还是再刷一遍（也许会有新消息）",
+      "options": [
+        {
+          "label": "关掉睡觉",
+          "outcome": "屏幕黑下去的一瞬间，屋里安静得有点陌生。你很快就睡着了。",
+          "effect": { "stamina": 4, "mood": 2 }
+        },
+        {
+          "label": "再刷一遍",
+          "outcome": "还是那几条。你又往下翻了两页，看到半年前的照片。",
+          "effect": { "mood": 3, "stamina": -2 }
+        }
+      ]
+    },
+    {
+      "id": "n_old_photo",
+      "text": "相册翻到去年夏天，那会儿窗外还是有树的。",
+      "tier": 1,
+      "decision": "看一会儿（心里舒服但睡不着），还是直接锁屏",
+      "options": [
+        {
+          "label": "看一会儿",
+          "outcome": "你把那几张来回看了几遍，然后锁了屏。躺下的时候心里是暖的。",
+          "effect": { "mood": 5, "stamina": -2 }
+        },
+        {
+          "label": "锁屏睡觉",
+          "outcome": "你把手机扣在枕头边，闭上眼睛。",
+          "effect": { "stamina": 3, "mood": 1 }
+        }
+      ]
+    },
+    {
+      "id": "n_replay_tomorrow",
+      "text": "躺下之后脑子开始转：明天要先做什么、还差什么、哪个店的队最短。",
+      "tier": 1,
+      "decision": "起来把明天写下来（费神但省事），还是在脑子里过一遍",
+      "options": [
+        {
+          "label": "写下来",
+          "outcome": "三行字，写完就清楚了。你把它压在鞋边上，明天一低头就能看见。",
+          "effect": { "mood": 4, "stamina": -2 }
+        },
+        {
+          "label": "脑子里过",
+          "outcome": "你在黑暗里把顺序排了两遍，最后一条想不起来是什么。",
+          "effect": { "stamina": 1, "mood": 1 }
+        }
+      ]
+    },
+    {
+      "id": "n_shoulder_numb",
+      "text": "右肩一直麻，从手肘麻到指尖。今天扛了太多次。",
+      "tier": 2,
+      "decision": "热敷一下（费点烧的），还是换个姿势忍过去",
+      "options": [
+        {
+          "label": "热敷一会儿",
+          "outcome": "你用毛巾包着热水袋敷了十分钟，麻意慢慢退回去了。",
+          "effect": { "health": 4, "mood": 2 }
+        },
+        {
+          "label": "换个姿势",
+          "outcome": "你侧过身，把手臂垫高。麻是麻，但困意上来了。",
+          "effect": { "stamina": 3, "mood": 1 }
+        }
+      ]
+    },
+    {
+      "id": "n_ear_ache",
+      "text": "耳朵里闷闷的，咽口水的时候有点疼。屋里比白天又冷了一度。",
+      "tier": 2,
+      "decision": "现在吃药（早一点压住），还是扛到明天看情况",
+      "options": [
+        {
+          "label": "吃一片药",
+          "outcome": "药片吞下去，你又灌了半杯热水。躺下的时候疼已经轻了。",
+          "effect": { "health": 5, "mood": 1 }
+        },
+        {
+          "label": "扛到明天",
+          "outcome": "你把围巾绕在脖子上睡下了，睡得不算沉。",
+          "effect": { "stamina": 2, "health": -1, "mood": 1 }
+        }
+      ]
+    },
+    {
+      "id": "n_heart_fast",
+      "text": "心跳得比平时快，躺着也压不下去。可能是今天累过了。",
+      "tier": 2,
+      "decision": "坐起来缓一会儿，还是闭眼数呼吸",
+      "options": [
+        {
+          "label": "坐起来缓",
+          "outcome": "你靠着墙坐了十来分钟，慢慢就平了。后背有点凉。",
+          "effect": { "health": 3, "stamina": -2, "mood": 2 }
+        },
+        {
+          "label": "数呼吸",
+          "outcome": "数到四十几下的时候你睡着了，醒来时天刚亮。",
+          "effect": { "stamina": 4, "mood": 2 }
+        }
+      ]
+    },
+    {
+      "id": "n_finger_stiff",
+      "text": "手指关节发僵，握拳要慢慢来。白天拆箱拆得太多了。",
+      "tier": 1,
+      "decision": "泡一下热水（费点烧的），还是搓一搓就睡",
+      "options": [
+        {
+          "label": "泡一会儿",
+          "outcome": "十个指头都活过来了。你顺便把指甲也剪了。",
+          "effect": { "health": 3, "mood": 3 }
+        },
+        {
+          "label": "搓一搓",
+          "outcome": "搓到发热就钻进了被窝，明天大概还是会僵。",
+          "effect": { "stamina": 3, "mood": 1 }
+        }
+      ]
+    },
+    {
+      "id": "n_breath_visible",
+      "text": "被窝里呼出的气能看见。你把被子往上拉了拉，边缘还是漏风。",
+      "tier": 2,
+      "decision": "把能盖的都盖上（占地方但暖），还是加烧一档（费燃料）",
+      "options": [
+        {
+          "label": "都盖上",
+          "outcome": "两床被子加一件大衣，压得翻身都难。但半个小时后真的暖了。",
+          "effect": { "shelter": 4, "mood": 2 }
+        },
+        {
+          "label": "加烧一档",
+          "outcome": "炉子响了一阵，屋里的温度慢慢爬上来。燃料表又下去一格。",
+          "effect": { "shelter": 5, "stamina": 1 }
+        }
+      ]
+    },
+    {
+      "id": "n_condensation",
+      "text": "窗户内侧结了一层水珠，顺着玻璃往下淌。窗台是湿的。",
+      "tier": 2,
+      "decision": "擦一遍（费事但防霉），还是明天再说",
+      "options": [
+        {
+          "label": "擦一遍",
+          "outcome": "抹布拧了三次水。你把窗台上那几样东西挪开，垫上了纸。",
+          "effect": { "shelter": 4, "stamina": -3, "mood": 2 }
+        },
+        {
+          "label": "明天再说",
+          "outcome": "你把离窗最近的那袋东西往里挪了挪，别的没动。",
+          "effect": { "stamina": 2, "shelter": 1 }
+        }
+      ]
+    },
+    {
+      "id": "n_frozen_bucket",
+      "text": "阳台那桶水表面结成了冰，中间鼓起一块。明天要用它洗东西。",
+      "tier": 2,
+      "decision": "搬进屋化（占地方），还是明天砸冰用",
+      "options": [
+        {
+          "label": "搬进来化",
+          "outcome": "冰在屋里慢慢化开，地上湿了一小片。明天有水用了，屋里也潮得不那么干。",
+          "effect": { "stamina": -3, "mood": 3, "shelter": 2 }
+        },
+        {
+          "label": "明天砸冰",
+          "outcome": "你回来躺下，想起冰化开还要很久。",
+          "effect": { "stamina": 3, "mood": 1 }
+        }
+      ]
+    },
+    {
+      "id": "n_door_check",
+      "text": "你确定门锁上了，但躺下之后又想不起来到底锁没锁。",
+      "tier": 1,
+      "decision": "起来确认一遍（第二遍），还是相信自己的记忆",
+      "options": [
+        {
+          "label": "起来确认",
+          "outcome": "锁着。你顺手把门后的挡板也顶上了。再躺下就踏实了。",
+          "effect": { "shelter": 3, "stamina": -1, "mood": 3 }
+        },
+        {
+          "label": "相信记忆",
+          "outcome": "你闭上眼，那个念头又冒了两次，然后你睡着了。",
+          "effect": { "stamina": 3, "mood": 1 }
+        }
+      ]
+    },
+    {
+      "id": "n_late_snack",
+      "text": "肚子叫了一声。晚饭吃得不算少，但这个点就是想吃点什么。",
+      "tier": 1,
+      "decision": "吃一点（动存货但睡得香），还是喝水顶过去",
+      "options": [
+        {
+          "label": "吃一点",
+          "outcome": "你开了一听，只吃了一半，剩下的盖好放回架上。",
+          "effect": { "mood": 4, "stamina": 2 }
+        },
+        {
+          "label": "喝水顶过去",
+          "outcome": "两杯水下肚，饿感淡了。你躺下的时候肚子还有点响。",
+          "effect": { "mood": 1, "stamina": 1 }
+        }
+      ]
+    },
+    {
+      "id": "n_prep_meds",
+      "text": "你把明天要带的药摊在桌上：两片、一卷纱布、一小瓶。盒子有点脏了。",
+      "tier": 1,
+      "decision": "重新装一个小包（费时间但明天不用翻），还是明天早上再说",
+      "options": [
+        {
+          "label": "装个小包",
+          "outcome": "你找了个干净袋子，把三样按顺序放好，塞进外套口袋里。",
+          "effect": { "mood": 4, "stamina": -1 }
+        },
+        {
+          "label": "明天再说",
+          "outcome": "你把东西推回原处，记住了它们大概在哪个角。",
+          "effect": { "stamina": 3, "mood": 1 }
+        }
+      ]
+    },
+    {
+      "id": "n_gear_check",
+      "text": "外套挂在门后，口袋里的东西一样没少。你还是习惯性地拍了拍。",
+      "tier": 1,
+      "decision": "把东西掏出来重装一遍，还是就这样挂着",
+      "options": [
+        {
+          "label": "重装一遍",
+          "outcome": "你把能用的留下、没用的拿出来。口袋里比以前轻。",
+          "effect": { "mood": 3, "stamina": -2 }
+        },
+        {
+          "label": "就这样挂着",
+          "outcome": "你拍了拍外套，回床上去了。明早伸手就能拿。",
+          "effect": { "stamina": 3, "mood": 1 }
+        }
+      ]
+    },
+    {
+      "id": "n_mark_expiry",
+      "text": "货架上有一排东西的日期看不清了。你想起来该给它们做个记号。",
+      "tier": 1,
+      "decision": "现在标（费一支笔），还是明天整理时一起弄",
+      "options": [
+        {
+          "label": "现在标上",
+          "outcome": "你用纸胶带写了几个月份，贴在罐头上。以后一眼就能看见。",
+          "effect": { "mood": 5, "stamina": -3 }
+        },
+        {
+          "label": "明天一起弄",
+          "outcome": "你把最旧的那几样往前挪了一格，算是做了个记号。",
+          "effect": { "stamina": 2, "mood": 2 }
+        }
+      ]
+    },
+    {
+      "id": "n_drink_alone",
+      "text": "柜子里还剩小半瓶酒。一个人喝没意思，但今天确实有点冷。",
+      "tier": 2,
+      "decision": "喝一口暖身（舒服，但明天会有点钝），还是留着",
+      "options": [
+        {
+          "label": "喝一口",
+          "outcome": "一口下去，从喉咙热到胃。你把瓶子拧紧放回去，还剩大半。",
+          "effect": { "mood": 5, "shelter": 2, "stamina": 1 }
+        },
+        {
+          "label": "留着",
+          "outcome": "你把瓶子往里推了推 —— 它大概会在更冷的那天派上用场。",
+          "effect": { "mood": 2, "stamina": 2 }
+        }
+      ]
+    },
+    {
+      "id": "n_knock_wrong_door",
+      "text": "有人敲错了门，敲了两下就停了。门外没有脚步声。",
+      "tier": 2,
+      "decision": "隔着门问一句，还是不出声等它过去",
+      "options": [
+        {
+          "label": "问一句",
+          "outcome": "是楼上找错楼层的人。他道了歉，你确认了门链是扣着的。",
+          "effect": { "mood": 3, "shelter": 2 }
+        },
+        {
+          "label": "不出声",
+          "outcome": "你在门边站了两分钟，直到隔壁的灯灭了。",
+          "effect": { "shelter": 3, "stamina": -1, "mood": 1 }
+        }
+      ]
+    },
+    {
+      "id": "n_battery_radio",
+      "text": "收音机还能收到一个台，声音断断续续。你有一阵没开过它了。",
+      "tier": 2,
+      "decision": "听一会儿（费电，但能知道外面的事），还是关掉省电",
+      "options": [
+        {
+          "label": "听一会儿",
+          "outcome": "播的是明天的天气，还有一段通知。你听完才关。",
+          "effect": { "mood": 5, "stamina": -1 }
+        },
+        {
+          "label": "关掉省电",
+          "outcome": "你把电留给了手电。屋里安静下来。",
+          "effect": { "stamina": 3, "mood": 1 }
+        }
+      ]
+    },
+    {
+      "id": "n_shoes_drying",
+      "text": "鞋垫还是潮的，塞在暖气边上烤了一晚也只干了一半。",
+      "tier": 1,
+      "decision": "再烤一小时（费点烧的），还是明天穿湿的",
+      "options": [
+        {
+          "label": "再烤一会儿",
+          "outcome": "你把鞋垫翻了个面，临睡前摸了摸 —— 干的。",
+          "effect": { "mood": 3, "health": 1 }
+        },
+        {
+          "label": "明天穿湿的",
+          "outcome": "你把鞋摆正，想着明天路上大概会不舒服。",
+          "effect": { "stamina": 2, "mood": 1 }
+        }
+      ]
+    },
+    {
+      "id": "n_neighbor_music",
+      "text": "楼下在放歌，声音不大，但一直没停。是首很老的歌。",
+      "tier": 1,
+      "decision": "听着睡（有人气），还是塞上耳塞",
+      "options": [
+        {
+          "label": "听着睡",
+          "outcome": "歌放到第三遍的时候你睡着了。楼里还有别人醒着，这件事让你踏实。",
+          "effect": { "mood": 4, "stamina": 2 }
+        },
+        {
+          "label": "塞上耳塞",
+          "outcome": "世界安静下来，你很快就沉下去了。",
+          "effect": { "stamina": 4, "mood": 1 }
+        }
+      ]
+    }
+  ]
+}
