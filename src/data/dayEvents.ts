@@ -32,13 +32,11 @@
  * 逐日上行的价格把这个博弈救回来 —— 今天不买，明天更贵。
  * 见 `DAY_PRICE_FACTOR` 与策划案 §12 的 v0.8 标注。
  *
- * DEFERRED(D-17): 物价与限购**只活在当天、且不进 `run.log`**。
- *   "换天清零"是对的（它们本来就该只活一天），但"事后查不到"不是 ——
- *   玩家回翻日报时看不到"D+3 那天物价涨到 1.5 倍"，而那一局的取舍正是被它决定的。
- *   M3 与日报的复盘视图一起做。
- *
- * ★ 那笔"逐日物价只覆盖寒潮"的账（原编号 D-19）**已经清偿**：
- *   曲线改成按 `disasterId` 的严重度算，见下面 `dayPriceFactor` 的注释。
+ * ★ 那两笔账（原编号 D-17 物价不进日报 / D-19 逐日物价只覆盖寒潮）**都已经清偿**：
+ *   · D-19：曲线改成按 `disasterId` 的严重度算，见下面 `dayPriceFactor` 的注释；
+ *   · D-17：生存期日报加了一行"市场"（现价倍率 + 限购），见
+ *     `ui/SurvivalScreen.ts` 的 `marketHtml`。囤货期那一半本来就在 log 里
+ *     （`resolveDayEvent` 写的那行带着 `describeDayEffect` 的摘要）。
  */
 import { severityAt } from '../model/calendar';
 import { getDisasterDef, hasDisasterDef } from './disaster';

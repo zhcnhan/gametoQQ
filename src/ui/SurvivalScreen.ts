@@ -11,6 +11,7 @@
  * D-Day 是特例：`day === 0` 时灾难刚落地，还没有结算过任何一天，所以那一屏只负责"揭晓 + 盘点"。
  */
 import { SURVIVAL_DAYS, getDisasterDef, outdoorTemp } from '../data/disaster';
+import { dayPriceFactor } from '../data/dayEvents';
 import { findEmergency } from '../data/emergencies';
 import { CATEGORY_LABELS, getItemDef } from '../data/items';
 import { SHELTER_SLEEP_LINE, STAMINA_RECOVER, dailyDrainOf, moodFromPlacement, organizeQuality } from '../data/survival';
@@ -156,6 +157,7 @@ export class SurvivalScreen implements Screen {
         ${emergencyHtml(last)}
         ${coldHouseNote(run)}
         ${last.usedMedicine > 0 || last.usedWarmth > 0 ? `<p class="block-note">${escapeHtml(supplyText(last))}</p>` : ''}
+        ${this.marketHtml(disaster, run)}
         ${this.stockHtml(disaster)}
       </section>
 
@@ -367,6 +369,53 @@ export class SurvivalScreen implements Screen {
   }
 
   /** "还剩多少 / 够几天" —— 这一节是整屏最实用的信息 */
+  /**
+   * ★ 市场那一行（D-17 清偿）。
+   *
+   * ## 它补的是什么
+   *
+   * 原欠账说的是"物价波动与限购**只活在当天**，玩家回翻日报时查不到
+   * 「D+3 那天物价涨到 1.5 倍」，而那一局的取舍正是被它决定的"。
+   *
+   * 实测之后发现要分两半看：
+   *
+   *  · **囤货期那一半已经记了** —— `resolveDayEvent` 写的那行 log 里
+   *    带着 `describeDayEffect` 的摘要（"物价 +10%"就在里面），
+   *    因为那正是玩家做选择的当场；
+   *  · **生存期那一半一个字都没有**，而那才是真正的缺口：
+   *    囤货期事件抬上去的价（`run.shopPriceFactor`）**会一路带到生存期**
+   *    （`basePriceOf` 把它叠在单价上），玩家却再也没见过那个数。
+   *
+   * ## 为什么显示"现在多少倍"而不是"哪天涨了多少"
+   *
+   * 前者是**玩家能拿去用的信息**（"现在买了就是 1.8 倍"），
+   * 后者只是一笔历史账 —— 而生存期本来就买不了东西，
+   * 所以这个数字在这一屏的作用是**解释你手上的存货值多少**。
+   * 这也与 §6.6 的反差层同一个口径：数字自己说话，不写形容词。
+   */
+  private marketHtml(disaster: ReturnType<typeof getDisasterDef>, run: RunState): string {
+    const factor = dayPriceFactor(run.day, disaster.id) * run.shopPriceFactor;
+    // 与 §6.6 的对比数字同一个理由：不写"贵／便宜"，只给倍率让玩家自己读
+    const tone = factor >= 1.5 ? ' is-tight' : '';
+    const lines = [
+      `${
+        factor < 1.02
+          ? '灾前价'
+          : factor < 1.3
+            ? '略涨'
+            : factor < 1.8
+              ? '明显涨了'
+              : '有钱也难买到'
+      } ${factor.toFixed(1)} 倍`
+    ];
+    if (run.shopLimits.length > 0) {
+      // 限购是**处境**（§6.2），不是奖励 —— 所以它只说事实，不加评价
+      const total = run.shopLimits.reduce((n, l) => n + l.max, 0);
+      lines.push(`${run.shopLimits.length} 个品类在限购（合计 ${total} 件）`);
+    }
+    return `<p class="block-note market-line${tone}">${escapeHtml(lines.join(' · '))}</p>`;
+  }
+
   private stockHtml(disaster: ReturnType<typeof getDisasterDef>): string {
     const run = this.store.run;
     const rows = dailyDrainOf(disaster)

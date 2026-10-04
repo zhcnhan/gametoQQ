@@ -2032,6 +2032,23 @@ button:disabled {
   font-weight: 600;
 }
 
+/*
+ * 市场那一行（D-17）：现在物价几倍、有没有限购。
+ *
+ * 它是一条 `.block-note`（正文说明），所以基线样式照旧，这里只管两件事：
+ *  · **数字用等宽数字**（`tabular-nums`）：这一行每天都会变，比例数字跳动会晃眼；
+ *  · **"贵到离谱"时上朱红** —— 与 `.stock-row.is-tight` 同一条纪律：
+ *    朱红 = 警告，而"有钱也难买到"确实是警告；"略涨"不是，所以不上色。
+ */
+.market-line {
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+.market-line.is-tight {
+  color: var(--vermilion);
+}
+
 /* 四维上的当日增量 */
 .stat em {
   margin-left: 5px;
