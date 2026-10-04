@@ -39,10 +39,32 @@ function put(run: RunState, shelfId: string, pos: SlotPos, itemId: string, count
   run.shelves[index] = setSlotStack(shelf, pos, makeStack(itemId, count, expiry));
 }
 
-/** 一份"刚好能撑一天"的最小开局（不依赖随机箱子内容） */
+/**
+ * 一份"刚好能撑一天"的最小开局（**不依赖随机箱子内容**）。
+ *
+ * ## ★★ 这里必须把 RNG 游标恢复成原始种子 —— 否则这个探针会随内容量漂
+ *
+ * `createStartingRun(seed)` 会顺手抽三个开局箱，而那一步**消耗 RNG 状态**；
+ * 而箱子池是**按品类从 `ITEM_DEFS` 现算**的（`data/boxes.ts` 的
+ * `itemIdsIn(MEDICAL_CATEGORIES)` 之类）。于是加一件医疗品 →
+ * 池子变长 → 洗牌的消耗次数变了 → 游标位置整体移位 →
+ * **后续每一次随机都换了一条序列**（地板卡、心情、突发事件）。
+ *
+ * 实测：给医疗加 8 件之后，同一条好档探针的逐日体力从
+ * `[…,100,97,89,89]`（最低 89）变成 `[…,89,86,78,78]`（最低 **78**），
+ * 而探针的库存是**写死的**（`probeLarder()`）、一件新物资都没用到。
+ *
+ * 所以这里显式把游标按回原种子：`boxesToUnpack` 反正紧接着就被清空/替换，
+ * 那一次抽取的**结果**没人要，但它对游标的**影响**被留下来了 —— 那才是漂移的来源。
+ *
+ * ★ 这条修的是"探针太脆"，不是"断言放宽"：
+ * 改完之后同一条曲线不再随内容量变化，`staminaFloor` 那个门才重新是个门。
+ */
 function bareRun(seed = 20261001): RunState {
   const run = createStartingRun(seed);
   run.boxesToUnpack = [];
+  // ★ 把游标按回原种子（理由见上）
+  run.seed = seed;
   run.shelves = run.shelves.map((shelf) =>
     shelf.slots.length > 0
       ? { ...shelf, slots: shelf.slots.map((row) => row.map(() => ({ stack: null }))) }
@@ -774,11 +796,18 @@ describe('★ 全周期探针（§12.3 v0.7 / §12 v0.8 的永久回归）：好
     expect(good.outcome).toBe('survived');
     expect(good.day).toBe(SURVIVAL_DAYS);
     expect(good.hardPressDays).toBe(0);
-    // 实测轨迹（14 天）：体力 100 → 88、健康 100 → 70、庇护所一路被磨到 22。
+    // 实测轨迹（14 天，RNG 游标已按回原种子，见 `bareRun`）：体力
+    // [98,96,99,100,100,100,100,100,100,100,100,97,94,94]、最低 94、健康 100 → 70、
+    // 庇护所一路被磨到 22。
     // 整理质量 1.0 → 每天 6 件 × 1.5 = 9 点，睡一觉回 12 —— 净 +3；
-    // 突发事件标了顺手位就化解得掉，所以它不该把这条曲线拽下去。
+    // 突发事件里化解得掉的那几条不额外扣分，所以它不该把这条曲线拽下去。
     // 后程那几点体力是庇护所跌破 40 之后"睡不踏实"扣的（§12.3 v0.7），不是整理的问题。
-    expect(good.staminaFloor).toBeGreaterThan(80);
+    //
+    // ⚠ 门槛从 `> 80` 抬到 `> 90` 是**有意的**：原来那个 80 是照着"最低 89"定的余量，
+    // 而那时这条曲线其实在随内容量漂（加 8 件医疗品就掉到 78）。
+    // 游标钉住之后它不再漂，所以门槛可以贴着实测值定 —— 那才是它作为
+    // "整理→体力这条链有没有退化"的报警器该有的松紧度。
+    expect(good.staminaFloor).toBeGreaterThan(90);
     expect(good.health).toBeGreaterThan(60);
   });
 
