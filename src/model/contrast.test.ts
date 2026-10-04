@@ -10,7 +10,7 @@ import { makeStack, setSlotStack } from './shelf';
 import { districtDays, indoorTemp, supplyDays } from './contrast';
 import type { RunState } from './types';
 import { createStartingRun } from '../systems/setup';
-import { getDisasterDef } from '../data/disaster';
+import { getDisasterDef, SURVIVAL_DAYS } from '../data/disaster';
 
 function emptyRun(): RunState {
   const run = createStartingRun(20261001);
@@ -74,6 +74,42 @@ describe('反差层：四个数字的口径', () => {
     expect(districtDays(4)).toBe(1);
     expect(districtDays(7)).toBe(0);
     expect(districtDays(99)).toBe(0); // 越界夹到末尾，不给负值
+  });
+
+  it('★ 这条曲线必须覆盖**整个生存期**（原来只有 9 天，后 5 天全是同一个数）', () => {
+    /*
+     * 原来那张表是 9 个数，而 `SURVIVAL_DAYS` 是 14 ——
+     * 于是第 10~14 天全都返回最后一档（0），也就是"整条街一点粮都没有了"。
+     * 那五天里这个数字**不再有任何信息量**：它既不变化、也不解释任何事，
+     * 只是每天印一个 0 在玩家旁边。
+     *
+     * ★ 而当时的测试**一条都不会红** —— 它们查的是
+     * `districtDays(0/1/4/7/99)`，全都是表内的点。
+     * 所以这条用例改成遍历**整个生存期**。
+     *
+     * ⚠ 但下标 0 是**哨兵**（灾难前，day ≤ 0 读它），**不是曲线上的点**。
+     * 我第一版从下标 0 开始查单调，于是报出"第 1 天比第 0 天还多"——
+     * **是断言错了，不是数据错了**。曲线本身从下标 1 起。
+     */
+    for (let day = 0; day <= SURVIVAL_DAYS; day++) {
+      const v = districtDays(day);
+      expect(Number.isFinite(v), `D+${day}`).toBe(true);
+      expect(v, `D+${day} 不该是负数`).toBeGreaterThanOrEqual(0);
+    }
+    // 递减：整条街只会越来越空（从下标 1，也就是 D+1 起）
+    let prev = Number.POSITIVE_INFINITY;
+    for (let day = 1; day <= SURVIVAL_DAYS; day++) {
+      const v = districtDays(day);
+      expect(v, `D+${day} 比前一天还多`).toBeLessThanOrEqual(prev);
+      prev = v;
+    }
+  });
+
+  it('★ 「你还有粮、整条街已经空了」这个反差必须真的出现过', () => {
+    // 这是这一层最狠的一句话（§6.6）。它要求街区在**生存期后段**就已经归零，
+    // 而不是等到最后一天才归零 —— 否则玩家没有机会看到那个对比
+    expect(districtDays(7)).toBe(0);
+    expect(districtDays(14)).toBe(0);
   });
 
   it('外界温度：灾难那天断崖式下跌，并且两头都夹得住', () => {
