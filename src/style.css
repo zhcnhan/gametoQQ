@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 《囤货末世》M0 样式
  * 美术基调（§5A）：纸底 / 墨色 / 朱红唯一点缀 / 暖黄仅用于"安全·窗内"语义。
  * 所有颜色都从 :root 的 CSS 变量取，不散落在各处。
@@ -3230,30 +3230,33 @@ button:disabled {
 .window-band {
   position: relative;
   flex: 0 0 auto;
-  height: 44px;
+  height: 52px;
   background: var(--sky);
   border-bottom: 1.5px solid var(--ink-16);
   overflow: hidden;
 }
 
 /*
- * ★ 高度与底边都调过一次（用户 2026-10 报"天光带没看到"）。
+ * ★ 尺寸与形状调过两次（用户 2026-10 连着报"天光带没看到"）。
  *
- * 实测（`scripts/_diag-band.ts`）：DOM 里那条带子一直都在、类名与渐变都对，
- * 而它当时只有 **34px**、天空与远景的明度差只有约 **14** ——
- * 在"洪水"这类低对比的场次上，它读起来像页眉的一条浅色分隔线，
- * 而不是"窗外"。所以：
+ * 第一次 34 → 44px 我以为够了，而他的反馈是"我还是不知道什么鬼带子"——
+ * 那句话真正的意思是：**它读起来不像任何东西**。
+ * 一条纯渐变在纸色页眉底下只是一块色块；而"窗外"要有**地平线**才成立。
  *
- *  · 高度 34 → **44px**（眼睛能认出"这是一幅画"的最小尺寸）；
- *  · 底边再压一道渐隐的墨线 —— 它把带子与下面的正文**分开**，
- *    于是它不再像"标题的底色"。
+ * 所以现在三样东西缺一不可：
+ *   ① **地平线**（下面那道 1px 墨线 + 它下面的渐隐）——
+ *      天在上、地在下，这一条线是"看得懂"的关键。
+ *      位置刻意偏下（天占约 2/3）：水平线落在正中间会读成"分栏"而不是"天地"；
+ *   ② **44 → 52px**：够放下"天 + 地"两段，而不是一条窄带；
+ *   ③ 窗棂（`.window-band-glass`）与飘着的东西（`.window-band-fall`）叠在上面。
  */
 .window-band::after {
   content: '';
   position: absolute;
   inset: auto 0 0 0;
-  height: 2px;
-  background: linear-gradient(180deg, rgba(44, 44, 42, 0.18), transparent);
+  height: 18px;
+  border-top: 1px solid rgba(44, 44, 42, 0.24);
+  background: linear-gradient(180deg, rgba(44, 44, 42, 0.06), rgba(44, 44, 42, 0.18));
   pointer-events: none;
 }
 

@@ -500,6 +500,52 @@ if (import.meta.env.DEV) {
   };
 
   /**
+   * ★★ **走查自检**：一次把"你在看哪一份、那一屏上有什么"打出来（2026-10 补）。
+   *
+   * ## 为什么必须有它（而不是再改一次代码）
+   *
+   * 用户连着两轮报"天光带没看到""那个命令根本没生效"，而我这边
+   * 代码、构建产物、测试**三处都验过是对的**。这种"两边都说得通"的局面，
+   * 再猜下去就是 M2 那条 7 轮的老路（纪律 §0.1：改到第二轮还不好，
+   * 就停止改代码、去补"能看见现场"的手段）。
+   *
+   * 所以这里补的**不是**第三次修改，而是一个能把现场说清楚的手段：
+   *
+   *   · 这一份是 dev 还是生产（`__tunhuo` 只在 dev 里存在）；
+   *   · 当前这一局的灾难 id 与名字、以及在哪一屏；
+   *   · 屏幕上**真的有没有**那条带子、它的高度、背景、以及它被算出来的位置；
+   *   · 顺带把这一屏的几个区块标题打出来（"我没看到"有时是"我不在那一屏"）。
+   *
+   * 用法：控制台 `__tunhuo.why()`
+   */
+  const why = (): void => {
+    const run = store.run;
+    const band = document.querySelector('.window-band') as HTMLElement | null;
+    const tag = document.querySelector('.disaster-tag') as HTMLElement | null;
+    const cs = band ? getComputedStyle(band) : null;
+    const rect = band?.getBoundingClientRect();
+    const blocks = [...document.querySelectorAll('.block-title')].map((e) => e.textContent).join(' / ');
+    console.info(
+      [
+        '[囤货末世] 自检',
+        `  构建：${import.meta.env.DEV ? 'dev（__tunhuo 存在）' : '生产（没有 __tunhuo）'}`,
+        `  这一局：${run.disasterId}（${getDisasterDef(run.disasterId).name}） · phase=${run.phase} · day=${run.day}`,
+        `  带子：${band ? '在 DOM 里' : '★ 不在 DOM 里（这一份构建没有它）'}`,
+        band
+          ? `    类名 = ${band.className}\n` +
+            `    内联 = ${band.getAttribute('style')}\n` +
+            `    算出来：高度 ${cs?.height} · 背景 ${(cs?.backgroundImage ?? '').slice(0, 70)}\n` +
+            `    位置 = ${rect ? `top ${Math.round(rect.top)}px、高 ${Math.round(rect.height)}px、宽 ${Math.round(rect.width)}px` : '?'}`
+          : '',
+        `  灾难标记 = ${tag ? tag.textContent : '不在'}`,
+        `  这一屏的区块 = ${blocks || '（没有）'}`
+      ]
+        .filter(Boolean)
+        .join('\n')
+    );
+  };
+
+  /**
    * 换一个测试存档（`src/tools/save-*.txt`）。
    *
    * ## 为什么需要它：人工走查的成本几乎全在"走到那一屏"
@@ -589,7 +635,8 @@ if (import.meta.env.DEV) {
     deferred: debts,
     jump,
     load,
-    disaster
+    disaster,
+    why
   };
   // 每开一次页面报一次账。目的很具体：让"寒潮是冷库 → M1 无腐坏""冰箱没效果"
   // 这类**已被记录的空转**，在任何人准备动手"修好"它之前先自我解释一次。
