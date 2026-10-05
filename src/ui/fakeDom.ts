@@ -227,6 +227,26 @@ export class FakeElement {
     return out;
   }
 
+  /**
+   * 自己是不是还挂在文档上（沿 `parent` 链走到 `documentElement`）。
+   *
+   * ★ 这个成员是**被一次静默失效找出来的**（W-02 的屏幕级守卫）：
+   * `OrganizeScreen.moveGhostTo` 里有一句"幽灵已被某次重绘丢掉就当它不存在"——
+   * `if (ghost.isConnected === false) { this.ghost = null; return; }`，
+   * 而假体**没有这个成员** → `undefined === false` 恒为假 → 那条清理逻辑
+   * 在屏幕级测试里**一次都没生效过**，真实浏览器里却是有效的。
+   *
+   * 教训：假体缺一个成员，代价不是"报错"，而是被测代码里某条分支**静静地不跑**。
+   */
+  get isConnected(): boolean {
+    let cur: FakeElement | null = this;
+    while (cur !== null) {
+      if (cur === this.ownerDocument?.documentElement) return true;
+      cur = cur.parent;
+    }
+    return false;
+  }
+
   closest(selector: string): FakeElement | null {
     let cur: FakeElement | null = this;
     while (cur) {
@@ -239,7 +259,6 @@ export class FakeElement {
   querySelectorAll(selector: string): FakeElement[] {
     return this.descendants().filter((el) => matchesAny(el, selector));
   }
-
   querySelector(selector: string): FakeElement | null {
     return this.querySelectorAll(selector)[0] ?? null;
   }

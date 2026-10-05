@@ -134,6 +134,103 @@ function setHeld(run: RunState, session: OrganizeSession, next: ItemStack | null
   run.heldFrom = next ? from : { kind: 'none' };
 }
 
+/**
+ * ★★ **吸附的偏好半径**（W-02，单位 = CSS 像素）。
+ *
+ * ## 它解决的是哪一件事
+ *
+ * 「贴了主食的那一行」与「什么规矩都没写的行」，在**手感上原来完全等价** ——
+ * 吸附只按"离指针最近"挑格子（`ui/OrganizeScreen.ts` 的 `nearestLegalSlot`），
+ * 于是玩家自己写的那张胶带替他做不了任何决定，引擎②（反差层）
+ * 就只是一台放大器，而不是**引擎① 的放大器**。
+ *
+ * ## 为什么是"半径"而不是"永远优先"（这条是设计决定，不是实现细节）
+ *
+ * 一个"清单收它就一定选它"的规则会造成手感上的荒谬：指针悬在第三行的空格上，
+ * 屏幕却把物资吸到第一行去 —— **那叫自作主张，不叫顺手**。
+ * 而 §5 引擎① 的第一句话是"**游戏不评判对错**"，
+ * 所以这一条也不能表现成"你放这边才对"。
+ *
+ * 取一个半径就同时满足了这两条：**只在指针本来就想落在那一带时**才替玩家选。
+ *
+ * ## ★★ 半径为什么是 34 而不是"一格宽的一半"（屏幕级测试逼出来的修正）
+ *
+ * 第一版写的 26px，理由是"≈ 一格宽（64px）的一半"。那个数是**拍的**，
+ * 而它在这张盘面上**永远不可能生效** —— 原因是几何：
+ *
+ * | 指针位置 | 到最近格心的距离 |
+ * | --- | --- |
+ * | 格子正中间 | 0 |
+ * | 两格之间的缝（60px 格 + 3px 缝）里 | 最多 **31.5** —— 再远一点隔壁那格就更近了 |
+ * | 货架卡底部那片死区（格子下沿到卡内沿 ~11px） | 最多 **41** |
+ *
+ * 也就是说"最近的合法落点"这个集合本身就被压在 31.5px 以内（只有卡底死区例外），
+ * 而 26 < 31.5 —— **没有任何一个点能同时满足"离某格 26px 以外"与"它还是最近的"**，
+ * 于是 `listed` 那一栏写了等于没写。这正是本仓反复出现的
+ * 「**写了 ≠ 生效了**」：函数、单测、接线都在，规则在真实几何下一次都触发不了。
+ *
+ * 34px 是"刚好越过 31.5 那条线、又不至于伸到隔壁那格身上"的值：
+ * 缝里的指针最多只为**相邻那一行**改主意（±2px 的带子），
+ * 而卡底死区里能把 30 多 px 外那一行拉进来。
+ *
+ * ⚠ 触屏会更不准（手指遮住的正是它指的地方），所以触屏那一侧放宽到
+ * {@link SNAP_PREFER_TOUCH_PX} —— 而放宽的只是**偏好**，
+ * 合法落点的判据（空格 / 同类 / 会互换）一个字都没动。
+ */
+export const SNAP_PREFER_PX = 34;
+
+/** 触屏上的偏好半径（见 {@link SNAP_PREFER_PX} 末尾那条 ⚠） */
+export const SNAP_PREFER_TOUCH_PX = 48;
+
+/** 一个吸附候选：**已经通过合法判据**的格子 */
+export interface SnapCandidate {
+  /** 格子中心到指针的距离（CSS 像素） */
+  distance: number;
+  /** 这一格所在的胶带清单**明确收着手里的这件**（`model/shelf.ts` 的 `zoneListedFor`） */
+  listed: boolean;
+}
+
+/**
+ * ★★ 从合法候选里挑一个（W-02 的全部逻辑，纯函数 —— 所以它能被测试跑到）。
+ *
+ * 规则只有一句：**半径内优先清单收它的那一格；半径外一律取最近**。
+ * 与 `zoneListedFor` 是同一把尺子（`model/score.ts` 的归位率也用它），
+ * 所以"吸附认为该放这儿"与"归位率认为放对了"永远是同一个答案 ——
+ * 两处各写一套判据的话，早晚会出现"吸过去反而不算归位"这种最伤人的组合。
+ *
+ * ★ 候选数组**必须非空**且按调用方给的顺序（平局时取先出现的，
+ * 与 `smallestUnderPoint` 的"粗略近似绘制顺序"一致）。
+ *
+ * @param candidates 合法落点及其距离
+ * @param preferPx 偏好半径，默认 {@link SNAP_PREFER_PX}
+ * @returns 选中的下标（0 基）
+ */
+export function pickSnapCandidate(candidates: readonly SnapCandidate[], preferPx = SNAP_PREFER_PX): number {
+  if (candidates.length === 0) throw new Error('pickSnapCandidate 需要至少一个候选');
+  let nearest = 0;
+  for (let i = 1; i < candidates.length; i += 1) {
+    // 严格小于：平局保留先出现的那个（调用方的顺序 = 文档顺序）
+    if ((candidates[i] as SnapCandidate).distance < (candidates[nearest] as SnapCandidate).distance) nearest = i;
+  }
+  const nearestListed = ((): number => {
+    let best = -1;
+    for (let i = 0; i < candidates.length; i += 1) {
+      const c = candidates[i] as SnapCandidate;
+      if (!c.listed || c.distance > preferPx) continue;
+      if (best < 0 || c.distance < (candidates[best] as SnapCandidate).distance) best = i;
+    }
+    return best;
+  })();
+  /*
+   * 只有在**最近的合法落点本身也是清单收它的**、或者**半径内根本没有清单收它的格子**时，
+   * 才退回"取最近"。前者没什么可选的，后者是"玩家指的这附近确实没地方放"——
+   * 那时候把他拽到屏幕另一头去才是真的坏手感。
+   */
+  if (nearestListed < 0) return nearest;
+  if ((candidates[nearest] as SnapCandidate).listed) return nearest;
+  return nearestListed;
+}
+
 export function createOrganizeSession(): OrganizeSession {
   return { held: null, heldFrom: { kind: 'none' }, tidyShelfIds: [] };
 }

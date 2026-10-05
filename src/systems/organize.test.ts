@@ -4,10 +4,13 @@ import type { SlotPos } from '../model/types';
 import { createSaveGame } from '../state/save';
 import { GameStore } from '../state/store';
 import {
+  SNAP_PREFER_PX,
+  SNAP_PREFER_TOUCH_PX,
   buildView,
   createOrganizeSession,
   householdTotals,
   inventoryTotals,
+  pickSnapCandidate,
   pickupFromShelf,
   placeHeld,
   restoreOrganizeSession,
@@ -16,7 +19,8 @@ import {
   swapSlots,
   takeFromBox,
   toggleHandy,
-  type OrganizeSession
+  type OrganizeSession,
+  type SnapCandidate
 } from './organize';
 import { createStartingRun } from './setup';
 
@@ -631,6 +635,57 @@ describe('真实开局数据上不炸', () => {
     expect(a.seed).toBe(b.seed);
     const counts = (run: typeof a) => run.boxesToUnpack.map((box) => box.items.reduce((n, s) => n + stackCount(s), 0));
     expect(counts(a)).toEqual(counts(b));
+  });
+});
+
+describe('★★ 吸附偏好：半径内优先"清单收它的那一行"（W-02）', () => {
+  /** 造一批候选：`d` = 距离，`listed` = 这一行的清单收不收手里那件 */
+  const cands = (...pairs: [number, boolean][]): SnapCandidate[] =>
+    pairs.map(([distance, listed]) => ({ distance, listed }));
+
+  it('半径内、清单收它 → 哪怕比最近的那格远一点，也选它（这就是 W-02 的全部）', () => {
+    // 0 号：距离 10 但不收；1 号：距离 18 但清单收它 → 取 1
+    expect(pickSnapCandidate(cands([10, false], [18, true]))).toBe(1);
+  });
+
+  it('★★ 半径**外**的清单行不许抢 —— 指针悬在这儿，物资不能被吸到屏幕另一头去', () => {
+    // 1 号虽然清单收它，但距离 200 远超半径 26
+    expect(pickSnapCandidate(cands([10, false], [200, true]))).toBe(0);
+    // 边界也要守：刚好 26 之内算数，26 之外不算
+    expect(pickSnapCandidate(cands([10, false], [SNAP_PREFER_PX, true]))).toBe(1);
+    expect(pickSnapCandidate(cands([10, false], [SNAP_PREFER_PX + 0.001, true]))).toBe(0);
+  });
+
+  it('半径内有两个清单行 → 取更近的那个（偏好不等于"随便挑一个"）', () => {
+    expect(pickSnapCandidate(cands([12, false], [22, true], [15, true]))).toBe(2);
+  });
+
+  it('最近的本来就是清单行 → 还是它（这一条防的是"为了偏好绕远路"）', () => {
+    expect(pickSnapCandidate(cands([8, true], [20, true]))).toBe(0);
+  });
+
+  it('半径内一个清单行都没有 → 老实取最近（没有偏好可讲）', () => {
+    expect(pickSnapCandidate(cands([30, false], [40, false]))).toBe(0);
+    // 手里空着（没有"收不收"可言）时，调用方会把 listed 全填 false —— 退化成原来的行为
+    expect(pickSnapCandidate(cands([10, false], [12, false], [90, false]))).toBe(0);
+  });
+
+  it('平局取先出现的那个（= 文档顺序，与 smallestUnderPoint 同一口径）', () => {
+    expect(pickSnapCandidate(cands([10, true], [10, true]))).toBe(0);
+    expect(pickSnapCandidate(cands([10, false], [10, false]))).toBe(0);
+    // 平局里一个是清单行：近的那个（0 号）也是清单行 → 它留下
+    expect(pickSnapCandidate(cands([10, true], [10, false]))).toBe(0);
+  });
+
+  it('触屏的偏好半径更宽（手指比鼠标不准），而合法判据一个字没动', () => {
+    expect(SNAP_PREFER_TOUCH_PX).toBeGreaterThan(SNAP_PREFER_PX);
+    const far = cands([10, false], [35, true]);
+    expect(pickSnapCandidate(far, SNAP_PREFER_PX), '鼠标：35 太远，不抢').toBe(0);
+    expect(pickSnapCandidate(far, SNAP_PREFER_TOUCH_PX), '触屏：35 在半径内，让它抢').toBe(1);
+  });
+
+  it('候选为空是**调用方的错**（抛出来，而不是悄悄返回 -1 让上面吸不到格子）', () => {
+    expect(() => pickSnapCandidate([])).toThrow();
   });
 });
 

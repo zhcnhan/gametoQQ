@@ -12,7 +12,7 @@ import { initAudio, isMuted, playSfx, setMuted } from '../fx/audio';
 import { iconSvg, itemIconSvg } from '../fx/icons';
 import { showToast, spawnCrushGhost, spawnSfxWord, spawnTidyTag } from '../fx/popup';
 import { dayLabel } from '../model/calendar';
-import { findZone, getStack, isOffZone, rowZoneId, stackCount, zoneIdsOf } from '../model/shelf';
+import { findZone, getStack, isOffZone, rowZoneId, stackCount, zoneIdsOf, zoneListedFor } from '../model/shelf';
 import { emergencyCategories } from '../model/score';
 import type { CategoryId, ItemStack, Shelf, SlotPos, Zone } from '../model/types';
 import type { GameStore } from '../state/store';
@@ -20,6 +20,8 @@ import { roomForNewFurniture, roomsOf, type RoomView } from '../systems/home';
 import { lockedRooms, survivedRuns } from '../systems/unlock';
 import {
   FURNITURE_PRICE,
+  SNAP_PREFER_PX,
+  SNAP_PREFER_TOUCH_PX,
   addFurnitureCommand,
   applyZone,
   assignZone,
@@ -28,6 +30,7 @@ import {
   deleteZone,
   editZone,
   inventoryTotals,
+  pickSnapCandidate,
   placeHeld,
   pickupFromShelf,
   returnHeld,
@@ -122,6 +125,16 @@ export class OrganizeScreen {
   private readonly session: OrganizeSession;
   private readonly props: OrganizeScreenProps;
 
+  /**
+   * 触屏吗？（决定吸附的偏好半径，见 `systems/organize.ts` 的 `SNAP_PREFER_PX`）
+   *
+   * 只看一次并记住：它在一台设备上不会变，而拖动过程中每帧都要问。
+   * `matchMedia` 在测试环境里没有，所以按"鼠标"处理 —— 那条路径是默认值，
+   * 也正是假 DOM 测试能验到的那一条。
+   */
+  private readonly coarsePointer: boolean =
+    typeof globalThis.matchMedia === 'function' && globalThis.matchMedia('(pointer: coarse)').matches;
+
   private roomEl!: HTMLElement;
   private dockEl!: HTMLElement;
   private scoreEl!: HTMLElement;
@@ -152,6 +165,15 @@ export class OrganizeScreen {
    */
   private addOpen = false;
   private drag: DragState = { active: false, source: 'shelf' };
+  /**
+   * 上一次渲染用的视图（给吸附偏好查"这一行是哪张胶带"用）。
+   *
+   * ★ 为什么不现算：`nearestLegalSlot` 在**拖动过程中每一帧**都会被调用，
+   * 而 `buildView` 会重建整份房间/货架/胶带结构 —— 在指针移动里做那件事
+   * 就是每帧一次全量重算。视图只在渲染时变，所以缓存它、丢掉重算，
+   * 代价是"渲染之后又被改过的分区"要等下一次渲染才生效（亚帧级，看不见）。
+   */
+  private lastView: OrganizeView | null = null;
 
   constructor(root: HTMLElement, store: GameStore, session: OrganizeSession, props: OrganizeScreenProps) {
     this.root = root;
@@ -285,6 +307,8 @@ export class OrganizeScreen {
      */
     this.clearGestureBindings();
     const view = buildView(this.store, this.session);
+    // 吸附偏好要按行查胶带，而它每帧都会被问一次 —— 所以在这里存一份（见 lastView）
+    this.lastView = view;
     this.renderSub(view);
     this.renderScore(view);
     this.renderTapeShelf();
@@ -1208,6 +1232,21 @@ export class OrganizeScreen {
     if (!this.session.held) return;
     this.drag = { active: true, source };
     this.dragOrigin = origin;
+    /*
+     * ★★ 起手先把**从上一轮手势留下的悬停**清掉（屏幕级测试抓出来的）。
+     *
+     * `moveDrag` 有一句"落点没变就提前 return"（那一句本身是对的：
+     * 落点没变就不该重画预览、不该再播一次音效）。可 `hoverEl` 是**跨手势**
+     * 留着的字段 —— 上一趟拖完松手时它记着最后一格，而新一轮的第一次移动
+     * 只要落在同一格上，那句提前 return 就会吃掉这一帧：
+     * 预览记号不加、`is-hover-snap` 不加、而 `data-snap` 那个标记
+     * 更是要等到**第二次移动**才补上。
+     *
+     * 后果是"按下就拖到某处、然后停住"这种最自然的操作，第一次落点
+     * 永远不亮（玩家看到的是"拖过去没反应，再动一下才亮"）。
+     * 起手清空 hoverEl 之后，新一轮的第一次移动必定走完整段判定。
+     */
+    this.clearHover();
     const el = document.createElement('div');
     el.className = 'drag-ghost';
     const held = this.session.held;
@@ -1259,6 +1298,20 @@ export class OrganizeScreen {
     this.moveGhostTo(point);
     if (!this.drag.active) return;
     const slot = this.pickDropSlot(point);
+    /*
+     * ★★ `data-snap` 必须在**提前 return 之前**读出来（屏幕级测试抓出来的）。
+     *
+     * `nearestLegalSlot` 每帧都会给这一帧选中的格子打上 `data-snap="1"`，
+     * 而下面那句 `slot === this.hoverEl` 会在"落点没变"时直接返回。
+     * 原来把读取放在返回之后：拖动中**第一次**选中某格时会走进来读到 `'1'`、
+     * 加对了 `is-hover-snap`；可只要指针继续在这格附近微动（落点不变），
+     * 后续每一帧都在**同一个元素**上重新打标记然后提前返回 ——
+     * 读到的 `data-snap` 于是可能是"上一帧这次调用之前"的状态，
+     * 中间一旦经过 `clearHover()` 清过一次，`is-hover-snap` 就再也加不上，
+     * 而 `data-snap` 这个**供测试与外部查询的标记**也会与当前选中格不一致。
+     * 顺序改成"先读、再决定要不要重画"。
+     */
+    const snapped = slot !== null && slot.dataset['snap'] === '1';
     if (slot === this.hoverEl) return;
     this.clearHover();
     if (slot) {
@@ -1270,7 +1323,7 @@ export class OrganizeScreen {
       const sameItem = stack && this.session.held && stack.itemId === this.session.held.itemId;
       // 三个记号各说一件事：会放（虚线）/ 会换（实线 + 角标）/ 这是吸附（半透明 + 虚线角标）
       slot.classList.add(stack && !sameItem ? 'is-hover-swap' : 'is-hover');
-      if (slot.dataset['snap'] === '1') slot.classList.add('is-hover-snap');
+      if (snapped) slot.classList.add('is-hover-snap');
       playSfx('preview');
     }
   }
@@ -1399,12 +1452,6 @@ export class OrganizeScreen {
       this.hoverEl.classList.remove('is-hover', 'is-hover-swap', 'is-hover-snap');
       this.hoverEl = null;
     }
-    // 清掉吸附标记：`nearestLegalSlot` 每次都会给当次选中的格子打上 `data-snap`，
-    // 不在这里清的话，上一帧那个格子的标记会留到下一次（它的 class 已经被移除，
-    // 但下一帧如果它又被选中，判断会读到陈旧状态）
-    this.roomEl.querySelectorAll<HTMLElement>('[data-slot][data-snap]').forEach((el) => {
-      delete el.dataset['snap'];
-    });
   }
 
   /**
@@ -1470,13 +1517,34 @@ export class OrganizeScreen {
         ? el.closest<HTMLElement>('[data-shelf-card]')
         : this.cardUnderPoint(point);
     const shelfId = card?.dataset['shelfCard'];
-    if (!shelfId) return null; // ④ 货架之外，不吸附
+    if (!shelfId) {
+      /*
+       * ④ 货架之外：不吸附。★ 但**必须把上一帧留下的吸附标记抹掉** ——
+       * 这条路径以前直接 `return null`，于是"指针已经离开货架"之后
+       * 那一格还挂着 `data-snap="1"`：屏幕上那个虚线角标不会自己消失，
+       * `data-snap` 也不再等于"最近一次判定"（屏幕级守卫抓到的第二处）。
+       */
+      this.wipeSnapMarks();
+      return null;
+    }
     return this.nearestLegalSlot(shelfId, point);
   }
 
   /**
-   * 按坐标找"指针正下方的那一格"（几何命中），不看 `elementFromPoint`。
+   * 抹掉所有 `data-snap`。
    *
+   * 这个标记的语义是"**最近一次吸附判定的结果**"，所以要保住两件事：
+   * 判定时只留一个（见 `nearestLegalSlot`），而判定**不成立时**一个都不留
+   * （见 `pickDropSlot` 的第 ④ 段）。
+   */
+  private wipeSnapMarks(): void {
+    this.roomEl.querySelectorAll<HTMLElement>('[data-slot][data-snap]').forEach((el) => {
+      delete el.dataset['snap'];
+    });
+  }
+
+  /**
+   * 按坐标找"指针正下方的那一格"（几何命中），不看 `elementFromPoint`。
    * 用于绕开"特效层里的东西挡在指针底下"这种情况 —— 幽灵的位置是可信的
    * （我们自己设的 `left/top`），而"谁在指针最上层"是浏览器的说法，可能受
    * `pointer-events`、层叠上下文、设备模拟等一堆因素影响。
@@ -1510,7 +1578,7 @@ export class OrganizeScreen {
   }
 
   /**
-   * 按坐标找"指针正下方的那一行"（几何命中），不看 `elementFromPoint`。
+   * 按坐标找"指针正下方的那一格"（几何命中），不看 `elementFromPoint`。
    *
    * ## ★★ 为什么必须有这一条（用户报的"正好放在图标上就没判定"）
    *
@@ -1571,12 +1639,30 @@ export class OrganizeScreen {
    * "合法" = 空格，或者装着**别的**物资的格子且**这一趟是从某格拖起的**（那是互换目标）。
    * 与 `pickDropSlot` 的①用同一套判据 —— 两处必须一致，否则"精确命中被拒、吸附却能落"
    * 这种自相矛盾的行为就会出现。
+   *
+   * ★★ 而"最近"之上还有一条**偏好**（W-02，2026-10）：半径内优先挑
+   * **清单收它的那一行**。理由与半径怎么定的，见 `systems/organize.ts` 的
+   * `pickSnapCandidate` —— 那里是纯函数，所以这个规则能被测试跑到；
+   * 这里只负责把格子量成"距离 + 收不收"两栏。
+   *
    * 返回的元素带 `data-snap="1"`，供悬停预览区分"精确命中"与"吸附"。
    */
   private nearestLegalSlot(shelfId: string, point: { x: number; y: number }): HTMLElement | null {
+    /*
+     * ★★ 开跑前先抹掉**上一帧留下的** `data-snap`（屏幕级守卫逼出来的分工）：
+     * 这一帧的标记必须由这一帧的判定来打，否则"这一格是不是吸附来的"这个问题
+     * 会被上一帧的答案回答。抹干净 + 帧末保留，两件事合起来才让
+     * `data-snap="1"` 成为"**最近一次吸附判定的结果**"这个可断言的事实。
+     *
+     * ⚠ 这件事以前挂在 `clearHover()` 里，而 `clearHover()` 是在**判定之后**
+     * 被调用的 —— 于是它删掉的正是这一帧刚打的标记：屏幕上 `is-hover-snap`
+     * 加得上（那是提前读出来的布尔值），`data-snap` 却永远查不到。
+     */
+    this.wipeSnapMarks();
     const shelf = this.shelfById(shelfId);
     const held = this.session.held;
     const canSwap = this.dragOrigin !== null;
+    const view = this.lastView;
     const candidates: HTMLElement[] = [];
     this.roomEl.querySelectorAll<HTMLElement>(`[data-slot][data-shelf="${shelfId}"]`).forEach((el) => {
       const row = Number(el.dataset['row']);
@@ -1591,16 +1677,27 @@ export class OrganizeScreen {
     });
     if (candidates.length === 0) return null;
 
-    let best: HTMLElement | null = null;
-    let bestDist = Number.POSITIVE_INFINITY;
-    for (const el of candidates) {
+    /*
+     * 手里那件的定义只查一次（外层循环里的每一格都要用同一份答案）。
+     * `held === null` 时这一趟是"空手拖"，偏好整个关闭 —— 没有"收不收"可言。
+     */
+    const itemDef = held !== null ? getItemDef(held.itemId) : null;
+    const scored = candidates.map((el) => {
       const rect = el.getBoundingClientRect();
-      const dist = Math.hypot(rect.left + rect.width / 2 - point.x, rect.top + rect.height / 2 - point.y);
-      if (dist < bestDist) {
-        bestDist = dist;
-        best = el;
-      }
-    }
+      const row = Number(el.dataset['row']);
+      const zone = view ? findZone(view.zones, rowZoneId(shelf, row)) : null;
+      return {
+        el,
+        distance: Math.hypot(rect.left + rect.width / 2 - point.x, rect.top + rect.height / 2 - point.y),
+        listed: itemDef !== null && zoneListedFor(zone, itemDef)
+      };
+    });
+
+    const pick = pickSnapCandidate(
+      scored,
+      this.coarsePointer ? SNAP_PREFER_TOUCH_PX : SNAP_PREFER_PX
+    );
+    const best = scored[pick]?.el ?? null;
     if (best !== null) best.dataset['snap'] = '1';
     return best;
   }
