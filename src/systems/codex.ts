@@ -41,8 +41,9 @@ import { getIdentityDef } from '../data/identities';
 import { countOfKind } from '../data/registry';
 import { NPC_DEFS } from '../data/npcs';
 import { countByItem } from '../model/consume';
+import { computeOrganizeScore, toPercent } from '../model/score';
 import type { GameStore } from '../state/store';
-import type { CodexPage, CodexState, MetaProfile, RunState } from '../model/types';
+import type { CodexPage, CodexState, LastRunScore, MetaProfile, RunState } from '../model/types';
 import { unlockAchievements, type AchievementVerdict } from './achievements';
 import { levelOf, raiseIdentityLevel } from './identity';
 import { survivedRuns } from './unlock';
@@ -87,6 +88,20 @@ export interface RunVerdict {
    * 否则它就是一个玩家永远不知道存在的隐藏数值（§10B.3 的纪律③）。
    */
   identityLevel: { before: number; after: number };
+  /**
+   * ★★ **上一局**那三个整理比率（2026-10，铁则 §10.1A 欠账②）。
+   *
+   * 它是这一局**开始之前** meta 里那一份，也就是"上局的成绩"。
+   * `null` = 没有上一局（第一局 / 老档）—— 界面在那时**不许画对比**。
+   *
+   * ## 为什么由 verdict 带出来，而不是让结算页自己去读
+   *
+   * 因为读的时机只有一次：下面那行 `meta.lastRunScore = …` 会把旧的**覆盖掉**。
+   * 结算页渲染时 meta 里已经是**这一局**的成绩了。所以"上一局是什么"
+   * 必须在覆盖之前抓下来 —— 那是结算这一次动作**独有**的信息，
+   * 与 `previousBest` / `identityLevel.before` 完全同一类。
+   */
+  previousScore: LastRunScore | null;
 }
 
 /**
@@ -116,6 +131,16 @@ export function earnedCodex(run: RunState): CodexState {
  */
 export function settleRunMeta(store: GameStore): RunVerdict | null {
   const run = store.run;
+  /*
+   * ★ 幂等闸：一局的奖励只发一次（三条结局出口都会走到结算页）。
+   *
+   * ⚠ 它带来的一个**已知**副作用（2026-10 记进 `meta/deferred.ts` 的 D-34）：
+   * 第二遍返回 `null`，于是 `previousScore` 也没了 ——
+   * 玩家**刷新一次结算页**，那三行"比上一局"的箭头就会消失
+   * （`meta.lastRunScore` 本身是对的，不会退化成 `±0`，只是不再显示）。
+   * 修它要给 `RunState` 再加一个"结算那一刻的上一局"快照字段，
+   * 那是一次 schema 变更，值不值得由"玩家会不会真的刷新结算页"决定。
+   */
   if (run.metaSettled !== null) return null;
   if (run.outcome !== 'survived' && run.outcome !== 'collapsed') return null;
 
@@ -182,6 +207,32 @@ export function settleRunMeta(store: GameStore): RunVerdict | null {
   const levelBefore = levelOf(meta, run.identityId);
   const leveledUp = outcome === 'survived' ? raiseIdentityLevel(meta, run.identityId) : levelBefore;
 
+  /*
+   * ★★ 上一局成绩快照（v20，铁则 §10.1A 欠账②）。
+   *
+   * 顺序是这一段唯一的难点：**先把旧的抓下来，再写新的**。
+   * 反过来的话结算页拿到的"上一局"就是这一局自己 —— 那会报出
+   * "归位率比上一局 +0%"这种看起来正常、其实什么都没比的账。
+   *
+   * 比率走 `computeOrganizeScore` + `toPercent`，与结算页**同一个来源**：
+   * 界面自己再算一遍的话，屏幕上"本局"与"上局"会是两把尺子量出来的。
+   */
+  const previousScore = meta.lastRunScore;
+  const scoreNow = computeOrganizeScore(
+    run.shelves,
+    run.zones,
+    run.boxesToUnpack,
+    getDisasterDef(run.disasterId)
+  );
+  meta.lastRunScore = {
+    placement: toPercent(scoreNow.placement),
+    fefo: toPercent(scoreNow.fefo),
+    emergency: toPercent(scoreNow.emergency),
+    disasterId: run.disasterId,
+    day: days,
+    outcome
+  };
+
   // ★ 顺序不能反：先钉住"已结算"，再让调用方去读这份结果。
   // 反过来的话，任何一次中途失败都会让奖励变成可重复领取的
   run.metaSettled = { at: Date.now(), outcome };
@@ -205,7 +256,8 @@ export function settleRunMeta(store: GameStore): RunVerdict | null {
     newRecord,
     previousBest,
     achievements: achievementVerdict,
-    identityLevel: { before: levelBefore, after: leveledUp }
+    identityLevel: { before: levelBefore, after: leveledUp },
+    previousScore
   };
 }
 

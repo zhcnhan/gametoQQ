@@ -1848,7 +1848,8 @@ button:disabled {
   grid-template-columns: 5.4em minmax(0, 1fr) 5.6em;
   grid-template-areas:
     'name bar value'
-    'explain explain explain';
+    'explain explain explain'
+    'grade grade grade';
   align-items: center;
   gap: 4px 8px;
   padding: 10px 0;
@@ -1908,6 +1909,76 @@ button:disabled {
   font-size: 12px;
   font-weight: 400;
   color: var(--ink-40);
+}
+
+/* ----------------------------------------------------------------
+ * 成绩那三行的「尺子」与「差值」（2026-10，铁则 §10.1A 欠账②）
+ *
+ * 一个百分比孤零零挂着是没有形状的。这里补两样东西：
+ *   · `.score-tick` —— 档位刻度（50 / 80 / 100 三条线贴在进度条上），
+ *     让玩家**看得见**离下一档还有多远，而不是只读到一个数；
+ *   · `.score-delta` —— 与上一局的差值（跨局快照见 `MetaProfile.lastRunScore`）。
+ *
+ * ★ 刻度用 `--at`（0~1）定位、差值用 `is-up/is-down/is-flat` 三态上色，
+ * 所以渲染那边只管给值，样式这边不重复判断档位门槛。
+ * ⚠ 进度条本身是 `overflow: hidden` 的，所以刻度画在**它内部**（贴右边缘），
+ * 不是挂在外面 —— 挂在外面会被裁掉（这个坑我踩过一次）。
+ * ---------------------------------------------------------------- */
+.score-row-bar > .score-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--at, 0) * 100%);
+  width: 1.5px;
+  background: var(--ink);
+  opacity: 0.35;
+}
+
+.score-row-bar > .score-tick:last-child {
+  /* 最高档那条线压在圆角上，挪进来一点才看得见 */
+  left: calc(var(--at, 1) * 100% - 2px);
+}
+
+.score-row-grade {
+  grid-area: grade;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  font-size: 11px;
+}
+
+.score-next {
+  font-style: normal;
+  color: var(--ink-70);
+}
+
+.score-next.is-top {
+  color: var(--warm);
+}
+
+.score-delta {
+  font-style: normal;
+  padding: 0 5px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+}
+
+.score-delta.is-up {
+  color: var(--vermilion);
+}
+
+.score-delta.is-down {
+  color: var(--ink-40);
+}
+
+.score-delta.is-flat {
+  color: var(--ink-70);
+}
+
+.score-baseline b {
+  color: var(--ink);
 }
 
 /* ================================================================

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 结算界面（§9.6：生存天数 / 整理评分 / 图鉴解锁）。
  *
  * ★ M1 的结局有**两种**，界面必须把它们说清楚（§12.3 v0.5 修订）：
@@ -17,10 +17,18 @@ import { getItemDef, hasItemDef } from '../data/items';
 import { NPC_DEFS } from '../data/npcs';
 import { dayLabel, hintAt } from '../model/calendar';
 import { districtDays, supplyDays } from '../model/contrast';
-import { computeOrganizeScore, gradeLabel, toPercent } from '../model/score';
-import type { CodexState, DisasterProfile, RunState } from '../model/types';
+import { computeOrganizeScore, GRADE_STEPS, gradeWith, toPercent } from '../model/score';
+import type { CodexState, DisasterProfile, LastRunScore, RunState } from '../model/types';
 import type { GameStore } from '../state/store';
-import { CODEX_PAGE_LABELS, CODEX_PAGES, bestOf, codexTotals, settleRunMeta, type RunVerdict } from '../systems/codex';
+import {
+  CODEX_PAGE_LABELS,
+  CODEX_PAGES,
+  bestOf,
+  codexTotals,
+  disasterName,
+  settleRunMeta,
+  type RunVerdict
+} from '../systems/codex';
 import { achievementTotal, orderedUnlocked } from '../systems/achievements';
 import { MAX_IDENTITY_LEVEL, LEVEL_BONUS_PER_STEP, levelOf } from '../systems/identity';
 import { householdTotals } from '../systems/organize';
@@ -31,6 +39,26 @@ export interface EndingScreenProps {
   onRestart: () => void;
   /** 翻图鉴（§10B.2 的界面 / 补 D-16）。结算页是它最主要的入口 */
   onOpenCodex: () => void;
+}
+
+/**
+ * 结算页那句"**拿什么在比**"（2026-10，铁则 §10.1A 欠账②）。
+ *
+ * 差值箭头只有配上"和哪一局比"才有意义：上一局打的是寒潮、这一局打的是洪水，
+ * 两个 `68%` 本来就不是一回事。所以这里必须把上一局的**身份**说清楚
+ * （哪一场灾难、什么结局），否则玩家会拿"洪水局的 40% 归位率"
+ * 去比"寒潮局的 90%"，然后得出一个假的结论。
+ *
+ * ★ 没有上一局时**不编**：明说这一次没有可比的对象。
+ * 第一局的玩家会看到它，而且他应当看得懂为什么上面没有箭头。
+ */
+function previousNoteHtml(previous: LastRunScore | null): string {
+  if (previous === null) {
+    return '<p class="block-note score-baseline">这是你的第一局，上面没有可比的上一局。</p>';
+  }
+  const name = escapeHtml(disasterName(previous.disasterId));
+  const end = previous.outcome === 'survived' ? '活到了最后' : `走到第 ${previous.day} 天`;
+  return `<p class="block-note score-baseline">上面那些箭头比的是上一局：<b>${name}</b> · ${end}。</p>`;
 }
 
 export class EndingScreen implements Screen {
@@ -79,6 +107,12 @@ export class EndingScreen implements Screen {
     const newRecord = verdict?.newRecord ?? false;
     const totalsOf = codexTotals();
     const streaked = run.survival.safeStreak >= 2;
+    /*
+     * ★ 上一局的成绩快照（v20）。只有它非 null 时，上面三行才会画对比箭头。
+     * ⚠ 它来自 `verdict`，**不能**读 `meta.lastRunScore` ——
+     * 那上面写的已经是这一局了（`settleRunMeta` 刚覆盖过）。
+     */
+    const previous = verdict?.previousScore ?? null;
 
     const title = survived
       ? `撑过 ${SURVIVAL_DAYS} 天`
@@ -180,14 +214,26 @@ export class EndingScreen implements Screen {
             <h2 class="block-title">整理得怎么样</h2>
             ${weightNoteHtml(disaster, score.weighted)}
             <div class="score-rows">
-              ${this.scoreRow('归位率', placement, '你自己给胶带写的清单，东西有没有照放。它决定每天找东西要花多少体力')}
-              ${this.scoreRow('快到期的先吃', fefo, '同一块货架有没有按到期日排好，快到期的排在前面')}
+              ${this.scoreRow(
+                '归位率',
+                placement,
+                '你自己给胶带写的清单，东西有没有照放。它决定每天找东西要花多少体力',
+                previous?.placement ?? null
+              )}
+              ${this.scoreRow(
+                '快到期的先吃',
+                fefo,
+                '同一块货架有没有按到期日排好，快到期的排在前面',
+                previous?.fefo ?? null
+              )}
               ${this.scoreRow(
                 '急用的够不够得着',
                 emergency,
-                '急用的东西有多少放在顺手位。体力见底的那天，只有它们还够得到'
+                '急用的东西有多少放在顺手位。体力见底的那天，只有它们还够得到',
+                previous?.emergency ?? null
               )}
             </div>
+            ${previousNoteHtml(previous)}
             ${
               score.tidyShelfIds.length > 0
                 ? `<p class="block-note">有 ${score.tidyShelfIds.length} 块货架做到了「整整齐齐」。${
@@ -347,13 +393,61 @@ export class EndingScreen implements Screen {
     `;
   }
 
-  private scoreRow(name: string, percent: number, explain: string): string {
+  /**
+   * ★★ 一行成绩 = **一个数 + 一把尺子 + 一个差值**（2026-10，铁则 §10.1A 欠账②）。
+   *
+   * ## 这一行原来差什么
+   *
+   * 原来只有 `${percent}% · 凑合能用`。玩家看到 `62%` 回答不了两个问题：
+   *
+   *  1. **离下一档还差多少** —— 那才是他下一次会去改的东西。
+   *     所以尺子上要画出档位刻度，并**明说差几个点**（`还差 18% 到「有条不紊」`）。
+   *  2. **比上一局强了吗** —— 单局里没有第二个值可比，所以差值来自
+   *     `verdict.previousScore`（跨局快照，见 `MetaProfile.lastRunScore`）。
+   *
+   * ★ `previous` 为 `null` 时**一格刻度都不编** —— 不画箭头、不写"持平"，
+   * 只写"没有上一局可比"。一个撒谎的 `±0%` 比不显示坏得多。
+   *
+   * @param previous 上一局的同一个比率；`null` = 没有可比的一局
+   */
+  private scoreRow(
+    name: string,
+    percent: number,
+    explain: string,
+    previous: number | null = null
+  ): string {
+    const grade = gradeWith(percent / 100);
+    /*
+     * 刻度线：把五档里**除最低档之外**的门槛画在尺子上。
+     * 最低档（0）画在最左端，画了也只是压在边框上，所以跳过。
+     */
+    const ticks = GRADE_STEPS.filter((s) => s.at > 0)
+      .map((s) => `<i class="score-tick" style="--at:${s.at / 100}" title="${s.at}%"></i>`)
+      .join('');
+
+    const toNext =
+      grade.toNext === null
+        ? '<em class="score-next is-top">到顶了</em>'
+        : `<em class="score-next">还差 ${grade.toNext}% 到「${escapeHtml(
+            GRADE_STEPS.find((s) => s.at === grade.next)?.label ?? ''
+          )}」</em>`;
+
+    let delta = '';
+    if (previous !== null) {
+      const diff = percent - previous;
+      // 0 也要说，"持平"是一个结论，不是没有结论
+      const cls = diff > 0 ? 'is-up' : diff < 0 ? 'is-down' : 'is-flat';
+      const sign = diff > 0 ? '+' : diff < 0 ? '−' : '±';
+      delta = `<em class="score-delta ${cls}">比上一局 ${sign}${Math.abs(diff)}</em>`;
+    }
+
     return `
       <div class="score-row">
         <span class="score-row-name">${escapeHtml(name)}</span>
-        <span class="score-row-bar"><i style="--fill:${percent / 100}"></i></span>
-        <span class="score-row-value">${percent}%<em>${escapeHtml(gradeLabel(percent / 100))}</em></span>
+        <span class="score-row-bar"><i style="--fill:${percent / 100}"></i>${ticks}</span>
+        <span class="score-row-value">${percent}%<em>${escapeHtml(grade.label)}</em></span>
         <span class="score-row-explain">${escapeHtml(explain)}</span>
+        <span class="score-row-grade">${toNext}${delta}</span>
       </div>
     `;
   }

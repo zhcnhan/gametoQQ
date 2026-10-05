@@ -227,11 +227,60 @@ export function toPercent(ratio: number): number {
   return Math.round(Math.max(0, Math.min(1, ratio)) * 100);
 }
 
+/**
+ * ★★ 整理的**五个档位**，从低到高（2026-10，铁则 §10.1A 欠账②）。
+ *
+ * ## 为什么要把这张表从 `gradeLabel` 里抽出来
+ *
+ * 结算页原来只有一句 `62% · 凑合能用` —— 那**没有形状**：玩家知道自己在哪一档，
+ * 却不知道**离下一档还差多少**。补刻度就得知道每一档的门槛，
+ * 而门槛要是散在渲染代码里自己写一遍（`if (p >= 80) …`），
+ * 早晚会和 `gradeLabel` 里的那一份对不上 —— 那时屏幕上的标签与刻度
+ * 会各说各话，而这正是"第二个真相来源"最典型的形态。
+ *
+ * ★ 所以表在这里**只写一份**，`gradeLabel` 与结算页的刻度都读它。
+ * 顺序是**从低到高**，`at` 是该档的起点百分比。
+ */
+export const GRADE_STEPS: readonly { at: number; label: string }[] = [
+  { at: 0, label: '无从下手' },
+  { at: 1, label: '翻箱倒柜' },
+  { at: 50, label: '凑合能用' },
+  { at: 80, label: '有条不紊' },
+  { at: 100, label: '整整齐齐' }
+];
+
 export function gradeLabel(ratio: number): string {
+  return gradeWith(ratio).label;
+}
+
+/**
+ * 这个百分比落在哪一档、**离下一档还差几个百分点**（结算页的刻度读它）。
+ *
+ * `toNext` 为 `null` = 已经在最高档 —— 界面那时要说"到顶了"，
+ * 而不是报一个 `还差 0%`（0 会被读成"差一点点"，与事实相反）。
+ */
+export function gradeWith(ratio: number): {
+  /** 当前档的名字 */
+  label: string;
+  /** 当前档的门槛（刻度线画在这里） */
+  floor: number;
+  /** 下一档的门槛；`null` = 已经在最高档 */
+  next: number | null;
+  /** 还差几个百分点进下一档；`null` = 已经在最高档 */
+  toNext: number | null;
+} {
   const p = toPercent(ratio);
-  if (p >= 100) return '整整齐齐';
-  if (p >= 80) return '有条不紊';
-  if (p >= 50) return '凑合能用';
-  if (p > 0) return '翻箱倒柜';
-  return '无从下手';
+  let index = 0;
+  for (let i = 0; i < GRADE_STEPS.length; i++) {
+    const step = GRADE_STEPS[i] as { at: number; label: string };
+    if (p >= step.at) index = i;
+  }
+  const here = GRADE_STEPS[index] as { at: number; label: string };
+  const up = GRADE_STEPS[index + 1] as { at: number; label: string } | undefined;
+  return {
+    label: here.label,
+    floor: here.at,
+    next: up ? up.at : null,
+    toNext: up ? up.at - p : null
+  };
 }

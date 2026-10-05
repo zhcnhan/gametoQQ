@@ -26,7 +26,8 @@ import type {
   SaveGame,
   UnpackBox,
   Zone,
-  EventHistory
+  EventHistory,
+  LastRunScore
 } from '../model/types';
 import { HANDY_SLOTS } from '../model/shelf';
 import { EVENT_HISTORY_KEEP } from '../model/types';
@@ -74,8 +75,12 @@ export const STORAGE_KEY = 'tunhuo.save';
  *  - v17：M3 第 3 步「身份熟练度」（§10B.3）—— `RunState` 增加 `identityLevel`
  *        （这一局用的等级，开局时从 `meta.identityLevels` **快照**下来）。
  *        老档补 **1**，那正好是它们当时的真实情况（那时还没有等级这回事）。
+ *  - v20：铁则 §10.1A 欠账②「结算页的三个比率要看得见参照物」——
+ *        `MetaProfile` 增加 `lastRunScore`（上一局的三个整理比率 + 灾难 + 天数 + 结局）。
+ *        老档补 `null`：**绝不反推** —— 老档没有这份记录，而"编一个上一局"
+ *        会造出一个撒谎的对比箭头，比不显示更坏（界面在 `null` 时不画对比）。
  */
-export const SAVE_VERSION = 19;
+export const SAVE_VERSION = 20;
 /** 落盘节流上限（提示词 0：debounce ≤ 300ms） */
 export const SAVE_DEBOUNCE_MS = 250;
 
@@ -96,7 +101,8 @@ export function createMetaProfile(): MetaProfile {
     survivedRuns: 0,
     achievements: [],
     totalShelved: 0,
-    everBoughtItemIds: []
+    everBoughtItemIds: [],
+    lastRunScore: null
   };
 }
 
@@ -179,6 +185,7 @@ export function migrate(raw: unknown): SaveGame | null {
   if (declared < 17) save = migrateV16ToV17(save);
   if (declared < 18) save = migrateV17ToV18(save);
   if (declared < 19) save = migrateV18ToV19(save);
+  if (declared < 20) save = migrateV19ToV20(save);
   return normalizeRun(save);
 }
 
@@ -257,6 +264,25 @@ export function migrateV17ToV18(save: SaveGame): SaveGame {
  *  所以它属于后者。
  */
 export function migrateV18ToV19(save: SaveGame): SaveGame {
+  save.meta.version = SAVE_VERSION;
+  return save;
+}
+
+/**
+ * v19 → v20：铁则 §10.1A 欠账②「结算页的三个比率要有参照物」。
+ *
+ * ## 与 v18 → v19 同一类：这次迁移也**故意什么都不做**
+ *
+ * 新增的 `MetaProfile.lastRunScore` 是**需要补 `null` 的**，而补它的地方在
+ * `sanitizeLastRunScore`（每次读档都跑），不在这个函数里。理由与 `normalizeShelves`
+ * 那次一模一样：一个被手改过的档、一份云备份合并回来的档，都可能带着
+ * 残缺的 `lastRunScore`，而那**不该只在跨版本这一次被拦住**。
+ *
+ * ★ 更要紧的一条：**绝不反推**。老档走过很多局，但一局成绩都没记下来，
+ * 于是这里唯一诚实的答案是"没有上一局"。要是照着什么反推一个出来，
+ * 结算页就会拿它去算差值、报出一个**编造的箭头** —— 那比不显示坏得多。
+ */
+export function migrateV19ToV20(save: SaveGame): SaveGame {
   save.meta.version = SAVE_VERSION;
   return save;
 }
@@ -383,7 +409,39 @@ function normalizeMeta(meta: MetaProfile): MetaProfile {
       typeof meta.totalShelved === 'number' && Number.isFinite(meta.totalShelved)
         ? Math.max(0, Math.round(meta.totalShelved))
         : 0,
-    everBoughtItemIds: strList(meta.everBoughtItemIds)
+    everBoughtItemIds: strList(meta.everBoughtItemIds),
+    lastRunScore: sanitizeLastRunScore(meta.lastRunScore)
+  };
+}
+
+/**
+ * 上一局成绩快照（v20）的清洗。
+ *
+ * ★ **形状全对才留，否则整个丢掉补 `null`** —— 不做"缺哪个字段补 0"那种半截修补。
+ * 理由：这个快照是拿来**做对比**的，而一个字段被补成 0 的快照会让界面报出
+ * "归位率比上一局 +62%"这种完全编造的结论。宁可说"没有上一局"。
+ */
+function sanitizeLastRunScore(raw: unknown): LastRunScore | null {
+  if (!isObject(raw)) return null;
+  const pct = (v: unknown): number | null =>
+    typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.min(100, Math.round(v))) : null;
+  const placement = pct(raw['placement']);
+  const fefo = pct(raw['fefo']);
+  const emergency = pct(raw['emergency']);
+  const disasterId = raw['disasterId'];
+  const day = raw['day'];
+  const outcome = raw['outcome'];
+  if (placement === null || fefo === null || emergency === null) return null;
+  if (typeof disasterId !== 'string' || disasterId === '') return null;
+  if (typeof day !== 'number' || !Number.isFinite(day)) return null;
+  if (outcome !== 'survived' && outcome !== 'collapsed') return null;
+  return {
+    placement,
+    fefo,
+    emergency,
+    disasterId,
+    day: Math.max(0, Math.round(day)),
+    outcome
   };
 }
 

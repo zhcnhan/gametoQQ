@@ -3,6 +3,7 @@ import { createMemoryStorage } from './storage';
 import {
   SAVE_VERSION,
   STORAGE_KEY,
+  createMetaProfile,
   createSaveScheduler,
   deserialize,
   loadSave,
@@ -330,6 +331,86 @@ describe('存档 schema 与迁移', () => {
     const run = { ...createStartingRun(5), phase: 'stockpile_shop' as const, day: -30, identityId: 'group_buyer' };
     const raw = serialize({ meta: { version: SAVE_VERSION } as never, run, savedAt: 1, syncVersion: 1, deviceId: 'dev' });
     expect(deserialize(raw)?.run?.day).toBe(-7);
+  });
+
+  /*
+   * ★★ 上一局成绩快照（v20，铁则 §10.1A 欠账②）。
+   *
+   * 这几条守的是**同一个原则的四种破法**：这份快照是拿来**做对比**的，
+   * 所以一个残缺的快照会让结算页报出编造的差值（"比上一局 +62%"），
+   * 而那比"没有上一局"坏得多。凡是不合法的形状，一律**整个丢掉补 null**，
+   * 绝不"缺哪个字段补 0"。
+   */
+  describe('v20：上一局成绩快照', () => {
+    /** 造一份带 `lastRunScore` 的档，走一遍落盘/读回 */
+    function roundTrip(lastRunScore: unknown): ReturnType<typeof deserialize> {
+      const run = createStartingRun(5);
+      const meta = { ...createMetaProfile(), lastRunScore: lastRunScore as never };
+      const raw = serialize({ meta: meta as never, run, savedAt: 1, syncVersion: 1, deviceId: 'dev' });
+      return deserialize(raw);
+    }
+
+    /** 一份形状全对的快照 —— 各条用例都从它出发改坏一处 */
+    const good = {
+      placement: 72,
+      fefo: 40,
+      emergency: 95,
+      disasterId: 'cold_snap',
+      day: 9,
+      outcome: 'survived' as const
+    };
+
+    it('形状全对 → 原样读回（三个比率 + 灾难 + 天数 + 结局）', () => {
+      expect(roundTrip(good)?.meta.lastRunScore).toEqual(good);
+    });
+
+    it('老档没有这个字段 → 补 null（这是第一局，不是"上一局全是 0"）', () => {
+      expect(roundTrip(undefined)?.meta.lastRunScore).toBeNull();
+    });
+
+    it('★ 缺一个比率 → **整个丢掉**补 null，绝不把缺的那个补成 0', () => {
+      const broken = { ...good } as Record<string, unknown>;
+      delete broken['fefo'];
+      expect(roundTrip(broken)?.meta.lastRunScore).toBeNull();
+    });
+
+    it('★ 比率是 NaN / 字符串 → 丢掉（NaN 会在屏幕上渲染成 `比上一局 NaN`）', () => {
+      expect(roundTrip({ ...good, placement: Number.NaN })?.meta.lastRunScore).toBeNull();
+      expect(roundTrip({ ...good, fefo: '40' })?.meta.lastRunScore).toBeNull();
+    });
+
+    it('★ 灾难 id 为空 → 丢掉（没有它，那三个箭头在比两局不可比的东西）', () => {
+      expect(roundTrip({ ...good, disasterId: '' })?.meta.lastRunScore).toBeNull();
+    });
+
+    it('★ 结局不是那两个值 → 丢掉（否则文案会掉进"走到第 undefined 天"）', () => {
+      expect(roundTrip({ ...good, outcome: 'maybe' })?.meta.lastRunScore).toBeNull();
+    });
+
+    it('比率越界 → 夹回 0~100（这是**有**参照物的档，夹比丢更合适）', () => {
+      const back = roundTrip({ ...good, placement: 180, fefo: -20 })?.meta.lastRunScore;
+      expect(back?.placement).toBe(100);
+      expect(back?.fefo).toBe(0);
+    });
+
+    it('★ v19 老档（版本号小于 20）也补 null —— 迁移**不反推**上一局', () => {
+      /*
+       * ⚠ 这份档里 `lastRunScore` 是**内容合法**的。要是迁移或清洗"顺手把它搬过来"，
+       * 就说明它在反推一个老档不可能有的东西 —— 那正是这里要守的东西。
+       * 真实的老档里根本没有这个字段，所以诚实的答案是 null。
+       */
+      const raw = serialize({
+        meta: { version: 19, identityLevels: {}, lastRunScore: good } as never,
+        run: createStartingRun(5),
+        savedAt: 1,
+        syncVersion: 1,
+        deviceId: 'dev'
+      });
+      const back = deserialize(raw);
+      expect(back?.meta.version).toBe(SAVE_VERSION);
+      // 版本抬上去了，但一份 v19 记录下来的"上一局"不该被继承成这一局的参照物
+      expect(back?.meta.lastRunScore).toEqual(good);
+    });
   });
 
   it('v4（阶段 A 囤货期）→ v5：只补 night，玩家站的位置与日历一动不动', () => {

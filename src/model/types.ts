@@ -1458,6 +1458,41 @@ export interface MetaProfile {
    * 这个回答"我这辈子买过什么"（成就与将来的解锁要用）。**两个问题不一样。**
    */
   everBoughtItemIds: string[];
+  /**
+   * ★★ **上一局**那三个整理比率（2026-10，铁则 §10.1A 的欠账②）。
+   *
+   * ## 为什么必须跨局存
+   *
+   * 结算页原来只报三个孤零零的百分比（归位率 / 快到期的先吃 / 急用的够不够得着）。
+   * 百分比的毛病不是"不精确"，而是**没有参照物** —— 玩家看到 `62%` 无法回答
+   * 那个他真正关心的问题："我这局比上局强了吗？"
+   *
+   * 而这个参照物**只能跨局存在**：单局里没有第二个值可比。
+   * `run` 在一局结束后就废了，所以它必须挂在 meta 上。
+   *
+   * ## 为什么整份快照一起存，而不是只存三个数
+   *
+   * 因为一个百分比脱离语境是没有意义的：上局打的是寒潮、这局打的是洪水，
+   * 两者本来就不可比。所以快照带上 `disasterId` / `day` / `outcome`，
+   * 界面才有资格说"比上一局"（并且能说清是**哪一局**）。
+   *
+   * `null` = 还没有上一局（第一局、或老档）。
+   * ★ 界面在 `null` 时**不许编造对比**（那会造出一个撒谎的箭头，比不显示更坏）。
+   */
+  lastRunScore: LastRunScore | null;
+}
+
+/** 上一局的整理成绩快照（见 `MetaProfile.lastRunScore`） */
+export interface LastRunScore {
+  /** 归位率 / 快到期的先吃 / 急用的够不够得着，都是 0~100 的整数 */
+  placement: number;
+  fefo: number;
+  emergency: number;
+  /** 哪一场灾难 —— 没有它，"比上一局"就是拿两局不可比的东西在比 */
+  disasterId: string;
+  /** 走到第几天 */
+  day: number;
+  outcome: 'survived' | 'collapsed';
 }
 
 export interface SaveGame {
