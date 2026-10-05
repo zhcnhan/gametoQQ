@@ -171,9 +171,67 @@ describe('图鉴界面：★「从哪儿来」必须算出来，而且不许留�
   it('灾难页与关系页也各有一行来源（它们不是物资，但同样要告诉玩家怎么遇到）', () => {
     ctx = setup();
     click(ctx.root, '[data-page="disasters"]');
-    expect(texts(ctx.root, '.codex-source').every((s) => s === '开局时揭晓')).toBe(true);
+    // 灾难那一页的每一格都要有字（具体写什么见下面那一组）
+    expect(texts(ctx.root, '.codex-source').filter((s) => s.trim().length === 0)).toEqual([]);
     click(ctx.root, '[data-page="npcs"]');
     expect(texts(ctx.root, '.codex-source').every((s) => s === '在门口遇见的')).toBe(true);
+  });
+});
+
+/**
+ * ★★ 灾难页的"从哪儿来"是**算出来的** —— 用户 2026-10 报的
+ *
+ * ## 用户的原话
+ *
+ * > "还有图鉴里解锁的灾难也会显示开局时揭晓，这不对吧"
+ *
+ * 他说得对。那一行原来是写死的 `source: '开局时揭晓'`：
+ * 在一个只有寒潮的版本里它是对的（那**确实**是开局就揭晓的），
+ * 而 116 场能被抽到之后它当场变成假话 ——
+ * **从没碰到过的灾难也写着"开局时揭晓"**，而它们的真实状态是"还没放出来"。
+ *
+ * ★ 而这条错误恰好是这一页的规矩**自己**不许的：`describeSources` 的注释写着
+ * "从哪儿来那句话必须从注册表推导，不手写"。物资与 NPC 都是算的，只有灾难是写死的 ——
+ * 于是它是这套规矩欠下的一笔，而不是一个新需求。
+ */
+describe('★★ 灾难页的"从哪儿来"要算：打过 / 能抽到 / 还没放出来，三种说法', () => {
+  let ctx: Ctx;
+  afterEach(() => ctx.screen.dispose());
+
+  it('★★ 没有一格写"开局时揭晓"（那句话在 116 场下是假话）', () => {
+    ctx = setup();
+    click(ctx.root, '[data-page="disasters"]');
+    const sources = texts(ctx.root, '.codex-source');
+    expect(sources.length).toBe(countOfKind('disaster'));
+    expect(
+      sources.filter((s) => s.includes('开局时揭晓')),
+      '图鉴里又出现了"开局时揭晓"这句写死的话'
+    ).toEqual([]);
+  });
+
+  it('★ 打过的那一场报"活到过 D+n"（比"打过"更有信息量）', () => {
+    /*
+     * ⚠ 夹具里那一局的 meta 是**空的**（`createSaveGame` 给一份全新账本），
+     * 所以这里要自己点亮一场 —— 不点的话三种说法里的第一种永远测不到，
+     * 而那条断言会以一个"看起来像界面没渲染"的样子失败。
+     */
+    ctx = setup();
+    ctx.store.save.meta.codex.disasters = ['cold_snap'];
+    ctx.store.save.meta.bestSurvivalDays['cold_snap'] = 11;
+    ctx.screen.render();
+    click(ctx.root, '[data-page="disasters"]');
+    const sources = texts(ctx.root, '.codex-source');
+    expect(sources, '点亮过的灾难没报"活到过第几天"').toContain('活到过 D+11');
+  });
+
+  it('★★ 还没放出来的那些说清"还差什么"（与开局页同一套口径）', () => {
+    ctx = setup();
+    click(ctx.root, '[data-page="disasters"]');
+    const sources = texts(ctx.root, '.codex-source');
+    // 全新档：除了寒潮，其余 115 场都还没放出来 → 都该报一个门槛
+    const hints = sources.filter((s) => s.includes('才会出现'));
+    expect(hints.length, '没放出来的灾难没有一行说清还差什么').toBeGreaterThan(100);
+    expect(hints.some((s) => /再撑到最后 \d+ 次/.test(s))).toBe(true);
   });
 });
 

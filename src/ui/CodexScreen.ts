@@ -34,13 +34,19 @@
 import { BOX_DEFS } from '../data/boxes';
 import { SHOP_DEFS } from '../data/shops';
 import { CATEGORY_LABELS, CATEGORY_ORDER, hasItemDef, getItemDef } from '../data/items';
-import { getDisasterDef, hasDisasterDef } from '../data/disaster';
+import {
+  DISASTER_TIER_GATES,
+  disasterTopTier,
+  getDisasterDef,
+  hasDisasterDef
+} from '../data/disaster';
 import { findNpc } from '../data/npcs';
 import { countOfKind, entriesOfKind, sourcesOfItem } from '../data/registry';
 import { TIER_LABELS } from '../model/types';
 import type { CategoryId, CodexPage } from '../model/types';
 import type { GameStore } from '../state/store';
-import { CODEX_PAGE_LABELS, CODEX_PAGES } from '../systems/codex';
+import { bestOf, CODEX_PAGE_LABELS, CODEX_PAGES } from '../systems/codex';
+import { disasterProgressOf } from '../systems/setup';
 import {
   ACHIEVEMENT_KIND_LABELS,
   achievementTotal,
@@ -183,15 +189,37 @@ export class CodexScreen implements Screen {
       });
     }
     if (page === 'disasters') {
+      /*
+       * ★★ 灾难那一页的"从哪儿来"是**算出来的**，不是一句话（用户 2026-10 报的）。
+       *
+       * 原来这里写死 `source: '开局时揭晓'` —— 在一个只有寒潮的版本里那句话是对的，
+       * 而 116 场能被抽到之后它当场变成假话：图鉴里那些**从没碰到过**的灾难
+       * 也写着"开局时揭晓"，而它们的真实状态是"**还没放出来**"
+       * （tier 阶梯没到，见 `data/disaster.ts` 的 `DISASTER_TIER_GATES`）。
+       *
+       * 而这一页的规矩本来就是"来源必须从数据推导，不手写"（见 `describeSources`），
+       * 所以这里补的正是那条规矩欠下的一笔：
+       *   · 打过 → **你在这一场里活到过第几天**（比"打过"更有信息量）；
+       *   · 放出来了、还没碰到 → "还没在这一场里活过"；
+       *   · 还没放出来 → **还差什么**（与开局页那一行同一套口径）。
+       */
+      const meta = this.store.save.meta;
+      const progress = disasterProgressOf(meta);
+      const litDisasters = lit;
       return entriesOfKind('disaster').map((entry) => {
         const def = hasDisasterDef(entry.id) ? getDisasterDef(entry.id) : null;
+        const on = litDisasters.has(entry.id);
         return {
           id: entry.id,
           name: def?.name ?? entry.id,
           meta: def ? `${def.family} · ${def.level}` : '',
           category: null,
-          source: '开局时揭晓',
-          lit: lit.has(entry.id)
+          source: on
+            ? `活到过 D+${bestOf(meta, entry.id)}`
+            : def
+              ? disasterSourceHint(def.tier, progress)
+              : '这一场不在表里了',
+          lit: on
         };
       });
     }
@@ -271,6 +299,34 @@ export class CodexScreen implements Screen {
 // ——————————————————————————————————————————————————————————————
 // 渲染小工具
 // ——————————————————————————————————————————————————————————————
+
+/**
+ * ★ 一场**还没打过**的灾难，它在图鉴上该写什么（用户 2026-10 报的那句假话）。
+ *
+ * 三种状态，一句话各自说清：
+ *
+ *  · 这一档已经放出来了（能抽到）→ "还没在这一场里活过" —— 它随时可能来；
+ *  · 还没放出来 → **还差什么**（与开局页那一行、与 `DISASTER_TIER_GATES`
+ *    同一套口径：两个条件取更近的那个）；
+ *  · 连那一档都没解锁 → 这一档的门槛。
+ *
+ * ★ 为什么不直接列"要撑过 N 次"就完事：tier 4 那一档有**两个**条件
+ * （撑过 5 次 **或** 图鉴里见过 8 场），只报一个会让另一个条件白写。
+ */
+function disasterSourceHint(tier: number, progress: { survivedRuns: number; seenDisasters: number }): string {
+  const top = disasterTopTier(progress);
+  if (tier <= top) return '还没在这一场里活过';
+  // 从"现在这一档 + 1"逐档往上找，找到第一个能放它出来的门槛
+  for (const t of [1, 2, 3, 4] as const) {
+    if (t <= top || t < tier) continue;
+    const gate = DISASTER_TIER_GATES[t];
+    const needRuns = Math.max(0, gate.need - progress.survivedRuns);
+    const needSeen = gate.seen === null ? null : Math.max(0, gate.seen - progress.seenDisasters);
+    if (needSeen !== null && needSeen < needRuns) return `图鉴里再点亮 ${needSeen} 场灾难才会出现`;
+    return `再撑到最后 ${needRuns} 次才会出现`;
+  }
+  return '还没在这一场里活过';
+}
 
 /**
  * 一张卡。**没点亮的也要画**（§10B.2 的硬要求）：灰色轮廓 + 一行来源。

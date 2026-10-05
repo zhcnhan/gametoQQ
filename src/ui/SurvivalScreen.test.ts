@@ -156,22 +156,29 @@ describe('★★ 有消息时：说清"相对什么"', () => {
 });
 
 /**
- * ★★ 反差层多出来的那一对：「随手够得到」（M4 工单 W-08）
+ * ★★ 反差层的两块：「室内 / 室外」与「你 / 整条街」（M4 W-08 + 用户 2026-10 的文案重写）
  *
- * ## 它守的是"整理在日报上终于可见"
+ * ## 第一件事：标题必须对得上底下的数（用户点名的那句）
  *
- * 「你的余粮」那一格的分母是"货架 ∪ **纸箱**"，所以把 30 罐从纸箱搬到
- * 贴好胶带的架上，它**一个数都不变** —— 「搬上架」「贴胶带」「标顺手位」
- * 这三个动作在日报上完全不可见。
+ * 用户的原话："外面里面为啥不能叫室内室外呢，类似的尴尬文案你给我全部改了！！！"
  *
- * ## 判据的形状：**只在两个数不一样时才并列**
+ * 原来那一块是"外面 / 里面"当标题、底下第一行写"外面 / 屋里"、第二行却是
+ * "你的余粮 / 街区平均"（跟室内室外毫无关系）。所以现在的判据是：
+ * **每块的标题就是它底下那两个数在比什么** ——
+ * 温度归「室内 / 室外」，天数归「你 / 整条街」，而且两块各自独立渲染。
  *
- * 差是 0 的时候（一件都没上架、整批货还躺在纸箱里）并排放两个相同的数
- * 会让人以为这一格坏了。所以判据是"那一行存在 / 不存在"，
- * 而不是"那一行的数字是多少"。
+ * ## 第二件事：「不用翻就拿到」那一行只在它**不等于**存货时才出现
+ *
+ * 差是 0 的时候（整批货还躺在纸箱里、或恰好全在明面上）并排放两个相同的数
+ * 会让人以为这一格坏了。所以判据是"那一行存在 / 不存在"，不是"数字是多少"。
+ *
+ * ## 第三件事：D-Day 那一屏也要有温度
+ *
+ * 用户报的"外面里面那个我没看到"，一半原因就在这里：反差层原来整个挂在
+ * `dayHtml()` 里，而 D-Day 走的是 `ddayHtml()` —— 灾难落地那一屏反而没有温度。
  */
-describe('★★ 反差层：「随手够得到」只有在它**不等于**余粮时才出现', () => {
-  /** 铺一份"全在纸箱里"的局面（余粮有、够得到 0） */
+describe('★★ 反差层：标题对得上数、差值对得上盘面、D-Day 也要有温度', () => {
+  /** 铺一份"全在纸箱里"的局面（存货有、够得到 0） */
   function inBoxes(): GameStore {
     const store = survivalStore();
     store.commit((draft) => {
@@ -202,7 +209,20 @@ describe('★★ 反差层：「随手够得到」只有在它**不等于**余�
     return root;
   }
 
-  it('★ 货全在纸箱里 → 出现「随手够得到 0 天」，而"你的余粮"仍在', () => {
+  it('★★ 标题就是它在比什么：出现「室内 / 室外」与「你 / 整条街」，且**不再有**「外面 / 里面」', () => {
+    const root = mountStore(inBoxes());
+    const titles = root.querySelectorAll('.block-title').map((el) => el.textContent);
+    expect(titles).toContain('室内 / 室外');
+    expect(titles).toContain('你 / 整条街');
+    // ★ 用户点名要去掉的那两个词
+    expect(titles.join('｜'), '「外面 / 里面」那个标题回来了').not.toContain('外面 / 里面');
+    const all = allText(root);
+    expect(all, '温度那一格还写着"外面" —— 与标题的"室外"又成了两个词').not.toContain('外面');
+    expect(all).toContain('室外');
+    expect(all).toContain('室内');
+  });
+
+  it('★ 货全在纸箱里 → 出现「不用翻就拿到 0 天」，而"你的存货"仍在', () => {
     /*
      * ⚠ 走 `allText`（`fakeDom` 的叶文本收集），不是读某个容器的 `textContent`：
      * `.contrast-cell` 里是 `<i>标签</i><b>数字</b>` 这种混排，而假体不实现文本节点
@@ -210,14 +230,14 @@ describe('★★ 反差层：「随手够得到」只有在它**不等于**余�
      */
     const root = mountStore(inBoxes());
     const all = allText(root);
-    expect(all, '反差层没有"随手够得到"那一格').toContain('随手够得到');
-    expect(all).toContain('你的余粮');
+    expect(all, '反差层没有"不用翻就拿到"那一格').toContain('不用翻就拿到');
+    expect(all, '"你的存货"那一格不见了').toContain('你的存货');
     expect(all, '差值那一格没有一起出现').toContain('要翻才拿得到');
     // 而它单独占一对（用来给样式挂钩，也用来给这条断言定位）
     expect(root.querySelectorAll('.contrast-pair.is-reach').length).toBe(1);
   });
 
-  it('★ 屋里空着（余粮也是 0）→ 那一对**不渲染**（两个相同的数只会让人以为坏了）', () => {
+  it('★ 屋里空着（存货也是 0）→ 差值那一对**不渲染**（两个相同的数只会让人以为坏了）', () => {
     const store = survivalStore();
     store.commit((draft) => {
       draft.shelves = draft.shelves.map((s) => ({
@@ -228,10 +248,30 @@ describe('★★ 反差层：「随手够得到」只有在它**不等于**余�
     });
     const root = mountStore(store);
     const all = allText(root);
-    expect(all).not.toContain('随手够得到');
+    expect(all).not.toContain('不用翻就拿到');
     expect(root.querySelectorAll('.contrast-pair.is-reach').length, '差为 0 时不该有那一对').toBe(0);
-    // 而上面两对（温度、余粮）照旧 —— 否则就是整块没渲染，而不是"那一对没渲染"
-    expect(all).toContain('外面');
-    expect(all).toContain('你的余粮');
+    // 而两块标题照旧 —— 否则就是整块没渲染，而不是"那一对没渲染"
+    const titles = root.querySelectorAll('.block-title').map((el) => el.textContent);
+    expect(titles).toContain('室内 / 室外');
+    expect(titles).toContain('你 / 整条街');
+  });
+
+  it('★★ D-Day 那一屏也要有温度（用户报的"没看到"有一半在这里）', () => {
+    /*
+     * D-Day 走的是 `ddayHtml()`，而反差层原来整个挂在 `dayHtml()` 里 ——
+     * 于是"灾难落地、外面 -18°C"那一屏**反而没有温度**，而那正是这一层
+     * 最该说话的地方（§6.6：数字自己说话）。
+     */
+    const store = survivalStore();
+    store.commit((draft) => {
+      draft.day = 0;
+      draft.phase = 'survival_day';
+    });
+    const root = mountStore(store);
+    const titles = root.querySelectorAll('.block-title').map((el) => el.textContent);
+    expect(titles, 'D-Day 那一屏没有温度块').toContain('室内 / 室外');
+    expect(allText(root)).toContain('室外');
+    // 而"你 / 整条街"那一块**不该**在 D-Day 出现：还没结算过，天数没有意义
+    expect(titles, 'D-Day 不该报存货天数').not.toContain('你 / 整条街');
   });
 });

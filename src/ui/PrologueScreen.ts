@@ -18,7 +18,13 @@
  * ★ 也是选①而不是"开局页让玩家选"的一个好处：玩家在开局页**就知道**
  * 自己抽到了哪一场，所以"先知知道该囤什么"这条身份设定仍然成立。
  */
-import { getDisasterDef } from '../data/disaster';
+import {
+  DISASTER_DEFS,
+  DISASTER_TIER_GATES,
+  disasterPool,
+  disasterTopTier,
+  getDisasterDef
+} from '../data/disaster';
 import { CATEGORY_LABELS } from '../data/items';
 import { calendarBars, dayLabel } from '../model/calendar';
 import type { IdentityDef, MetaProfile } from '../model/types';
@@ -35,6 +41,8 @@ import { lockedIdentities, unlockCandidates, unlockedIdentities, survivedRuns } 
  * 而 `unlockCandidates()` 仍然给全部。
  */
 const MAX_SHOWN = 3;
+/** 全表有多少场灾难（报"还有 N 场没放出来"时用；从数据算，不写死） */
+const TOTAL_DISASTERS = DISASTER_DEFS.length;
 import { iconSvg } from '../fx/icons';
 import type { Screen } from './Router';
 
@@ -132,7 +140,9 @@ export class PrologueScreen implements Screen {
             </p>
             <p class="block-note">
               最要紧的是 ${disaster.priorityCategories.map((c) => `<b>${CATEGORY_LABELS[c]}</b>`).join(' 和 ')}。
-            </p>          </section>
+            </p>
+            ${this.disasterLadderHtml()}
+          </section>
         </main>
         <footer class="dock">
           <div class="dock-tools">
@@ -142,6 +152,59 @@ export class PrologueScreen implements Screen {
           </div>
         </footer>
       </div>
+    `;
+  }
+
+  /**
+   * ★★ **这一局可能抽到哪几场** + **还差什么才能抽到更多**（M4，用户 2026-10 报的）。
+   *
+   * ## 用户的原话（这一块存在的全部理由）
+   *
+   * > "我问一下你的设定是不是必须撑过一次寒潮才能解锁其他灾难呢，
+   * >  因为我没通过几次他也没解锁"
+   *
+   * 他说得对，而且那条规则**在界面上一个字都没有** ——
+   * 玩家只能靠"反复重开、发现永远是寒潮"自己猜出这条规则，
+   * 而猜出来的版本（"过几次就解锁"）比真相宽松，于是它读起来像 bug。
+   *
+   * ## 为什么这一块必须写在**开局页**（而不是结算页）
+   *
+   * 因为抽签发生在**开新局的那一刻**（`data/disaster.ts` 的 `DISASTER_TIER_GATES`）：
+   * 玩家要问"我这次能不能撞上点别的"，问的正是这一屏。
+   * 而结算页回答不了它 —— 那一局的灾难早就定了。
+   *
+   * ## 口径：报**池子有多大**与**下一档差什么**
+   *
+   * 不列全部 116 场的名字（那是图鉴的活），只报三件事：
+   * 这一局是抽的、现在池子里有几场、下一档要什么。**不解释机制、不劝他多玩**。
+   */
+  private disasterLadderHtml(): string {
+    const progress = { survivedRuns: survivedRuns(this.props.meta), seenDisasters: this.props.meta.codex.disasters.length };
+    const pool = disasterPool(progress);
+    const top = disasterTopTier(progress);
+    const nextTier = ([1, 2, 3, 4] as const).find((t) => t > top);
+
+    if (!nextTier) {
+      return `
+        <p class="block-note">
+          这一局的灾难是随机抽的（现在 ${pool.length} 场都可能）。
+        </p>
+      `;
+    }
+    const gate = DISASTER_TIER_GATES[nextTier];
+    // 还差什么：两个条件取**更宽**的那个（与 `disasterTopTier` 同一套口径）
+    const needRuns = Math.max(0, gate.need - progress.survivedRuns);
+    const needSeen = gate.seen === null ? null : Math.max(0, gate.seen - progress.seenDisasters);
+    const left =
+      needSeen !== null && needSeen < needRuns
+        ? `图鉴里再点亮 ${needSeen} 场灾难`
+        : `再撑到最后 ${needRuns} 次`;
+    const more = TOTAL_DISASTERS - pool.length;
+    return `
+      <p class="block-note">
+        这一局的灾难是随机抽的（现在 ${pool.length} 场都可能）。还有 ${more} 场没放出来 ——
+        ${escapeHtml(left)}就能碰到。
+      </p>
     `;
   }
 

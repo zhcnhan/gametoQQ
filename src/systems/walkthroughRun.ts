@@ -28,7 +28,7 @@ import { NIGHT_SLEEP } from '../data/nightEvents';
 import { SURVIVAL_DAYS, getDisasterDef } from '../data/disaster';
 import { dailyDrainOf } from '../data/survival';
 import { makeStack, setSlotStack, SHELF_H, SHELF_W } from '../model/shelf';
-import type { CategoryId, RunState, SurvivalSnapshot } from '../model/types';
+import type { CategoryId, MetaProfile, RunState, SurvivalSnapshot } from '../model/types';
 import { SAVE_VERSION, createSaveGame, deserialize, serialize } from '../state/save';
 import { GameStore } from '../state/store';
 import { settleRunMeta } from './codex';
@@ -229,11 +229,30 @@ export interface WalkResult {
 /**
  * 跑完一整局（真实命令 × 存档往返）。
  *
+ * ## ★ `meta`：跨局账本（M4 补的，为了验"灾难阶梯会不会解锁"）
+ *
+ * 原来这个函数**每一局都从一份全新的账本开始**（`createSaveGame(null)`），
+ * 于是它读不到调用方的进度 —— 也就**验不了任何跨局的东西**：
+ * 灾难阶梯、身份熟练度、成就、图鉴的跨局累计，在这条夹具上全都测不到。
+ *
+ * ⚠ 这一点是我自己先被它骗过一次：写了个"连打三局看池子涨不涨"的脚本，
+ * 它报出 `survivedRuns` 1 → 1 → 0，看起来像"结算把计数弄丢了"的**严重 bug** ——
+ * 而真相是**夹具每局都换了一本新账**。所以这里必须能收一份账进来，
+ * 并且把它**带出去**（`store.save.meta` 就是那一份）。
+ *
  * @param tidy 囤货期到底整理成什么样 —— 这一条就是"好档 vs 乱档"
  * @param disasterId 这一局抽到哪一场（默认寒潮：三条永久回归探针与夹具都钉在它上面）
+ * @param meta 上一局留下的跨局账本；不传 = 一份全新的
  */
-export function playFullRun(seed: number, tidy: boolean, disasterId = 'cold_snap'): WalkResult {
-  let store = new GameStore(createSaveGame(createStartingRun(seed, { disasterId })), createSaveSchedulerStub());
+export function playFullRun(
+  seed: number,
+  tidy: boolean,
+  disasterId = 'cold_snap',
+  meta?: MetaProfile
+): WalkResult {
+  const save = createSaveGame(createStartingRun(seed, { disasterId }));
+  if (meta) save.meta = meta;
+  let store = new GameStore(save, createSaveSchedulerStub());
   const session = createOrganizeSession();
   const nightEvents: string[] = [];
   const dayEvents: string[] = [];

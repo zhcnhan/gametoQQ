@@ -109,8 +109,8 @@ export class EndingScreen implements Screen {
             <p class="block-note strong${collapsed ? ' is-collapsed' : ''}">${escapeHtml(verdictText)}</p>
             <div class="stat-grid">
               <div class="stat"><i>撑过</i><b>${lasted} 天</b></div>
-              <div class="stat"><i>硬撑过</i><b>${run.survival.hardPressDays} 天</b></div>
-              <div class="stat"><i>没凑齐</i><b>${run.survival.shortagePieces} 件</b></div>
+              <div class="stat"><i>硬撑了</i><b>${run.survival.hardPressDays} 天</b></div>
+              <div class="stat"><i>缺过</i><b>${run.survival.shortagePieces} 件</b></div>
               <div class="stat"><i>最后剩下</i><b>${totals.pieces} 件</b></div>
             </div>
             <p class="block-note">${escapeHtml(
@@ -130,8 +130,8 @@ export class EndingScreen implements Screen {
           <section class="block">
             <h2 class="block-title">这一场 ${escapeHtml(disaster.name)}</h2>
             <div class="stat-grid">
-              <div class="stat"><i>本灾难最佳纪录</i><b>${best} 天</b></div>
-              <div class="stat"><i>最好连过</i><b>${meta.bestSafeStreak} 天</b></div>
+              <div class="stat"><i>这一场最好成绩</i><b>${best} 天</b></div>
+              <div class="stat"><i>最长的安全连击</i><b>${meta.bestSafeStreak} 天</b></div>
             </div>
             ${
               newRecord
@@ -175,12 +175,17 @@ export class EndingScreen implements Screen {
           ${this.identityHtml(verdict)}
 
           <section class="block">
-            <h2 class="block-title">整理体检</h2>
+            <h2 class="block-title">整理得怎么样</h2>
             ${weightNoteHtml(disaster, score.weighted)}
             <div class="score-rows">
               ${this.scoreRow('归位率', placement, '你自己给胶带写的清单，东西有没有照放。它决定每天找东西要花多少体力')}
-              ${this.scoreRow('临期优先', fefo, '同一块货架有没有按到期日排好，快到期的排在前面')}
-              ${this.scoreRow('应急可达率', emergency, '急用的东西有多少放在顺手位。体力见底的那天，只有它们还够得到')}            </div>
+              ${this.scoreRow('快到期的先吃', fefo, '同一块货架有没有按到期日排好，快到期的排在前面')}
+              ${this.scoreRow(
+                '急用的够不够得着',
+                emergency,
+                '急用的东西有多少放在顺手位。体力见底的那天，只有它们还够得到'
+              )}
+            </div>
             ${
               score.tidyShelfIds.length > 0
                 ? `<p class="block-note">有 ${score.tidyShelfIds.length} 块货架做到了「整整齐齐」。${

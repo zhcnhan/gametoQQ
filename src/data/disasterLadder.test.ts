@@ -15,17 +15,29 @@
  *  3. ★ 抽签**不扰动 `run.seed` 那条主序列** —— 否则三条永久回归探针全漂，
  *     而那种漂的**原因看不出来**（§4.4 的老账）；
  *  4. ★ "不生效的条件"必须是 `null` 而不是某个数 —— 这一格我连着写错两次
- *     （先 `0` 再 `-1`，两个都恒真），而发现它靠的是探针的第一行输出。
+ *     （先 `0` 再 `-1`，两个都恒真），而发现它靠的是探针的第一行输出；
+ *  5. ★★ **从"结算"到"下一局抽签"这一段要有人走**（用户 2026-10 报"没通过几次
+ *     他也没解锁"之后补的）：上面四条验的都是"给定进度 → 池子多大"，
+ *     而没有一条验"打完一局之后进度真的会动、新开的那一局真的读到它" ——
+ *     那正是"接线"那一类缺口（§2.19）的形状。
  */
 import { describe, expect, it } from 'vitest';
 import { DISASTER_DEFS, disasterPool, disasterTopTier, lockedDisasterCount } from './disaster';
 import { createCursor, pick } from '../model/rng';
+import { createMetaProfile } from '../state/save';
 import { createStartingRun, createStartingShelves, rollDisasterId } from '../systems/setup';
+import { playFullRun } from '../systems/walkthroughRun';
 import { ROOM_ID } from '../model/shelf';
+import type { MetaProfile } from '../model/types';
 
 /** 一份进度（`MetaProfile` 里抽签要读的那两个数） */
 function progress(survivedRuns: number, seenDisasters: number) {
   return { survivedRuns, seenDisasters };
+}
+
+/** 跨局账本 → 抽签要读的那两个数（与 `disasterProgressOf` 同一个口径） */
+function progressOf(meta: MetaProfile) {
+  return progress(meta.survivedRuns, meta.codex.disasters.length);
 }
 
 describe('★ 第一局：必然且只有寒潮（用户 2026-10 选的那条）', () => {
@@ -97,6 +109,78 @@ describe('阶梯：撑得越久 / 见过越多，池子越大', () => {
     const ids = new Set(pool.map((d) => d.id));
     const unreachable = DISASTER_DEFS.filter((d) => !ids.has(d.id)).map((d) => `${d.name}(${d.id})`);
     expect(unreachable, '这些灾难永远抽不到').toEqual([]);
+  });
+});
+
+describe('★★ 打完一局之后：新开的那一局真的会换灾难吗', () => {
+  /*
+   * ## 这一组是用户 2026-10 报的那句话逼出来的
+   *
+   * > "我问一下你的设定是不是必须撑过一次寒潮才能解锁其他灾难呢，
+   * >  因为我没通过几次他也没解锁"
+   *
+   * 我查下去发现两件事：
+   *
+   *  ① **规则确实是这样**（`survivedRuns >= 1` 才放 tier 2），而且它挡住了
+   *     "打了几次没通关"的玩家 —— 他们会一直看到寒潮，于是合理地以为这是 bug；
+   *  ② ★ **而它此前没有任何一条端到端的测试**：`disasterLadder.test.ts` 上面那些
+   *     验的都是"给定进度 → 池子多大"，**没有一条**验"打完之后进度真的会动、
+   *     新开的那一局真的读到它"。那正是"接线"那一类缺口（§2.19）的形状 ——
+   *     每一段都对，而从"结算"到"下一局抽签"这一段没人走过。
+   *
+   * ⚠ 而它没被走过有一个具体原因：走测夹具 `playFullRun` **每一局都从一份全新的
+   * 跨局账本开始**（`createSaveGame(null)`），于是它读不到调用方的进度。
+   * 所以我先给夹具加了 `meta` 参数（见 `systems/walkthroughRun.ts` 的注释）——
+   * 在此之前，"跨局的一切"在这套夹具上都是不可测的。
+   */
+  it('★★ 真打一局（真实命令 + 真实结算）→ 进度真的 +1，而新开的那一局真的换了灾难', () => {
+    const meta = createMetaProfile();
+    expect(disasterTopTier(progressOf(meta)), '全新档不该已经解锁别的').toBe(1);
+
+    // 打一局寒潮（好档策略，实测能撑过去）
+    const out = playFullRun(20261001, true, 'cold_snap', meta);
+    expect(out.store.run.outcome).toBe('survived');
+    const after = out.store.save.meta;
+
+    // ① 结算真的把计数记上了（这是"解锁"的唯一输入）
+    expect(after.survivedRuns, '撑过去了一局，survivedRuns 却没涨').toBe(1);
+    expect(after.codex.disasters).toContain('cold_snap');
+
+    // ② 而新开的那一局**真的**读到了它
+    expect(disasterTopTier(progressOf(after))).toBe(2);
+    expect(disasterPool(progressOf(after)).length).toBe(33);
+
+    // ③ 拿真实抽签函数抽一把：抽到的东西必须真的在池子里
+    const pool = new Set(disasterPool(progressOf(after)).map((d) => d.id));
+    const drawn = [1, 2, 3, 4, 5].map((s) => rollDisasterId(progressOf(after), 20261000 + s));
+    for (const id of drawn) expect(pool.has(id), `${id} 不在池子里`).toBe(true);
+
+    /*
+     * ④ ★ 而"换没换"这件事要用**抽签的分布**判，不能用某一个 seed 判：
+     *    同 seed 同结果（那是存档回放的前提），所以单独一次抽签不能证明池子变大了。
+     *    这里用 200 个 seed 打一遍 —— 全新档只会给出 1 种，撑过一局之后必然远多于 1。
+     */
+    const before = new Set(Array.from({ length: 200 }, (_, i) => rollDisasterId(progressOf(meta), i + 1)));
+    const now = new Set(Array.from({ length: 200 }, (_, i) => rollDisasterId(progressOf(after), i + 1)));
+    expect(before.size, '全新档只能抽到寒潮').toBe(1);
+    expect(now.size, '撑过一局之后还是只能抽到一场 —— 那正是用户报的那个现象').toBeGreaterThan(20);
+  });
+
+  it('★ 没撑过去的那一局**不算**（"没通过几次"正是用户报的那个状态）', () => {
+    /*
+     * 用户的原话里最要紧的四个字是"**没通过**几次" —— 而规则要求的是
+     * `outcome === 'survived'`（撑满 14 天）。倒下的那几局不算数，
+     * 所以"打了很多次但都没通关"的玩家会一直只看到寒潮。
+     *
+     * 这一条把那个事实钉住：它是**设计**（`systems/codex.ts` 的"倒下的那一局不算"），
+     * 不是 bug —— 而它必须被写下来，否则下一个人会把它当成 bug 去"修"。
+     */
+    const meta = createMetaProfile();
+    // 乱档（不买不整理）实测约 D+10 倒下
+    const out = playFullRun(20261001, false, 'cold_snap', meta);
+    expect(out.store.run.outcome).toBe('collapsed');
+    expect(out.store.save.meta.survivedRuns, '倒下的那一局不该给解锁计数').toBe(0);
+    expect(disasterTopTier(progressOf(out.store.save.meta))).toBe(1);
   });
 });
 

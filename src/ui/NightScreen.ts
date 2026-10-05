@@ -140,7 +140,13 @@ export class NightScreen implements Screen {
       .join('')}</div>`;
   }
 
-  /** 四维 + 现金 + 待拆箱：让这次"交换"能立刻被读到 */
+  /**
+   * 四维 + 现金 + 待拆箱：让这次"交换"能立刻被读到。
+   *
+   * ⚠ 标签与另外两屏**逐字一致**（`待拆纸箱`，不是 `待拆`）——
+   * 同一样东西在三个屏幕上三个叫法，玩家会以为它们是三件事
+   * （2026-10 用户要求把这类"同一件事两个词"的文案清一遍）。
+   */
   private metersHtml(): string {
     const run = this.store.run;
     const stats = run.stats;
@@ -156,7 +162,7 @@ export class NightScreen implements Screen {
         <div class="stat"><i>体力</i><b>${stats.stamina}</b></div>
         <div class="stat"><i>庇护所</i><b>${stats.shelter}</b></div>
         <div class="stat"><i>现金</i><b>${run.cash}</b></div>
-        <div class="stat"><i>待拆</i><b>${boxes} 箱 / ${pieces} 件</b></div>
+        <div class="stat"><i>待拆纸箱</i><b>${boxes} 箱 / ${pieces} 件</b></div>
       </div>
     `;
   }

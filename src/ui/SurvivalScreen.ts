@@ -4,7 +4,7 @@
  * 分层纪律：只读；写操作（两个命令）通过 props 交给 systems/phases。
  *
  * 这一屏要回答的问题只有一个：**"我还撑得住几天？"**
- * 所以信息的排布顺序是：今天发生了什么 → 还剩多少、够几天 → 四维 → 这一切跟我的整理有什么关系。
+ * 所以信息的排布顺序是：今天发生了什么 → 还剩多少、够几天 → 身体与状态 → 这一切跟我的整理有什么关系。
  * 最后一节（"来自整理"）是刻意留的：§5 的立场是"整理即战力"，
  * 玩家必须在生存期看到自己的整理**真的在变成数字**，否则整理就只是仪式。
  *
@@ -123,10 +123,18 @@ export class SurvivalScreen implements Screen {
         <div class="stat-grid">
           <div class="stat"><i>总计</i><b>${totals.pieces} 件</b></div>
           <div class="stat"><i>总重</i><b>${totals.weight.toFixed(1)}kg</b></div>
-          <div class="stat"><i>还没拆</i><b>${run.boxesToUnpack.length} 箱</b></div>
+          <div class="stat"><i>待拆纸箱</i><b>${run.boxesToUnpack.length} 箱</b></div>
           <div class="stat"><i>现金</i><b>${run.cash}</b></div>
         </div>
       </section>
+      ${/*
+        ★ 温度那一块**从 D-Day 就显示**（用户 2026-10 反馈"外面里面那个我没看到"）。
+        原来整个反差层都挂在 `dayHtml()` 里，而 D-Day 走的是 `ddayHtml()` ——
+        于是玩家在**灾难落地那一屏**上看不到"室外多少度、室内多少度"，
+        而那一屏恰恰是这一层最该说话的地方（§6.6：数字自己说话）。
+        余粮那一半仍然只在 D+1 起显示：D-Day 还没结算过，天数没有意义。
+      */ ''}
+      ${this.tempHtml(run)}
     `;
   }
 
@@ -175,7 +183,7 @@ export class SurvivalScreen implements Screen {
       ${this.safetyHtml(run)}
 
       <section class="block">
-        <h2 class="block-title">四维</h2>
+        <h2 class="block-title">身体与状态</h2>
         <div class="stat-grid">
           ${this.statHtml('健康', run.stats.health, last.health)}
           ${this.statHtml('心情', run.stats.mood, last.mood)}
@@ -186,14 +194,16 @@ export class SurvivalScreen implements Screen {
 
       ${this.tradeHtml(run)}
 
+      ${this.tempHtml(run)}
+
       ${this.contrastHtml(disaster, run)}
 
       <section class="block">
         <h2 class="block-title">这一切跟你的整理有关</h2>
         <p class="block-note">
           归位率 ${Math.round(score.placement * 100)}%（心情 ${moodBonus >= 0 ? '+' : ''}${moodBonus}）
-          · 临期优先 ${Math.round(score.fefo * 100)}%
-          · 应急可达 ${Math.round(score.emergency * 100)}%
+          · 快到期的先吃 ${Math.round(score.fefo * 100)}%
+          · 急用的够不够得着 ${Math.round(score.emergency * 100)}%
         </p>
         <p class="block-note">
           ${
@@ -256,7 +266,7 @@ export class SurvivalScreen implements Screen {
         <h2 class="block-title">今天屋里的样子</h2>
         <div class="stat-grid is-triple">
           <div class="stat"><i>归位率</i><b>${Math.round(score.placement * 100)}%</b></div>
-          <div class="stat"><i>临期优先</i><b>${Math.round(score.fefo * 100)}%</b></div>
+          <div class="stat"><i>快到期的先吃</i><b>${Math.round(score.fefo * 100)}%</b></div>
           <div class="stat"><i>顺手位</i><b>${Math.round(handy * 100)}%</b></div>
         </div>
         ${note ? `<p class="block-note">${escapeHtml(note)}</p>` : ''}
@@ -265,56 +275,76 @@ export class SurvivalScreen implements Screen {
   }
 
   /**
-   * 反差层（§6.6「数字自己说话」，零台词）。
+   * 室内 / 室外温度（§6.6：「数字自己说话」最原始的那一对）。
    *
-   * 两对数字并排：外面的温度对屋里的温度，你的余粮对街区的余粮。
-   * **不配任何形容词** —— 这一层的全部力量来自让玩家自己把两个数摆在一起看；
-   * 一旦写下"你比邻居强多了"，它就变成炫耀，而炫耀是这个游戏一直躲开的东西。
+   * ★ 单独抽成一个方法，因为它**两屏都要用**：D-Day（`ddayHtml`）与日报（`dayHtml`）。
+   * 两处各写一遍的话，迟早会出现"日报改了口径、D-Day 还是旧的"。
+   */
+  private tempHtml(run: RunState): string {
+    return `
+      <section class="block">
+        <h2 class="block-title">室内 / 室外</h2>
+        <div class="contrast-pair">
+          <div class="contrast-cell"><i>室外</i><b>${outdoorTemp(run.day, run.disasterId)}°C</b></div>
+          <div class="contrast-cell is-warm"><i>室内</i><b>${indoorTemp(run.stats.shelter)}°C</b></div>
+        </div>
+      </section>
+    `;
+  }
+
+  /**
+   * 反差层剩下的那一块：「你 / 整条街」（§6.6「数字自己说话」，零台词）。
    *
-   * ## ★ 第三对：「你的余粮」对「随手够得到」（M4 W-08）
+   * ## ★★ 这一块在 2026-10 被用户点名重写过，改的是**"这一栏到底在比什么"**
    *
-   * 这一对和上面两对**不是同一种关系**：上面两对是"跟别人比"（外面 vs 屋里、
-   * 你 vs 街区），而这一对是"**跟自己的另一个数比**" ——
+   * 用户的原话：
    *
-   * > 你囤了 11 天，可随手够得到的只有 4 天。
+   * > "外面里面为啥不能叫室内室外呢，类似的尴尬文案你给我全部改了！！！"
    *
-   * 它存在的理由是那笔具体的账：`supplyDays` 的分母是"货架 ∪ **纸箱**"，
-   * 所以**把 30 罐从纸箱搬到贴好胶带的架上，那块屏幕上一个数都不变**——
-   * 「搬上架」「贴胶带」「标顺手位」这三个动作在日报上完全不可见（W-08 的起因）。
-   * 现在它们是两个并排的天数，差多少一眼看得出。
+   * 他说得对，而且比"换个词"更根本 —— 原来那一块是这么排的：
    *
-   * ⚠ **仍然零台词**：不写"你该整理了"。差值是玩家自己看见的 ——
-   * 与 §5 引擎①「游戏不评判对错」一字不冲突。
+   * ```
+   * 外面 / 里面            ← 区块标题
+   *   外面 -23°C │ 屋里 13°C
+   *   你的余粮 5 天 │ 街区平均 2 天     ← 这一行跟"里面/外面"毫无关系
+   * ```
+   *
+   * 两个毛病：① 标题写"里面"，格子却写"屋里"（**同一件事两个词**）；
+   * ② 第二行比的是"你 vs 街区"，与"室内 / 室外"根本不是一回事，
+   * 却被塞在同一个标题底下 —— 玩家读到的标题对不上底下的数。
+   *
+   * 所以现在拆成两块，**每块的标题就是它底下那两个数在比什么**：
+   * 温度归 `tempHtml`（室内 / 室外），天数归这里（你 / 整条街）。
+   *
+   * ## 措辞的三处口径（同一次改的）
+   *
+   *  · **"你的余粮" → "你的存货"**：这个数数的是**七个品类加总**（主食/饮水/燃料/…），
+   *    而"余粮"在中文里专指粮食 —— 一个把燃料算进去的数叫"余粮"是不准的；
+   *  · **"随手够得到" → "不用翻就拿到"**："随手/顺手"在这款游戏里已经是**专有名词**
+   *    （`Shelf.handyRank`，全屋唯一那一块），而这一格数的是"顺手位 **∪** 贴了清单的行" ——
+   *    用专有名词去描述一个更宽的集合，会让玩家以为它说的就是那块架子；
+   *  · **"要翻才拿得到"保留**：它把"够不到"翻译成**一个动作**（翻），
+   *    与 §6.4「乱 → 翻找耗时」是同一种说法。
    */
   private contrastHtml(disaster: DisasterProfile, run: RunState): string {
     const total = supplyDays(run, disaster);
     const handy = handyDays(run, disaster);
+    // 差为 0（整批货还躺在纸箱里、或恰好全部都在明面上）时不显示差值那一行
+    const reachRow =
+      total - handy > 0
+        ? `<div class="contrast-pair is-reach">
+             <div class="contrast-cell"><i>不用翻就拿到</i><b>${handy} 天</b></div>
+             <div class="contrast-cell"><i>要翻才拿得到</i><b>${total - handy} 天</b></div>
+           </div>`
+        : '';
     return `
       <section class="block">
-        <h2 class="block-title">外面 / 里面</h2>
+        <h2 class="block-title">你 / 整条街</h2>
         <div class="contrast-pair">
-          <div class="contrast-cell"><i>外面</i><b>${outdoorTemp(run.day, run.disasterId)}°C</b></div>
-          <div class="contrast-cell is-warm"><i>屋里</i><b>${indoorTemp(run.stats.shelter)}°C</b></div>
-        </div>
-        <div class="contrast-pair">
-          <div class="contrast-cell"><i>你的余粮</i><b>${total} 天</b></div>
+          <div class="contrast-cell"><i>你的存货</i><b>${total} 天</b></div>
           <div class="contrast-cell"><i>街区平均</i><b>${districtDays(run.day)} 天</b></div>
         </div>
-        ${
-          /*
-           * 只在两个数**不一样**时并排显示。
-           *
-           * 差是 0 的时候（屋里一件应急货都没上架、整批货还躺在纸箱里）并排放两个
-           * 相同的数只会让人以为这一格坏了；而差是正的时候，那一行差值本身就是
-           * 这一格全部的信息量 —— 不需要一句话去解释它。
-           */
-          total - handy > 0
-            ? `<div class="contrast-pair is-reach">
-                 <div class="contrast-cell"><i>随手够得到</i><b>${handy} 天</b></div>
-                 <div class="contrast-cell"><i>要翻才拿得到</i><b>${total - handy} 天</b></div>
-               </div>`
-            : ''
-        }
+        ${reachRow}
       </section>
     `;
   }

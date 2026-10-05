@@ -4,14 +4,16 @@
  * 分层纪律：本文件**只读** buildView() 的结果；写操作一律调用 systems/organize 的命令函数，
  * 命令返回的 OrganizeEvent 才是表现层的输入（音效 / 拟声字 / 压扁动画）。
  */
+import { getDisasterDef } from '../data/disaster';
 import { FURNITURE_DEFS, furnitureDefOf } from '../data/furniture';
-import { getItemDef } from '../data/items';
+import { CATEGORY_LABELS, getItemDef } from '../data/items';
 import { ZONE_COLORS } from '../data/palette';
 import { initAudio, isMuted, playSfx, setMuted } from '../fx/audio';
 import { iconSvg, itemIconSvg } from '../fx/icons';
 import { showToast, spawnCrushGhost, spawnSfxWord, spawnTidyTag } from '../fx/popup';
 import { dayLabel } from '../model/calendar';
 import { findZone, getStack, isOffZone, rowZoneId, stackCount, zoneIdsOf } from '../model/shelf';
+import { emergencyCategories } from '../model/score';
 import type { CategoryId, ItemStack, Shelf, SlotPos, Zone } from '../model/types';
 import type { GameStore } from '../state/store';
 import { roomForNewFurniture, roomsOf, type RoomView } from '../systems/home';
@@ -631,18 +633,32 @@ export class OrganizeScreen {
     const p = Math.round(view.score.placement * 100);
     const f = Math.round(view.score.fefo * 100);
     const e = Math.round(view.score.emergency * 100);
-    const capacity = this.store.run.shelves.reduce((n, s) => n + s.w * s.h, 0);
-    const handyCount = this.store.run.shelves.filter((s) => s.handyRank !== null).length;
+    const run = this.store.run;
+    const capacity = run.shelves.reduce((n, s) => n + s.w * s.h, 0);
+    const handyCount = run.shelves.filter((s) => s.handyRank !== null).length;
+    /*
+     * ★ 那两句话跟着**这一局的灾难**走（M4 W-01 顺手修的文案 bug）。
+     *
+     * 原来这里写死了"这场寒潮要用的东西（燃料和药）" —— 在 116 场都能被抽到之后，
+     * 它在热浪局里会指着水与药说"燃料和药"。而这两句是**解释这一栏怎么算的**，
+     * 算错一项，玩家就会按错的清单去整理。
+     *
+     * 品类取自 `emergencyCategories(disaster)`（= 这一场的刚需 ∪ 医疗），
+     * 与那一栏的分子分母**同一个来源** —— 两处各写一份的话，
+     * 解释与算法迟早分家（那是 §2.19 那个形状）。
+     */
+    const emergencyCats = emergencyCategories(getDisasterDef(run.disasterId));
+    const emergencyNames = emergencyCats.map((c) => CATEGORY_LABELS[c]).join('和');
     // 全中文台账。术语解释放 title（鼠标）＋点一下弹提示（手机没 hover，只能点）
     this.scoreEl.innerHTML = `
       <button class="score-item" data-action="explain" data-explain="归位率：你自己给胶带写的清单，东西有没有照放。只有被某张清单明确写进去的东西才算归位；贴了胶带但没写清单，和没贴一样是 0。" title="你自己给胶带写的清单，东西有没有照放。只有被清单明确写进去的才算归位；没写清单就不算。">
         <i>归位率</i><b>${p}%</b>
       </button>
-      <button class="score-item" data-action="explain" data-explain="临期优先：同一块货架有没有按到期日排好，快到期的排在前面，也先被用掉" title="同一块货架有没有按到期日排好">
-        <i>临期优先</i><b>${f}%</b>
+      <button class="score-item" data-action="explain" data-explain="快到期的先吃：同一块货架有没有按到期日排好，快到期的排在前面，也先被用掉" title="同一块货架有没有按到期日排好">
+        <i>快到期的先吃</i><b>${f}%</b>
       </button>
-      <button class="score-item" data-action="explain" data-explain="应急可达率：这场寒潮要用的东西（燃料和药）有多少放在顺手位上${handyCount === 0 ? '。你还没标过顺手位，点货架右上角的「顺手位」，全屋只有这一块' : ''}。体力见底那天，只有顺手位上的东西还够得到。" title="急用的东西有多少放在顺手位上">
-        <i>应急可达</i><b>${e}%</b>
+      <button class="score-item" data-action="explain" data-explain="急用的够不够得着：这一场要用的东西（${emergencyNames}）有多少放在顺手位上${handyCount === 0 ? '。你还没标过顺手位，点货架右上角的「顺手位」，全屋只有这一块' : ''}。体力见底那天，只有顺手位上的东西还够得到。" title="急用的东西有多少放在顺手位上">
+        <i>急用的够不够得着</i><b>${e}%</b>
       </button>
       <button class="score-item" data-action="explain" data-explain="已上架：占了 ${view.score.stacks} 个格子，全房间一共 ${capacity} 格" title="已占用 ${view.score.stacks} 个格子，全房间共 ${capacity} 格">
         <i>已上架</i><b>${view.score.stacks}</b>

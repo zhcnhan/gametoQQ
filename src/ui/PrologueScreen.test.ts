@@ -24,17 +24,25 @@ import { createMetaProfile } from '../state/save';
 import { PrologueScreen } from './PrologueScreen';
 import { FakeDocument, allText, asElement, installFakeWindow, type FakeElement } from './fakeDom';
 
-function mount(disasterId: string): FakeElement {
+function mount(disasterId: string, meta?: ReturnType<typeof createMetaProfile>): FakeElement {
   const doc = new FakeDocument();
   installFakeWindow(doc);
   const root = doc.createElement('div');
   new PrologueScreen(asElement(root), {
     disasterId,
-    meta: createMetaProfile(),
+    meta: meta ?? createMetaProfile(),
     onConfirm: () => undefined,
     onRestart: () => undefined
   }).mount();
   return root;
+}
+
+/** 一份"撑过 n 次、见过 m 场"的跨局账本 */
+function metaWith(survivedRuns: number, seen: string[]): ReturnType<typeof createMetaProfile> {
+  const meta = createMetaProfile();
+  meta.survivedRuns = survivedRuns;
+  meta.codex.disasters = seen;
+  return meta;
 }
 
 /**
@@ -95,5 +103,58 @@ describe('★ 开局页显示的是**这一局真的抽到的那一场**', () =>
     const heat = blockNotes(mount('heat_wave'));
     // 第一段区块的说明行是身份解锁提示，日历那一句在它后面
     expect(cold).not.toEqual(heat);
+  });
+});
+
+/**
+ * ★★ 「这一局可能抽到哪几场 / 还差什么才能碰到别的灾难」
+ *
+ * ## 用户报的那句话就是这一组的由来
+ *
+ * > "我问一下你的设定是不是必须撑过一次寒潮才能解锁其他灾难呢，
+ * >  因为我没通过几次他也没解锁"
+ *
+ * 那条规则本身是对的（数据里写着），但**界面上一个字都没有** ——
+ * 玩家只能靠"反复重开、发现永远是寒潮"自己猜，而猜出来的版本比真相宽松，
+ * 于是它读起来像 bug。这一组把那句话钉在屏幕上。
+ */
+describe('★★ 开局页要自己说清"这一局能抽到几场、还差什么"', () => {
+  it('全新档：只说"现在 1 场都可能"，并说清差什么', () => {
+    const all = allText(mount('cold_snap'));
+    expect(all, '开局页没说"灾难是随机抽的"').toContain('随机抽的');
+    expect(all).toContain('1 场');
+    expect(all, '没说还差什么').toMatch(/再撑到最后 \d+ 次/);
+    expect(all, '没说还有多少场没放出来').toMatch(/还有 \d+ 场没放出来/);
+  });
+
+  it('★ "还差什么"取**更近**的那个条件（与 `disasterTopTier` 的 Math.max 同一套口径）', () => {
+    /*
+     * 两个条件取更宽的那个 = "谁先到算谁"。所以提示要报**更近的那一条**：
+     *   · 撑过 2 次、见过 2 场 → 离 tier 3 差"再撑 1 次"（而 tier 3 根本不看图鉴）；
+     *   · 撑过 3 次、见过 5 场 → 离 tier 4 差"再撑 2 次"，而图鉴那条还差 3 场 ——
+     *     两条都报得出来，所以必须挑近的。
+     * 报错了那一条，玩家会去追一个更远的目标。
+     */
+    const byRuns = allText(mount('cold_snap', metaWith(2, ['cold_snap', 'heat_wave'])));
+    expect(byRuns).toContain('再撑到最后 1 次');
+    expect(byRuns).not.toContain('图鉴里再点亮');
+
+    // tier 3 → 4：撑过 3 次（还差 2 次）vs 见过 5 场（还差 3 场）→ 报更近的那个
+    const toTier4 = allText(
+      mount('cold_snap', metaWith(3, ['a', 'b', 'c', 'd', 'e']))
+    );
+    expect(toTier4).toContain('再撑到最后 2 次');
+    expect(toTier4).not.toContain('图鉴里再点亮');
+  });
+
+  it('★ 全部放出来之后就不再说"还差什么"（不留一条永远追不上的提示）', () => {
+    const all = allText(mount('cold_snap', metaWith(9, ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'])));
+    expect(all).not.toContain('没放出来');
+    expect(all).toContain('都可能');
+  });
+
+  it('★ 池子大小随进度变（撑过 1 次 → 33 场，与数据一致）', () => {
+    const one = allText(mount('cold_snap', metaWith(1, ['cold_snap'])));
+    expect(one).toContain('33 场');
   });
 });
