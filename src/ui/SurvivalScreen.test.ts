@@ -554,3 +554,77 @@ describe('★★ 现金顶一件：开关的三个状态都要说清楚', () => 
     expect(cashBtn(root)?.classList.contains('is-on')).toBe(true);
   });
 });
+
+describe('★★ 维度 7 的位置那一半：日报要把"多花了多少"说出来', () => {
+  /**
+   * 造一份"有日报、劳作是 20 点"的局面，`workSaved` / `workHauled` 由调用方给。
+   *
+   * ⚠ 这一组用的是**文件顶层**的 `mount`（它自己造日报快照），不是
+   * `.contrast` 那一组里的 `mountStore` —— 后者在另一个 `describe` 里，取不到。
+   * 所以这里先 `mount` 拿到 root 与 store，再 `commit` 改那两个数并重挂一次。
+   */
+  function withWork(over: { workSaved?: number; workHauled?: number }): FakeElement {
+    const store = survivalStore();
+    store.commit((draft) => {
+      const last = draft.survival.last;
+      if (!last) throw new Error('这一屏需要一份日报快照');
+      last.workCost = 20;
+      last.workSaved = over.workSaved ?? 0;
+      last.workHauled = over.workHauled ?? 0;
+    });
+    const root = doc2Root();
+    new SurvivalScreen(asElement(root), store, {
+      onStart: () => undefined,
+      onNext: () => undefined,
+      onTrade: () => false,
+      onGoOrganize: () => undefined
+    }).mount();
+    return root;
+  }
+
+  function doc2Root(): FakeElement {
+    const doc = new FakeDocument();
+    installFakeWindow(doc);
+    const root = doc.createElement('div');
+    doc.body.appendChild(root);
+    return root;
+  }
+
+  it('★ 说出来"多花了几点"，并指出怎么改（挪到门口那块）', () => {
+    /*
+     * ## 这一句和 `workSaved` 那句是**一对**
+     *
+     * `workSaved` 说"你挑的人替你省的"，`workHauled` 说"这一场的天气 +
+     * 你自己的摆法罚你的"。只说前一句，玩家会在体力账上看到一笔解释不了的窟窿，
+     * 然后把账记到别处（以为公式坏了、以为灾难更狠了），而不会想到
+     * "我把米堆在最里头那块架子上了"。
+     */
+    const text = allText(withWork({ workHauled: 2.4 }));
+    expect(text, '压在靠里那块多花的体力没有说出来').toContain('搬不动的天气');
+    expect(text).toContain('多花');
+    expect(text).toContain('2.4');
+    // ★ 给的是"怎么改"，不是一个光秃秃的数
+    expect(text).toContain('门口');
+  });
+
+  it('★ 没有搬运惩罚时一个字都不提位置（不许挂一条永远在的提示）', () => {
+    /*
+     * 平时摆哪儿都一分不多花。一条永远挂着的"靠里那块费劲"会让玩家
+     * 去挪一个本来不该挪的屋子 —— 那比不说更坏。
+     *
+     * ⚠ 判据必须用**只属于这一句**的措辞（"搬不动的天气" / "靠里"），
+     * 不能拿"多花"当判据：整理那一块本来就有一句
+     * "东西还没放进你自己写的清单里，每天找它们要多花力气" ——
+     * 它讲的不是位置，但会让这条断言**永远红着**。
+     */
+    const text = allText(withWork({ workHauled: 0 }));
+    expect(text, '平时不该提位置').not.toContain('搬不动的天气');
+    expect(text).not.toContain('靠里');
+  });
+
+  it('两句可以同时出现（搬不动的天气 + 装卸工）：它们说的是两笔不同的账', () => {
+    const text = allText(withWork({ workSaved: 4, workHauled: 2.4 }));
+    expect(text).toContain('少花');
+    expect(text).toContain('多花');
+  });
+});

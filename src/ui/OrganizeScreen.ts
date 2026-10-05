@@ -4,7 +4,7 @@
  * 分层纪律：本文件**只读** buildView() 的结果；写操作一律调用 systems/organize 的命令函数，
  * 命令返回的 OrganizeEvent 才是表现层的输入（音效 / 拟声字 / 压扁动画）。
  */
-import { getDisasterDef } from '../data/disaster';
+import { getDisasterDef, disasterModifiersOf } from '../data/disaster';
 import { FURNITURE_DEFS, furnitureDefOf, furniturePriceOf } from '../data/furniture';
 import { handySlotLimitOf } from '../data/identities';
 import { CATEGORY_LABELS, getItemDef } from '../data/items';
@@ -13,6 +13,7 @@ import { initAudio, isMuted, playSfx, setMuted } from '../fx/audio';
 import { iconSvg, itemIconSvg } from '../fx/icons';
 import { showToast, spawnCrushGhost, spawnSfxWord, spawnTidyTag } from '../fx/popup';
 import { dayLabel } from '../model/calendar';
+import { farShelfNote } from '../model/haul';
 import { findZone, getStack, isOffZone, rowZoneId, stackCount, zoneIdsOf, zoneListedFor } from '../model/shelf';
 import { emergencyCategories } from '../model/score';
 import type { CategoryId, ItemStack, Shelf, SlotPos, Zone } from '../model/types';
@@ -944,6 +945,21 @@ export class OrganizeScreen {
      */
     const fur = furnitureDefOf(shelf.kind);
     const special = fur.spoilFactor < 1 ? `<em class="shelf-why">${escapeHtml(fur.why)}</em>` : '';
+    /*
+     * ★ 维度 7 的位置那一半（`model/haul.ts`）：靠里那块取东西费劲。
+     *
+     * ## 它为什么非挂在**这一块**的头上
+     *
+     * 这条轴平时一分钱不多花（`carryFactor >= 1` 时乘数恒为 1），只在
+     * "搬不动的天气"里出现 —— 而那正是玩家最没空研究界面的时候。
+     * 挂在门口那块上没用（它不罚），挂在日报里也没用（日报说的是总数，
+     * 而玩家需要知道的是**该把什么挪走**）。所以它只出现在该挪的那一块上。
+     *
+     * ⚠ 文案由 `farShelfNote` 统一给（与日报同一句话）—— 这里不拼字符串，
+     * 免得两处说法漂开。
+     */
+    const far = farShelfNote(index, this.haulCarryFactor());
+    const farNote = far === null ? '' : `<em class="shelf-far">${escapeHtml(far)}</em>`;
     return `
       <section class="shelf-card" data-shelf-card="${shelf.id}">
         <div class="shelf-head">
@@ -963,9 +979,19 @@ export class OrganizeScreen {
           </button>
         </div>
         ${special}
+        ${farNote}
         <div class="shelf-rows">${rows.join('')}</div>
       </section>
     `;
+  }
+
+  /**
+   * 这一场的搬运惩罚。抽成一个方法是因为 `shelfHtml` 逐架调用它 ——
+   * `disasterModifiersOf` 自己带缓存，所以这里不必再缓存一层；
+   * 真正要防的是**在别处另写一个 `disaster.carryFactor ?? 1`**（第二个真相）。
+   */
+  private haulCarryFactor(): number {
+    return disasterModifiersOf(this.store.run.disasterId).carryFactor;
   }
 
   private slotHtml(shelfId: string, pos: SlotPos, stack: ItemStack | null, zone: Zone | null): string {

@@ -12,6 +12,7 @@ import { CATEGORY_ORDER, getItemDef } from '../data/items';
 import { NIGHT_SLEEP } from '../data/nightEvents';
 import { moodFromPlacement, dailyDrainOf, hardPressTier, round1, workCostOf } from '../data/survival';
 import { consumeCategory, countCategory } from '../model/consume';
+import { haulFactorOfShelves } from '../model/haul';
 import { scatterRows } from '../model/scatter';
 import { createShelf, fefoSorted, getStack, makeStack, readingOrder, setSlotStack, stackCount } from '../model/shelf';
 import { isBatchSpoiled, spoilEverything, virtualDay } from '../model/spoil';
@@ -61,8 +62,20 @@ function put(run: RunState, shelfId: string, pos: SlotPos, itemId: string, count
  * ★ 这条修的是"探针太脆"，不是"断言放宽"：
  * 改完之后同一条曲线不再随内容量变化，`staminaFloor` 那个门才重新是个门。
  */
-function bareRun(seed = 20261001): RunState {
-  const run = createStartingRun(seed);
+/**
+ * 一场**真的搬不动**的灾难，供维度 7（搬运惩罚的位置那一半）的用例使用。
+ *
+ * ★ 为什么不能靠 `createStartingRun(seed)` 默认抽到的那场：默认是寒潮，
+ * 而 `src/data/disaster.ts` 里**没有** `cold_snap` 的 `carryFactor` 行 ——
+ * `disasterModifiersOf('cold_snap').carryFactor` 就是 1，
+ * `haulFactorOfShelves` 直接返回 1，用例会**假绿**。
+ *
+ * 海啸的 `carryFactor: 0.5` 是最糟那一档（`HAUL_FULL_RAMP = 0.5` → 吃满），
+ * 用它才能让"压在靠里那块更贵"这件事真的发生。
+ */
+const DEEP_DISASTER = 'tsunami';
+
+function bareRun(seed = 20261001): RunState {  const run = createStartingRun(seed);
   run.boxesToUnpack = [];
   // ★ 把游标按回原种子（理由见上）
   run.seed = seed;
@@ -425,6 +438,86 @@ describe('每日结算：把整理变成数字', () => {
     expect(porterReport.workSaved).toBeGreaterThan(plainReport.workCost * 0.15);
     expect(porterReport.workSaved).toBeLessThan(plainReport.workCost * 0.25);
     expect(porterReport.workCost).toBeLessThan(plainReport.workCost);
+  });
+
+  it('★ 维度 7：搬不动的天气里，东西压在靠里那块真的更费劲', () => {
+    /*
+     * ## 这一条守的是"位置那一半"真的接到了劳作账上
+     *
+     * M4 验收第 1 条数的是"17 个维度里有几个真的改『该放哪儿』"。在 `carryFactor`
+     * 只乘手提上限的年代，答案里没有第 7 维 —— 它改的是"你一次能搬多少"，
+     * 与"东西放在哪块架子上"无关。
+     *
+     * ## ⚠ 必须显式挑一场有搬运惩罚的灾难
+     *
+     * `createStartingRun(seed)` 默认抽到寒潮，而 `src/data/disaster.ts` 里
+     * **没有** `cold_snap` 的 `carryFactor` 行 —— 乘数恒为 1，这一条会**假绿**
+     * （"压在深处更贵"这个断言会因为两边都等于 1 而通过）。
+     *
+     * ## ⚠ 也必须是**同一批货、同一批活**的两次结算
+     *
+     * 两边的件数必须一样，否则 `workCost` 的差里混着"今天活多活少"，
+     * 而那个差与位置无关 —— 用例就不再是在测位置。
+     *
+     * ⚠ 但**不能**断言"放门口时 `deep.workHauled === 0`"：`bareRun` 开局三块架子，
+     * 八件货铺在前两块上，第三块（`index = 2`）即便空着也让**前两块**里的
+     * 第二块落在第 1 层 —— 那个数本来就该大于 0。真正要断的是
+     * **全压在靠里那块时更贵**，以及**没有搬运惩罚的天气里这笔恒为 0**。
+     */
+    const build = (toDeep: boolean) => {
+      const run = bareRun();
+      run.disasterId = DEEP_DISASTER;
+      // ⚠ 海啸带 `capacityFactor: 0.55` + `unusableShelfIds: ['shelf_a']`：
+      //   每块只剩 2 排、还少一块。这里按**实际**的架子数铺，不去猜 3 块 4 排。
+      const goods: ItemStack[] = [];
+      // 八件主食，一件一格；`bareRun` 已把全部格子清空
+      for (let i = 0; i < 8; i++) goods.push(makeStack('canned_beans', 1, 60));
+      let at = 0;
+      const perShelf = Math.ceil(goods.length / run.shelves.length);
+      run.shelves = run.shelves.map((shelf, index) => {
+        // 铺匀（`toDeep` 假）时门口那块与里面那块各拿一半；压深处时全给**最后**那块
+        const take = toDeep
+          ? index === run.shelves.length - 1
+            ? goods.length
+            : 0
+          : index === run.shelves.length - 1
+            ? Math.max(0, goods.length - perShelf * (run.shelves.length - 1))
+            : Math.min(perShelf, Math.max(0, goods.length - at));
+        let next = shelf;
+        for (let n = 0; n < take; n++) {
+          const flat = at + n;
+          next = setSlotStack(
+            next,
+            { row: Math.floor(flat / next.w), col: flat % next.w },
+            goods[flat] ?? makeStack('canned_beans', 1, 60)
+          );
+        }
+        at += take;
+        return next;
+      });
+      run.day = 3;
+      run.stats = { health: 90, mood: 60, stamina: 60, shelter: 80 };
+      return run;
+    };
+
+    const spread = build(false);
+    const allDeep = build(true);
+    const front = settleSurvivalDay(spread);
+    const deep = settleSurvivalDay(allDeep);
+
+    // 同一批活（件数一样）—— 是这一条用例的前提
+    expect(front.workCost).toBeGreaterThan(0);
+    expect(deep.fromShelves).toBe(front.fromShelves);
+    // ★ 摆法真的改变了乘数本身（不是靠件数变多）：全压在深处更贵
+    expect(haulFactorOfShelves(allDeep.shelves, 0.5)).toBeGreaterThan(
+      haulFactorOfShelves(spread.shelves, 0.5)
+    );
+    // ★ 平时（没有搬运惩罚）这笔恒为 0 —— 三条永久回归探针的前提
+    expect(haulFactorOfShelves(allDeep.shelves, 1)).toBe(1);
+    // ★ 压在靠里那块：多花的力气必须真的出现在账上，而且是加在 `workCost` 上的
+    expect(deep.workHauled).toBeGreaterThan(0);
+    expect(deep.workCost).toBeGreaterThan(front.workCost);
+    expect(deep.workHauled).toBeGreaterThan(front.workHauled);
   });
 
   it('归位率越高心情越好，越低越是负担（但永远只是心情，不是判罚）', () => {

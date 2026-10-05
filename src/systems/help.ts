@@ -35,6 +35,7 @@ import { getNpcDef } from '../data/npcs';
 import { workCostOf, round1 } from '../data/survival';
 import { dayLabel } from '../model/calendar';
 import { consumeCategory, countCategory } from '../model/consume';
+import { haulFactorOfShelves } from '../model/haul';
 import { createCursor, nextFloat, pickEventAvoidingRecent, type RngCursor } from '../model/rng';
 import { computeOrganizeScore } from '../model/score';
 import type { CategoryId, RunState } from '../model/types';
@@ -115,11 +116,16 @@ export function inspectRequest(run: RunState, def: HelpRequestDef): HelpShortfal
  * —— 本函数与 `systems/survival.ts` 的日报 —— 只乘一处、漏一处的表现是
  * "日报说少花了、隔天凑订单又没花"：两个数各自都"对"，所以不会有任何报错，
  * 只有玩家觉得这个身份时灵时不灵。
+ *
+ * ★ 维度 7 的位置那一半（`model/haul.ts`）也必须乘在这里，理由逐字相同：
+ * 凑这一单的人和每天翻找的人是同一个，"东西压在最里头"对他一样费劲。
+ * 所以本函数与日报各自乘 `workFactor` 与 `haulFactorOf`，**两个乘数都不能漏**。
  */
 export function searchCost(run: RunState, def: HelpRequestDef): number {
   const score = computeOrganizeScore(run.shelves, run.zones, run.boxesToUnpack, getDisasterDef(run.disasterId));
   const base = workCostOf(score.placement, score.fefo, inspectRequest(run, def).pieces);
-  return round1(base * identityWorkFactor(run.identityId));
+  const haul = haulFactorOfShelves(run.shelves, disasterModifiersOf(run.disasterId).carryFactor);
+  return round1(base * identityWorkFactor(run.identityId) * haul);
 }
 
 export type HelpEvent =

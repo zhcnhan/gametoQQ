@@ -73,6 +73,7 @@ import {
   workCostOf
 } from '../data/survival';
 import { identityWorkFactor } from '../data/identities';
+import { haulFactorOfShelves, workHauledOf } from '../model/haul';
 import { nextFloat, type RngCursor } from '../model/rng';
 import { recordEvent } from './setup';
 import type { CategoryId, EmergencyDef, HardPressLevel, RunState } from '../model/types';
@@ -201,6 +202,14 @@ export interface SurvivalReport {
    * 没有这条路，玩家只会觉得"这个身份好像没什么用"，而不会来报 bug。
    */
   workSaved: number;
+  /**
+   * ★ 维度 7 的位置那一半：为了"从靠里那块取"多花的体力（正数，`0` = 没多花）。
+   *
+   * 与 `workSaved` 成对：一个是"你挑的人替你省的"，一个是"这一场的天气 +
+   * 你自己的摆法罚你的"。日报两句都要说 —— 只说省了多少，玩家会把
+   * "搬不动的天气里我把米堆在最里头"这笔账记成别的（比如以为体力公式坏了）。
+   */
+  workHauled: number;
   fromShelves: number;
   fromBoxes: number;
   /** 有货但没力气翻到的件数（体力见底的那天才 > 0） */
@@ -337,16 +346,33 @@ export function settleSurvivalDay(run: RunState, cursor?: RngCursor): SurvivalRe
    */
   const workFactor = identityWorkFactor(run.identityId);
   const workBase = workCostOf(score.placement, score.fefo, takenPieces);
-  const workCost = round1(workBase * workFactor);
-  const workSaved = round1(workBase - workCost);
-
-  const deltas = { health: 0, mood: 0, stamina: 0, shelter: 0 };
+  const workAfterIdentity = round1(workBase * workFactor);
+  const workSaved = round1(workBase - workAfterIdentity);
   /*
-   * §10B.3.1 的 L2 维度：这一场灾难改哪些"生活条件"。
+   * 这一场的 L2 修正在这里拿下。
+   *
    * `disasterModifiersOf` 是**唯一读点**（默认值、区间夹取、坏值防御都在那里）——
    * 这里只负责用。不要在这附近再写 `disaster.xxx ?? 1`，那会造出第二个真相。
+   * 下面"睡一觉回多少"也读它的 `restEfficiency`，所以这个值本来就该在这里取。
    */
   const mods = disasterModifiersOf(run.disasterId);
+  /*
+   * ★ 维度 7 的位置那一半（`model/haul.ts`）：东西压在最里头那块，取出来多花力气。
+   *
+   * 它**必须在这里乘**，理由与上面身份那一乘逐字相同 —— `workCostOf` 是 §6.4 的
+   * 基准账，探针照着它算。而它与身份那一乘的区别是"谁在罚你"：
+   * 身份是**你挑的人**，搬运惩罚是**这一场的天气**。
+   *
+   * ★★ 两笔各自算在自己的基准上（`workSaved` 从 `workBase` 起算、
+   * `workHauled` 从身份之后起算），最后才合成 `workCost`。
+   * 合成一个乘数也能算出同样正确的**总数**，但日报就说不出"哪一笔是多少"了 ——
+   * 而 §10.1A 要的正是那两个数各自有名字。
+   */
+  const haulFactor = haulFactorOfShelves(run.shelves, mods.carryFactor);
+  const workHauled = workHauledOf(workAfterIdentity, haulFactor);
+  const workCost = round1(workBase * workFactor * haulFactor);
+
+  const deltas = { health: 0, mood: 0, stamina: 0, shelter: 0 };
   // 睡一觉回多少体力，看**入夜前**的庇护所（§12.3 v0.7）：屋子跌破 40 → 冷得睡不踏实，
   // 只回一半。判定必须在 wear 扣减之前 —— "昨晚睡在什么样的屋里"说的是结算前那个数。
   // ★ L2：再乘这一场的**休息效率**（大停电 0.55 = 睡着也冻醒，体力回不满）。
@@ -543,6 +569,7 @@ export function settleSurvivalDay(run: RunState, cursor?: RngCursor): SurvivalRe
     unreachable: unreachableUnits,
     workCost,
     workSaved,
+    workHauled,
     hardPress,
     hardPressLevel: todayTier?.level ?? 'none',
     usedMedicine: supply.usedMedicine,
@@ -635,6 +662,7 @@ export function settleSurvivalDay(run: RunState, cursor?: RngCursor): SurvivalRe
     quality,
     workCost,
     workSaved,
+    workHauled,
     fromShelves,
     fromBoxes,
     unreachable: unreachableUnits,

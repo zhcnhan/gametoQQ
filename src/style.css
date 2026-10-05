@@ -1159,6 +1159,31 @@ body::before {
   color: var(--ink-40);
 }
 
+/**
+ * 「最里头那块」（维度 7 的位置那一半，`model/haul.ts`）。
+ *
+ * ## 它为什么必须存在
+ *
+ * 搬运惩罚那条轴平时**一分钱不多花**（`carryFactor >= 1` 时乘数恒为 1），
+ * 所以它只在"搬不动的天气"里出现 —— 而那正是玩家最没空研究界面的时候。
+ * 一句话挂在**那一块**货架的头上，玩家扫一眼就知道"这块贵"，
+ * 不必去日报里反推自己是哪一块拖累了体力。
+ *
+ * ⚠ 只挂在**最里头那一块**（`haulFactorAt(index) > 1` 只对 index ≥ 1 成立，
+ * 而 index 0 是门口那块）。四块架子都挂一句就变成噪音（§5A 的层次口径）。
+ *
+ * ⚠ 与 `.shelf-why` 同一层次（解释，不是状态），但**颜色重一档**：
+ * 冰箱那句是"它有什么好处"，这句是"它要你多花力气"——后者是代价。
+ */
+.shelf-far {
+  display: block;
+  margin: 0 0 6px;
+  padding-left: 2px;
+  font-size: 11px;
+  font-style: normal;
+  color: var(--ink-70);
+}
+
 .field {
   display: block;
   margin-top: 12px;

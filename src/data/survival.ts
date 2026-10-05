@@ -50,6 +50,8 @@ export const EMPTY_SURVIVAL_SNAPSHOT: SurvivalSnapshot = {
   workCost: 0,
   // M4 W-06：零值 = "这个身份没有翻找省力的天赋"，也正是绝大多数身份的值
   workSaved: 0,
+  // 维度 7 的位置那一半：零值 = "没从深处取东西"，也是绝大多数情况的值
+  workHauled: 0,
   hardPress: false,
   hardPressLevel: 'none',
   usedMedicine: 0,

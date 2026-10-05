@@ -1000,6 +1000,11 @@ function normalizeRun(save: SaveGame): SaveGame | null {
        * （"这个身份没有翻找省力的天赋"），不需要迁移。
        */
       workSaved: Math.max(0, num(last.workSaved)),
+      /*
+       * 维度 7 的位置那一半：旧档同样没有这个字段 → 0 也是真值
+       * （"那一天没从深处取东西"），不需要迁移。
+       */
+      workHauled: Math.max(0, num(last.workHauled)),
       hardPress: last.hardPress === true,
       hardPressLevel:
         last.hardPressLevel === 'straining' ||
