@@ -484,6 +484,7 @@ describe('★★ 现金顶一件：开关的三个状态都要说清楚', () => 
     const btn = cashBtn(root);
     expect(btn, '开关必须存在 —— 它不存在的话玩家不知道还有这条路').not.toBeNull();
     expect(btn?.disabled).toBe(true);
+    expect(btn?.classList.contains('is-idle')).toBe(true);
     expect(btn?.textContent).toContain('先挑');
   });
 

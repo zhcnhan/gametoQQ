@@ -2371,6 +2371,47 @@ button:disabled {
   margin-top: 10px;
 }
 
+/*
+ * 「用钱顶一件」那个开关（M4 决策 B 的现金出口）。
+ *
+ * ★ 它必须长得**与周围那些"挑东西"的按钮不一样** —— 玩家点它是改规则
+ * （三件额度变两件），不是挑一样货。所以开着的时候用朱红实边 + 朱红字，
+ * 而不是和 `.trade-item` 一样的纸色。
+ *
+ * ⚠ 关着但可点、与"清单空着所以不能点"这两种灰必须分得开：
+ * 前者是 `disabled` 属性的默认态（能点，只是没开），后者多了 `.is-idle`。
+ */
+.trade-cash {
+  border-style: dashed;
+  text-align: left;
+  line-height: 1.35;
+}
+
+.trade-cash.is-on {
+  border-style: solid;
+  border-color: var(--vermilion);
+  color: var(--vermilion);
+  background: var(--card);
+}
+
+.trade-cash.is-on b {
+  color: var(--vermilion);
+}
+
+.trade-cash.is-idle {
+  border-color: var(--ink-16);
+  color: var(--ink-40);
+}
+
+/* 现金不够那一行：与 `.press-line` 同一族，只是必须自己跳出来（它是"还差多少"，不是背景） */
+.press-line.is-cash-short {
+  color: var(--vermilion);
+}
+
+.press-line.is-cash-short b {
+  color: var(--vermilion);
+}
+
 /* ================================================================
  * 求援订单（§6.5）
  * 这一屏只回答一件事：你给不给得起。所以清单必须一眼扫得完。

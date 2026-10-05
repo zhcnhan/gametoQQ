@@ -481,11 +481,11 @@ export class SurvivalScreen implements Screen {
      * 现在按钮灰着，并**说清为什么**（§4A：不许有死按钮），因为差额在挑好之前算不出来。
      */
     const cashBtn = `
-      <button class="trade-cash${this.cashOn ? ' is-on' : ''}" data-action="trade-cash"
+      <button class="trade-cash${this.cashOn ? ' is-on' : ''}${canPickCash ? '' : ' is-idle'}" data-action="trade-cash"
               aria-pressed="${this.cashOn ? 'true' : 'false'}"${canPickCash ? '' : ' disabled'}>
         ${
           !canPickCash
-            ? `先挑要给的东西 —— 钱只能顶掉其中一件`
+            ? `先挑一件要给的东西，然后还能拿钱顶掉它`
             : this.cashOn
               ? `用钱顶一件：付 <b>${cash} 元</b>（按你挑的最贵那件算）`
               : `也可以拿钱顶一件 —— 退一件，按你挑的最贵那件折价`
