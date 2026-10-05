@@ -12,7 +12,7 @@ import { CATEGORY_ORDER, getItemDef } from '../data/items';
 import { NIGHT_SLEEP } from '../data/nightEvents';
 import { moodFromPlacement, dailyDrainOf, hardPressTier, round1, workCostOf } from '../data/survival';
 import { consumeCategory, countCategory } from '../model/consume';
-import { haulFactorOfShelves } from '../model/haul';
+import { haulFactorOfShelves, workHauledOf } from '../model/haul';
 import { scatterRows } from '../model/scatter';
 import { createShelf, fefoSorted, getStack, makeStack, readingOrder, setSlotStack, stackCount } from '../model/shelf';
 import { isBatchSpoiled, spoilEverything, virtualDay } from '../model/spoil';
@@ -467,6 +467,9 @@ describe('每日结算：把整理变成数字', () => {
     const build = (toDeep: boolean) => {
       const run = bareRun();
       run.disasterId = DEEP_DISASTER;
+      // ★ 装卸工（`workCostFactor: 0.8`）：让 `workSaved` 与 `workHauled`
+      //   同时非零，才验得出"两笔各算在自己的基准上"（默认身份两条路数值相同）
+      run.identityId = 'warehouse_porter';
       // ⚠ 海啸带 `capacityFactor: 0.55` + `unusableShelfIds: ['shelf_a']`：
       //   每块只剩 2 排、还少一块。这里按**实际**的架子数铺，不去猜 3 块 4 排。
       const goods: ItemStack[] = [];
@@ -518,6 +521,28 @@ describe('每日结算：把整理变成数字', () => {
     expect(deep.workHauled).toBeGreaterThan(0);
     expect(deep.workCost).toBeGreaterThan(front.workCost);
     expect(deep.workHauled).toBeGreaterThan(front.workHauled);
+    /*
+     * ★★ 这一笔必须乘在**身份之后**的基准上（`workAfterIdentity`），不是 `workBase`。
+     *
+     * ⚠ 这条判据非这样写不可。两种算法的差只有零点几，而 `round1` 会把
+     * `.05 / .15` 那一档直接舍掉 —— 拿"差 0.1 以内就算对"去比，
+     * **错的实现照样绿**。我真试过：把 `workHauledOf(workAfterIdentity, …)`
+     * 改成 `workHauledOf(workBase, …)`，整套 50 条全过。
+     *
+     * 所以这里把**界面上印出来的那个数**逐字算一遍：
+     *   `workBase` → 身份那一乘 → 这一场的搬运乘数 → `workHauledOf`。
+     * 用 `workBase` 当基准的话印出来是 1.2，正确的那条是 0.8 —— 一眼分得开。
+     *
+     * ⚠ 身份必须取装卸工（`rate: 0.8`）：默认身份两乘相等，
+     * 这条断言对它没有分辨力。
+     */
+    expect(deep.workSaved).toBeGreaterThan(0);
+    const identityFactor = 0.8; // 装卸工省 20%
+    const workBase = deep.workSaved / (1 - identityFactor);
+    const haulFactor = haulFactorOfShelves(allDeep.shelves, 0.5);
+    expect(deep.workHauled).toBe(workHauledOf(round1(workBase * identityFactor), haulFactor));
+    // ★ 而乘错地方的那条路会印出另一个数 —— 这一条就是给它留的
+    expect(deep.workHauled).not.toBe(workHauledOf(workBase, haulFactor));
   });
 
   it('归位率越高心情越好，越低越是负担（但永远只是心情，不是判罚）', () => {
