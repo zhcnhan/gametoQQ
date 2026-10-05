@@ -8,13 +8,20 @@
  */
 import './style.css';
 import { CATEGORY_ORDER } from './data/items';
-import { getDisasterDef } from './data/disaster';
+import {
+  DISASTER_DEFS,
+  DISASTER_TIER_GATES,
+  disasterPool,
+  disasterTopTier,
+  getDisasterDef
+} from './data/disaster';
 import { getIdentityDef } from './data/identities';
 import { ACTION_POINTS_PER_DAY } from './data/shops';
 import { initAudio, playSfx } from './fx/audio';
 import { showToast } from './fx/popup';
 import { openDeferred } from './meta/deferred';
 import { createCursor } from './model/rng';
+import { ROOM_ID } from './model/shelf';
 import type { GamePhase } from './model/types';
 import { bootstrapStore } from './state/store';
 import { declineRequest, fulfillRequest, leaveRequest, type HelpResult } from './systems/help';
@@ -33,7 +40,7 @@ import {
   startSurvival,
   type PhaseResult
 } from './systems/phases';
-import { newRunWithDisaster } from './systems/setup';
+import { createStartingShelves, disasterProgressOf, newRunWithDisaster } from './systems/setup';
 import { CodexScreen } from './ui/CodexScreen';
 import { EndingScreen } from './ui/EndingScreen';
 import { NightScreen } from './ui/NightScreen';
@@ -399,7 +406,62 @@ if (import.meta.env.DEV) {
   };
 
   /**
-   * 切到某个测试存档（`src/tools/save-*.txt`）。
+   * ★ **重抽这一局的灾难**（M4 W-01 的走查钩子）。
+   *
+   * ## 它为什么必须有
+   *
+   * 116 场灾难从 M4 起真的会被抽到了，而**抽到哪一场是按 tier 阶梯来的**：
+   * 全新档的池子里只有寒潮（那是刻意的，见 `data/disaster.ts` 的
+   * `DISASTER_TIER_GATES`）。于是"想看一眼洪水局长什么样"这件事，
+   * 在真实规则下要**先撑过一次**才做得到 —— 而走查要看的恰恰是那些没见过的。
+   *
+   * 所以它把这件事变成一条命令：按名字（或 id）指定一场，**重铺整间屋子**。
+   *
+   * ⚠ 它**重铺货架**（`createStartingShelves`），所以会清空已经摆好的东西 ——
+   * 这是刻意的：空间维度（少一块 / 矮一排）只有在**开局那一刻**才铺得出来。
+   * 想知道"换一场会不会少一块货架"，就得看开局那一下。
+   *
+   * 用法（浏览器控制台）：
+   *   __tunhuo.disaster('洪水')      按名字
+   *   __tunhuo.disaster('flood_urban')  按 id
+   *   __tunhuo.disaster()            列出现在能抽到的池子（含"还差什么"）
+   */
+  const disaster = (which?: string): void => {
+    const progress = disasterProgressOf(store.save.meta);
+    const pool = disasterPool(progress);
+    if (!which) {
+      const top = disasterTopTier(progress);
+      console.info(
+        `[囤货末世] 现在最高 tier ${top}，池子 ${pool.length}/${DISASTER_DEFS.length} 场：\n` +
+          pool.map((d) => `${d.name}(${d.id})`).join(' / ')
+      );
+      console.info(
+        `[囤货末世] 撑过 ${progress.survivedRuns} 次、见过 ${progress.seenDisasters} 场。` +
+          `下一档：${[1, 2, 3, 4].map((t) => `${t}=${DISASTER_TIER_GATES[t as 1 | 2 | 3 | 4].why}`).join('；')}`
+      );
+      return;
+    }
+    const def = DISASTER_DEFS.find((d) => d.id === which || d.name === which);
+    if (!def) {
+      console.warn(`[囤货末世] 没有叫「${which}」的灾难。不带参数调用可以看到池子。`);
+      return;
+    }
+    store.commit((draft) => {
+      draft.disasterId = def.id;
+      draft.shelves = createStartingShelves(ROOM_ID, def.id);
+      draft.shopStocks = [];
+    });
+    ensureDayStocks(store);
+    router.render();
+    console.info(
+      `[囤货末世] 换成了「${def.name}」：${def.level} · ${def.family} · ` +
+        `capacityFactor ${def.capacityFactor ?? 1}、unusableShelfIds [${(def.unusableShelfIds ?? []).join(',')}] ` +
+        `→ 屋里 ${store.run.shelves.length} 块、每块 ${store.run.shelves[0]?.h ?? 0} 排`
+    );
+  };
+
+  /**
+   * 换一个测试存档（`src/tools/save-*.txt`）。
    *
    * ## 为什么需要它：人工走查的成本几乎全在"走到那一屏"
    *
@@ -449,7 +511,8 @@ if (import.meta.env.DEV) {
     router,
     deferred: debts,
     jump,
-    load
+    load,
+    disaster
   };
   // 每开一次页面报一次账。目的很具体：让"寒潮是冷库 → M1 无腐坏""冰箱没效果"
   // 这类**已被记录的空转**，在任何人准备动手"修好"它之前先自我解释一次。
