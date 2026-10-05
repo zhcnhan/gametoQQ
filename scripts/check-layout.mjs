@@ -1,0 +1,168 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  版面宽度的守卫（`scripts/check-layout.mjs`）
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * ## 它拦的是哪一类错（用户 2026-10："你真是一个一个修"）
+ *
+ * 桌面适配出过**连着三轮**同一类问题，每次都是"某个元素忘了收窄，
+ * 于是它在 1920 的窗口上横贯整屏，而正文在中间"：
+ *
+ *  轮次 | 漏的是谁 | 怎么发现的
+ *  --- | --- | ---
+ *  1 | 正文容器 `.scroll`（`100vw` 的 padding 把它算成负宽度） | 用户截图（塌成一条线）
+ *  2 | `.topbar-row` / `.score` / `.tape-shelf` | 我点名补的
+ *  3 | **`.loadbar` / `.title` / 那条「窗外」的带子** | 用户又一张截图
+ *
+ * 三次的根因是同一个：**"收窄"靠人记得逐个点名**。
+ *
+ * ## 这一版是"静态契约 + 自证"，而不是一个 CSS 引擎
+ *
+ * 我先后写过两版**模拟浏览器**的守卫，两版都错：
+ *
+ *  ① 手写模板解析器（按标签配对算深度）：模板里夹着 `${…}` 时它**数错层数**，
+ *     只看见 5 个"容器 > 子元素"组合 —— 连 `.topbar-row` 都没看见，
+ *     而它照样报"合格"。**一个看不见东西的守卫比没有守卫更坏，因为它是绿的。**
+ *  ② 用正则抽 `@media (min-width: 560px)` 那一块：非贪婪量词在块里**第一条规则的
+ *     `}`** 就停了，于是桌面那几条收窄规则一条都没进，整个样式表被报成"全都没约束"。
+ *
+ * 两次都撞在同一件事上：**在一个没有布局引擎的地方假装有布局引擎。**
+ *
+ * 所以现在它只做两件确定的事：
+ *
+ *  1. **结构判据**：桌面那一块必须真的收窄"内容"，而不是点名收窄某几个类 ——
+ *     通配符 `.topbar > *` / `.dock > *`（新加的元素**自动**跟上），
+ *     加上 `.scroll` 与 `.window-band` 各自带 `--content-max`；
+ *  2. **自证**：它把当前这份判定**跑一遍**（含一条故意违反契约的样本），
+ *     确认自己真的能判红 —— 也就是"守卫要能故意失败一次"这条纪律变成了代码。
+ *
+ * ⚠ 它**不**回答"某个具体 class 在 1920 下有多宽"。那一类问题由
+ * `ui/` 那几屏的挂载用例 + 人工在桌面浏览器里看一眼来兜 —— 这里只守"结构没退化"。
+ */
+import { readFileSync } from 'node:fs';
+
+const CSS = readFileSync('src/style.css', 'utf8');
+const CONTENT_MAX_PX = 470;
+
+/** 从 `from` 处的 `{` 开始找配对的 `}`（数花括号，不靠正则的懒惰量词） */
+function matchingBrace(text, from) {
+  let depth = 0;
+  for (let i = from; i < text.length; i++) {
+    if (text[i] === '{') depth += 1;
+    else if (text[i] === '}') {
+      depth -= 1;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+/** 取出 `@media (min-width: 560px)` 那一块的正文（桌面专用样式） */
+function desktopBlock(css) {
+  const m = /@media\s*\(min-width:\s*560px\)\s*\{/.exec(css);
+  if (!m) return '';
+  const open = m.index + m[0].length - 1;
+  const close = matchingBrace(css, open);
+  return close < 0 ? '' : css.slice(open + 1, close);
+}
+
+/**
+ * 契约（每一条都是"桌面上的内容必须被收进同一条纵列"的一种落实方式）。
+ * `must` 是**在源码里必须找得到的字面片段**（去掉空白后比对）。
+ */
+const CONTRACT = [
+  {
+    why: '页眉里的每一个直接子元素都要收窄 —— 用通配，这样新加的元素自动跟上',
+    must: '.topbar > *'
+  },
+  {
+    why: '操作台同上（底栏按钮铺满整宽会看起来像两截拼起来的）',
+    must: '.dock > *'
+  },
+  {
+    why: '正文容器自己带宽度约束（它是被点名收窄的那个，不靠通配）',
+    must: '.scroll'
+  },
+  {
+    why: '那条「窗外」也要收 —— 整屏宽的话它在桌面上从"窗外"变成"一条装饰横带"',
+    must: '.window-band'
+  },
+  {
+    why: '整理页是**故意**的例外（货架网格固有宽 471px，比内容上限宽 1px）',
+    must: '.room-scroll'
+  }
+];
+
+/**
+ * ⚠ 判之前必须**先去掉注释**：桌面那一块的注释里就写着
+ * "原来的 `padding-inline: max(12px, (100vw − 470px) / 2)`"，而那一句
+ * 是**解释历史**的，不是一条声明。第一版没去注释，于是守卫对着一段正确的样式
+ * 报了"又用 100vw 了" —— 又是一次假账（同一个坑这一天踩了第三次，
+ * 值得记：**守卫读的是文本，而文本里有注释**）。
+ */
+const desktop = desktopBlock(CSS)
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/\s+/g, '');
+const problems = [];
+
+for (const item of CONTRACT) {
+  const needle = item.must.replace(/\s+/g, '');
+  if (!desktop.includes(needle)) {
+    problems.push(`桌面那一块里找不到 \`${item.must}\` —— ${item.why}`);
+  }
+}
+
+/** 收窄用的必须是 `--content-max`，不许再手写 px（否则两处会漂） */
+const usesContentMax = (desktop.match(/max-width:var\(--content-max\)/g) ?? []).length;
+if (usesContentMax < 3) {
+  problems.push(
+    `桌面那一块里 \`max-width: var(--content-max)\` 只出现 ${usesContentMax} 次（至少要 3 次）—— ` +
+      `收窄的宽度必须只有一处真相（\`:root\` 里的 \`--content-max\`）`
+  );
+}
+
+/** 不许再用 `100vw` 算内边距（那一个坑让正文塌成过一条线） */
+if (/padding-inline:max\([^)]*100vw/.test(desktop)) {
+  problems.push(
+    '桌面那一块又用 `100vw` 算内边距了 —— 它含纵向滚动条的宽度，' +
+      '会让内容盒算成负数（2026-10 正文塌成一条线的根因）'
+  );
+}
+
+/*
+ * ★ 自证：把判定函数拿出来，喂一条**故意违反契约**的样本 ——
+ * 它必须判红。跑不通就说明这个守卫在验空气（纪律 §2.18）。
+ */
+function judge(block) {
+  const out = [];
+  for (const item of CONTRACT) {
+    if (!block.includes(item.must.replace(/\s+/g, ''))) out.push(item.must);
+  }
+  return out;
+}
+const selfTest = judge('.topbar>*{max-width:var(--content-max)}.dock>*{max-width:var(--content-max)}');
+if (selfTest.length === 0) {
+  console.error(
+    '[check-layout] ★ 守卫自检失败：喂给它一条**故意缺少** `.scroll` / `.window-band` 的样本，\n' +
+      '  它却判了合格 —— 说明这一道守卫在验空气，不是真的在守。'
+  );
+  process.exit(1);
+}
+
+if (problems.length > 0) {
+  console.error('[check-layout] 桌面版面的宽度契约破了：\n');
+  for (const p of problems) console.error(`  ✗ ${p}`);
+  console.error(
+    `\n  这一道守卫存在的理由：同一个"忘了收窄"在 2026-10 连着犯了三次，` +
+      `每次都是用户截图报出来的。\n` +
+      `  修法：桌面那一块（\`@media (min-width: 560px)\`）里，` +
+      `内容一律 \`width:100%\` + \`max-width:var(--content-max)\` + \`margin-inline:auto\`；` +
+      `页眉/操作台用通配覆盖它们的所有直接子元素。`
+  );
+  process.exit(1);
+}
+
+console.log(
+  `[check-layout] 桌面宽度契约完好：${CONTRACT.length} 条都成立、` +
+    `\`var(--content-max)\` 出现 ${usesContentMax} 次、自检（故意缺项必判红）通过。`
+);

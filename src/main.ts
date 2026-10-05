@@ -370,9 +370,21 @@ function applyDisasterFromUrl(): void {
     if (!result.ok) console.warn(`[囤货末世] ?disaster=${param} —— ${result.message}`);
     else console.info(`[囤货末世] ?disaster ${result.message}`);
   });
-  if (store.run.disasterId === DISASTER_DEFS.find((d) => d.id === param || d.name === param)?.id) {
+  const wanted = DISASTER_DEFS.find((d) => d.id === param || d.name === param);
+  if (wanted && store.run.disasterId === wanted.id) {
     ensureDayStocks(store);
     router.render();
+  }
+  /*
+   * ★ 用 URL 换过一次之后**记得把参数从地址栏去掉** —— 否则它每次刷新都会再执行一遍，
+   * 于是"我刚刚在控制台换成了热浪、一刷新又变回洪水"会读起来像"命令时灵时不灵"。
+   * （这不是 bug，是 URL 参数本来就有"常驻"的语义；但不写一句提示，它就是陷阱。）
+   */
+  if (wanted) {
+    console.info(
+      `[囤货末世] 地址栏里的 ?disaster=${param} 会在**每次刷新**时重新生效 —— ` +
+        `想固定用控制台的 __tunhuo.disaster("…") 换场，请把地址栏那个参数去掉。`
+    );
   }
 }
 applyDisasterFromUrl();
