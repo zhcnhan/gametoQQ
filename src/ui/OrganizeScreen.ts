@@ -249,20 +249,24 @@ export class OrganizeScreen {
               浏览器永不插手，也就不会发 `pointercancel` 把拖拽收掉）——
               代价是**滚谁**这件事得由我们指出来。
               见 `ui/drag.ts` 的 `resolveScrollHost`：它从被按住的元素往上找这个属性。
-              ★ 全屏**只许有这一处**：见下面 `data-boxes` 那一段
-              （两个滚动容器就是"滑动方向是反的"那个报障的根因）。 */ ''}
+              ★ 符号（手指往下 = `scrollTop` 变小）见 `ui/drag.ts` 的 `applyFingerScroll`
+              —— 那个符号错了三轮，别再"顺手"改回来。 */ ''}
         <main class="room-scroll" data-room data-scroll-host></main>
         <footer class="dock">
           <div class="dock-hand" data-hand data-drop="return"></div>
-          ${/* ★★ 这里**故意没有** `data-scroll-host`（2026-10 修"滑动反向"时拿掉的）。
-                纸箱那一叠自己 `overflow-y: auto`，于是它**同时**是一个滚动容器；
-                如果落在这里的手势去滚它、落在别处的手势去滚房间，屏幕上就有两个
-                能独立滚的窗口 —— 手指在箱子上下拉，动的是箱子；往上推到货架上，
-                动的却是整页。玩家报的"滑动方向是反的"就是这个：**不是方向错了，
-                是滚的东西不一样**。
-                现在全屏只有 `.room-scroll` 一个滚动容器，手势滚到它的边界还会
-                接力给外层，而"箱子那一叠"由「收起」把手来管（它本来就是为这个造的）。 */ ''}
-          <div class="dock-boxes" data-boxes></div>
+          ${/* ★★ `data-scroll-host` 在这一叠上**回来过两次**，这里记清楚为什么。
+                2026-10 修"滑动反向"的时候我把它拿掉过，理由是"全屏只许有一个
+                滚动容器，两个能独立滚的窗口就是'方向反了'的根因"。
+                **那个理由错了**：两个滚动窗口本身没问题，错的是我们写
+                `scrollTop` 的符号（见 `ui/drag.ts` 的 `applyFingerScroll`）。
+                拿掉它之后的实际后果是：落在箱子上的竖向滑动被两边同时放弃 ——
+                `.box` 是 `touch-action: none`（浏览器不滚），而手势层从箱子上
+                往上找不到 `data-scroll-host` → `takeOverScroll` 返回 false →
+                `onCancel`。用户第三次报障里的「连下面的箱子如果多了，滑动一下
+                也还是反向的」就是这条：箱子多到要滚时，在箱子上怎么划都没反应。
+                所以它回来了，而且这一叠的手势也上提到容器上（`bindBoxGestures`，
+                与 `bindRoomGestures` 同一套：容器接管 + 委托 + 这一个属性）。 */ ''}
+          <div class="dock-boxes" data-boxes data-scroll-host></div>
           <div class="dock-tools">
             <button class="btn" data-action="sort">${iconSvg('sort')}<span>按保质期排</span></button>
             ${
@@ -1323,34 +1327,61 @@ export class OrganizeScreen {
     });
   }
 
+  /**
+   * 纸箱那一叠：手势挂在**整块** `.dock-boxes` 上（与 `.room-scroll` 完全同构）。
+   *
+   * ★★ 2026-10 改的 —— 它就是用户第三次报"滑动方向还是反的"里
+   * 「**连下面的箱子如果多了，滑动一下也还是反向的**」那一半。
+   *
+   * 改之前：每个 `.box` 各自挂手势，而 `attachPointerGesture` 那一处
+   * **没有** `scrollHost` → `resolveScrollHost` 从箱子上往上找不到
+   * `data-scroll-host`（当时全屏只有 `.room-scroll` 一个）→ `takeOverScroll`
+   * 返回 false → 走 `onCancel`。而 `.box` 是 `touch-action: none`，
+   * 浏览器也不滚。**于是落在箱子上的竖向滑动被两边同时放弃**：
+   * 箱子多到要滚的时候，在箱子上怎么划都没反应（在缝隙里划才滚，方向还是反的）。
+   *
+   * 改之后：容器接管 + 委托（`selector: '[data-box]'`）+ `data-scroll-host`，
+   * 这一叠里也只剩我们一个滚动写者 —— 符号跟着 `applyFingerScroll` 走。
+   *
+   * ⚠ `bindBoxGestures` 每次 `renderDock` 都会调一次（箱子会拆、会重排），
+   * 而挂的是**容器**：所以它必须与 `clearGestureBindings()` 配对
+   * （`render()` 开头先摘掉上一批），否则同一个容器上会叠出第二套监听器。
+   */
   private bindBoxGestures(): void {
-    this.dockEl.querySelectorAll<HTMLElement>('[data-box]').forEach((el) => {
-      const boxId = el.dataset['box'];
-      if (!boxId) return;
-      this.gestureDetachers.push(
-        attachPointerGesture(el, {
-          onTap: () => this.consume(takeFromBox(this.store, this.session, boxId)),
-        onDragStart: (point) => {
-          /*
-           * 从纸箱拖起：手里空就当场拿一件；**来源一律是 `null`**。
-           *
-           * 没有货架来源，所以拖到占用格上只会走"放上去"（`placeHeld`），
-           * 绝不走互换 —— 这是对的：从箱子里掏出来的东西没有"原来那一格"可换。
-           *
-           * （原来这里还判断过"手里那件是不是上一步没放下的一半"来沿用来源，
-           * 那个 `holdingPartial` 标记连同 `DragState.partial` 一起删掉了：
-           * 它与"这一趟从哪格拖起"是同一件事的两种说法，而两套说法会打架 ——
-           * 玩家报的"拖两件互换却被拒绝"就是打架的结果。）
-           */
-          if (!this.session.held) this.consume(takeFromBox(this.store, this.session, boxId));
-          this.beginDrag('box', null, point);
-        },
+    const strip = this.dockEl.querySelector<HTMLElement>('[data-boxes]');
+    if (!strip) return;
+    this.gestureDetachers.push(
+      attachPointerGesture(
+        strip,
+        {
+          onTap: (_point, element) => {
+            const boxId = boxIdFromElement(element);
+            if (boxId) this.consume(takeFromBox(this.store, this.session, boxId));
+          },
+          onDragStart: (point, element) => {
+            /*
+             * 从纸箱拖起：手里空就当场拿一件；**来源一律是 `null`**。
+             *
+             * 没有货架来源，所以拖到占用格上只会走"放上去"（`placeHeld`），
+             * 绝不走互换 —— 这是对的：从箱子里掏出来的东西没有"原来那一格"可换。
+             *
+             * （原来这里还判断过"手里那件是不是上一步没放下的一半"来沿用来源，
+             * 那个 `holdingPartial` 标记连同 `DragState.partial` 一起删掉了：
+             * 它与"这一趟从哪格拖起"是同一件事的两种说法，而两套说法会打架 ——
+             * 玩家报的"拖两件互换却被拒绝"就是打架的结果。）
+             */
+            const boxId = boxIdFromElement(element);
+            if (!boxId) return;
+            if (!this.session.held) this.consume(takeFromBox(this.store, this.session, boxId));
+            this.beginDrag('box', null, point);
+          },
           onDragMove: (point) => this.moveDrag(point),
           onDragEnd: (point) => this.endDrag(point),
           onCancel: () => this.cancelDrag()
-        })
-      );
-    });
+        },
+        { moveTolerance: 6, selector: '[data-box]', scrollHost: strip }
+      )
+    );
   }
 
   private readonly onClickBound = (e: MouseEvent): void => this.onDelegatedClick(e);
@@ -2136,6 +2167,17 @@ function slotFromElement(element: HTMLElement | null): { shelfId: string; pos: S
   const shelfId = element?.dataset?.['shelf'];
   if (!element || !shelfId) return null;
   return { shelfId, pos: { row: Number(element.dataset['row']), col: Number(element.dataset['col']) } };
+}
+
+/**
+ * ★★ 同一个道理，纸箱那一叠用（2026-10：那一叠的手势也上提一层挂到容器上）。
+ *
+ * `data-box` 里存的就是 `boxId`（`renderBoxes` 写上去的那个），
+ * 所以这里只做一件事：确认手指底下**真的**是一个纸箱。
+ * 落在箱子之间的缝里 → `null` → 这一趟只滚那一叠，不开拖。
+ */
+function boxIdFromElement(element: HTMLElement | null): string | null {
+  return element?.dataset?.['box'] ?? null;
 }
 
 /**

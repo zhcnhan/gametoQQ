@@ -21,12 +21,21 @@
  *  · 自己滚（本层，`touch-action: none`）：手势的含义由我们定，拖拽稳。
  *    代价是滚动的跟手与惯性得自己写（见 `startInertia`）。
  *
- * ★★ 两层同时存在的那个 bug（"方向是反的"）**不是"自己滚"造成的**，
- * 而是"自己滚"叠上了**合成器滚动**：当时 `.room-scroll` 写着
- * `-webkit-overflow-scrolling: touch`，那块区域被提升成合成层滚动容器，
- * 浏览器自己也在滚同一块内容。**主线程拦不住合成器**。
- * 所以定稿是两条一起改：接管滚动 + 把 `-webkit-overflow-scrolling` 摘掉，
- * 让这块内容上只有一层（我们这一层）。
+ * ★★ 关于"方向是反的"那个报障（**连着报了三轮，我错了三轮**）：
+ *
+ * 第一轮我以为是"合成器滚动叠上了自己滚"（`.room-scroll` 上那句
+ * `-webkit-overflow-scrolling: touch`）。查下来真凶是**另一个**：
+ * `touch-action` **只对它被声明的那块像素生效** —— 格子之间、卡片内边距
+ * 那些地方的 `touch-action` 还是 `auto`，浏览器在那些像素上**同时**在滚，
+ * 方向与我们的相反。收掉那些像素上的原生滚动是对的（做法见 `selector`）。
+ *
+ * 但**我们自己那个写者的符号一直是反的**（`scrollTop = before + 手指Δy`，
+ * 而跟手应该是 `before − 手指Δy`），所以"让我们的写者成为唯一写者"这一步
+ * 把"有时反向"变成了"一直反向" —— 第三轮报障比前两轮更重，是我自己造成的。
+ *
+ * ★ 两次都错的**同一个原因**：我在读代码推断方向，还写了一条"两个区域方向
+ * 一致吗"的探针 —— 两侧**一致地反着**，于是它绿了。判据必须来自实现之外
+ * （原生对照容器），见 `applyFingerScroll` 那段。
  *
  * ═══════════════════════════════════════════════════════════════════════
  * ★★ 为什么 window 上的监听器**只在模块加载时挂一次**（M2 重写）
@@ -104,24 +113,27 @@ export interface GestureOptions {
   /**
    * ★★ 把整块区域交给我们管（**只对指定选择器**底下的元素做 tap / 拖拽）。
    *
-   * ## 为什么要有这一条（2026-10 玩家第三次报"滑动方向是反的"的根因）
+   * ## 为什么要有这一条（玩家第三次报"滑动方向是反的"的一半根因）
    *
    * `touch-action` **只对它被声明的那块像素生效，不继承**。原来我们把它
    * 声明在 `.slot`（格子）上，而格子**之间**有 `gap`、货架卡有内边距、
    * 两张卡之间有空白 —— 那些地方的 `touch-action` 还是 `auto`：
    *
-   *   · 手指落在**格子上** → 我们接管滚动 → 方向对（`scrollTop += deltaY`）；
-   *   · 手指落在**格子之间** → 浏览器接管原生滚动 → 方向**与我们相反**
-   *     （真浏览器实测：手指往下划 160px，`scrollTop` 从 398 掉到 253，
+   *   · 手指落在**格子上** → 我们接管滚动；
+   *   · 手指落在**格子之间** → 浏览器接管原生滚动（真浏览器实测：
+   *     手指往下划 160px，`scrollTop` 从 398 掉到 253，
    *     日志里是 `cancel 来源=pointercancel`）。
    *
-   * 于是同一块屏幕上**真的有两层逻辑**，玩家撞上哪一层决定他看到哪个方向 ——
-   * 这就是"方向是反的"这句报障能活过两轮修复的原因：**它不是方向写错了，
-   * 是屏幕上有两个写着相反方向的写者。**
+   * 于是同一块屏幕上**真的有两层逻辑** —— 这是"方向是反的"这句报障
+   * 能活过两轮修复的一半原因：屏幕上有两个写者。
    *
-   * 修法：把 `touch-action: none` 提到**整个可滚区域**（`.room-scroll`），
-   * 手势也从每一个格子**上提一层**挂到容器上（委托）—— 于是这块区域里
-   * 一个原生的滚动者都不剩，方向只剩一个来源。
+   * ⚠⚠ 另一半原因在**我们自己那个写者身上**：它当时写的是
+   * `scrollTop = before + deltaY`，即**反向滚动**。所以两个写者
+   * 不是"一个对一个错"，而是**一个对、一个错**，玩家撞上哪个决定他看到什么。
+   * 收掉原生那个写者（把 `touch-action: none` 提到整个 `.room-scroll`、
+   * 手势上提一层挂到容器上）本身是对的，但**必须先把自己那个写者的符号
+   * 弄对**：否则剩下唯一那个写者还是反的，而"反向"从"有时"变成"一直"。
+   * 详见 `applyFingerScroll` 那段注释。
    */
   selector?: string;
 }
@@ -230,14 +242,86 @@ function resolveScrollHost(el: HTMLElement, opts: ResolvedOptions): HTMLElement 
  *
  * ⚠ 判据是"`scrollTop` 到没到边界"，**不是**"这次移动了 0 像素"：
  * 手指划 3px 时 `scrollTop` 也只动 3px，而这显然不是"到头"。
- * 正数方向（手指往上推）的边界是 `scrollHeight - clientHeight`，负数是 0。
+ * 手指往下（正数）想看的是**上面**的内容，边界是 `scrollTop === 0`；
+ * 手指往上（负数）边界才是 `scrollHeight - clientHeight`。
  * 那 0.5px 是给亚像素的余量（`scrollTop` 在部分浏览器上是小数）。
  */
 function atScrollEnd(host: HTMLElement, deltaY: number): boolean {
   const max = Math.max(0, host.scrollHeight - host.clientHeight);
-  if (deltaY > 0) return host.scrollTop >= max - 0.5;
-  if (deltaY < 0) return host.scrollTop <= 0.5;
+  if (deltaY > 0) return host.scrollTop <= 0.5;
+  if (deltaY < 0) return host.scrollTop >= max - 0.5;
   return true;
+}
+
+/**
+ * ★★★ **唯一一处写 `scrollTop` 的地方** —— 反号只在这里发生，别处不许再写。
+ *
+ * 约定：`fingerDelta` 是**手指的位移**（正数 = 手指往下划）。返回的是
+ * **真正生效的那部分手指位移**（被边界夹过之后可能比要的小）。
+ *
+ * ## 为什么是减法（这一条被连着报障三次，别再"顺手"改回去）
+ *
+ * 手机上的**跟手**滚动是：手指往下划 → 内容跟着往下走 → 看到上面的东西 →
+ * `scrollTop` **变小**。
+ *
+ * 真浏览器实测（同一份代码，把 `.room-scroll` 的 `touch-action` 放回 `auto`
+ * 让浏览器自己滚一次）：手指往下划 160px，`scrollTop` 从 398 **掉到** 253。
+ *
+ * ⚠⚠ 这里原来是 `scrollTop = before + fingerDelta` —— 读起来"挺顺"，
+ * 但那是**反向滚动**（手指往下、内容往上）。前两轮修复都在查"谁在滚"
+ * （`touch-action` 只对声明过的那块像素生效 → 两个写者，那部分结论是**对的**），
+ * 却没有人去问一句"跟手到底该是哪个方向"，而唯一剩下的写者恰好是写反的那个 ——
+ * 于是每"修"一次，反向的面积就更大一次。
+ *
+ * ★ 教训（写在这里，因为下次还会犯）：**判据不能从实现里推**。
+ * "跟手"的定义来自浏览器，不来自这个文件：同一个手势下我们的 `scrollTop`
+ * 必须与**一个没有任何手势绑定的原生对照容器**同号。
+ * `scripts/_probe-scroll-two-writers.ts` 就是这么量的（它同时放一个原生块当裁判）。
+ */
+function applyFingerScroll(host: HTMLElement, fingerDelta: number): number {
+  const before = host.scrollTop;
+  host.scrollTop = before - fingerDelta;
+  return before - host.scrollTop;
+}
+
+/**
+ * 最近一次"我们接管滚动"的结果 —— 给 DEV 的屏上诊断（`ui/layoutHud.ts`）用。
+ *
+ * ★ 这个东西存在的唯一理由：**"滑动方向反了"这一件事我错了三轮**，
+ *   每一轮我都在自己写的量具里自证清白（量"两个区域方向一致吗"、量"容器滚了没"，
+ *   两者一致地反着，于是每次都绿）。方向对不对，只有真机上的
+ *   "手指往哪儿、内容往哪儿"说了算 —— 所以把这两个数直接从真机搬到屏幕上，
+ *   让用户滑一下、截一张图，就能把真相交出来，不用我再反推。
+ */
+export interface ScrollReport {
+  /** 这一趟手势我们接管的总位移（正数 = 手指往下划），px */
+  finger: number;
+  /** 这一趟真正写进 `scrollTop` 的变化量，px */
+  scroll: number;
+  /** 落在哪个容器上（第一个类名，用来区分房间 / 纸箱那一叠） */
+  host: string;
+  /**
+   * 判定：`follows` = 内容跟手（手指往下 → 看到上面的东西 → `scrollTop` 变小）。
+   * `clipped` = `scrollTop` 一动没动（已经在边界），这一趟**判不出来**，别拿它当证据。
+   */
+  verdict: 'follows' | 'reverse' | 'clipped';
+}
+
+let lastScrollReport: ScrollReport | null = null;
+
+/**
+ * 上一趟滚动的结论（没有过滚动就是 `null`）。
+ *
+ * ⚠ 只在 DEV 的诊断里读它，**产品代码一行都不许依赖它**：它是一次"事后记账"，
+ * 不参与任何决策（没有它的时候滚动照样是对的）。
+ */
+export function scrollReport(): ScrollReport | null {
+  return lastScrollReport;
+}
+
+function hostLabel(host: HTMLElement): string {
+  const cls = typeof host.className === 'string' ? host.className.split(/\s+/)[0] : '';
+  return cls !== '' && cls !== undefined ? cls : host.tagName.toLowerCase();
 }
 
 /**
@@ -259,11 +343,23 @@ function takeOverScroll(g: ActiveGesture, deltaY: number): boolean {
   if (!host) return false;
   g.scrolling = true;
   let left = deltaY;
+  /*
+   * ★ 这里累计的是**容器真的移动了多少**（`scrollTop` 的差），不是"手指走了多少"。
+   *   `applyFingerScroll` 返回的是它**吃掉的手指位移**（与 `left` 同号），
+   *   而 `scrollTop` 的差与之**差一个负号** —— 屏上诊断要判的正是这个负号，
+   *   所以这里必须取反。
+   *
+   *   ⚠ 第一版忘了取反，于是 4/4 格与原生裁判同向的那一次探针里，
+   *     屏幕上却报"✗✗ 反向！"—— **假警报比没有警报更坏**：它会让我
+   *     照着它去改一个本来是对的符号。
+   */
+  let scrollDelta = 0;
   let node: HTMLElement | null = host;
   while (node && Math.abs(left) > 0.01) {
-    const before = node.scrollTop;
-    node.scrollTop = before + left;
-    left -= node.scrollTop - before;
+    /* ★ 写 `scrollTop` 只走这一个函数（反号在它里面，见上面那段注释） */
+    const applied = applyFingerScroll(node, left);
+    scrollDelta -= applied;
+    left -= applied;
     /*
      * ★ 顺 `data-scroll-host` 往上找**外层容器**（滚动接力）：内层滚到头之后
      * 这一次手势剩下的位移交给外层。没有这一条，纸箱那一叠滚到底之后
@@ -279,22 +375,41 @@ function takeOverScroll(g: ActiveGesture, deltaY: number): boolean {
    */
   g.samples.push([now(), deltaY]);
   if (g.samples.length > 2) g.samples.shift();
+  /*
+   * ★ 记账给 DEV 的屏上诊断（见 `ScrollReport`）：按**整趟手势**累计，
+   * 所以手指还没松开时，屏幕上显示的就是这一趟到目前为止的总量。
+   * 小于 8px 不记 —— 那是手抖，拿它判方向只会得到噪声。
+   */
+  g.scrollFinger += deltaY;
+  g.scrollMoved += scrollDelta;
+  if (Math.abs(g.scrollFinger) > 8) {
+    lastScrollReport = {
+      finger: g.scrollFinger,
+      scroll: g.scrollMoved,
+      host: hostLabel(host),
+      verdict:
+        Math.abs(g.scrollMoved) < 0.5
+          ? 'clipped'
+          : g.scrollFinger * g.scrollMoved < 0
+            ? 'follows'
+            : 'reverse',
+    };
+  }
   return true;
 }
 
 /**
  * 甩动速度（px/ms）。
  *
- * ★ 符号与手指移动的方向一致（`point.y - prev.y`）：**正数 = 手指往下划
- * = `scrollTop` 变大 = 看到下面的内容**（手指往哪边划，内容就跟到哪边，
- * 与手机上的自然滚动同向）。`startInertia` 直接把它当 `scrollTop`
- * 的增量速度用，所以两个符号必须是同一个。
+ * ★ 符号与手指移动的方向一致（`point.y - prev.y`）：**正数 = 手指往下划**。
+ * 往下划看到的是**上面**的内容，所以 `scrollTop` 会**变小** —— 与
+ * `applyFingerScroll` 是同一套约定（它里面那个减号就是这件事）。
  *
- * ⚠ 这里曾经写反过（"正数 = 手指往上划"）。写反的代价不是"手感差一点"，
- * 而是**整段滚动的方向在真机上就是反的** —— 而它在单测里看不出来，
- * 因为断言也照着那句写反的注释抄。判据只有一条：`takeOverScroll` 里
- * 就是 `scrollTop = before + deltaY`（`deltaY` 取的是 `point.y - prev.y`），
- * 读代码就能定，不要凭"感觉像"。
+ * ⚠ 这里曾经写反过（"正数 = 手指往上划"，以及"正数 = scrollTop 变大"）。
+ * 写反的代价不是"手感差一点"，而是**整段滚动的方向在真机上就是反的** ——
+ * 而它在单测里看不出来，因为断言也照着那句写反的注释抄。
+ * 判据只有一条：滚动那一步走的是 `applyFingerScroll`，符号跟着它走，
+ * 不要凭"感觉像"。
  */
 function flingVelocity(g: ActiveGesture): number {
   const [a, b] = g.samples;
@@ -378,17 +493,16 @@ function startInertia(host: HTMLElement, velocity: number): void {
     const nowMs = now();
     const dt = Math.min(64, Math.max(0, nowMs - last));
     last = nowMs;
-    const move = v * dt;
-    const before = host.scrollTop;
-    host.scrollTop = before + move;
-    const applied = host.scrollTop - before;
+    /* `v` 是**手指**的速度（正 = 手指往下），与 `applyFingerScroll` 同一套约定 */
+    const want = v * dt;
+    const applied = applyFingerScroll(host, want);
     v *= Math.exp(-dt / INERTIA_TAU_MS);
     /*
      * 两个停止条件：速度衰减够了、或者**已经滚到头**（`applied` 与期望差得远）。
      * 后者不处理的话，动画会空转完整个衰减过程 —— 表现是"顶上继续甩手指，
      * 页面纹丝不动但一帧都没省"。
      */
-    if (Math.abs(v) < 0.02 || Math.abs(applied - move) > 0.5) return;
+    if (Math.abs(v) < 0.02 || Math.abs(applied - want) > 0.5) return;
     inertiaFrame = raf(step);
   };
   inertiaFrame = raf(step);
@@ -433,6 +547,12 @@ interface ActiveGesture {
    * 而两次采样在"最后一次 pointermove 到 pointerup 之间"这个窗口里就是对的。
    */
   samples: [number, number][];
+  /**
+   * 这一趟手势累计的「手指位移 / 真的滚掉的位移」，**只服务 DEV 的屏上诊断**
+   * （见 `ScrollReport`）。产品逻辑一行都不读它。
+   */
+  scrollFinger: number;
+  scrollMoved: number;
   startTime: number;
   longPressTimer: number | null;
   /** 最近一次看到的指针事件时间（"手势自杀检测"用） */
@@ -917,6 +1037,8 @@ export function attachPointerGesture(
        */
       scrollHost: resolveScrollHost(el, opts),
       samples: [],
+      scrollFinger: 0,
+      scrollMoved: 0,
       start: { x: e.clientX, y: e.clientY },
       last: { x: e.clientX, y: e.clientY },
       startTime: now(),

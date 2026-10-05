@@ -193,24 +193,137 @@ const SPOTS = `(() => {
       if (blank && slot) break;
     }
   }
+  /*
+   * ★ 纸箱那一叠：用户第三次报障里点名的**第二处**（「连下面的箱子如果多了，
+   *   滑动一下也还是反向的」）。落点取**第一个纸箱的正中** —— 判据是这一点
+   *   往上能 closest 到 [data-box]（不能靠"取条子的中点"：中点可能落在
+   *   两行之间的缝里，而缝里没有任何手势绑定，量出来会是"划了不动"）。
+   */
+  const strip = document.querySelector('.dock-boxes');
+  let box = null;
+  let stripMax = 0;
+  let boxCount = 0;
+  if (strip) {
+    stripMax = Math.max(0, strip.scrollHeight - strip.clientHeight);
+    boxCount = strip.querySelectorAll('[data-box]').length;
+    const first = strip.querySelector('[data-box]');
+    if (first) {
+      const b = first.getBoundingClientRect();
+      box = { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) };
+    }
+  }
   return {
     ok: true,
-    blank, slot,
+    blank, slot, box,
     rect: { top: r.top, bottom: r.bottom, left: r.left, right: r.right },
     max: Math.max(0, room.scrollHeight - room.clientHeight),
+    stripMax, boxCount,
     slotTa: getComputedStyle(document.querySelector('.slot')).touchAction,
     roomTa: getComputedStyle(room).touchAction,
+    stripTa: strip ? getComputedStyle(strip).touchAction : '—',
   };
 })()`;
 
+/**
+ * 在纸箱那一叠里**当场**挑一个落点：一个看得见、且 `elementFromPoint` 真的命中
+ * `[data-box]` 的箱子正中。
+ *
+ * ★ 为什么不能像房间那两处一样在开局算一次就完事：算的时候这一叠还在顶端，
+ *   而挥之前我把它滚到了中位 —— 那个坐标就落到别的箱子（或者两行之间的**缝**）上了。
+ *   缝里没有任何手势绑定，量出来的会是"划了不动"，然后我会去修一个不存在的 bug。
+ */
+function pickBox(): string {
+  return `(() => {
+    const strip = document.querySelector('.dock-boxes');
+    if (!strip) return null;
+    const sr = strip.getBoundingClientRect();
+    for (const b of strip.querySelectorAll('[data-box]')) {
+      const r = b.getBoundingClientRect();
+      const x = Math.round(r.left + r.width / 2);
+      const y = Math.round(r.top + r.height / 2);
+      if (y > sr.top + 2 && y < sr.bottom - 2 && x > sr.left + 2 && x < sr.right - 2) {
+        const el = document.elementFromPoint(x, y);
+        if (el && el.closest('[data-box]')) return { x, y };
+      }
+    }
+    return null;
+  })()`;
+}
+
 function setTop(v: number): string {
   return `(() => { const r = document.querySelector('.room-scroll'); r.scrollTop = ${v}; return r.scrollTop; })()`;
+}
+
+function boxTop(): string {
+  return `(() => {
+    const d = document.querySelector('.dock-boxes');
+    return d ? Math.round(d.scrollTop * 100) / 100 : -1;
+  })()`;
+}
+
+function setBoxTop(v: number): string {
+  return `(() => { const d = document.querySelector('.dock-boxes'); d.scrollTop = ${v}; return d.scrollTop; })()`;
 }
 
 function readTop(): string {
   return `(() => {
     const r = document.querySelector('.room-scroll');
     return { top: Math.round(r.scrollTop * 100) / 100, dock: (() => { const d = document.querySelector('.dock-boxes'); return d ? Math.round(d.scrollTop) : -1; })() };
+  })()`;
+}
+
+/*
+ * ★★★ 裁判：一个**没有任何手势绑定**的原生滚动块。
+ *
+ * ## 为什么必须有它（这一条是这一轮最贵的教训）
+ *
+ * 在这个文件之前的版本里，判据是"手指往下划 → `scrollTop` 应该变大"——
+ * 那是我**从实现里推出来的**（实现写的就是 `scrollTop += deltaY`），
+ * 而"跟手"的定义来自浏览器：手指往下划要看到**上面**的内容，`scrollTop` 应该是**变小**。
+ * 于是四个格子全绿、方向全反，我拿这份绿报告宣布"修好了"，用户第三次报障。
+ *
+ * 所以现在的判据是**比较**：同一发手势、同样的坐标、同样的起点（中位），
+ * 一个落在我们的容器上、一个落在旁边这个原生块上，
+ * **两者 `scrollTop` 的符号必须相同**。这个方向不来自我，也不来自 `drag.ts`。
+ *
+ * ⚠ 它必须是 `position: fixed` + 最高 z-index + `touch-action: auto`：
+ *   `fixed` 是为了不被文档流影响，`z-index` 是为了 `elementFromPoint` 命中它，
+ *   `touch-action: auto` 是让浏览器**真的**去滚它（我们自己的容器是 `none`）。
+ */
+function nativeOracle(x: number, y: number): string {
+  return `(() => {
+    document.getElementById('__native-oracle')?.remove();
+    const box = document.createElement('div');
+    box.id = '__native-oracle';
+    box.style.cssText =
+      'position:fixed;z-index:2147483647;overflow-y:auto;overflow-x:hidden;' +
+      'touch-action:auto;background:rgba(0,0,0,0.01);' +
+      'left:' + (${x} - 20) + 'px;top:' + (${y} - 20) + 'px;width:40px;height:40px';
+    box.innerHTML = '<div style="height:2000px"></div>';
+    document.body.appendChild(box);
+    box.scrollTop = 500;
+    return box.scrollTop;
+  })()`;
+}
+
+function dropNativeOracle(): string {
+  return `(() => { document.getElementById('__native-oracle')?.remove(); return 'ok'; })()`;
+}
+
+function readOracle(): string {
+  return `(() => { const b = document.getElementById('__native-oracle'); return b ? b.scrollTop : -1; })()`;
+}
+
+/**
+ * 屏上诊断（`ui/layoutHud.ts`）此刻说的那一句话。
+ *
+ * ★ 顺手把它读出来是为了**验它自己**：那一句是给用户看的证据，
+ * 它错了就等于我又给了他一个错的判据（而这个文件的存在就是为了不再发生这件事）。
+ */
+function hudText(): string {
+  return `(() => {
+    const hud = window.__tunhuoHud;
+    return hud ? String(hud.text()).split('\\n').filter((l) => l.startsWith('滚动')).join('') : '（屏上诊断没装上）';
   })()`;
 }
 
@@ -221,9 +334,29 @@ interface StepLog {
   actualStart: number;
 }
 
-async function gesture(cdp: Cdp, x: number, y: number, stepY: number): Promise<StepLog> {
+/**
+ * 读一个 `scrollTop` 的表达式（默认读整理页那间房）。
+ *
+ * ★ 之所以要参数化：同一发手势要分别喂给**我们的容器**与**原生裁判块**，
+ *   而"谁被滚了"是这两趟唯一的差别 —— 如果读取端固定成房间，
+ *   原生那一路读的就还是房间（等于裁判没上场，而报告会显示"我们 = 我们"）。
+ */
+function roomTop(): string {
+  return `(() => {
+    const r = document.querySelector('.room-scroll');
+    return r ? Math.round(r.scrollTop * 100) / 100 : -1;
+  })()`;
+}
+
+async function gesture(
+  cdp: Cdp,
+  x: number,
+  y: number,
+  stepY: number,
+  readExpr: string = roomTop(),
+): Promise<StepLog> {
   cdp.drainLogs();
-  const actualStart = (await evalIn<{ top: number }>(cdp, readTop())).top;
+  const actualStart = await evalIn<number>(cdp, readExpr);
   await cdp.send('Input.dispatchTouchEvent', {
     type: 'touchStart',
     touchPoints: [{ x, y, radiusX: 6, radiusY: 6, force: 1, id: 1 }],
@@ -236,13 +369,13 @@ async function gesture(cdp: Cdp, x: number, y: number, stepY: number): Promise<S
       touchPoints: [{ x, y: Math.round(y + stepY * i), radiusX: 6, radiusY: 6, force: 1, id: 1 }],
     });
     await sleep(16);
-    steps.push((await evalIn<{ top: number }>(cdp, readTop())).top);
+    steps.push(await evalIn<number>(cdp, readExpr));
   }
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   const after: number[] = [];
   for (const ms of [100, 200, 300]) {
     await sleep(ms);
-    after.push((await evalIn<{ top: number }>(cdp, readTop())).top);
+    after.push(await evalIn<number>(cdp, readExpr));
   }
   return { steps, after, logs: cdp.drainLogs(), actualStart };
 }
@@ -291,8 +424,12 @@ async function runViewport(cdp: Cdp, w: number, h: number): Promise<void> {
     slot: { x: number; y: number } | null;
     rect: { top: number; bottom: number; left: number; right: number };
     max: number;
+    stripMax: number;
+    boxCount: number;
+    box: { x: number; y: number } | null;
     slotTa: string;
     roomTa: string;
+    stripTa: string;
   }>(cdp, SPOTS);
   if (!spots.ok) throw new Error(spots.why ?? '找不到落点');
   console.log(
@@ -301,35 +438,127 @@ async function runViewport(cdp: Cdp, w: number, h: number): Promise<void> {
   );
   console.log(`  格子上的落点 ${JSON.stringify(spots.slot)}　空白处的落点 ${JSON.stringify(spots.blank)}`);
   if (!spots.blank || !spots.slot) throw new Error('两种落点没有同时找到');
+  console.log(
+    `  纸箱那一叠 可滚 ${spots.stripMax}px / ${spots.boxCount} 个箱子 touch-action=${spots.stripTa}` +
+      `　落点 ${JSON.stringify(spots.box)}`,
+  );
+
+  if (
+    !(await evalIn<boolean>(cdp, `sessionStorage.getItem('__hudWait') === '1'`)) &&
+    spots.stripMax > 8 &&
+    spots.box
+  ) {
+    /* HUD 每 250ms 重画一次，等它把"未滑"那一版画出来再动手（否则读到上一格的残留） */
+    await evalIn<string>(cdp, `(() => { sessionStorage.setItem('__hudWait','1'); return 'ok'; })()`);
+    await sleep(300);
+  }
 
   const mid = Math.round(spots.max / 2);
-  const cases: Array<{ name: string; p: { x: number; y: number }; step: number }> = [
-    { name: '格子上・往下划', p: spots.slot, step: 40 },
-    { name: '格子上・往上划', p: spots.slot, step: -40 },
-    { name: '空白处・往下划', p: spots.blank, step: 40 },
-    { name: '空白处・往上划', p: spots.blank, step: -40 },
+  const stripMid = Math.round(spots.stripMax / 2);
+  const cases: Array<{
+    name: string;
+    p: { x: number; y: number };
+    step: number;
+    pre: string;
+    read: string;
+    resolveP?: string;
+  }> = [
+    { name: '格子上・往下划', p: spots.slot, step: 40, pre: setTop(mid), read: roomTop() },
+    { name: '格子上・往上划', p: spots.slot, step: -40, pre: setTop(mid), read: roomTop() },
+    { name: '空白处・往下划', p: spots.blank, step: 40, pre: setTop(mid), read: roomTop() },
+    { name: '空白处・往上划', p: spots.blank, step: -40, pre: setTop(mid), read: roomTop() },
   ];
+  /*
+   * ★★ 用户第三次报障里点名的第二处：「连下面的箱子如果多了，滑动一下也还是反向的」。
+   *
+   * 这一叠必须单独量，因为它的手势路径**本来就与房间不同** ——
+   * 它的容器不是 `.room-scroll`，而它曾经连 `data-scroll-host` 都没有
+   * （那版注释写着"全屏只许有这一处"，代价就是"落在箱子上的竖向滑动被当场作废"）。
+   * 步长取 20（不是 40）：这一叠只有一百多像素高，40×4=160 会把两头都顶到边界上，
+   * "符号相同"这件事就会被边界吃掉一半。
+   */
+  if (spots.box && spots.stripMax > 8) {
+    cases.push(
+      {
+        name: '纸箱上・往下划',
+        p: spots.box,
+        step: 20,
+        pre: setBoxTop(stripMid),
+        read: boxTop(),
+        resolveP: pickBox(),
+      },
+      {
+        name: '纸箱上・往上划',
+        p: spots.box,
+        step: -20,
+        pre: setBoxTop(stripMid),
+        read: boxTop(),
+        resolveP: pickBox(),
+      },
+    );
+  } else {
+    console.log('  ⚠ 这一档纸箱叠不可滚（箱子太少），跳过纸箱那两格');
+  }
+  let bad = 0;
+  let unknown = 0;
   for (const one of cases) {
-    await evalIn(cdp, setTop(mid));
+    await evalIn(cdp, dropNativeOracle());
+    await evalIn(cdp, one.pre);
     /*
      * ★ 静置 1.2 秒之后再确认起点。上一次手势的惯性会继续写 `scrollTop`，
      *   而"起点其实不是中位"这件事本身就是一个必须看见的事实 ——
      *   上一个探针里 472 与 398 的分歧就出在这里。
      */
     await sleep(1200);
-    const settled = (await evalIn<{ top: number }>(cdp, readTop())).top;
-    console.log(`\n  ▶ ${one.name}（先把房间放到 ${mid}，静置后实际起点 ${settled}）`);
-    const g = await gesture(cdp, one.p.x, one.p.y, one.step);
+    /*
+     * ★ 落点也在这时候才定：`resolveP`（纸箱那两格）要在**容器已经滚到中位之后**
+     *   重新找一次，见 `pickBox` 那段注释。
+     */
+    const p = one.resolveP ? await evalIn<{ x: number; y: number } | null>(cdp, one.resolveP) : one.p;
+    if (!p) {
+      console.log(`\n  ▶ ${one.name}　⚠ 找不到落点（跳过）`);
+      unknown += 1;
+      continue;
+    }
+    const settled = await evalIn<number>(cdp, one.read);
+    console.log(`\n  ▶ ${one.name}（先把容器放到中位，静置后实际起点 ${settled}　落点 ${JSON.stringify(p)}）`);
+    const g = await gesture(cdp, p.x, p.y, one.step, one.read);
     console.log(`     按下那一刻起点=${g.actualStart}　逐步：${g.steps.join(' → ')}`);
     console.log(`     松手后 100/300/600ms：${g.after.join(' → ')}`);
     const moved = g.steps[g.steps.length - 1] - g.actualStart;
-    const want = one.name.includes('往下') ? 1 : -1;
-    const ok = want > 0 ? moved > 0 : moved < 0;
-    console.log(
-      `     位移 ${moved >= 0 ? '+' : ''}${moved}　${moved === 0 ? '⚠ 没动' : ok ? '✅ 与手指同向' : '❌ **与手指相反**'}` +
-        `　［${g.logs.join(' ｜ ') || '无日志'}］`,
-    );
+
+    /*
+     * ★★ 同一发手势、同一个坐标，再喂给**原生裁判**（见 `nativeOracle` 那段注释）。
+     *    两边都从"自己的中位"出发，所以比的是**符号**，不是绝对值（比例也不必相同：
+     *    我们的容器与裁判块的尺寸、惯性与边界都不同）。
+     */
+    const oracleStart = await evalIn<number>(cdp, nativeOracle(p.x, p.y));
+    const n = await gesture(cdp, p.x, p.y, one.step, readOracle());
+    const nativeMoved = n.steps[n.steps.length - 1] - oracleStart;
+
+    const ours = Math.sign(moved);
+    const theirs = Math.sign(nativeMoved);
+    let verdict: string;
+    if (Math.abs(nativeMoved) < 4) {
+      verdict = '⚠ 裁判没滚（这一格判不出来）';
+      unknown += 1;
+    } else if (ours === theirs) {
+      verdict = '✅ 与原生同向';
+    } else {
+      verdict = '❌ **与原生相反**';
+      bad += 1;
+    }
+    console.log(`     我们 ${moved >= 0 ? '+' : ''}${moved}（${moved === 0 ? '⚠ 没动' : '动了'}）`);
+    console.log(`     原生 ${nativeMoved >= 0 ? '+' : ''}${nativeMoved}（裁判块 40×40，同一个坐标）`);
+    console.log(`     ${verdict}　［${g.logs.join(' ｜ ') || '无日志'}］`);
+    console.log(`     屏上诊断：${await evalIn<string>(cdp, hudText())}`);
+    await evalIn(cdp, dropNativeOracle());
   }
+  console.log(
+    `\n  小结：${cases.length} 格里 ${cases.length - bad - unknown} 格与原生同向` +
+      `${bad > 0 ? `，**${bad} 格相反**` : ''}${unknown > 0 ? `，${unknown} 格判不出来` : ''}`,
+  );
+  if (bad > 0) throw new Error(`有 ${bad} 格与原生裁判方向相反 —— 这就是"滑动反向"`);
 }
 
 async function main(): Promise<void> {

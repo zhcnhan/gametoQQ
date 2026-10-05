@@ -143,18 +143,24 @@ describe('手势状态机（ui/drag.ts 的真实行为）', () => {
     mount(h);
 
     /*
-     * ⚠ 方向：`pointermove` 的 y **变大 = 手指往下划**，于是
-     * `scrollTop` 也变大（手指往哪边划、内容就跟到哪边，与手机上的自然滚动同向）。
-     * `takeOverScroll` 写的就是 `scrollTop = before + (point.y - prev.y)`。
+     * ⚠ 方向（**第九次**才改对的那个符号，别再从实现里推）：
+     *   `pointermove` 的 y **变小 = 手指往上划** → 想看到下面的内容 →
+     *   `scrollTop` **变大**。手势层写的是 `scrollTop = before - 手指Δy`
+     *   （`applyFingerScroll`，全文件唯一的写点），与浏览器原生滚动**同号**。
+     *
+     * ⚠⚠ 起点不能是 0：手指**往上**划在 `scrollTop = 0` 处是"想看下面"、本来就
+     *   滚得动；而手指**往下**划在 0 处会被夹住 —— 那样这一条会退化成
+     *   "反正什么都没动也绿"。所以先把容器摆在 120。
      */
-    h.el.dispatch('pointerdown', pointerEvent(30, 30));
-    // 往下划 60px（远超 scrollTolerance=16），横向只挪 2px
-    h.win.dispatch('pointermove', pointerEvent(32, 90));
-    expect(host.scrollTop, '滑动的位移要真的落到容器上').toBe(60);
+    host.scrollTop = 120;
+    h.el.dispatch('pointerdown', pointerEvent(30, 190));
+    // 往上划 60px（远超 scrollTolerance=16），横向只挪 2px
+    h.win.dispatch('pointermove', pointerEvent(32, 130));
+    expect(host.scrollTop, '滑动的位移要真的落到容器上').toBe(180);
     expect(h.log, '还没长按成立，不该开拖').toEqual([]);
 
-    h.win.dispatch('pointermove', pointerEvent(32, 130));
-    expect(host.scrollTop).toBe(100);
+    h.win.dispatch('pointermove', pointerEvent(32, 90));
+    expect(host.scrollTop).toBe(220);
 
     /*
      * ★★ 抬手时**绝不能判 tap**。
@@ -163,7 +169,7 @@ describe('手势状态机（ui/drag.ts 的真实行为）', () => {
      * 正好是一件物资 —— 判成 tap 就是"滚屏顺手把东西放下/拿起来了"，
      * 而且他完全不知道发生了什么。
      */
-    h.win.dispatch('pointerup', pointerEvent(32, 130, { buttons: 0 }));
+    h.win.dispatch('pointerup', pointerEvent(32, 90, { buttons: 0 }));
     expect(h.log, '滚完抬手不是 tap').toEqual([]);
   });
 
@@ -190,14 +196,14 @@ describe('手势状态机（ui/drag.ts 的真实行为）', () => {
     host.appendChild(h.el);
     mount(h);
 
-    h.el.dispatch('pointerdown', pointerEvent(30, 90));
-    h.win.dispatch('pointermove', pointerEvent(30, 30)); // 手指往上划 = 内容往下走
+    h.el.dispatch('pointerdown', pointerEvent(30, 20));
+    h.win.dispatch('pointermove', pointerEvent(30, 80)); // 手指往下划 = 想看上面，而已经在顶端
     expect(host.scrollTop, '已经在顶端，滚不动').toBe(0);
     expect(h.log, '滚不动也不许取消这次手势').toEqual([]);
 
     // 手指改成反方向划：这一次手势仍然是"滚动"，立刻就能滚
-    h.win.dispatch('pointermove', pointerEvent(30, 100));
-    expect(host.scrollTop, '反方向要马上生效').toBe(70);
+    h.win.dispatch('pointermove', pointerEvent(30, 20));
+    expect(host.scrollTop, '反方向要马上生效').toBe(60);
   });
 
   it('★★ 滚动接管之后，长按计时器到期也不许开拖', () => {
@@ -234,8 +240,8 @@ describe('手势状态机（ui/drag.ts 的真实行为）', () => {
      * 假体把 rAF 也接管了：`tick(...)` 会跑掉排队的动画帧（见 `fakeDom` 的
      * 假 window 那段），于是"滑了多少"在单测里是可推演的。
      *
-     * ⚠ 起点**不能是 0**：手指往上划（`scrollTop` 变小）而已经在顶端时，
-     * 滚动会被夹在 0，甩动的速度算出来是 0 —— 那样这一条会变成
+     * ⚠ 起点**不能是 0 也不能是上界**：手指往上划（`scrollTop` 变大）而已经在
+     * **底端**时会被夹住，甩动的速度算出来是 0 —— 那样这一条会变成
      * "惯性本来就没动过"的假绿。所以先把容器摆到中间（500）。
      */
     const host = h.doc.createElement('div');
@@ -255,10 +261,10 @@ describe('手势状态机（ui/drag.ts 的真实行为）', () => {
     h.win.tick(16);
     h.win.dispatch('pointermove', pointerEvent(30, 30));
     const atRelease = host.scrollTop;
-    expect(atRelease).toBe(340);
+    expect(atRelease).toBe(660);
     h.win.dispatch('pointerup', pointerEvent(30, 30, { buttons: 0 }));
     h.win.tick(200);
-    expect(host.scrollTop, '松手之后还要再滑一段（同方向）').toBeLessThan(atRelease);
+    expect(host.scrollTop, '松手之后还要再滑一段（同方向）').toBeGreaterThan(atRelease);
   });
 
   it('★ 没有滚动容器的调用方：竖向滑动仍然按老路作废（胶带条那条路）', () => {
@@ -343,6 +349,7 @@ describe('手势状态机（ui/drag.ts 的真实行为）', () => {
     container.place(0, 0, 300, 400);
     container.scrollHeight = 2000;
     container.clientHeight = 400;
+    container.scrollTop = 100; // ★ 不摆到 0：见上面那条用例的方向说明
     h.doc.body.appendChild(container);
     const slot = h.doc.createElement('div');
     slot.className = 'slot';
@@ -361,13 +368,13 @@ describe('手势状态机（ui/drag.ts 的真实行为）', () => {
       { selector: '[data-slot]', scrollHost: asElement(container) }
     );
 
-    container.dispatch('pointerdown', pointerEvent(30, 30));
-    // 往下划 90px：`touch-action: none` 的世界里这一趟只可能归我们
-    h.win.dispatch('pointermove', pointerEvent(30, 120));
-    expect(container.scrollTop, '空白处也要跟手滚').toBe(90);
+    container.dispatch('pointerdown', pointerEvent(30, 120));
+    // 往上划 90px：`touch-action: none` 的世界里这一趟只可能归我们
+    h.win.dispatch('pointermove', pointerEvent(30, 30));
+    expect(container.scrollTop, '空白处也要跟手滚').toBe(190);
     h.win.tick(LONG_PRESS_MS + 60); // 长按照常到期，但这一次没有"东西"
     expect(h.log, '空白处长按不该开拖').toEqual([]);
-    h.win.dispatch('pointerup', pointerEvent(30, 120, { buttons: 0 }));
+    h.win.dispatch('pointerup', pointerEvent(30, 30, { buttons: 0 }));
     expect(taps, '滚完抬手不是 tap').toEqual([]);
   });
 

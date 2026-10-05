@@ -535,6 +535,16 @@ applyDisasterFromUrl();
 if (import.meta.env.DEV) {
   const debts = openDeferred();
 
+  /*
+   * ★ 屏上诊断（用户点名要的那个"检测"）：左下角一条极小的读数，
+   * 点窗外那条带子展开完整面板 —— 视口 / dvh / 逐块高度 / 最近一次滚动的
+   * 「手指 Δy → scrollTop Δ」与 跟手·反向 判定。
+   *
+   * ⚠ 必须**动态** import：`npm run build` 出来那一份里，这个模块连文件都不会进包
+   * （静态 import 会把它一起打进去，而它是纯调试物，不该占生产体积）。
+   */
+  void import('./ui/layoutHud').then((m) => m.installLayoutHud());
+
   /**
    * 一键跳到某一天 —— **只在 dev 构建里存在**。
    *

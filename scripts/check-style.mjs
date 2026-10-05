@@ -301,7 +301,7 @@ if (strayWhite.length > 0) {
  *  · **同时**把合成层那一行摘掉（第 ④ 条）—— 第三次之所以失败，
  *    是因为那两层叠在了一起，**不是因为"自己滚"这个决定错了**。
  *
- * ## 真正要守的是七条
+ * ## 真正要守的是八条
  *
  *  ① `.slot` / `.box` **显式**写着 `touch-action: none` ——
  *     "没写"会让浏览器在**任何方向**上接管（第一次那个 bug）；
@@ -329,7 +329,8 @@ if (strayWhite.length > 0) {
  *     原因是：`touch-action` **只对它被声明的那块像素生效、不继承**。
  *     格子（`.slot`）写着 `none`，而格子**之间的缝 / 货架卡的内边距 / 卡片之间**
  *     那些像素仍然是 `auto` —— 于是同一块屏幕上真有两个写着相反方向的写者：
- *        · 落在格子上 → 我们接管，`scrollTop = before + deltaY`（+160，跟手）
+ *        · 落在格子上 → 我们接管（★ 当时那句是 `scrollTop = before + deltaY`，
+ *          而这**本身就是反的** —— 见第八次，下面 ⑧）
  *        · 落在缝里   → 浏览器原生滚动（-160，与手指相反，日志里 `pointercancel`）
  *     玩家撞上哪一层决定他看到哪个方向，这就是它为什么能活过前两轮修复。
  *
@@ -342,6 +343,19 @@ if (strayWhite.length > 0) {
  *       `APP_URL` 默认 `http://127.0.0.1:5199/`；`VIEWPORTS=375x667`）。
  *       它派发**真触摸事件**，逐 40px 记 `scrollTop`，四格都要"与手指同向"
  *       （格子上/缝里 × 往下/往上）。撤掉这一行的话，"缝里"那两格会立刻翻成反向。
+ *
+ *  ⑧ ★★ **符号**：我们写 `scrollTop` 的那一处必须是**减法**
+ *     （`applyFingerScroll`：手指往下 → `scrollTop` 变小）。
+ *
+ *     第八次是玩家连着第三次报"滑动还是反的"，而这次真凶不是别人：
+ *     前两轮查的都是"谁在滚"，没人问一句"跟手应该是哪个方向"。
+ *     我们那个唯一的写者一直写着 `scrollTop = before + 手指Δy` —— **反向滚动**。
+ *     第七次把原生那个写者收掉之后，"有时反向"就变成了"一直反向"。
+ *
+ *     ★ 为什么必须有守卫：这个符号**单测证明不了**（断言会照着实现抄），
+ *       而它读起来"挺顺"，顺手改回去的诱惑一直在。
+ *       真正的证据是 `scripts/_probe-scroll-two-writers.ts` 里的
+ *       **原生对照容器**：同一发手势下去，我们和它必须同号。
  */
 for (const cls of ['room-scroll', 'slot', 'box', 'tape-chip']) {
   /*
@@ -435,6 +449,39 @@ for (const [label, probe, why] of TAKEOVER_SIGNS) {
   }
 }
 /*
+ * ★ ⑧：写 `scrollTop` 的地方**只能有一处**，而且那处必须是**减法**。
+ *
+ * 判据与理由见文件头第八次那一段：符号反了 = 整块区域反向滚动，
+ * 而它**单测证明不了**（断言会照着实现抄）、读起来还挺顺。
+ * 所以这里守两条：
+ *  · `drag.ts` 里 `.scrollTop =` 只出现一次（唯一写点，改符号只能改这一处）；
+ *  · 那一处是 `before - fingerDelta`（不是 `+`）。
+ *
+ * ⚠ 跑在 `stripComments` 之后的源码上：这两个字符串在说明性注释里到处都是
+ * （那正是它们的价值），直接匹配整个文件会把解释本身判成违规。
+ */
+{
+  const writes = dragCode.match(/\.scrollTop\s*=/g) ?? [];
+  const fn = /function\s+applyFingerScroll\s*\([\s\S]*?\n\}/.exec(dragCode)?.[0] ?? '';
+  if (writes.length !== 1 || fn === '') {
+    note(
+      `ui/drag.ts 里写 \`scrollTop\` 的地方不唯一（找到 ${writes.length} 处，` +
+        `applyFingerScroll ${fn === '' ? '不存在' : '在'}）。\n` +
+        `    反号必须只发生在**一个**地方（\`applyFingerScroll\`），` +
+        `否则下次改符号一定会漏一处、\n` +
+        `    而漏掉的那一处就是"方向时对时反"。`
+    );
+  } else if (!/scrollTop\s*=\s*before\s*-\s*fingerDelta/.test(fn)) {
+    note(
+      `ui/drag.ts 的 applyFingerScroll 不是减法了 —— **这就是"滑动方向是反的"那个 bug**。\n` +
+        `    跟手的定义：手指往下划 → 内容跟着往下 → 看到上面的东西 → \`scrollTop\` **变小**。\n` +
+        `    真浏览器实测写在那个函数的注释里（原生滚一次：手指往下 160px，398 → 253）。\n` +
+        `    ★ 别用单测来"确认"这个符号 —— 断言会照着你刚写的实现抄。\n` +
+        `    唯一的裁判是 scripts/_probe-scroll-two-writers.ts 里的原生对照容器。`
+    );
+  }
+}
+/*
  * ⚠ 这里**刻意不**设"`OrganizeScreen.ts` 里不许出现 scrollTop"这一条守卫。
  *
  * 它看起来像是同一件事的判据，其实不是：`renderRoom` 里有合法的一对
@@ -460,8 +507,9 @@ for (const [label, probe, why] of TAKEOVER_SIGNS) {
  * ★ 第五次之后名单里多了 `.dock-boxes`：纸箱那一叠自己也成了滚动容器
  * （它现在是 `data-scroll-host`，手势层会往它的 `scrollTop` 写），
  * 于是它带着这一行的话会**原地复发**同一个 bug。
- * ★ 第六次（M5）它不再是 `data-scroll-host` 了（见下面 ⑤ 那一段），
- * 但**它仍然是一块能滚的区域**，所以这一条对它照样成立：只要它还可能被谁滚，
+ * ★ 第六次（M5）它一度从名单里拿掉过，**第八次又放回来了**（见下面 ⑤ 那一段）——
+ * 理由当时写的是"两个滚动窗口就是方向反了的根因"，而**那个诊断是错的**。
+ * 不管在不在名单里，它都是**一块能滚的区域**，所以这一条对它照样成立：
  * 带上 `-webkit-overflow-scrolling` 就是在给自己准备一次"方向反了"。
  * 顺手也守住 `.slot` 自己：格子不是滚动容器，带上它只会让祖先里多一个合成层。
  */
@@ -489,21 +537,25 @@ for (const cls of ['room-scroll', 'dock-boxes', 'slot']) {
  *    ★ 判据是"**同一个标签**里两个都在"，不是"两个字符串都在文件里" ——
  *      后者在把标记加到错误的元素上时照样会绿。
  *
- * ★★ **第六次（M5）：`.dock-boxes` 从名单里拿掉了** —— 这是一个取舍，不是疏漏。
+ * ★★ **第六次（M5）`.dock-boxes` 从名单里拿掉了；第八次又放回来了。**
  *
- * 它从第五次开始带着 `data-scroll-host`，理由是"它自己 `overflow-y: auto`"。
- * 结果是屏幕上**同时有两个能滚的窗口**：手指落在纸箱上动的是纸箱那一栏，
- * 推到货架上动的才是整页。玩家报的原话是"滑动方向是反的"—— 他看到的不是方向错了，
- * 是**滚的东西不一样**。于是全屏只留 `.room-scroll` 一处滑动（那段注释在
- * `OrganizeScreen.ts:247` 一带）。
+ * 拿掉时的理由是"屏幕上同时有两个能滚的窗口，玩家看到的不是方向错了、
+ * 是**滚的东西不一样**"（`OrganizeScreen.ts` 的 `data-boxes` 那一段）。
+ * **那个诊断是错的** —— 真凶是我们自己写 `scrollTop` 的符号反了（第 ⑧ 条）。
+ * 两个滚动窗口本身没有任何问题：只要**每一个**都由我们这一层滚、而且符号一致。
  *
- * 代价要说清：手指落在**纸箱上**的竖向滑动不再滚 `.dock-boxes`（`.box` 自己
- * `touch-action: none`）；缝里、四个按钮上、手里那块牌子上都还能滚。
- * "纸箱那一栏一滚就朝反方向跳"这个毛病，比"少一个滚动入口"重得多。
+ * 拿掉它的代价（当时也写进了注释，只是没料到这就是用户第三次报障里
+ * 「连下面的箱子如果多了，滑动一下也还是反向的」那一半）：
+ * 手指落在**纸箱上**的竖向滑动被两边同时放弃 —— `.box` 是 `touch-action: none`
+ * （浏览器不滚），而手势层从箱子上往上找不到 `data-scroll-host`
+ * （`resolveScrollHost` 返回 `null`）→ `takeOverScroll` 返回 false → `onCancel`。
+ * 于是箱子多到要滚的时候，在箱子上怎么划都没反应。
  *
- * ⚠ 这一条因此**不能**笼统地写成"每个滚动容器都要注册"：那样会把手势层逼回两层逻辑。
+ * ⚠ 这一条仍然**不能**笼统地写成"每个滚动容器都要注册"：注册了就必须
+ * 把那一叠的手势也上提到容器上（`bindBoxGestures` 与 `bindRoomGestures` 同构），
+ * 否则容器级的手势与元素级的手势会在同一次按下上叠出两个 `ActiveGesture`。
  */
-for (const cls of ['room-scroll']) {
+for (const cls of ['room-scroll', 'dock-boxes']) {
   const tagRe = new RegExp(`<[a-z]+[^>]*class="[^"]*\\b${cls}\\b[^"]*"[^>]*>`, 'g');
   const tags = organizeSrc.match(tagRe) ?? [];
   if (tags.length === 0) {
