@@ -6,11 +6,20 @@
  * 与其让 Router 找不到界面而白屏，不如给一页说清楚"这里还没开"。
  * 这一页是工程防御，不是玩法内容 —— 阶段 B/C/D 落地后它自然不会再被走到。
  */
+import { windowBandHtml } from './windowBand';
 import type { Screen } from './Router';
 
 export interface PendingScreenProps {
   title: string;
   note: string;
+  /**
+   * 这一局抽到的那一场（`run.disasterId`）。
+   *
+   * ★ 这一屏是**兜底页**（存档里的 phase 这个版本不认识），本来不需要任何局面数据 ——
+   * 而它仍然要那条「窗外」：不然"每一屏都有它"就成了一句空话，
+   * 而"某一屏恰好没有"正是这次 bug 的形状（见 `ui/windowBand.ts` 的注释）。
+   */
+  disasterId: string;
   onRestart: () => void;
 }
 
@@ -45,6 +54,7 @@ export class PendingScreen implements Screen {
             <h1>${escapeHtml(this.props.title)}</h1>
           </div>
         </header>
+        ${windowBandHtml(this.props.disasterId)}
         <main class="scroll">
           <section class="block">
             <p class="block-note strong">${escapeHtml(this.props.note)}</p>

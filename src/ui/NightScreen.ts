@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 夜间界面（§6.2 夜间小事件 / §9 界面清单）。
  *
  * 分层纪律：只读 `store.run.night`，写操作全部通过 props 回调交给 systems/phases 的命令。
@@ -17,6 +17,7 @@ import { dayLabel } from '../model/calendar';
 import type { NightOption } from '../model/types';
 import type { GameStore } from '../state/store';
 import { NO_EFFECT, cashCost, describeEffect, resolveOutcome } from '../systems/night';
+import { windowBandHtml } from './windowBand';
 import type { Screen } from './Router';
 
 export interface NightScreenProps {
@@ -43,6 +44,7 @@ export class NightScreen implements Screen {
     this.root.innerHTML = `
       <div class="screen screen-plain">
         <header class="topbar" data-head></header>
+        ${windowBandHtml(this.store.run)}
         <main class="scroll" data-main></main>
         <footer class="dock" data-dock></footer>
       </div>

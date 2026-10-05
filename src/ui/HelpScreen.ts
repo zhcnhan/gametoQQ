@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 求援订单界面（§6.5 / §9 界面清单第 4 条"求援订单弹窗"）。
  *
  * 这一屏要回答的问题只有一个：**你给不给得起。**
@@ -19,6 +19,7 @@ import { playSfx } from '../fx/audio';
 import { dayLabel } from '../model/calendar';
 import type { GameStore } from '../state/store';
 import { inspectRequest, searchCost } from '../systems/help';
+import { windowBandHtml } from './windowBand';
 import type { Screen } from './Router';
 
 export interface HelpScreenProps {
@@ -76,6 +77,7 @@ export class HelpScreen implements Screen {
             <p class="sub">${dayLabel(run.day)} · ${escapeHtml(npc.name)}</p>
           </div>
         </header>
+        ${windowBandHtml(this.store.run)}
         <main class="scroll">
           <section class="block">
             <p class="night-text">${escapeHtml(def.text)}</p>

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 囤货主界面（§9.2：地图点位列表 / 现金 / 负重 / 车载容量 / 剩余天数）。
  *
  * 分层纪律：只读 `buildCartView()` 的结果，写操作全部调用 systems/shop 的命令函数。
@@ -33,6 +33,7 @@ import {
   type ShopResult
 } from '../systems/shop';
 import { startNumbersOf } from '../systems/identity';
+import { windowBandHtml } from './windowBand';
 import type { Screen } from './Router';
 
 export interface ShopScreenProps {
@@ -61,6 +62,7 @@ export class ShopScreen implements Screen {
     this.root.innerHTML = `
       <div class="screen screen-plain">
         <header class="topbar" data-head></header>
+        ${windowBandHtml(this.store.run)}
         <main class="scroll" data-main></main>
         <footer class="dock" data-dock></footer>
       </div>

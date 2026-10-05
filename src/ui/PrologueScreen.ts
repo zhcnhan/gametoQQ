@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 开局界面（§9.1：身份三选一卡 + 灾难揭示 + 先知日历；M1 身份二选一、灾难固定寒潮）。
  *
  * 分层纪律：本文件只读 data/ 的静态表；写操作一律通过 props.onConfirm 交回给 systems。
@@ -44,6 +44,7 @@ const MAX_SHOWN = 3;
 /** 全表有多少场灾难（报"还有 N 场没放出来"时用；从数据算，不写死） */
 const TOTAL_DISASTERS = DISASTER_DEFS.length;
 import { iconSvg } from '../fx/icons';
+import { windowBandHtml } from './windowBand';
 import type { Screen } from './Router';
 
 export interface PrologueScreenProps {
@@ -105,6 +106,8 @@ export class PrologueScreen implements Screen {
             </div>
           </div>
         </header>
+        ${windowBandHtml(this.props.disasterId)}
+        
         <main class="scroll">
           <section class="block">
             <h2 class="block-title">你重生了，先决定你是谁</h2>

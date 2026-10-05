@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 结算界面（§9.6：生存天数 / 整理评分 / 图鉴解锁）。
  *
  * ★ M1 的结局有**两种**，界面必须把它们说清楚（§12.3 v0.5 修订）：
@@ -24,6 +24,7 @@ import { CODEX_PAGE_LABELS, CODEX_PAGES, bestOf, codexTotals, settleRunMeta, typ
 import { achievementTotal, orderedUnlocked } from '../systems/achievements';
 import { MAX_IDENTITY_LEVEL, LEVEL_BONUS_PER_STEP, levelOf } from '../systems/identity';
 import { householdTotals } from '../systems/organize';
+import { windowBandHtml } from './windowBand';
 import type { Screen } from './Router';
 
 export interface EndingScreenProps {
@@ -103,6 +104,7 @@ export class EndingScreen implements Screen {
             <p class="sub">${sub}</p>
           </div>
         </header>
+        ${windowBandHtml(this.store.run)}
         <main class="scroll">
           <section class="block">
             <h2 class="block-title">这一局</h2>

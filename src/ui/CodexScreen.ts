@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 图鉴界面（§9 界面清单第 7 条 / 补 D-16 / §10B.2）。
  *
  * ## 它在补什么
@@ -53,6 +53,7 @@ import {
   groupByKind
 } from '../systems/achievements';
 import { ACHIEVEMENT_DEFS } from '../data/achievements';
+import { windowBandHtml } from './windowBand';
 import type { Screen } from './Router';
 
 export interface CodexScreenProps {
@@ -118,6 +119,7 @@ export class CodexScreen implements Screen {
           </div>
           <button class="btn btn-quiet" data-action="close">返回</button>
         </header>
+        ${windowBandHtml(this.store.run)}
         <main class="scroll">
           <nav class="codex-tabs">
             ${CODEX_PAGES.map(

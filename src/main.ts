@@ -318,6 +318,8 @@ function makeScreen(key: ScreenKey): Screen {
       return new PendingScreen(root as HTMLElement, {
         title: '这一局读不出来',
         note: '存档里的进度状态这个版本不认识。可以重开一局，或者回到上一页继续。',
+        // 兜底页也要那条「窗外」—— 见 `ui/windowBand.ts` 的注释
+        disasterId: store.run.disasterId,
         onRestart: restart
       });
   }
