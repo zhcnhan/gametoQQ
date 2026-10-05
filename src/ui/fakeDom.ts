@@ -739,9 +739,30 @@ function applyAttributes(el: FakeElement, attrText: string): void {
      * 而它会让屏幕级测试**静默地验错对象**，比直接报错危险得多。
      */
     if (name === 'class') el.className = value;
+    /*
+     * ★★ 布尔属性要同步到**属性**上（2026-10 修）。
+     *
+     * 假体原来只把它们写进 `attributes` / `dataset`，于是
+     * `<button disabled>` 的 `el.disabled` **仍然是 `false`** ——
+     * 而产品代码读的正是那个属性（`goOut.disabled = !canGoOut`、
+     * `btn.disabled: true` 那几处）。这与 `isConnected` 是同一类毛病：
+     * **假体缺一个成员，代价不是报错，而是被测代码里某条分支静静地验不到。**
+     *
+     * 只列真正被产品代码读的那几个；`value` 这种"有值才设"的不在此列。
+     */
+    if (name in BOOLEAN_ATTRS) (el as unknown as Record<string, boolean>)[name] = true;
     if (m[2] !== undefined) re.lastIndex = m.index + m[0].length;
   }
 }
+
+/** HTML 布尔属性：出现即为真，与值无关（见 `applyAttributes` 里那段注释） */
+const BOOLEAN_ATTRS: Record<string, true> = {
+  disabled: true,
+  checked: true,
+  selected: true,
+  hidden: true,
+  open: true
+};
 
 /** 假 localStorage（`resolveStorage()` 会探测它，所以形状要对） */
 function makeFakeStorage(): {

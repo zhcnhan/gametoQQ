@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 生存期日报里「市场」那一行的守护测试（D-17 的第二版）。
  *
  * ## 它守的是用户报的那个横幅
@@ -26,7 +26,9 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { makeStack } from '../model/shelf';
 import { createSaveGame } from '../state/save';
 import { GameStore } from '../state/store';
+import { GO_HOME_AP_COST } from '../systems/phases';
 import { createStartingRun } from '../systems/setup';
+import { cashPriceOf, type TradeIntent } from '../systems/trade';
 import { SurvivalScreen } from './SurvivalScreen';
 import { FakeDocument, allText, asElement, installFakeWindow, type FakeElement } from './fakeDom';
 import type { SurvivalSnapshot } from '../model/types';
@@ -70,15 +72,21 @@ interface Ctx {
   screen: SurvivalScreen;
 }
 
-function mount(over: Parameters<typeof survivalStore>[0] = {}): Ctx {
+function mount(
+  over: Parameters<typeof survivalStore>[0] = {},
+  props: Partial<{ actionPoints: number; day: number }> = {}
+): Ctx {
   const doc = new FakeDocument();
   installFakeWindow(doc);
   const root = doc.createElement('div');
   const store = survivalStore(over);
+  if (props.actionPoints !== undefined) store.run.actionPoints = props.actionPoints;
+  if (props.day !== undefined) store.run.day = props.day;
   const screen = new SurvivalScreen(asElement(root), store, {
     onStart: () => undefined,
     onNext: () => undefined,
-    onTrade: () => false
+    onTrade: () => false,
+    onGoOrganize: () => undefined
   });
   screen.mount();
   return { root, screen };
@@ -204,7 +212,8 @@ describe('★★ 反差层：标题对得上数、差值对得上盘面、D-Day 
     new SurvivalScreen(asElement(root), store, {
       onStart: () => undefined,
       onNext: () => undefined,
-      onTrade: () => false
+      onTrade: () => false,
+        onGoOrganize: () => undefined
     }).mount();
     return root;
   }
@@ -312,7 +321,8 @@ describe('★★ 突发事件的框：它必须自己站出来', () => {
     new SurvivalScreen(asElement(root), store, {
       onStart: () => undefined,
       onNext: () => undefined,
-      onTrade: () => false
+      onTrade: () => false,
+        onGoOrganize: () => undefined
     }).mount();
     return root;
   }
@@ -341,5 +351,205 @@ describe('★★ 突发事件的框：它必须自己站出来', () => {
      */
     expect(okRoot.querySelectorAll('.event-kind')[0]?.textContent).toContain('已解决');
     expect(badRoot.querySelectorAll('.event-kind')[0]?.textContent).toContain('未解决');
+  });
+});
+
+describe('★★ 回家整理（M4 决策 B）：入口在，但不能是个死按钮', () => {
+  /** 找 dock 里那个按钮；不存在返回 null */
+  function goBtn(root: FakeElement): FakeElement | null {
+    return root.querySelectorAll('[data-action="go-organize"]')[0] ?? null;
+  }
+
+  it('D-Day 与普通日报都给出这个入口', () => {
+    expect(goBtn(mount({}, { day: 3 }).root), '普通日报').not.toBeNull();
+    expect(goBtn(mount({}, { day: 0 }).root), 'D-Day').not.toBeNull();
+  });
+
+  it('★ 行动点够时按钮可用，并写出它要花几点', () => {
+    const btn = goBtn(mount({}, { actionPoints: GO_HOME_AP_COST }).root);
+    expect(btn?.disabled).toBeFalsy();
+    expect(btn?.textContent).toContain(String(GO_HOME_AP_COST));
+  });
+
+  it('★★ 行动点不够时**不消失、也不无声地灰掉** —— 灰掉并说出还剩几点', () => {
+    /*
+     * ⚠ `over` 必须显式给一个空对象：`survivalStore` 的**默认值**里有 `actionPoints: 3`，
+     * 只传 `{}` 之外的东西才能让这一条测到"不够"那一支。
+     */
+    const btn = goBtn(mount({}, { actionPoints: 0 }).root);
+    expect(btn, '按钮不许凭空消失（那样玩家会以为这条路不存在）').not.toBeNull();
+    expect(btn?.disabled, '点不动就要说明为什么').toBe(true);
+    // ★ 说明里必须有那个数：「今天剩 0 点」——写"行动点不够"等于什么都没说
+    expect(btn?.textContent).toContain('0');
+    expect(btn?.textContent).toContain('不够');
+  });
+
+  it('★ 点它调的是 onGoOrganize 那一条路', () => {
+    const doc = new FakeDocument();
+    installFakeWindow(doc);
+    const root = doc.createElement('div');
+    const store = survivalStore();
+    store.run.actionPoints = 3;
+    let calls = 0;
+    const screen = new SurvivalScreen(asElement(root), store, {
+      onStart: () => undefined,
+      onNext: () => undefined,
+      onTrade: () => false,
+      onGoOrganize: () => {
+        calls += 1;
+      }
+    });
+    screen.mount();
+    const btn = root.querySelectorAll('[data-action="go-organize"]')[0];
+    expect(btn).toBeTruthy();
+    /*
+     * ⚠ 假体的 `dispatch` **不做冒泡**（`fakeDom.ts`：它只调自己的 listener），
+     * 而这一屏的点击是**挂在 root 上的委托**（`target.closest('[data-action]')`）。
+     * 所以要从 root 派发、并把 `target` 指到那个按钮 —— 直接 `btn.dispatch('click')`
+     * 只会得到"零次调用"，看起来像产品代码坏了。
+     */
+    root.dispatch('click', { target: btn });
+    expect(calls).toBe(1);
+  });
+});
+
+/**
+ * ★★ 现金顶一件（M4 决策 B 的第四个出口）。
+ *
+ * ## 它守的是"这一屏比命令层多知道的那一半"
+ *
+ * 命令层（`systems/trade`）只负责"这一单成不成立"；而**开关什么时候可点、
+ * 打开之后要不要替玩家退掉一件、付不起的时候说什么**，全在这一屏。
+ * 这三件事坏掉都不会报错：
+ *
+ *  ① 清单空着时开关可点 → 玩家打开它，命令挑不出那一件，最后收到一句驴唇不对马嘴的拒绝；
+ *  ② 打开开关时不退件 → 额度从 3 缩到 2，"凑齐 3/2、按钮永远灰着"，一个死局；
+ *  ③ 现金不够时不说 → 玩家只能靠点一下才知道差多少。
+ */
+describe('★★ 现金顶一件：开关的三个状态都要说清楚', () => {
+  /**
+   * 一个"正在硬撑、屋里有货"的局面（交易才开得了门）。
+   *
+   * ⚠ 三个条件缺一不可：`hardPress`（不是硬撑时这一节整个不出现）、
+   * 冷却已过（`lastTradeDay = NEVER_TRADED`，而 `createStartingRun` 给的正是它）、
+   * 以及货架上有东西（清单空着时开关是灰的）。
+   */
+  function tradeStore(): GameStore {
+    const store = survivalStore();
+    store.run.survival.last.hardPress = true;
+    store.run.survival.last.hardPressLevel = 'straining';
+    store.commit((draft) => {
+      draft.boxesToUnpack = [];
+      const shelf = draft.shelves[0];
+      if (!shelf) throw new Error('开局没有货架');
+      shelf.slots[0]![0] = { stack: makeStack('battery', 4, null) };
+      shelf.slots[0]![1] = { stack: makeStack('canned_beans', 4, null) };
+      shelf.slots[0]![2] = { stack: makeStack('rice_bag', 1, null) };
+    });
+    return store;
+  }
+
+  function mountTrade(): { root: FakeElement; store: GameStore; intents: TradeIntent[] } {
+    const doc = new FakeDocument();
+    installFakeWindow(doc);
+    const root = doc.createElement('div');
+    const store = tradeStore();
+    const intents: TradeIntent[] = [];
+    const screen = new SurvivalScreen(asElement(root), store, {
+      onStart: () => undefined,
+      onNext: () => undefined,
+      onTrade: (intent) => {
+        intents.push(intent);
+        return false; // 一律不当成交：被拒时界面必须**留着**已选与开关
+      },
+      onGoOrganize: () => undefined
+    });
+    screen.mount();
+    return { root, store, intents };
+  }
+
+  /** 假体的 `dispatch` **不冒泡**，所以点击一律从 root 派发并把 target 指过去 */
+  function click(root: FakeElement, selector: string, index = 0): void {
+    const target = root.querySelectorAll(selector)[index];
+    if (!target) throw new Error(`点不到 ${selector}[${index}]`);
+    root.dispatch('click', { target });
+  }
+
+  const cashBtn = (root: FakeElement): FakeElement | null => root.querySelectorAll('.trade-cash')[0] ?? null;
+  const confirmBtn = (root: FakeElement): FakeElement | null =>
+    root.querySelectorAll('[data-action="trade-confirm"]')[0] ?? null;
+
+  it('★ 清单空着时开关是灰的，并说清为什么（不是让玩家白点一下）', () => {
+    const { root } = mountTrade();
+    const btn = cashBtn(root);
+    expect(btn, '开关必须存在 —— 它不存在的话玩家不知道还有这条路').not.toBeNull();
+    expect(btn?.disabled).toBe(true);
+    expect(btn?.textContent).toContain('先挑');
+  });
+
+  it('★★ 打开开关：额度从 3 缩到 2，并**替玩家退掉多出来的那一件**', () => {
+    const { root } = mountTrade();
+    /*
+     * ⚠ 一次点击 = **加一件**，而点到已经选过的那一堆是**收回一件**
+     * （`togglePick` 的语义，也是唯一的撤销方式）。所以"凑满三件"必须点**三样不同的东西** ——
+     * 之前这里点了两次电池，实际得到的是 1 件。
+     */
+    click(root, '[data-pick="battery"]');
+    click(root, '[data-pick="canned_beans"]');
+    click(root, '[data-pick="rice_bag"]');
+    expect(root.querySelectorAll('.trade-count')[0]?.textContent).toContain('3/3');
+
+    click(root, '[data-action="trade-cash"]');
+
+    // ① 额度变了；② 真的退了一件（否则会停在"凑齐 3/2"这个死局上）
+    expect(root.querySelectorAll('.trade-count')[0]?.textContent).toContain('2/2');
+    const chosen = root
+      .querySelectorAll('.trade-chosen')
+      .reduce((n, el) => n + Number((el.textContent ?? '').replace(/\D+/g, '')), 0);
+    expect(chosen, '挑中的件数必须与额度一致').toBe(2);
+    expect(cashBtn(root)?.classList.contains('is-on')).toBe(true);
+    expect(confirmBtn(root)?.disabled).toBeFalsy();
+  });
+
+  it('★ 付得起时开关把**价钱**报出来（它是玩家做这个决定的唯一依据）', () => {
+    const { root, store } = mountTrade();
+    click(root, '[data-pick="canned_beans"]');
+    click(root, '[data-action="trade-cash"]');
+    const price = cashPriceOf(store.run, 'canned_beans');
+    expect(cashBtn(root)?.textContent).toContain(`${price} 元`);
+    expect(root.querySelectorAll('.is-cash-short')).toHaveLength(0);
+  });
+
+  it('★★ 付不起时不灰按钮，而是把"差多少"说出来', () => {
+    const { root, store } = mountTrade();
+    store.commit((draft) => {
+      draft.cash = 0;
+    });
+    click(root, '[data-pick="canned_beans"]');
+    click(root, '[data-action="trade-cash"]');
+
+    const note = root.querySelectorAll('.is-cash-short')[0];
+    expect(note, '现金不够时必须有一行说明').toBeTruthy();
+    expect(note?.textContent).toContain('现金不够');
+    expect(note?.textContent).toContain(String(cashPriceOf(store.run, 'canned_beans')));
+    // 说明在，但"交给他"仍然是灰的 —— 钱不够本来就成交不了
+    expect(confirmBtn(root)?.disabled).toBe(true);
+  });
+
+  it('★★ 交出去的是"一单意图"（开关状态），不是界面自己算好的那一件', () => {
+    const { root, intents } = mountTrade();
+    click(root, '[data-pick="battery"]');
+    click(root, '[data-pick="canned_beans"]');
+    click(root, '[data-action="trade-cash"]');
+    click(root, '[data-action="trade-confirm"]');
+
+    expect(intents).toHaveLength(1);
+    expect(intents[0]?.cashOn).toBe(true);
+    expect(intents[0]?.picks.map((p) => p.itemId).sort()).toEqual(['battery', 'canned_beans']);
+    // 挑哪一件是 systems/trade 的规矩（`pickCashFor`），界面不许替它决定
+    expect(Object.keys(intents[0] ?? {})).not.toContain('cashFor');
+    // 被拒（`onTrade` 返回 false）→ 已选与开关**都留着**，玩家改一下就能再试
+    expect(root.querySelectorAll('.trade-chosen').length).toBeGreaterThan(0);
+    expect(cashBtn(root)?.classList.contains('is-on')).toBe(true);
   });
 });

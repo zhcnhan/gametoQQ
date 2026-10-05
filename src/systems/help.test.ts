@@ -170,7 +170,7 @@ describe('人情：它在 M1 里的唯一用途，是决定门口还开不开', 
     expect(trustTotal(store.run)).toBeLessThan(0);
     expect(isShutOut(store.run)).toBe(true);
     expect(canTrade(store.run)).toBe(false);
-    expect(tradeForBox(store, [{ itemId: 'bandage', count: 3 }]).ok).toBe(false);
+    expect(tradeForBox(store, { picks: [{ itemId: 'bandage', count: 3 }], cashOn: false }).ok).toBe(false);
   });
 
   it('没被人记恨时，硬撑照样能敲门', () => {
@@ -181,7 +181,7 @@ describe('人情：它在 M1 里的唯一用途，是决定门口还开不开', 
     store.run.survival.last = { ...EMPTY_SURVIVAL_SNAPSHOT, hardPress: true };
 
     expect(canTrade(store.run)).toBe(true);
-    expect(tradeForBox(store, [{ itemId: 'battery', count: 3 }]).ok).toBe(true);
+    expect(tradeForBox(store, { picks: [{ itemId: 'battery', count: 3 }], cashOn: false }).ok).toBe(true);
   });
 });
 

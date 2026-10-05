@@ -1,23 +1,30 @@
 import { describe, expect, it } from 'vitest';
-import { FIRST_STOCKPILE_DAY } from '../data/disaster';
+import { FIRST_STOCKPILE_DAY, disasterModifiersOf } from '../data/disaster';
 import { NIGHT_SLEEP } from '../data/nightEvents';
 import { ACTION_POINTS_PER_DAY, SHOP_DEFS } from '../data/shops';
 import { createSaveGame } from '../state/save';
 import { GameStore } from '../state/store';
 import {
+  GO_HOME_AP_COST,
   NEXT_PHASES,
+  advanceSurvivalDay,
+  backToSurvival,
   canAdvance,
   chooseIdentity,
   chooseNightOption,
   endDay,
   ensureDayStocks,
   goHome,
+  goOrganize,
   goOut,
   isStockpilePhase,
-  sleep
+  isSurvivalOrganize,
+  sleep,
+  startSurvival
 } from './phases';
 import { createStartingRun } from './setup';
 import { enterShop } from './shop';
+import { applyZone } from './organize';
 
 function createSaveSchedulerStub() {
   return {
@@ -211,6 +218,153 @@ describe('状态机流转表', () => {
     expect(isStockpilePhase('night')).toBe(true);
     expect(isStockpilePhase('survival_day')).toBe(false);
     expect(isStockpilePhase('ending')).toBe(false);
+  });
+});
+
+/**
+ * 一路推进到 D-Day（`phase === 'survival_day'` 且 `day === 0`）。
+ *
+ * ⚠ 它**不能用 `passDay` 循环固定次数** —— 囤货期的最后一天是 `day === -1`，
+ * 而它离开局隔了 7 天（`FIRST_STOCKPILE_DAY = -7`）。这里按 phase 循环，
+ * 哪天跨过去就哪天停，改日历起点也不会让这个 helper 静默失效。
+ */
+function toDDay(store: GameStore): void {
+  let guard = 0;
+  while (store.run.phase !== 'survival_day' && guard < 30) {
+    if (store.run.phase === 'organize') passDay(store);
+    else if (store.run.phase === 'stockpile_shop') goHome(store);
+    else break;
+    guard += 1;
+  }
+  if (store.run.phase !== 'survival_day') throw new Error('没能推进到 D-Day');
+  expect(store.run.day).toBe(0);
+}
+
+/** D-Day 之后迈出第一步：`day 0 → 1`，`startSurvival` 会顺手发今天的行动点 */
+function inSurvival(seed = 20261001): GameStore {
+  const store = startedStore(seed);
+  toDDay(store);
+  startSurvival(store);
+  return store;
+}
+
+describe('★★ 生存期回整理页（M4 决策 B）', () => {
+  it('★ 生存期有行动点 —— 它是"回家整理"的代价，而它以前从 D-Day 起恒为 0', () => {
+    const store = inSurvival();
+    expect(store.run.phase).toBe('survival_day');
+    /*
+     * 这一条是整个 W-09 的地基：`startNextDay` 跨到 D-Day 时把行动点清零，
+     * 而**之后再没人写过它** —— 于是"每次回去花 1 点"会变成"永远付不起"。
+     * 断言写成"≥1 且 = 算式结果"而不是写死 3：`actionPointDelta` 是这一场的维度之一。
+     */
+    const mods = disasterModifiersOf(store.run.disasterId);
+    expect(store.run.actionPoints).toBe(Math.max(1, ACTION_POINTS_PER_DAY + mods.actionPointDelta));
+    expect(store.run.actionPoints).toBeGreaterThanOrEqual(1);
+  });
+
+  it('流转表允许 survival_day ⇄ organize，且回到日报是合法的', () => {
+    expect(canAdvance('survival_day', 'organize')).toBe(true);
+    expect(canAdvance('organize', 'survival_day')).toBe(true);
+    // 反证：这两条本来是假的，而"从生存期回整理页"正是靠它们
+    expect(NEXT_PHASES.survival_day).toContain('organize');
+  });
+
+  it('★ 回去花掉 1 个行动点，phase 变成 organize，日志里记了账', () => {
+    const store = inSurvival();
+    const before = store.run.actionPoints;
+    expect(goOrganize(store).ok).toBe(true);
+    expect(store.run.phase).toBe('organize');
+    expect(store.run.actionPoints).toBe(before - GO_HOME_AP_COST);
+    expect(store.run.log.some((l) => l.includes('回家整理'))).toBe(true);
+  });
+
+  it('★ 行动点不够时拒绝，且**什么都不改**', () => {
+    const store = inSurvival();
+    const day = store.run.day;
+    store.run.actionPoints = GO_HOME_AP_COST - 1;
+    const result = goOrganize(store);
+    expect(result.ok).toBe(false);
+    // 拒绝要说清原因与还差多少（界面的浮字直接用它）
+    const reason = result.events.find((e) => e.type === 'rejected');
+    expect(reason && 'reason' in reason ? reason.reason : '').toContain('行动点');
+    expect(store.run.phase).toBe('survival_day');
+    expect(store.run.day).toBe(day);
+    expect(store.run.actionPoints).toBe(GO_HOME_AP_COST - 1);
+  });
+
+  it('囤货期不能走这条路（那是另一条：goOut / endDay）', () => {
+    const store = startedStore();
+    const result = goOrganize(store);
+    expect(result.ok).toBe(false);
+    expect(store.run.phase).toBe('stockpile_shop');
+  });
+
+  it('★ 回日报不结算、不跨天 —— 日历的推进权只在 advanceSurvivalDay 手里', () => {
+    const store = inSurvival();
+    const day = store.run.day;
+    expect(goOrganize(store).ok).toBe(true);
+    expect(backToSurvival(store).ok).toBe(true);
+    expect(store.run.phase).toBe('survival_day');
+    expect(store.run.day).toBe(day);
+  });
+
+  it('★★ isSurvivalOrganize 认的是"这一天跨过去了没"，不是 phase 本身', () => {
+    const store = startedStore();
+    goHome(store);
+    expect(store.run.phase).toBe('organize');
+    // 囤货期的整理 → 不是生存期那次
+    expect(isSurvivalOrganize(store.run)).toBe(false);
+
+    const surv = inSurvival();
+    goOrganize(surv);
+    expect(surv.run.phase).toBe('organize');
+    expect(isSurvivalOrganize(surv.run)).toBe(true);
+
+    /*
+     * ★ D-Day **当天**（day === 0）也算生存期：灾难已经登陆，只是第一顿还没吃。
+     * 判据若写成 `day >= 1`，那一屏的"回家整理"会掉回囤货期的形状
+     * （dock 里冒出"再去采购 / 过一天"，而商店在生存期是关的）。
+     */
+    const dday = startedStore();
+    toDDay(dday);
+    expect(dday.run.day).toBe(0);
+    dday.run.phase = 'organize';
+    expect(isSurvivalOrganize(dday.run)).toBe(true);
+  });
+
+  it('★ 回去整理完，整理本身照常生效（用户口径："做出操作也会有影响"）', () => {
+    const store = inSurvival();
+    goOrganize(store);
+    /*
+     * 这一条不重复验 `systems/organize.ts` 的命令（那是它自己的测试），
+     * 只钉住**这件事本身**：换到生存期之后，整理页的命令仍然走得通。
+     * 若哪一天有人给整理命令加一道"只在囤货期允许"的闸，这条会红。
+     */
+    const result = applyZone(store, 'shelf_a', { name: '主食', color: '#8a8a80', categories: ['food'] });
+    expect(result.ok).toBe(true);
+  });
+
+  it('★ 每次回日报之后还能再回去（用户口径："可以自由回去"）', () => {
+    const store = inSurvival();
+    let trips = 0;
+    while (store.run.actionPoints >= GO_HOME_AP_COST) {
+      expect(goOrganize(store).ok).toBe(true);
+      expect(backToSurvival(store).ok).toBe(true);
+      trips += 1;
+    }
+    // 今天的行动点全部换成了"回去整理"，一次都没被拒
+    expect(trips).toBeGreaterThanOrEqual(2);
+    expect(store.run.phase).toBe('survival_day');
+  });
+
+  it('★ 下一天把行动点补回来（否则第二天再也回不去）', () => {
+    const store = inSurvival();
+    goOrganize(store);
+    backToSurvival(store);
+    store.run.actionPoints = 0;
+    advanceSurvivalDay(store);
+    const mods = disasterModifiersOf(store.run.disasterId);
+    expect(store.run.actionPoints).toBe(Math.max(1, ACTION_POINTS_PER_DAY + mods.actionPointDelta));
   });
 });
 

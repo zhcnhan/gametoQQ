@@ -142,7 +142,8 @@ function mountSurvival(disasterId: string): FakeElement {
   new SurvivalScreen(asElement(root), survivalStore(disasterId), {
     onStart: () => undefined,
     onNext: () => undefined,
-    onTrade: () => false
+    onTrade: () => false,
+        onGoOrganize: () => undefined
   }).mount();
   return root;
 }
@@ -161,7 +162,8 @@ function mountOrganize(disasterId: string): FakeElement {
   new OrganizeScreen(asElement(root), new GameStore(createSaveGame(run), stubScheduler()), createOrganizeSession(), {
     onRestart: () => undefined,
     onGoOut: () => undefined,
-    onEndDay: () => undefined
+    onEndDay: () => undefined,
+        onBackToSurvival: () => undefined
   }).mount();
   return root;
 }

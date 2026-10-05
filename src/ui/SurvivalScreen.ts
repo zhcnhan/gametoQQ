@@ -15,7 +15,7 @@ import { findEmergency } from '../data/emergencies';
 import { CATEGORY_LABELS, getItemDef } from '../data/items';
 import { SHELTER_SLEEP_LINE, STAMINA_RECOVER, dailyDrainOf, moodFromPlacement, organizeQuality } from '../data/survival';
 import { playSfx } from '../fx/audio';
-import { itemIconSvg } from '../fx/icons';
+import { iconSvg, itemIconSvg } from '../fx/icons';
 import { hintAt, dayLabel, severityAt } from '../model/calendar';
 import { countByItem, countCategory } from '../model/consume';
 import { districtDays, handyDays, indoorTemp, supplyDays } from '../model/contrast';
@@ -25,7 +25,15 @@ import { revealedForecasts } from '../systems/intel';
 import type { GameStore } from '../state/store';
 import { isShutOut } from '../systems/help';
 import { householdTotals } from '../systems/organize';
-import { TRADE_COST_PIECES, tradeCooldownLeft } from '../systems/trade';
+import { GO_HOME_AP_COST } from '../systems/phases';
+import {
+  TRADE_COST_PIECES,
+  TRADE_MAX_CASH_PIECES,
+  cashPriceOf,
+  pickCashFor,
+  tradeCooldownLeft,
+  type TradeIntent
+} from '../systems/trade';
 import { disasterTagHtml, windowBandHtml } from './windowBand';
 import type { Screen } from './Router';
 
@@ -34,8 +42,16 @@ export interface SurvivalScreenProps {
   onStart: () => void;
   /** 过一天（结算新的一天） */
   onNext: () => void;
-  /** 以物易物：把选好的三件交出去换一箱。返回是否成交（失败时界面保留已选，让玩家改） */
-  onTrade: (picks: { itemId: string; count: number }[]) => boolean;
+  /** 回家整理（M4 决策 B：花 1 个行动点，由 systems/phases 的 goOrganize 完成） */
+  onGoOrganize: () => void;
+  /**
+   * 以物易物：把选好的（两件货 + 一件的钱，或三件货）交出去换一箱。
+   *
+   * ★ 交出去的是**一单意图**（`TradeIntent`）而不是"顶哪一件"——
+   * 那条规矩住在 systems/trade 的 `pickCashFor`，界面只回答"开关开没开"。
+   * 返回是否成交（失败时界面保留已选，让玩家改）。
+   */
+  onTrade: (intent: TradeIntent) => boolean;
 }
 
 export class SurvivalScreen implements Screen {
@@ -53,6 +69,8 @@ export class SurvivalScreen implements Screen {
     this.store = store;
     this.props = props;
   }
+
+  private cashOn = false;
 
   private readonly onClickBound = (e: MouseEvent): void => this.onClick(e);
 
@@ -99,12 +117,41 @@ export class SurvivalScreen implements Screen {
     this.query('[data-main]').innerHTML = day === 0 ? this.ddayHtml() : this.dayHtml();
     this.query('[data-dock]').innerHTML = `
       <div class="dock-tools">
+        ${this.goOrganizeHtml(run)}
         ${
           day === 0
             ? `<button class="btn btn-primary" data-action="start">开始生存</button>`
             : `<button class="btn btn-primary" data-action="next">过一天</button>`
         }
       </div>
+    `;
+  }
+
+  /**
+   * 「回家整理」那个按钮（M4 决策 B：生存期可以自由回去整理）。
+   *
+   * ## 用户的口径
+   *
+   * > "可以自由回去，并且做出操作也会有影响，只是不能通过商店补货了"
+   *
+   * 所以这个入口**不限次数**，代价只有行动点（见 `systems/phases.ts` 的 `goOrganize`）。
+   *
+   * ## ★ 为什么行动点不够时是"灰掉 + 写出差多少"，而不是藏起来
+   *
+   * §4A 说"不许有死按钮"—— 而它的意思是**不许有"点了不知道为什么没反应"的按钮**。
+   * 一个灰按钮配一句"今天剩 0 点"，说的是同一件事，而且它比"按钮凭空消失"
+   * 多告诉玩家两件重要的事：**这条路存在**，以及**它是怎么算的**。
+   *
+   * ★ 与整理页的"再去采购"（`ui/OrganizeScreen.ts` 的 `renderDock`）是同一套做法，
+   * 两处都是"资源不够 → 灰掉 + 说明"，不要一处藏一处灰。
+   */
+  private goOrganizeHtml(run: RunState): string {
+    const can = run.actionPoints >= GO_HOME_AP_COST;
+    const note = can
+      ? `花 ${GO_HOME_AP_COST} 个行动点`
+      : `今天剩 ${run.actionPoints} 点，不够了`;
+    return `
+      <button class="btn" data-action="go-organize"${can ? '' : ' disabled'}>${iconSvg('box')}<span>回家整理</span><em class="btn-note">${escapeHtml(note)}</em></button>
     `;
   }
 
@@ -394,12 +441,24 @@ export class SurvivalScreen implements Screen {
   private tradePickerHtml(): string {
     const run = this.store.run;
     const picked = [...this.picks.values()].reduce((n, c) => n + c, 0);
+    /*
+     * ★★ 现金那一件只花**这件东西今天的价钱**，而它是从已经挑好的那几件里
+     * 挑**最贵的那个**算的（`pickCashFor`）。
+     *
+     * 为什么不让玩家自己指哪一件用钱顶：那个做法要给每一行加一个"用钱顶"的开关，
+     * 而玩家在"三件里挑三件"这件事上**不是**在挑"哪一件付钱"——
+     * 他挑的是"割哪三样肉"。多一层开关只会让本想好的决定变复杂。
+     * 代价是贵一点：退掉的那一件是**你自己挑的最贵的那件**。
+     */
+    const cash = this.cashAmount();
+    const need = this.needPieces();
+    const canPickCash = picked > 0;
     const rows = countByItem(run.shelves, run.boxesToUnpack)
       .map(({ itemId, count }) => {
         const def = getItemDef(itemId);
         const chosen = this.picks.get(itemId) ?? 0;
         const left = count - chosen;
-        const canAdd = picked < TRADE_COST_PIECES && left > 0;
+        const canAdd = picked < need && left > 0;
         // 已经选过的堆必须一直能点（点一下收回一件）—— 它是唯一的撤销方式
         const disabled = !canAdd && chosen === 0;
         return `<li>
@@ -414,15 +473,48 @@ export class SurvivalScreen implements Screen {
       })
       .join('');
 
+    /*
+     * ★★ 这件东西还没挑出来之前（`picks` 是空的）**不给开**这个开关。
+     *
+     * 第一版让它一直可点，于是玩家能在清单空着的时候打开它 —— 那一件挑不出来，
+     * 命令收到的 `cashOn` 落空，最后回一句"要凑满 3 件"。玩家会读成"钱这条路走不通"。
+     * 现在按钮灰着，并**说清为什么**（§4A：不许有死按钮），因为差额在挑好之前算不出来。
+     */
+    const cashBtn = `
+      <button class="trade-cash${this.cashOn ? ' is-on' : ''}" data-action="trade-cash"
+              aria-pressed="${this.cashOn ? 'true' : 'false'}"${canPickCash ? '' : ' disabled'}>
+        ${
+          !canPickCash
+            ? `先挑要给的东西 —— 钱只能顶掉其中一件`
+            : this.cashOn
+              ? `用钱顶一件：付 <b>${cash} 元</b>（按你挑的最贵那件算）`
+              : `也可以拿钱顶一件 —— 退一件，按你挑的最贵那件折价`
+        }
+      </button>`;
+
     return `
       <ul class="trade-list">${rows || '<li class="block-note">屋里已经拿不出什么了。</li>'}</ul>
+      ${cashBtn}
+      ${cashNoteHtml(cash, run.cash)}
       <div class="trade-foot">
-        <span class="trade-count">凑齐 ${picked}/${TRADE_COST_PIECES}</span>
+        <span class="trade-count">凑齐 ${picked}/${need}</span>
         <button class="btn btn-primary" data-action="trade-confirm"${
-          picked === TRADE_COST_PIECES ? '' : ' disabled'
+          picked === need && (cash === 0 || cash <= run.cash) ? '' : ' disabled'
         }>交给他</button>
       </div>
     `;
+  }
+
+  /**
+   * 现金顶掉的那一件值多少 —— 在已经挑好的那几件里取**最贵的**；一件都没挑时是 0。
+   *
+   * ★ "一件都没挑"与"挑好了但付不起"是两种不同的状态，界面要分开说，
+   * 所以价钱（`cashAmount`）与差额（`run.cash` 减它）两个数都要拿到手。
+   */
+  private cashAmount(): number {
+    if (!this.cashOn) return 0;
+    const id = pickCashFor(this.store.run, this.picks);
+    return id === null ? 0 : cashPriceOf(this.store.run, id);
   }
 
   /** 点一下加一件；点已经选过的那一堆就是收回一件 */
@@ -434,11 +526,48 @@ export class SurvivalScreen implements Screen {
       return;
     }
     const picked = [...this.picks.values()].reduce((n, c) => n + c, 0);
-    if (picked >= TRADE_COST_PIECES) return;
+    if (picked >= this.needPieces()) return;
     const run = this.store.run;
     const have = countByItem(run.shelves, run.boxesToUnpack).find((s) => s.itemId === itemId)?.count ?? 0;
     if (have <= 0) return;
     this.picks.set(itemId, 1);
+  }
+
+  /**
+   * 这一单还要几件货（开着"用钱顶一件"时少一件）。
+   *
+   * ★ 所有"凑齐几件"的判断都必须走这里。写死 `TRADE_COST_PIECES` 的地方会与
+   * 渲染出来的 `凑齐 N/M` 对不上 —— 玩家看到"凑齐 2/2"而按钮是灰的，
+   * 或者反过来点得下去然后被命令拒绝。
+   */
+  private needPieces(): number {
+    return this.cashOn ? TRADE_COST_PIECES - TRADE_MAX_CASH_PIECES : TRADE_COST_PIECES;
+  }
+
+  /**
+   * 开关"用钱顶一件"。
+   *
+   * ★ 清单空着时**不开**：那一件挑不出来，命令收到的开关会落空
+   * （判据与按钮的 `disabled` 同源，见 `tradePickerHtml`）。
+   *
+   * ★★ 打开时**必须退掉多出来的那一件**：额度从三件缩到两件，
+   * 而已经挑满三件的玩家会卡在一个"凑齐 3/2、按钮永远是灰的、又不知道要退哪一件"
+   * 的死局里 —— 那正是 §4A 说的死按钮。退的顺序是**从后往前**
+   * （`picks` 是 Map，顺序 = 玩家点选的顺序），即先退他最后挑的那一件。
+   */
+  private toggleCash(): void {
+    if (!this.cashOn && this.picks.size === 0) return;
+    this.cashOn = !this.cashOn;
+    const need = this.needPieces();
+    let picked = [...this.picks.values()].reduce((n, c) => n + c, 0);
+    while (picked > need) {
+      const keys = [...this.picks.keys()];
+      const last = keys[keys.length - 1];
+      if (last === undefined) break;
+      const count = this.picks.get(last) ?? 1;
+      picked -= count;
+      this.picks.delete(last);
+    }
   }
 
   /** 局部重绘：整页重绘会把滚动位置弹回顶部，而玩家正看着清单在挑东西 */
@@ -585,14 +714,22 @@ export class SurvivalScreen implements Screen {
     if (action === 'start') {
       playSfx('place');
       this.props.onStart();
+    } else if (action === 'go-organize') {
+      playSfx('place');
+      this.props.onGoOrganize();
     } else if (action === 'next') {
       playSfx('preview');
       this.props.onNext();
+    } else if (action === 'trade-cash') {
+      playSfx('pick');
+      this.toggleCash();
+      this.refreshTrade();
     } else if (action === 'trade-confirm') {
       const picks = [...this.picks.entries()].map(([itemId, count]) => ({ itemId, count }));
       // 成交才清空草稿；被拒时留着，让玩家改一下再试，而不是从头挑一遍
-      if (this.props.onTrade(picks)) {
+      if (this.props.onTrade({ picks, cashOn: this.cashOn })) {
         this.picks.clear();
+        this.cashOn = false;
         this.refreshTrade();
       }
     }
@@ -727,6 +864,22 @@ function safetyNote(run: RunState, placement: number, emergency: number): string
   if (placement < 0.5) return '东西还没放进你自己写的清单里，每天找它们要多花力气。';
   if (emergency < 1) return '急用的那几件还不在顺手位上，出了事得现翻。';
   return '';
+}
+
+/**
+ * 开着"用钱顶一件"而现金不够时的那一行说明（`cash` 是那一件今天的价钱）。
+ *
+ * ★ 与「加家具」同一条界面纪律（见 `OrganizeScreen.addFurnitureHtml` 的注释）：
+ * **钱不够时不灰按钮，只说差多少** —— 玩家需要知道自己差多少，
+ * 而不是面对一个点不动的按钮。命令层仍然会兜一道
+ * （`tradeForBox` 那句"现金不够：这一件折 N 元，你还有 M 元"），
+ * 但玩家不该靠点一下才知道。
+ *
+ * 价钱是 0（没挑东西 / 开关没开）时什么都不说 —— 那两件事由按钮自己的文案管。
+ */
+function cashNoteHtml(cash: number, wallet: number): string {
+  if (cash <= 0 || cash <= wallet) return '';
+  return `<p class="press-line is-cash-short">现金不够：这一件折 <b>${cash} 元</b>，你还有 <b>${wallet} 元</b>，还差 <b>${cash - wallet} 元</b>。</p>`;
 }
 
 function escapeHtml(text: string): string {

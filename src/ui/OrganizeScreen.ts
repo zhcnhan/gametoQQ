@@ -17,6 +17,7 @@ import { emergencyCategories } from '../model/score';
 import type { CategoryId, ItemStack, Shelf, SlotPos, Zone } from '../model/types';
 import type { GameStore } from '../state/store';
 import { roomForNewFurniture, roomsOf, type RoomView } from '../systems/home';
+import { isSurvivalOrganize } from '../systems/phases';
 import { lockedRooms, survivedRuns } from '../systems/unlock';
 import {
   FURNITURE_PRICE,
@@ -55,6 +56,13 @@ export interface OrganizeScreenProps {
   onGoOut: () => void;
   /** 过一天（M1 新增；由 systems/phases 的 endDay 命令完成） */
   onEndDay: () => void;
+  /**
+   * 生存期整理完，回日报（M4 决策 B；由 systems/phases 的 backToSurvival 完成）。
+   *
+   * ⚠ 它**只在生存期的那一次整理**里被调用 —— 囤货期点不到它（那时 dock 里是
+   * "再去采购 / 过一天"）。判定见 `isSurvivalOrganize`。
+   */
+  onBackToSurvival: () => void;
 }
 
 interface DragState {
@@ -213,9 +221,24 @@ export class OrganizeScreen {
           <div class="dock-boxes" data-boxes></div>
           <div class="dock-tools">
             <button class="btn" data-action="sort">${iconSvg('sort')}<span>按保质期排</span></button>
-            <span data-add-furniture></span>
-            <button class="btn" data-action="go-out"><span>再去采购</span></button>
-            <button class="btn btn-primary" data-action="end-day"><span>过一天</span></button>
+            ${
+              /*
+               * ★★ 「加家具」那一个 host 在生存期**整个不写出来**（M4 决策 B，用户明确要求：
+               * "不要花现金加家具，生存页回去的时候闭合这个入口"）。
+               *
+               * 为什么是"不渲染"而不是"渲染成灰的"：灰按钮说的是"条件没满足"，
+               * 而这里的口径是**这件事在生存期不存在**（钱在生存期没有别的用途，
+               * 而家具是囤货期"东西放不下"的解药，生存期不需要它）。
+               * 留一个灰的反而会让玩家去找"怎么才能点亮它"。
+               */
+              isSurvivalOrganize(this.store.run) ? '' : '<span data-add-furniture></span>'
+            }
+            ${
+              isSurvivalOrganize(this.store.run)
+                ? `<button class="btn btn-primary" data-action="back-survival"><span>回日报</span></button>`
+                : `<button class="btn" data-action="go-out"><span>再去采购</span></button>
+            <button class="btn btn-primary" data-action="end-day"><span>过一天</span></button>`
+            }
           </div>
         </footer>
       </div>
@@ -891,6 +914,16 @@ export class OrganizeScreen {
    *     而"东西放不下"这件事只在整理时被感受到。
    */
   private addFurnitureHtml(): string {
+    /*
+     * ★★ 生存期不给这个入口（M4 决策 B）。
+     *
+     * 这一道判断与 `mount()` 里那个"整个 host 不写出来"是**故意重复**的：
+     * 那一边管"屏幕上有没有地方放它"，这一边管"这个方法本身会不会造出它"。
+     * 只留前者的话，任何一次 `mount()` 之后的路径改动（比如把 host 加回来、
+     * 或者别人在别处调这个方法）都会让入口**静默复活** —— 而它复活的表现
+     * 是"玩家在生存期能花 100 块加一块货架"，不是任何一条报错。
+     */
+    if (isSurvivalOrganize(this.store.run)) return '';
     const meta = this.store.save.meta;
     const room = roomForNewFurniture(meta, this.store.run);
     if (!room) {
@@ -1202,6 +1235,9 @@ export class OrganizeScreen {
         return;
       case 'end-day':
         this.props.onEndDay();
+        return;
+      case 'back-survival':
+        this.props.onBackToSurvival();
         return;
       case 'restart':
         if (window.confirm('重开一局会清空这一局的所有进度（物资、分区、现金），确定吗？')) this.props.onRestart();

@@ -762,6 +762,20 @@ function runProbe(build: (run: RunState) => void, fixAtDay: number | null = null
   const scatteredByDay: number[] = [];
   let guard = 0;
   while (store.run.phase === 'survival_day' && guard < 60) {
+    /*
+     * ★ 中途补救那一刻，**这里原来是直接改 `run` 状态**造的场面
+     * （`shelveEverything` + `fefoAll` 绕过一切界面与命令）。
+     *
+     * W-09（M4 决策 B：生存期可以自由回家整理）做完之后，**这个场面玩家真的做得出来了**：
+     * 日报 → 「回家整理」（花 1 行动点）→ 上架 / 写清单 / FEFO / 标顺手位 → 「回日报」。
+     * 所以这一段注释跟着更新（纪律 §2.17：注释里的场景要么还成立、要么说清它变了）。
+     *
+     * ⚠ 但探针**仍然直接改状态**，刻意不走 `goOrganize` / `backToSurvival`：
+     * 三条永久回归探针量的是"整理质量对生存曲线的影响"这一条因果，
+     * 而"回去要花几个行动点"是另一件事 —— 把它搅进来会让这条基线
+     * 在每次调 `GO_HOME_AP_COST` 时都漂一次。行动点那一层由
+     * `systems/phases.test.ts` 的「生存期回整理页」那一组单独钉。
+     */
     if (fixAtDay !== null && store.run.day === fixAtDay) {
       shelveEverything(store.run);
       fefoAll(store.run);

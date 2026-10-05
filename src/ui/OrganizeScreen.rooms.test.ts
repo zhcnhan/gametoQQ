@@ -70,7 +70,8 @@ function mountFromFixture(name: string): Ctx {
   new OrganizeScreen(asElement(root), store, createOrganizeSession(), {
     onRestart: () => undefined,
     onGoOut: () => undefined,
-    onEndDay: () => undefined
+    onEndDay: () => undefined,
+        onBackToSurvival: () => undefined
   }).mount();
   return { root };
 }
@@ -87,7 +88,8 @@ function mountSingleRoom(): Ctx {
   new OrganizeScreen(asElement(root), store, createOrganizeSession(), {
     onRestart: () => undefined,
     onGoOut: () => undefined,
-    onEndDay: () => undefined
+    onEndDay: () => undefined,
+        onBackToSurvival: () => undefined
   }).mount();
   return { root };
 }

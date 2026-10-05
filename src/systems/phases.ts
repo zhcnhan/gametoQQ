@@ -42,7 +42,8 @@ export const NEXT_PHASES: Record<GamePhase, readonly GamePhase[]> = {
   // 囤货期最后一天过完 → D-Day（survival_day）
   organize: ['stockpile_shop', 'night', 'survival_day', 'ending'],
   night: ['stockpile_shop', 'survival_day', 'ending'],
-  survival_day: ['survival_day', 'help_request', 'ending'],
+  // 生存期 ⇄ 整理页（M4 决策 B）：回去免费地"看一眼"是不行的，见 `goOrganize`
+  survival_day: ['survival_day', 'organize', 'help_request', 'ending'],
   help_request: ['survival_day'],
   ending: []
 };
@@ -124,7 +125,7 @@ export function chooseIdentity(store: GameStore, identityId: string): PhaseResul
     draft.cash = start.startCash;
     draft.day = FIRST_STOCKPILE_DAY;
     draft.phase = 'stockpile_shop';
-    draft.actionPoints = ACTION_POINTS_PER_DAY;
+    draft.actionPoints = dailyActionPoints(draft);
     draft.carLoad = 0;
     draft.visitedShopIds = [];
     draft.currentShopId = null;
@@ -174,6 +175,99 @@ export function goOut(store: GameStore): PhaseResult {
     draft.phase = 'stockpile_shop';
   });
   return ok([{ type: 'wentOut' }]);
+}
+
+// ———————— 生存期 ⇄ 整理页（M4 决策 B） ————————
+
+/**
+ * 生存期回家整理。
+ *
+ * ## 用户的口径（2026-10，原话）
+ *
+ * > "可以自由回去，并且做出操作也会有影响，只是不能通过商店补货了
+ * >  （其他方式当然可以，而且给这个阶段获取的现金也提供一点作用，但是要合理）"
+ *
+ * 所以：**不限次数、不需要先买许可**，而且整理、贴胶带、排 FEFO、标顺手位
+ * 全都照常生效（它们走的就是同一套 `systems/organize.ts` 命令，这里一个字都不用改）。
+ *
+ * ## ★★ 但"回去"必须有代价，否则它会毁掉生存期的张力
+ *
+ * 这不是额外的要求，是 §12.3 那条已经成立的账：`workCost`（每天 9 / 18 / 27 点翻找体力）
+ * 之所以有意义，是因为"整理得好"与"整理得烂"在 14 天里分岔。
+ * **若回去免费且无限次，玩家可以在体力见底的当天回去把整个盘面重排一遍** ——
+ * 那条下坡路就不存在了。
+ *
+ * 代价选的是**行动点**而不是体力，理由有两条：
+ *  ① 行动点是**已有资源**，而生存期商店关了之后它**本来就没有别的用途** ——
+ *     于是它天然变成"今天这 1~3 点：回去整理两行，还是留着做别的"；
+ *  ② 它**不碰体力/健康那几条已经调好的链**，所以不会让三条永久回归探针漂。
+ *
+ * ⚠ 决策 B 里写的"每次 1 行动点"是**建议**，用户拍板的是"自由回去 + 有影响"。
+ * 1 点这个数落在 `GO_HOME_AP_COST`，改它只影响这一处。
+ */
+export const GO_HOME_AP_COST = 1;
+
+export function goOrganize(store: GameStore): PhaseResult {
+  const run = store.run;
+  if (run.phase !== 'survival_day') return reject('现在不在生存期');
+  /*
+   * ★ 行动点不够时**拒绝**，而不是偷偷放行。
+   *
+   * 界面那一边负责把"为什么点不动"说出来（§4A 不许有死按钮）——
+   * 但命令层不能依赖界面自觉：`canAdvance` 是给界面看的，真正的闸在这里。
+   */
+  if (run.actionPoints < GO_HOME_AP_COST) {
+    return reject(`回家整理要花 ${GO_HOME_AP_COST} 个行动点，今天还剩 ${run.actionPoints} 个`);
+  }
+  store.commit((draft) => {
+    draft.actionPoints -= GO_HOME_AP_COST;
+    draft.phase = 'organize';
+    draft.log.push(`${dayLabel(draft.day)} · 回家整理（花掉 ${GO_HOME_AP_COST} 个行动点）。`);
+  });
+  return ok([{ type: 'wentHome' }]);
+}
+
+/**
+ * 整理完回到生存期日报。
+ *
+ * ★ 它**不结算、不跨天** —— 日历的推进权只在 `advanceSurvivalDay` 手里。
+ * "回去整理"是一段插曲，插曲结束应当回到原来那一屏，而不是把这一天过掉。
+ */
+export function backToSurvival(store: GameStore): PhaseResult {
+  const run = store.run;
+  if (run.phase !== 'organize') return reject('现在不在家里');
+  if (!isSurvivalOrganize(run)) return reject('现在是囤货期，整理完该去过一天');
+  store.commit((draft) => {
+    draft.phase = 'survival_day';
+  });
+  return ok([{ type: 'wentOut' }]);
+}
+
+/**
+ * 现在这一次"整理"是生存期的插曲，还是囤货期的日常？
+ *
+ * ★ 判据是**这一天有没有跨过去**，不是 `phase` 本身 —— `organize` 是两段共用的值。
+ * 用 `day > 0` 而不是 `day >= 1`：D-Day 当天（`day === 0`）也已经是生存期了
+ * （灾难已经登陆，只是第一顿还没吃），从那一屏回去整理同样该走生存期的形状。
+ */
+export function isSurvivalOrganize(run: RunState): boolean {
+  return run.phase === 'organize' && run.day >= 0;
+}
+
+/**
+ * 今天的行动点。
+ *
+ * ⚠ 囤货期与生存期**必须用同一个算式**（`ACTION_POINTS_PER_DAY + mods.actionPointDelta`）：
+ * 决策 B 把"回去整理"定成花行动点，而行动点在生存期原来是恒 0 的
+ * （`startNextDay` 在跨到 D-Day 时把它清零，之后再没人写过）。
+ * 两处各写一份的话，`actionPointDelta`（大停电 -1 那类）会在其中一段静默失效 ——
+ * 正是《纪律》里"写了 ≠ 生效了"那一类。
+ *
+ * `Math.max(1, ...)` 的理由见 `startNextDay` 里那段注释：给 0 会让这一天没有动作可做，
+ * 而 §4A 承诺"任何界面都得有一条能走的路"。
+ */
+function dailyActionPoints(run: RunState): number {
+  return Math.max(1, ACTION_POINTS_PER_DAY + disasterModifiersOf(run.disasterId).actionPointDelta);
 }
 
 // ———————— 过一天 ————————
@@ -331,6 +425,10 @@ export function startSurvival(store: GameStore): PhaseResult {
   store.commit((draft) => {
     const cursor = createCursor(draft.seed);
     draft.day = 1;
+    // ★ 生存期也要有行动点 —— 它是"回家整理"的代价（M4 决策 B）。
+    //   以前这里不写，于是 `run.actionPoints` 从 D-Day 起恒为 0，
+    //   而行动点变成"只减不增"之后那个代价会永远付不起。
+    draft.actionPoints = dailyActionPoints(draft);
     settleAndMaybeEnd(draft, events, cursor);
     draft.seed = cursor.state;
   });
@@ -363,6 +461,7 @@ export function advanceSurvivalDay(store: GameStore): PhaseResult {
       return;
     }
     draft.day = next;
+    draft.actionPoints = dailyActionPoints(draft);
     settleAndMaybeEnd(draft, events, cursor);
     draft.seed = cursor.state;
   });
@@ -402,11 +501,10 @@ function startNextDay(run: RunState, cursor: RngCursor): PhaseEvent {
    * 这一天只能做两件事 —— 那会把"去哪家店"从"顺路都去"变成"必须选"。
    * 这是所有维度里**对玩家决策影响最直接**的一个。
    *
-   * `Math.max(1, ...)`：至少留 1 点。给 0 会让这一天彻底没有动作可做，
-   * 而 §4A 承诺"任何界面都得有一条能走的路"—— 一个不能做任何事的白天不是难度，是卡住。
+   * ★ 算式收在 `dailyActionPoints` 里，生存期那两处与这里共用同一份 ——
+   * 各写一份的话，这个维度会在其中一段静默失效（"写了 ≠ 生效了"）。
    */
-  const mods = disasterModifiersOf(run.disasterId);
-  run.actionPoints = Math.max(1, ACTION_POINTS_PER_DAY + mods.actionPointDelta);
+  run.actionPoints = dailyActionPoints(run);
   run.carLoad = 0; // 车上的货都卸在家里了
   run.visitedShopIds = [];
   run.currentShopId = null;

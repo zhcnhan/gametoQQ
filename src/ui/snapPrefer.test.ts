@@ -105,7 +105,8 @@ function setup(): Ctx {
   const screen = new OrganizeScreen(asElement(root), store, session, {
     onRestart: () => undefined,
     onGoOut: () => undefined,
-    onEndDay: () => undefined
+    onEndDay: () => undefined,
+        onBackToSurvival: () => undefined
   });
   screen.mount();
   const ctx = { store, session, screen, root, win };

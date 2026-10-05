@@ -30,11 +30,13 @@ import { rollShopStocks } from './systems/shop';
 import { tradeForBox } from './systems/trade';
 import {
   advanceSurvivalDay,
+  backToSurvival,
   chooseIdentity,
   chooseNightOption,
   endDay,
   ensureDayStocks,
   goHome,
+  goOrganize,
   goOut,
   sleep,
   startSurvival,
@@ -250,6 +252,12 @@ function makeScreen(key: ScreenKey): Screen {
         onEndDay: () => {
           consumePhase(endDay(store));
           router.render();
+        },
+        // 生存期那一次整理（M4 决策 B）：回日报，**不结算、不跨天** ——
+        // 日历的推进权只在 advanceSurvivalDay 手里
+        onBackToSurvival: () => {
+          consumePhase(backToSurvival(store));
+          router.render();
         }
       });
     case 'night':
@@ -273,8 +281,16 @@ function makeScreen(key: ScreenKey): Screen {
           consumePhase(advanceSurvivalDay(store));
           router.render();
         },
-        onTrade: (picks) => {
-          const result = tradeForBox(store, picks);
+        // 回家整理：花 1 个行动点，进整理页（M4 决策 B）。
+        // 被拒时 `consumePhase` 会把命令给的那句话浮出来（`rejected` 事件）
+        onGoOrganize: () => {
+          consumePhase(goOrganize(store));
+          router.render();
+        },
+        // 界面交上来的是"一单意图"（给哪几件 + 用钱顶一件开没开）。
+        // ★ 具体顶哪一件由 systems/trade 的 pickCashFor 决定，见 TradeIntent 的注释
+        onTrade: (intent) => {
+          const result = tradeForBox(store, intent);
           for (const ev of result.events) {
             if (ev.type === 'traded') {
               playSfx('place');

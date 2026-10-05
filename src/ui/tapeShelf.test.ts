@@ -111,7 +111,8 @@ function mount(name: string, sharedWin: FakeWindow): Ctx {
   const screen = new OrganizeScreen(asElement(root), store, createOrganizeSession(), {
     onRestart: () => undefined,
     onGoOut: () => undefined,
-    onEndDay: () => undefined
+    onEndDay: () => undefined,
+        onBackToSurvival: () => undefined
   });
   screen.mount();
   return { root, store, win: sharedWin, screen };
