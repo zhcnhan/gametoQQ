@@ -2614,6 +2614,77 @@ button:disabled {
 }
 
 /*
+ * ★★ M4 W-11：三档来源各自的报价（「从哪儿凑」那一块）。
+ *
+ * 与 `.need-row` 同一套骨架（三列 grid + 一样的行高），但**不加边框**：
+ * 上面那三行是"他要什么"（这一单的事实），这三行是"你从哪儿拿"（你自己的账）。
+ * 同一屏里两组长得一模一样的话，玩家会以为它们是同一张表的两半。
+ *
+ * 不够的那一档不上朱红 —— 用灰下去就够了。朱红在本作里是"警告"（§5A），
+ * 而"这一档不够"不是警告，只是这一条路走不通：另外两档里通常有一条能走。
+ * 把它涂红会让整屏看起来像出了错。
+ */
+.where-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.where-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 8em 4.4em;
+  align-items: baseline;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--card);
+}
+
+.where-row b {
+  font-size: 15px;
+}
+
+.where-row span {
+  font-size: 12px;
+  color: var(--ink-70);
+  font-variant-numeric: tabular-nums;
+}
+
+.where-row em {
+  font-style: normal;
+  font-size: 13px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.where-row.is-short {
+  opacity: 0.55;
+}
+
+/*
+ * 主按钮上多一行价钱（`.dock-stack` 里的那一枚）。
+ * 数字单独占一行、比按钮文字小一号：这一屏的按钮文案本来就长
+ * （"从划好的那行拿"），把价钱塞进同一行会让两句话都读不顺。
+ *
+ * ★ 这一屏刻意**不**用 `.dock-tools` 把按钮排成一行：本屏最多四个按钮
+ * （三档 + 婉拒），文案还都比别处长 —— 一行排不下，而 `dock-tools` 没有
+ * `flex-wrap`，挤出去的部分会被容器裁掉（`.dock` 是 `overflow: hidden` 的那个层级）。
+ * 竖着排是这一屏唯一不会翻车的排法，代价是底部高一点。
+ */
+.dock-stack .btn-primary b {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  opacity: 0.85;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
  * 「顺手位」标记（§5「应急货架（门口/最顺手位）」）。
  * 标上之后用**暖黄** —— 那是本作"安全 / 窗内"的语义色，而顺手位正是屋里最靠门口、
  * 最有人味的那两格。刻意不用朱红：朱红是警告，而"我把药放在门口了"是件踏实的事。

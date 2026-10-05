@@ -306,8 +306,8 @@ function makeScreen(key: ScreenKey): Screen {
       });
     case 'help':
       return new HelpScreen(root as HTMLElement, store, {
-        onFulfill: () => {
-          consumeHelp(fulfillRequest(store));
+        onFulfill: (source) => {
+          consumeHelp(fulfillRequest(store, source));
           router.render();
         },
         onDecline: () => {

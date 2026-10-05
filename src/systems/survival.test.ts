@@ -19,7 +19,7 @@ import {
   round1,
   workCostOf
 } from '../data/survival';
-import { consumeCategory, countCategory } from '../model/consume';
+import { consumeCategory, countCategory, countCategoryFrom } from '../model/consume';
 import { haulFactorOfShelves, workHauledOf } from '../model/haul';
 import { scatterRows } from '../model/scatter';
 import { createShelf, fefoSorted, getStack, makeStack, readingOrder, setSlotStack, stackCount } from '../model/shelf';
@@ -376,6 +376,103 @@ describe('取用：先归位，再 FEFO', () => {
     const result = consumeCategory(run.shelves, run.zones, run.boxesToUnpack, 'food', 2);
     expect(result.taken).toBe(0);
     expect(countCategory(result.shelves, result.boxes, 'medicine')).toBe(5);
+  });
+});
+
+describe('★★ 取用的三档来源（M4 W-11）', () => {
+  /**
+   * 摆出一个三档俱全的屋子：
+   *   `shelf_a` 第 0 行贴「口粮区」（清单收 food）放 1 件 → 贴了清单那一档
+   *   `shelf_a` 第 1 行没贴、放 2 件                    → 上了架但没写清单那一档
+   *   `box_1` 里 3 件                                   → 没拆的纸箱那一档
+   */
+  function threeWays(): RunState {
+    const run = bareRun();
+    run.zones = [{ id: 'zone_food', name: '口粮区', color: '#C8372D', autoAccept: { categories: ['food'] } }];
+    const shelfA = run.shelves[0];
+    if (!shelfA) throw new Error('缺货架');
+    run.shelves[0] = { ...shelfA, zoneIds: shelfA.zoneIds.map((_, row) => (row === 0 ? 'zone_food' : null)) };
+    put(run, 'shelf_a', { row: 0, col: 0 }, 'canned_beans', 1, 60);
+    put(run, 'shelf_a', { row: 1, col: 0 }, 'canned_beans', 2, 60);
+    run.boxesToUnpack = [{ id: 'box_1', defId: 'box_staple', items: [makeStack('canned_beans', 3, 60)] }];
+    return run;
+  }
+
+  it('★★ `from` 是"只准从这一档拿"，不是"优先从这一档拿"', () => {
+    /*
+     * 这个区分是整套 W-11 的地基：`'marked'` 说的是"我当着人家的面只翻我划好的那一行"。
+     * 一旦它退化成"优先"（不够就顺手去别处补），界面上那三档价钱就变成
+     * 一句谎话 —— 玩家选了 1.5 一件那档，实际拿的是纸箱里的货。
+     */
+    const run = threeWays();
+
+    // 这一档（贴了清单、清单认它）只有 1 件，要 2 件 → 只拿到 1 件、差 1 件，**不去别处补**
+    const marked = consumeCategory(run.shelves, run.zones, run.boxesToUnpack, 'food', 2, 'marked');
+    expect(marked.taken).toBe(1);
+    expect(marked.shortage).toBe(1);
+    expect(marked.fromBoxes).toBe(0);
+    expect(marked.boxes[0]?.items[0]?.batches[0]?.count).toBe(3); // 纸箱一件没动
+    // 没写清单的那一行也一件没动
+    expect(countCategory(marked.shelves, [], 'food')).toBe(2);
+  });
+
+  it('★ 三档各自拿得到多少 —— 归位的货架与没归位的货架分属两档', () => {
+    const run = threeWays();
+    const count = (from: 'marked' | 'shelf' | 'box' | 'all'): number =>
+      countCategoryFrom(run.shelves, run.zones, run.boxesToUnpack, 'food', from);
+
+    expect(count('marked')).toBe(1); // 只有第 0 行那一件
+    expect(count('shelf')).toBe(3); // 两行加一起（第 1 行那两件"上了架但没写清单"）
+    expect(count('box')).toBe(3);
+    expect(count('all')).toBe(6);
+    // ★ 数货与取货必须是同一个判断：某一档数得出几件，就从那一档拿得到几件
+    for (const from of ['marked', 'shelf', 'box'] as const) {
+      const result = consumeCategory(run.shelves, run.zones, run.boxesToUnpack, 'food', 99, from);
+      expect(result.taken, `${from}：数得出 ${count(from)} 件，却只拿到 ${result.taken} 件`).toBe(count(from));
+    }
+  });
+
+  it('★ 不传 `from` 时逐位等于从前的行为（每日消耗那条路不许被这一档改变）', () => {
+    const run = threeWays();
+    const a = consumeCategory(run.shelves, run.zones, run.boxesToUnpack, 'food', 2);
+    const b = consumeCategory(run.shelves, run.zones, run.boxesToUnpack, 'food', 2, 'all');
+    expect(a.taken).toBe(b.taken);
+    expect(a.fromBoxes).toBe(b.fromBoxes);
+    expect(a.batches).toEqual(b.batches);
+    expect(a.shortage).toBe(b.shortage);
+    // 归位那一行先出（老规矩没变）
+    expect(a.batches[0]?.from).toBe('shelf');
+  });
+
+  it('★ 只从纸箱拿：货架上明明有，也一件不碰', () => {
+    const run = threeWays();
+    const boxed = consumeCategory(run.shelves, run.zones, run.boxesToUnpack, 'food', 2, 'box');
+    expect(boxed.taken).toBe(2);
+    expect(boxed.fromBoxes).toBe(2);
+    expect(boxed.batches.every((b) => b.from === 'box')).toBe(true);
+    // 货架上三件原封不动
+    expect(countCategory(boxed.shelves, [], 'food')).toBe(3);
+  });
+
+  it('★ 只从货架上拿：纸箱里明明有，也一件不碰', () => {
+    const run = threeWays();
+    const shelved = consumeCategory(run.shelves, run.zones, run.boxesToUnpack, 'food', 3, 'shelf');
+    expect(shelved.taken).toBe(3);
+    expect(shelved.fromBoxes).toBe(0);
+    expect(countCategory(shelved.shelves, [], 'food')).toBe(0);
+    expect(shelved.boxes[0]?.items[0]?.batches[0]?.count).toBe(3);
+  });
+
+  it('★ 贴了胶带但清单不认它 → 那一行算"货架上"那一档，不算"划好的那行"', () => {
+    const run = bareRun();
+    run.zones = [{ id: 'zone_med', name: '药柜', color: '#C8372D', autoAccept: { categories: ['medicine'] } }];
+    const shelfA = run.shelves[0];
+    if (!shelfA) throw new Error('缺货架');
+    run.shelves[0] = { ...shelfA, zoneIds: shelfA.zoneIds.map(() => 'zone_med') };
+    put(run, 'shelf_a', { row: 0, col: 0 }, 'canned_beans', 2, 60); // 在"药柜"里，不算归位
+
+    expect(countCategoryFrom(run.shelves, run.zones, run.boxesToUnpack, 'food', 'marked')).toBe(0);
+    expect(countCategoryFrom(run.shelves, run.zones, run.boxesToUnpack, 'food', 'shelf')).toBe(2);
   });
 });
 

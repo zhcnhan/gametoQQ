@@ -56,7 +56,13 @@ export interface TakenBatch {
   itemId: string;
   count: number;
   expiresAtDay: number | null;
-  /** 这一批是从哪儿翻出来的（界面据此解释"为什么今天这么费劲"） */
+  /**
+   * 这一批是从哪儿翻出来的（界面据此解释"为什么今天这么费劲"）。
+   *
+   * ⚠ 它是**箱 / 架**两级，与 `ConsumeSource` 的三级**不是同一把尺子**：
+   * 贴了清单的那几行与没写清单的行都是 `'shelf'`（都在架上）。
+   * 想知道价钱按哪一档算，看调用方传的 `from`，不要从这个字段反推。
+   */
   from: 'shelf' | 'box';
 }
 
@@ -92,7 +98,41 @@ function expiryKey(stack: ItemStack): number {
 }
 
 /**
- * 按 FEFO 取走 `need` 件某品类的物资（货架优先，纸箱兜底）。
+ * 这一格属于哪一档来源（0 = 贴了清单且清单收它、1 = 上了架但没写清单、2 = 纸箱）。
+ *
+ * ★ W-11 把原来内联在 `consumeCategory` 里的那个三元抽出来，就是为了一件事：
+ * **界面数货（`countCategoryFrom`）与实际取货（`consumeCategory`）必须问同一个函数**。
+ * 两边各写一遍的表现是"按下去之前说够、按下去说凑不齐"，而两边各自都算得对。
+ *
+ * 注意它用的是 `zoneAccepts`（这张胶带**容不容**它），**不是**归位率那套
+ * `zoneListedFor`（有没有写进清单）—— 理由见本文件开头那段。
+ */
+function rankOf(shelf: Shelf, row: number, stack: ItemStack, zones: readonly Zone[]): number {
+  const zone = findZone(zones, rowZoneId(shelf, row));
+  return zoneAccepts(zone, getItemDef(stack.itemId)) ? RANK_IN_PLACE : RANK_SHELF;
+}
+
+/**
+ * 这一趟只准从哪一档翻（M4 W-11 的行级选项）。
+ *
+ * 三个值就是上面那三级来源的**上界**：`'marked'` 只从贴了清单、而且清单收它的那几行拿；
+ * `'shelf'` 放宽到所有货架（含没写清单的行）；`'box'` 只从没拆的纸箱里翻。
+ *
+ * ★ 它的语义是"**只准从这一档**"，不是"优先从这一档" —— 所以某一档不够时，
+ * 结果是**凑不齐**而不是"剩下的去别处补"。要"全屋一起凑"就传 `'all'`（默认）。
+ * 这个区分是刻意的：`'box'` 这一档的价钱（`WORK_PER_ITEM_BOX = 4.5`）说的是
+ * "你当着人家的面拆箱"，如果它会自动去货架补几件，那个价钱就不再是那一趟的价钱了。
+ */
+export type ConsumeSource = 'marked' | 'shelf' | 'box';
+
+/**
+ * 取走 `need` 件某品类的物资。
+ *
+ * 默认按三级来源顺序（归位的货架 → 其他货架 → 纸箱），组内 FEFO。
+ *
+ * ★ M4 W-11：多了一个可选的 `from`（见 `ConsumeSource`）。它为 `'all'` 时行为
+ * 与从前**逐位相同** —— 每日消耗那条路（`systems/survival.ts`）与生产代码里的
+ * 其他调用点都不传它，所以那条路上的行为一个字节都没变。
  *
  * @returns 新的货架与纸箱数组（都是 clone 过的），以及取走的明细与缺口。
  *          调用方直接替换 `run.shelves` / `run.boxesToUnpack` 即可。
@@ -102,7 +142,8 @@ export function consumeCategory(
   zones: readonly Zone[],
   boxes: readonly UnpackBox[],
   category: CategoryId,
-  need: number
+  need: number,
+  from: ConsumeSource | 'all' = 'all'
 ): ConsumeResult {
   const nextShelves = shelves.map(cloneShelf);
   const nextBoxes = boxes.map((box) => ({ ...box, items: box.items.slice() }));
@@ -122,7 +163,17 @@ export function consumeCategory(
 
   const candidates: Candidate[] = [];
 
-  for (let i = 0; i < shelves.length; i++) {
+  /*
+   * ★ W-11：`from` 的两个闸。`'all'` 与 `'shelf'` 都读货架（差在 rank 上界），
+   * `'box'` 一个货架格子都不看。两处判断写在一起，免得将来有人只改了一边 ——
+   * 那是"扣了体力却从另一个来源拿了货"这类不会有报错的分家。
+   */
+  const readShelves = from !== 'box';
+  const readBoxes = from === 'all' || from === 'box';
+  /** 货架来源的 rank 上界：`'marked'` 只收 rank 0 那几行 */
+  const shelfRankMax = from === 'marked' ? RANK_IN_PLACE : RANK_SHELF;
+
+  for (let i = 0; readShelves && i < shelves.length; i++) {
     const shelf = shelves[i];
     if (!shelf) continue;
     for (const pos of readingOrder(shelf)) {
@@ -134,9 +185,10 @@ export function consumeCategory(
        * 原来这里是整架的 `shelf.zoneId` —— 一块架子上"主食那两行"和
        * "最上面那行随手堆"会拿到同一个 rank，而它们显然是两回事。
        */
-      const zone = findZone(zones, rowZoneId(shelf, pos.row));
+      const rank = rankOf(shelf, pos.row, stack, zones);
+      if (rank > shelfRankMax) continue;
       candidates.push({
-        rank: zoneAccepts(zone, getItemDef(stack.itemId)) ? RANK_IN_PLACE : RANK_SHELF,
+        rank,
         shelfIndex: i,
         row: pos.row,
         col: pos.col,
@@ -146,7 +198,7 @@ export function consumeCategory(
     }
   }
 
-  for (let i = 0; i < boxes.length; i++) {
+  for (let i = 0; readBoxes && i < boxes.length; i++) {
     const box = boxes[i];
     if (!box) continue;
     for (let k = 0; k < box.items.length; k++) {
@@ -248,6 +300,47 @@ export function countCategory(
     for (const stack of box.items) {
       if (getItemDef(stack.itemId).category !== category) continue;
       total += stackCount(stack);
+    }
+  }
+  return total;
+}
+
+/**
+ * 某一档来源上还有多少件某品类的货（**不动物品、纯数**）。
+ *
+ * ★★ M4 W-11：它的判据必须与 `consumeCategory` 的 `from` 闸**逐字对齐** ——
+ * 界面拿它回答"从划好的那行拿得够吗"，而 `fulfillRequest` 拿真正的 `from` 去取。
+ * 两处一旦分家，表现是"按钮说够、按下去说凑不齐"，而两边各自都算得对。
+ *
+ * 所以这里刻意**只调用**同一个 `rankOf` 判定（下面那个私有函数），
+ * 而不是把 `zoneAccepts` 再写一遍。
+ */
+export function countCategoryFrom(
+  shelves: readonly Shelf[],
+  zones: readonly Zone[],
+  boxes: readonly UnpackBox[],
+  category: CategoryId,
+  from: ConsumeSource | 'all'
+): number {
+  let total = 0;
+  if (from !== 'box') {
+    for (const shelf of shelves) {
+      for (const pos of readingOrder(shelf)) {
+        const stack = getStack(shelf, pos);
+        if (!stack) continue;
+        if (getItemDef(stack.itemId).category !== category) continue;
+        const rank = rankOf(shelf, pos.row, stack, zones);
+        if (rank > (from === 'marked' ? RANK_IN_PLACE : RANK_SHELF)) continue;
+        total += stackCount(stack);
+      }
+    }
+  }
+  if (from === 'all' || from === 'box') {
+    for (const box of boxes) {
+      for (const stack of box.items) {
+        if (getItemDef(stack.itemId).category !== category) continue;
+        total += stackCount(stack);
+      }
     }
   }
   return total;

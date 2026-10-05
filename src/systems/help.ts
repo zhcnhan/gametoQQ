@@ -34,7 +34,7 @@ import { CATEGORY_LABELS } from '../data/items';
 import { getNpcDef } from '../data/npcs';
 import { workCostOf, round1 } from '../data/survival';
 import { dayLabel } from '../model/calendar';
-import { consumeCategory, countCategory } from '../model/consume';
+import { consumeCategory, countCategory, countCategoryFrom, type ConsumeSource } from '../model/consume';
 import { haulFactorOfShelves } from '../model/haul';
 import { createCursor, nextFloat, pickEventAvoidingRecent, type RngCursor } from '../model/rng';
 import { computeOrganizeScore } from '../model/score';
@@ -105,6 +105,131 @@ export function inspectRequest(run: RunState, def: HelpRequestDef): HelpShortfal
   };
 }
 
+// ———————— ★★ M4 W-11：这一趟从哪一档翻 ————————
+
+/**
+ * 三档来源，各有一个**固定的每件价钱**（§6.4 那把尺子的三个刻度，见 `data/survival.ts`）：
+ *
+ *   1.5 —— 贴了清单、而且清单收它的那几行（伸手拿，闭着眼也拿得到）
+ *   3.3 —— 上了架，但那一行没写清单（要翻两下）—— `WORK_PER_ITEM_MID`，刻意是两端的中点
+ *   4.5 —— 还没拆的纸箱（当着人家的面拆箱）—— 就是 `WORK_PER_ITEM_HARD`
+ *
+ * ## 它换掉了什么，又刻意**没**换掉什么
+ *
+ * W-11 之前只有一个数：整单按**全屋整理质量**算一个体力价（4.5 ~ 13.5 之间连续取值）。
+ * 那个数是"你这一屋子平均有多乱"，而它对**这一单到底从哪儿拿**一无所知 ——
+ * 于是 §6.5 承诺的那场取舍（"现在拆箱省时间，还是翻我划好的那一行省力气"）
+ * 在屏幕上根本没有落点：玩家看到的永远只有那一个混合价。
+ *
+ * ★ 现在两套并存，**全屋口径没有被替换**：
+ *   · `searchCost`（老口径）继续按质量算那个混合价，是默认的那条路；
+ *   · `sourceCostOf`（新口径）把三档各自的价钱摆出来，玩家可以**指定**用哪一档。
+ * 两者的差就是这一单"本来能多便宜"—— 那正是要摆给玩家看的东西。
+ *
+ * ⚠ 三档的价钱**不乘** `workCostOf` 的质量曲线，只乘身份天赋。
+ * 理由：这一档的价钱说的就是"这一档有多费劲"，质量那 0.6/0.4 的加权
+ * 是给**混合**口径用的；两者相乘会得到"整理得好的纸箱也便宜"这种不成立的话。
+ */
+export const WORK_PER_ITEM_MARKED = 1.5;
+export const WORK_PER_ITEM_MID = 3.3;
+export const WORK_PER_ITEM_BOX = 4.5;
+
+/**
+ * 这一趟只准从这一档翻。
+ *
+ * 与 `model/consume.ts` 的 `ConsumeSource` **刻意是同一个三值集合**
+ * （那边是"取货时怎么过滤"，这边是"界面上的按钮叫哪一档"）——
+ * 两者一旦分家，表现是"按钮说按划好的那行算 4.5、实际按别处算"。
+ */
+export type WorkSource = ConsumeSource;
+
+/** 这一档每件多少体力 */
+export function workPerItemOf(source: WorkSource): number {
+  if (source === 'marked') return WORK_PER_ITEM_MARKED;
+  if (source === 'shelf') return WORK_PER_ITEM_MID;
+  return WORK_PER_ITEM_BOX;
+}
+
+/** 三档的固定顺序：从最省力到最费劲。界面按它排版，别在各处各写一遍 */
+export const WORK_SOURCES: readonly WorkSource[] = ['marked', 'shelf', 'box'];
+
+/** 档位的名字（界面上那个按钮说什么） */
+export function workSourceLabel(source: WorkSource): string {
+  if (source === 'marked') return '划好的那行';
+  if (source === 'shelf') return '货架上';
+  return '没拆的纸箱';
+}
+
+export interface SourceQuote {
+  source: WorkSource;
+  /** 按这一档算，这一单要多少体力（已含身份天赋） */
+  cost: number;
+  /** 这一档上凑得出几件（可能少于需求） */
+  pieces: number;
+  /** 这一档够不够凑齐这一单 */
+  enough: boolean;
+}
+
+/**
+ * 这一档上凑得出几件（**封顶在需求件数**：多出来的那些不用拿）。
+ *
+ * `quoteSources` 与 `sourceCostOf` 都只问它 —— 与 `countCategoryFrom` 那句
+ * 注释同一个道理，两处各写一遍的账迟早会分家。
+ */
+function availableFrom(run: RunState, def: HelpRequestDef, source: WorkSource): { have: number; missing: number } {
+  let have = 0;
+  let missing = 0;
+  for (const need of def.demands) {
+    const got = countCategoryFrom(run.shelves, run.zones, run.boxesToUnpack, need.category, source);
+    have += Math.min(got, need.count);
+    missing += Math.max(0, need.count - got);
+  }
+  return { have, missing };
+}
+
+/**
+ * 三档各自的报价。★ 界面拿它画按钮，`fulfillRequest` 拿同一档去取货 ——
+ * 两边问的是同一个 `countCategoryFrom`（见那里的注释：两把尺子会分家）。
+ *
+ * ## ★★ 价钱按**这一档真拿得出的件数**算，不是按需求件数
+ *
+ * 第一版写的是 `workPerItemOf(source) * pieces * factor`（`pieces` = 需求总数），
+ * 于是"这一档只有 2 件、而单子要 3 件"那一行会印成「只有 2 件 · **9.9 点**」——
+ * 9.9 是 3 件的钱。玩家读到的是一句自相矛盾的话，而这一屏的全部意义
+ * 就是那两个数能对着看。
+ *
+ * 那一档不够时它的按钮根本不会画出来（`HelpScreen` 只画 `enough` 的），
+ * 所以这个数在那时只是个参照；而够的时候它恰好等于 `sourceCostOf` ——
+ * **屏幕上写的与按下去付的是同一个数**，这一条由 `helpSource.test.ts` 跨层钉住。
+ *
+ * **乘数先乘再 `round1`**，与 `searchCost`、与日报同口径 ——
+ * 先 round 再乘在两个数都是整数时看不出区别，而 base 一旦有小数就会差 0.1。
+ */
+export function quoteSources(run: RunState, def: HelpRequestDef): SourceQuote[] {
+  const factor = identityWorkFactor(run.identityId);
+  return WORK_SOURCES.map((source) => {
+    const { have, missing } = availableFrom(run, def, source);
+    return {
+      source,
+      cost: round1(workPerItemOf(source) * have * factor),
+      pieces: have,
+      enough: missing === 0
+    };
+  });
+}
+
+/**
+ * 按**指定档位**算这一单的体力（与 `quoteSources` 同一把尺子）。
+ *
+ * 与 `searchCost` 的分工写在 `WORK_PER_ITEM_MARKED` 那段注释里。
+ * 件数同样取 `availableFrom` —— 它与 `quoteSources` 必须给出同一个数，
+ * 否则"报价说 4.5 点、按下去扣了 9.9 点"，而两边各自都算得对。
+ */
+export function sourceCostOf(run: RunState, def: HelpRequestDef, source: WorkSource): number {
+  const { have } = availableFrom(run, def, source);
+  return round1(workPerItemOf(source) * have * identityWorkFactor(run.identityId));
+}
+
 /**
  * 凑这一单要花多少体力。用的是**每日劳作那套公式**（件数 × 1.5~4.5）——
  * 因为它是同一种劳作。区别只在规模：订单通常三到五件，
@@ -160,15 +285,37 @@ function reject(reason: string): HelpResult {
  *
  * 换句话说：**`ok` 回答"状态变了吗"，`events` 回答"变成了什么"**。
  * 两者混用就会在两个地方同时出错（界面与账本），而且都不容易看出来。
+ *
+ * ★★ M4 W-11：多了一个可选的 `from`（"这一趟只从哪一档翻"）。
+ *   · 不传（`'all'`）→ 与从前**逐位相同**：全屋一起凑，价钱按整理质量那个混合价；
+ *   · 传了 → 只从那一档取，价钱按那一档的固定单价（见 `WORK_PER_ITEM_MARKED` 一段）。
+ *
+ * ⚠ 传了档位而那一档**不够**时，走的是"凑不齐"那条路（对方今日离开、不扣人情），
+ * 而不是回头去别处补货。这一点必须与 `quoteSources` 的 `enough` 一致 ——
+ * 界面只给够的那几档画按钮，所以正常走不到这里；但真走到了，
+ * 报出来的话必须是"那一档上不够"，不是"你屋里没有"。
  */
-export function fulfillRequest(store: GameStore): HelpResult {
+export function fulfillRequest(store: GameStore, from: ConsumeSource | 'all' = 'all'): HelpResult {
   const run = store.run;
   if (run.phase !== 'help_request') return reject('现在门口没有人');
   const def = run.helpRequest ? findHelpRequestDef(run.helpRequest.defId) : null;
   if (!def) return reject('这一单已经过期了');
 
   const info = inspectRequest(run, def);
-  const cost = searchCost(run, def);
+  const cost = from === 'all' ? searchCost(run, def) : sourceCostOf(run, def, from);
+  /** 选了档位时，"凑得齐吗"要按**那一档**问，不能拿全屋那个数回答 */
+  const missing =
+    from === 'all'
+      ? info.missing
+      : def.demands.reduce(
+          (n, need) =>
+            n +
+            Math.max(
+              0,
+              need.count - countCategoryFrom(run.shelves, run.zones, run.boxesToUnpack, need.category, from)
+            ),
+          0
+        );
 
   const events: HelpEvent[] = [];
   store.commit((draft) => {
@@ -178,8 +325,10 @@ export function fulfillRequest(store: GameStore): HelpResult {
     // 两种"没给成"在这里是**分开**的：一种是你没能耐，一种是你没力气。
     // 都不额外扣人情 —— §6.5 只把"婉拒"算作不讲情面
     const why =
-      info.missing > 0
-        ? `翻遍了也只凑出 ${info.pieces - info.missing} 件`
+      missing > 0
+        ? from === 'all'
+          ? `翻遍了也只凑出 ${info.pieces - info.missing} 件`
+          : `${workSourceLabel(from)}只有 ${info.pieces - missing} 件`
         : draft.stats.stamina < cost
           ? `翻这一趟要 ${cost} 点体力，你今天不够`
           : '';
@@ -194,7 +343,14 @@ export function fulfillRequest(store: GameStore): HelpResult {
     }
 
     for (const need of def.demands) {
-      const result = consumeCategory(draft.shelves, draft.zones, draft.boxesToUnpack, need.category, need.count);
+      const result = consumeCategory(
+        draft.shelves,
+        draft.zones,
+        draft.boxesToUnpack,
+        need.category,
+        need.count,
+        from
+      );
       draft.shelves = result.shelves;
       draft.boxesToUnpack = result.boxes;
     }
@@ -237,8 +393,14 @@ export function fulfillRequest(store: GameStore): HelpResult {
     draft.helpRequest = null;
     draft.phase = 'survival_day';
     draft.seed = cursor.state;
+    /*
+     * ★ W-11：日志里写上"从哪儿凑的"。这不是装饰 —— 它是 §10.1A 铁则要的
+     * **非数字表达**：同一单 4.5 点与 13.5 点的差别，只有在这一行里才看得出
+     * 是"伸手拿的"还是"当着面拆箱的"。
+     */
     draft.log.push(
       `${dayLabel(draft.day)} · 给了${npc.name}${describeNeeds(def)}，人情 +${def.trustGain}` +
+        `${from === 'all' ? '' : `（从${workSourceLabel(from)}凑的）`}` +
         `${thanks ? `，他留下 ${thanks}` : ''}`
     );
     events.push({ type: 'helpFulfilled', npcName: npc.name, thanks });
