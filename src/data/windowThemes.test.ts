@@ -32,6 +32,28 @@ const RESERVED = ['#c8372d', '#f2c94c', '#f7f3ea', '#2c2c2a', '#fffcf5'];
 
 const hex = (v: string): string => v.toLowerCase();
 
+/** `#rrggbb` → HSL 里的明度（0~100）。"看起来深还是浅"最直接的量 */
+function lightness(color: string): number {
+  const n = parseInt(hex(color).replace('#', ''), 16);
+  const r = ((n >> 16) & 255) / 255;
+  const g = ((n >> 8) & 255) / 255;
+  const b = (n & 255) / 255;
+  return ((Math.max(r, g, b) + Math.min(r, g, b)) / 2) * 100;
+}
+
+/** `#rrggbb` → HSL 里的饱和度（0~100） */
+function saturation(color: string): number {
+  const n = parseInt(hex(color).replace('#', ''), 16);
+  const r = ((n >> 16) & 255) / 255;
+  const g = ((n >> 8) & 255) / 255;
+  const b = (n & 255) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  const d = max - min;
+  return d === 0 ? 0 : (d / (1 - Math.abs(2 * l - 1))) * 100;
+}
+
 describe('★★ 「每一场灾难看起来都不一样」—— 116 个窗外主题一个都不许漏', () => {
   it('★ 116 场的 windowScene **全部**有手写主题（没有一场回退到家族色）', () => {
     /*
@@ -111,5 +133,64 @@ describe('★★ 「每一场灾难看起来都不一样」—— 116 个窗外�
       })
       .map(([family, set]) => `${family}（${set.size} 种色）`);
     expect(thin, '这些家族内部颜色太少 —— 同一家族的两场会看起来一样').toEqual([]);
+  });
+
+  /**
+   * ★★ 对比度：**"看不出来"要能被拦住**（用户 2026-10："对比更强"）
+   *
+   * ## 为什么要有下界，而不只是"好看就行"
+   *
+   * 第一版那 116 组配色是"印在纸上的淡彩"—— 方向没错（§5A 的印色就该压过
+   * 明度与饱和度），但**拉不开**。实测（`scripts/_probe-contrast.ts`）：
+   *
+   * | 量什么 | 改之前 | 改之后 |
+   * | --- | --- | --- |
+   * | 三道渐变的明度跨度（中位） | 34.9 | **44.7** |
+   * | 最平的那一场 | **10.2**（几乎是一块纯色） | **26.5** |
+   * | 代表色的饱和度（中位） | **8.9%** | **19.6%** |
+   *
+   * "那一场最平"不是审美问题：**一道纯色板读不出"窗外"**，它只是界面上的一块色块。
+   */
+  it('★★ 每一场的三道渐变要拉得开（最平的那一场也不许是一块纯色）', () => {
+    const flat: string[] = [];
+    for (const d of DISASTER_DEFS) {
+      const t = windowThemeOf(d);
+      const ls = [t.sky, t.far, t.ground].map((c) => lightness(c));
+      const spread = Math.max(...ls) - Math.min(...ls);
+      if (spread < 26) flat.push(`${d.name}（明度跨度 ${spread.toFixed(1)}）`);
+    }
+    expect(flat, '这些场的窗外淡得像一块纯色 —— 玩家读不出"天在上、地在下"').toEqual([]);
+  });
+
+  it('★★ 代表色的饱和度不能太低（灰到看不出色偏 = 这一场没有颜色）', () => {
+    /*
+     * ★ 门槛 **14%** 不是拍出来的，是量出来的：第一版我用的是 ×2.2 的倍数、
+     * 下限卡在 8%，实跑 35 场不过 —— 而根因不是"配色坏了"，是**倍数把灰顶到了同一个下限**：
+     * `宵禁` / `封控` / `骚乱` 三场拿到了**一模一样**的 `#424038`
+     * （那正是"同质性太强烈"，只不过换了个位置）。
+     *
+     * 修法是给变换加一个**抬底**（"哪怕你本来是灰的，也给你一点可读的色偏"），
+     * 让灰底场景靠**色相**（冷灰 / 暖褐 / 灰绿）分开。改完实测最低 **15.5%**。
+     */
+    const grey: string[] = [];
+    for (const d of DISASTER_DEFS) {
+      const s = saturation(disasterTintOf(d));
+      if (s < 14) grey.push(`${d.name}（饱和度 ${s.toFixed(1)}%）`);
+    }
+    expect(grey, '这些场的代表色灰到看不出是什么').toEqual([]);
+  });
+
+  it('★ 不许有两场拿到**完全相同**的代表色（那就是"看起来一样"的定义）', () => {
+    const byColor = new Map<string, string[]>();
+    for (const d of DISASTER_DEFS) {
+      const list = byColor.get(disasterTintOf(d)) ?? [];
+      list.push(d.name);
+      byColor.set(disasterTintOf(d), list);
+    }
+    const dupes = [...byColor.entries()].filter(([, names]) => names.length > 1);
+    expect(
+      dupes.map(([c, names]) => `${c} ← ${names.join('/')}`),
+      '这些场的代表色一模一样'
+    ).toEqual([]);
   });
 });
