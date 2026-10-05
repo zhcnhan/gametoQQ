@@ -342,7 +342,15 @@ function makeScreen(key: ScreenKey): Screen {
   }
 }
 
-const router = new Router(root, () => keyOfPhase(store.run.phase), makeScreen);
+// ★ 第四个参数 = "这一局正在经历哪一场"（D-33 / 决策 E）：底色跟着灾难家族走，
+//   而 Router 是每一屏都会经过的地方。`run.disasterId` 一定是表里认识的 id ——
+//   `state/save.ts` 在读档时用 `hasDisasterDef` 兜过底（不认识的换回寒潮）。
+const router = new Router(
+  root,
+  () => keyOfPhase(store.run.phase),
+  makeScreen,
+  () => getDisasterDef(store.run.disasterId)
+);
 router.render();
 
 // 移动端：第一次触摸才允许创建 AudioContext（自动播放策略）

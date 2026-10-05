@@ -14,7 +14,14 @@
  * 所以它由**装配层**的一个内存开关决定（`main.ts` 的 `codexOpen`），
  * 优先级高于 `phase`。刷新之后开关回到 false（图鉴是"看一眼"的地方，
  * 不是要恢复的进度），然后按 `phase` 回到玩家真正该在的那一屏 —— 这正是 §4A 要的。
+ *
+ * ## ★ 它也是"整页底色"的唯一落点（D-33 / 决策 E）
+ *
+ * 底色跟着这一场的灾难家族走，而换页时**不重设**它 —— 所以必须由一个
+ * "每屏都会经过"的地方来挂。`render()` 开头那句 `applyTone()` 就是这个位置。
  */
+import { familyToneVars } from '../data/familyTone';
+import type { DisasterProfile } from '../model/types';
 
 export interface Screen {
   /** 建 DOM、挂事件（只在进入这个界面时调一次） */
@@ -47,20 +54,48 @@ export class Router {
   private readonly root: HTMLElement;
   private readonly make: (key: ScreenKey) => Screen;
   private readonly keyOf: () => ScreenKey;
+  /**
+   * 这一局正在经历哪一场灾难（D-33 / 决策 E）。
+   *
+   * 为什么**由 Router 自己调**而不是各屏自己挂：底色是**整页**的属性，
+   * 而屏与屏之间的切换不重设它 —— 一旦某一屏忘了挂，玩家看到的是
+   * "刚才还是冷的、点一下变回米黄"，而这一屏与上一屏的代码各自都是对的。
+   * 挂在换页这一处，"每一屏都有底色"就成了构造保证。
+   */
+  private readonly disasterOf: () => DisasterProfile | undefined;
   private current: { key: ScreenKey; screen: Screen } | null = null;
 
-  constructor(root: HTMLElement, keyOf: () => ScreenKey, make: (key: ScreenKey) => Screen) {
+  constructor(
+    root: HTMLElement,
+    keyOf: () => ScreenKey,
+    make: (key: ScreenKey) => Screen,
+    disasterOf: () => DisasterProfile | undefined = () => undefined
+  ) {
     this.root = root;
     this.keyOf = keyOf;
     this.make = make;
+    this.disasterOf = disasterOf;
   }
 
   get currentKey(): ScreenKey | null {
     return this.current ? this.current.key : null;
   }
 
+  /** 把这一场的家族配色写到 `<body>` 上（见 `data/familyTone.ts`） */
+  private applyTone(): void {
+    const disaster = this.disasterOf();
+    const vars = familyToneVars(disaster);
+    for (const [name, value] of Object.entries(vars)) {
+      document.body.style.setProperty(name, value);
+    }
+    // 家族名也挂上：将来要按家族写 CSS 规则时有地方落，且它让"现在是什么底"可查
+    if (disaster) document.body.dataset['disasterFamily'] = disaster.family;
+    else delete document.body.dataset['disasterFamily'];
+  }
+
   /** phase 变了就换页，没变就重绘当前页 */
   render(): void {
+    this.applyTone();
     const key = this.keyOf();
     if (!this.current || this.current.key !== key) {
       // 先摘干净旧界面的监听器，再清 DOM —— 顺序反了就会留下一批指向已死节点的委托
