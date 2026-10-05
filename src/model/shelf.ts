@@ -5,6 +5,7 @@
  * 所有函数返回**新的** Shelf，不改入参 —— 配合原子存档，任何中间状态都能整份写盘。
  */
 import { getItemDef } from '../data/items';
+import { EXHAUSTED_REACH } from '../data/survival';
 import type { CategoryId, ItemDef, ItemStack, Shelf, Slot, SlotPos, UnpackBox, Zone } from './types';
 
 export const SHELF_W = 6;
@@ -721,6 +722,91 @@ export function countOnHandy(shelves: readonly Shelf[], category: CategoryId): n
       if (!stack) continue;
       if (getItemDef(stack.itemId).category !== category) continue;
       total += stackCount(stack);
+    }
+  }
+  return total;
+}
+
+/**
+ * ★ **这一堆是不是"写明了放哪儿"**（M4 W-08 的判据）。
+ *
+ * 两种情况算：① 它在**顺手位**那块架子上；② 它所在那一**行**贴着一张
+ * **明确收它**的胶带（`zoneListedFor` —— 与归位率同一把尺子）。
+ *
+ * ## 为什么"贴了胶带"也算够得到
+ *
+ * 这一格要回答的是"**体力见底那天，屋里哪些东西不用翻就找得到**"。
+ * 而"贴了胶带"这件事的含义正是"我知道这类东西在哪一行" —— 它省掉的**不是距离，
+ * 是翻找**。所以它与顺手位是同一类东西（都让取用不必翻），只是强度不同：
+ * 顺手位是"伸手就拿"，胶带是"直着走过去拿"。
+ *
+ * ★ 判据刻意走 `zoneListedFor` 而不是 `zoneAccepts`（与归位率同一个理由）：
+ * 一张**空胶带**什么都收，所以它没有告诉你任何东西 —— 那种"贴了等于没贴"
+ * 正是 §12 v0.8 修掉的那个 loophole，这里不能再开一个后门。
+ */
+export function isInPlaceFor(shelf: Shelf, row: number, item: ItemDef, zones: readonly Zone[]): boolean {
+  if (shelf.handyRank !== null) return true;
+  return zoneListedFor(findZone(zones, rowZoneId(shelf, row)), item);
+}
+
+/**
+ * ★★ **体力见底那一天，这个品类能凑到几件** —— 生存期结算那条算式的模型层版本。
+ *
+ * 口径（与 `systems/survival.ts` 的结算逐字一致）：
+ * **一半的需求（向上取整）＋ 顺手位上的那些**。
+ *  · 一半是"翻不动也还剩一口气"的那条底（`EXHAUSTED_REACH`，刻意不是 0 ——
+ *    饿死人不该由"累"来完成）；
+ *  · 顺手位上的**不用翻**，所以是**加**上去的，不受那一半的限制。
+ *
+ * ## ⚠ 它**刻意不看胶带**（"顺手位 ∪ 贴了清单的行"是另一件事）
+ *
+ * 我一度想让这个函数也认胶带（"写明放哪儿的都算够得到"），那样日报那一格
+ * 与结算就是同一个口径了 —— 但那条路会把**顺手位在"最糟那天"的唯一性**
+ * 让给胶带，于是"门口那一块"退化成可有可无。两者的分工要保住：
+ *
+ * | 谁 | 管什么 |
+ * | --- | --- |
+ * | **胶带**（`isInPlaceFor` 的那一半） | 取用顺序与归位 —— 每天省的是**翻找** |
+ * | **顺手位**（`countOnHandy`） | 最糟的那天**够不够得着** —— 就是这一条 |
+ *
+ * 所以这里只认顺手位，而日报的 `handyDays` 读 `isInPlaceFor` ——
+ * **两个问题不同，读数就该不同。** 注释写在这里，免得下一个人把它们"统一"掉。
+ *
+ * ⚠ 它是**结算那条算式的复印件**，而复印件会漂（§2.16）。目前它没有生产读者
+ * （结算自己写着那三行，见 `systems/survival.ts` 里那段"刻意不看胶带"的注释），
+ * 留着的唯一理由是给测试一个可直接调用的口径。**改动结算那一行时，这里要跟着改。**
+ *
+ * @param need 这一类今天要几件（基础消耗，不含硬撑加码）
+ */
+export function dailyReachable(
+  shelves: readonly Shelf[],
+  category: CategoryId,
+  need: number,
+  exhausted: boolean
+): number {
+  if (need <= 0) return 0;
+  const handy = countOnHandy(shelves, category);
+  return exhausted ? Math.min(need, Math.max(0, Math.ceil(need * EXHAUSTED_REACH)) + handy) : need;
+}
+
+/**
+ * 某品类**写明放哪儿**的总件数（顺手位 ∪ 贴了收它的清单的行）。
+ *
+ * 它是 `dailyReachable` 与日报那一格共同的分子，所以只允许一个实现 ——
+ * 与 `countOnHandy` 的注释是同一条纪律（"两处各写一份，玩家会看到自相矛盾"）。
+ */
+export function countInPlace(shelves: readonly Shelf[], zones: readonly Zone[], category: CategoryId): number {
+  let total = 0;
+  for (const shelf of shelves) {
+    for (let row = 0; row < shelf.h; row++) {
+      for (let col = 0; col < shelf.w; col++) {
+        const stack = getStack(shelf, { row, col });
+        if (!stack) continue;
+        const item = getItemDef(stack.itemId);
+        if (item.category !== category) continue;
+        if (!isInPlaceFor(shelf, row, item, zones)) continue;
+        total += stackCount(stack);
+      }
     }
   }
   return total;

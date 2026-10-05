@@ -727,3 +727,38 @@ export function pointerEvent(
 ): Record<string, unknown> {
   return { clientX: x, clientY: y, pointerId: 1, pointerType: 'touch', button: 0, buttons: 1, cancelable: true, ...extra };
 }
+
+/**
+ * ★★ 把一棵子树里**所有**读得到的字拼起来 —— 屏幕级断言该走这个。
+ *
+ * ## 为什么必须有一个（而不是各测试自己写一遍）
+ *
+ * 假体的解析器不实现文本节点（见 `parseHtml` 的边界说明）：只有**没有子标签**
+ * 的元素才有 `textContent`。所以 `<div class="a"><i>外面</i><b>-18°C</b></div>`
+ * 这种混排里，容器本身读到空串，而 `<i>` / `<b>` 各自好端端的。
+ *
+ * 于是"读 `.contrast-cell` 的 textContent"会得到**空**，而那条失败看起来
+ * 像"这一格没渲染" —— 它会把一个正确的界面报成坏的。反过来更危险：
+ * 用 `not.toContain` 断言时，空串会让它**永远通过**。
+ *
+ * 这个函数把"这一屏上到底有哪些字"变成一句可依赖的话：沿 `children` 递归，
+ * 收集每个**有文本**的节点。它对"真 DOM 里能不能读到"不做承诺 ——
+ * 它回答的是"假体里渲染出了哪些字"，而那正是测试要断言的那件事。
+ *
+ * ⚠ 它**不**按文档顺序拼接容器与叶子的文本（假体没有文本节点，顺序信息不存在）。
+ * 所以断言应该用 `toContain` / `toContain` 的组合，而不是 `toBe` 一整句。
+ */
+export function leafTexts(el: FakeElement): string[] {
+  const out: string[] = [];
+  const walk = (node: FakeElement): void => {
+    if (node.textContent) out.push(node.textContent);
+    for (const child of node.children) walk(child);
+  };
+  walk(el);
+  return out;
+}
+
+/** `leafTexts` 的拼接版：读"这一屏/这一块有哪些字"时默认用它 */
+export function allText(el: FakeElement): string {
+  return leafTexts(el).join('｜');
+}

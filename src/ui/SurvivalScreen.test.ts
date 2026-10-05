@@ -23,11 +23,12 @@
  * 它不存在 = 那一行没渲染 —— 这正是第 1 条要的判据。
  */
 import { afterEach, describe, expect, it } from 'vitest';
+import { makeStack } from '../model/shelf';
 import { createSaveGame } from '../state/save';
 import { GameStore } from '../state/store';
 import { createStartingRun } from '../systems/setup';
 import { SurvivalScreen } from './SurvivalScreen';
-import { FakeDocument, asElement, installFakeWindow, type FakeElement } from './fakeDom';
+import { FakeDocument, allText, asElement, installFakeWindow, type FakeElement } from './fakeDom';
 import type { SurvivalSnapshot } from '../model/types';
 
 function stubScheduler() {
@@ -151,5 +152,86 @@ describe('★★ 有消息时：说清"相对什么"', () => {
     const text = marketLine(root)?.textContent ?? '';
     expect(text).toContain('贵');
     expect(text).toContain('限购');
+  });
+});
+
+/**
+ * ★★ 反差层多出来的那一对：「随手够得到」（M4 工单 W-08）
+ *
+ * ## 它守的是"整理在日报上终于可见"
+ *
+ * 「你的余粮」那一格的分母是"货架 ∪ **纸箱**"，所以把 30 罐从纸箱搬到
+ * 贴好胶带的架上，它**一个数都不变** —— 「搬上架」「贴胶带」「标顺手位」
+ * 这三个动作在日报上完全不可见。
+ *
+ * ## 判据的形状：**只在两个数不一样时才并列**
+ *
+ * 差是 0 的时候（一件都没上架、整批货还躺在纸箱里）并排放两个相同的数
+ * 会让人以为这一格坏了。所以判据是"那一行存在 / 不存在"，
+ * 而不是"那一行的数字是多少"。
+ */
+describe('★★ 反差层：「随手够得到」只有在它**不等于**余粮时才出现', () => {
+  /** 铺一份"全在纸箱里"的局面（余粮有、够得到 0） */
+  function inBoxes(): GameStore {
+    const store = survivalStore();
+    store.commit((draft) => {
+      draft.shelves = draft.shelves.map((s) => ({
+        ...s,
+        slots: s.slots.map((row) => row.map(() => ({ stack: null })))
+      }));
+      draft.boxesToUnpack = [
+        {
+          id: 'box_x',
+          defId: 'box_staple',
+          items: [makeStack('canned_beans', 30, null), makeStack('mineral_water', 30, null), makeStack('fuel_can', 30, null)]
+        }
+      ];
+    });
+    return store;
+  }
+
+  function mountStore(store: GameStore): FakeElement {
+    const doc = new FakeDocument();
+    installFakeWindow(doc);
+    const root = doc.createElement('div');
+    new SurvivalScreen(asElement(root), store, {
+      onStart: () => undefined,
+      onNext: () => undefined,
+      onTrade: () => false
+    }).mount();
+    return root;
+  }
+
+  it('★ 货全在纸箱里 → 出现「随手够得到 0 天」，而"你的余粮"仍在', () => {
+    /*
+     * ⚠ 走 `allText`（`fakeDom` 的叶文本收集），不是读某个容器的 `textContent`：
+     * `.contrast-cell` 里是 `<i>标签</i><b>数字</b>` 这种混排，而假体不实现文本节点
+     * —— 容器的 `textContent` 是**空串**，于是"这一格没渲染"会把一个正确的界面报成坏的。
+     */
+    const root = mountStore(inBoxes());
+    const all = allText(root);
+    expect(all, '反差层没有"随手够得到"那一格').toContain('随手够得到');
+    expect(all).toContain('你的余粮');
+    expect(all, '差值那一格没有一起出现').toContain('要翻才拿得到');
+    // 而它单独占一对（用来给样式挂钩，也用来给这条断言定位）
+    expect(root.querySelectorAll('.contrast-pair.is-reach').length).toBe(1);
+  });
+
+  it('★ 屋里空着（余粮也是 0）→ 那一对**不渲染**（两个相同的数只会让人以为坏了）', () => {
+    const store = survivalStore();
+    store.commit((draft) => {
+      draft.shelves = draft.shelves.map((s) => ({
+        ...s,
+        slots: s.slots.map((row) => row.map(() => ({ stack: null })))
+      }));
+      draft.boxesToUnpack = [];
+    });
+    const root = mountStore(store);
+    const all = allText(root);
+    expect(all).not.toContain('随手够得到');
+    expect(root.querySelectorAll('.contrast-pair.is-reach').length, '差为 0 时不该有那一对').toBe(0);
+    // 而上面两对（温度、余粮）照旧 —— 否则就是整块没渲染，而不是"那一对没渲染"
+    expect(all).toContain('外面');
+    expect(all).toContain('你的余粮');
   });
 });

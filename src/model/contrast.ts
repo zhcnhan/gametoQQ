@@ -12,8 +12,10 @@
  *
  * model/ 层纪律：纯函数，不碰任何浏览器 API。
  */
-import { dailyDrainOf } from '../data/survival';
+import { SURVIVAL_DAYS } from '../data/disaster';
+import { EXHAUSTED_REACH, dailyDrainOf } from '../data/survival';
 import { countCategory } from './consume';
+import { countInPlace } from './shelf';
 import type { DisasterProfile, RunState } from './types';
 
 /**
@@ -32,6 +34,10 @@ export function indoorTemp(shelter: number): number {
  *
  * 取**最小值**而不是总和：水和米各剩十份是够的，但只够到水先断的那天。
  * 这也是界面上那句"还能撑 N 天"的口径，两处必须一致。
+ *
+ * ⚠ **它的分母是全屋**（货架 ∪ 还没拆的纸箱），所以它对"搬运"恒等不变 ——
+ * 把 30 罐从纸箱搬到贴好胶带的架上，这个数**一个都不动**（那是 W-08 的起因）。
+ * 想知道"够得着的"有多少天，看 `handyDays`。
  */
 export function supplyDays(run: RunState, disaster: DisasterProfile): number {
   const needs = dailyDrainOf(disaster);
@@ -42,6 +48,84 @@ export function supplyDays(run: RunState, disaster: DisasterProfile): number {
     min = Math.min(min, Math.floor(stock / need));
   }
   return Number.isFinite(min) ? min : 0;
+}
+
+/**
+ * ★★ **随手够得到几天**（M4 工单 W-08）。
+ *
+ * ## 它补的是哪一个洞
+ *
+ * 「你的余粮 N 天」那一格的输入是"货架 ∪ **纸箱**的件数 ÷ 日耗" ——
+ * 所以把 30 罐从纸箱搬到**贴好胶带的架上**，那一格**一个数都不变**。
+ * 也就是说：**「搬上架」「贴胶带」「标顺手位」这三个动作，在日报上完全不可见。**
+ *
+ * 这一格数的是"**体力见底那天也够得到的那部分**"能撑几天 ——
+ * 判据是 `isInPlaceFor`：**顺手位那块架子** ∪ **贴了明确收它的清单的那一行**。
+ * 两者是同一类东西（都让取用不必翻），只是强度不同。
+ *
+ * ## 那三个动作各自换来一截（这是这一格存在的全部理由）
+ *
+ * | 状态 | 够得到 |
+ * | --- | --- |
+ * | 全堆在纸箱里 | **0 天**（箱底的东西要翻，而翻不动） |
+ * | 搬上架、什么都没写 | 只有"半份"那条底 → 不够一天 |
+ * | **贴了收它的清单** | 那一行不用翻 → 满份 |
+ * | **标了顺手位** | 连走都不用走 → 满份，而且是最先兑现的那一块 |
+ *
+ * ## 口径：逐日往下走，而不是"总量 ÷ 日耗"
+ *
+ * 差在哪儿：顺手位上那一块**每天用掉一点就会少一点**，而"够得到"又取决于
+ * 当天还剩几件。所以这里一天一天地扣，扣到哪一天凑不齐为止 ——
+ * 与生存期结算同一套算术，只是把"全屋"换成了"够得着的那一份"。
+ *
+ * ## 三条刻意的边界
+ *
+ *  1. **只数货架**：纸箱里的东西不在明面上，翻箱要力气 —— 所以搬进箱子的货
+ *     在这格里是 0 天。这正是要它做的事；
+ *  2. **按体力见底来算**（`exhausted = true`）：这一格回答的不是"今天够不够"
+ *     （那由日报的"该吃该烧的都凑齐了"回答），而是"**最糟的那天够不够**"。
+ *     按最好的那天算，它永远等于「你的余粮」，那一格就白加了；
+ *  3. **不是预测，是读数**：它假设之后什么都不变（不吃药、不添被、不再整理）。
+ *     所以它读起来像"你现在这个样子能撑几天"，而不是"你会活几天"——
+ *     与这一层"只给数、不给形容词"的纪律一致（§6.6 零台词）。
+ */
+export function handyDays(run: RunState, disaster: DisasterProfile): number {
+  const needs = dailyDrainOf(disaster).filter((n) => n.need > 0);
+  if (needs.length === 0) return 0;
+  const left = new Map<string, number>();
+  /** 其中**写明放哪儿**（顺手位 ∪ 贴了清单的行）的那一份 —— 逐日扣，见下面的注释 */
+  const reach = new Map<string, number>();
+  for (const { category } of needs) {
+    left.set(category, countCategory(run.shelves, [], category));
+    reach.set(category, countInPlace(run.shelves, run.zones, category));
+  }
+
+  for (let day = 1; day <= SURVIVAL_DAYS; day++) {
+    for (const { category, need } of needs) {
+      const have = left.get(category) ?? 0;
+      const inPlace = Math.min(reach.get(category) ?? 0, have);
+      /*
+       * 当天真的能拿到的量：**一半的底 + 还写明放哪儿的那些**。
+       *
+       * ★ 这里逐日重算，不拿开局快照 —— 我第一版拿的就是快照，而它当场造出一个
+       * 假读数：标着 5 天货的架子 + 另一块架子上堆满的货 → 快照让后面那几天
+       * **全按"不用翻"算**，"随手够得到"报出 14 天；而实际上第 6 天起
+       * 就得翻别的架子上那两件。**快照会把别处的货偷偷算进"够得到"**，
+       * 而那恰好是这一格存在的理由的反面。
+       */
+      const reachable = Math.min(need, Math.max(0, Math.ceil(need * EXHAUSTED_REACH)) + inPlace);
+      if (reachable < need) return day - 1;
+      /*
+       * 存量与"写明放哪儿的那一份"一起往下扣。
+       *
+       * 扣的顺序与结算是同一个意思（归位的先出）：当天吃掉的那些先来自
+       * 够得到的那一块，不够的部分才轮到要翻的 —— 所以 `reach` 每天最多减一个 `need`。
+       */
+      left.set(category, have - need);
+      reach.set(category, Math.max(0, inPlace - need));
+    }
+  }
+  return SURVIVAL_DAYS;
 }
 
 /**

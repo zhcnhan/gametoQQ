@@ -22,7 +22,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createMetaProfile } from '../state/save';
 import { PrologueScreen } from './PrologueScreen';
-import { FakeDocument, asElement, installFakeWindow, type FakeElement } from './fakeDom';
+import { FakeDocument, allText, asElement, installFakeWindow, type FakeElement } from './fakeDom';
 
 function mount(disasterId: string): FakeElement {
   const doc = new FakeDocument();
@@ -72,11 +72,15 @@ describe('★ 开局页显示的是**这一局真的抽到的那一场**', () =>
      * 这是本文件的核心一条。它防的是"日历按抽到的那场走、而标题/文案
      * 还写着上一版的常量"—— 那种错在屏幕上是自相矛盾的，
      * 而它读起来仍然像一句正常的话（玩家会以为"寒潮"是这一场灾难的代号）。
+     *
+     * ★ 断言走 `allText`（`fakeDom` 的叶文本收集）而不是挑几个 `.block-note`：
+     * **这一条是"整页不许出现"** —— 只读几个已知的叶子，等于给"将来某处
+     * 新加一句写死的寒潮文案"留了一个不会被抓到的口子。而那一句正是最容易漏的
+     * （"最要紧的是 …" 就是这么一处：它在假体里根本不是叶子）。
      */
     const root = mount('heat_wave');
     expect(blockTitle(root, 1)).toContain('热浪');
-    const page = [blockTitle(root, 0), blockTitle(root, 1), ...blockNotes(root)].join('｜');
-    expect(page, '开局页在热浪局里念了寒潮的日历').not.toContain('寒潮');
+    expect(allText(root), '开局页在热浪局里念了寒潮的日历').not.toContain('寒潮');
   });
 
   it('日历本身按这一场画：两场的强度曲线不同', () => {

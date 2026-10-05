@@ -275,6 +275,16 @@ export function settleSurvivalDay(run: RunState, cursor?: RngCursor): SurvivalRe
     const need = baseNeed + (dawnTier?.extraDrain[category] ?? 0);
     // 顺手位上的那些**不用翻** —— 体力见底的时候，它们是你唯一还够得到的东西。
     // 这就是 §5「应急货架（门口/最顺手位）」在数值上的落点，也是应急可达率的出口。
+    //
+    // ★ 这一行**刻意不看胶带**（W-08 讨论后的口径）：`countOnHandy` 只认顺手位。
+    //   我一度把它换成"写明放哪儿的都算"（顺手位 ∪ 贴了清单的行），
+    //   而那会把**顺手位在体力见底那天的唯一性**让给胶带 —— 于是"门口那一块"
+    //   退化成可有可无。两者的分工要保住：
+    //     · **胶带**管"取用顺序与归位"（每天省的是翻找，见 `workCostOf` 那三条链）；
+    //     · **顺手位**管"最糟的那天够不够得着"（这一行）。
+    //   而日报新加的那一格（`handyDays`）用得更宽 —— 它回答的是另一个问题
+    //   （"你现在这个样子能撑几天"），所以它读 `isInPlaceFor`。
+    //   两个问题不同，读数不同，注释写在这里免得下一个人把它们统一掉。
     const handy = countOnHandy(run.shelves, category);
     const reachable = exhausted
       ? Math.min(need, Math.max(0, Math.ceil(need * EXHAUSTED_REACH)) + handy)

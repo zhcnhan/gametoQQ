@@ -18,7 +18,7 @@ import { playSfx } from '../fx/audio';
 import { itemIconSvg } from '../fx/icons';
 import { hintAt, dayLabel, severityAt } from '../model/calendar';
 import { countByItem, countCategory } from '../model/consume';
-import { districtDays, indoorTemp, supplyDays } from '../model/contrast';
+import { districtDays, handyDays, indoorTemp, supplyDays } from '../model/contrast';
 import { computeOrganizeScore } from '../model/score';
 import type { DisasterProfile, HardPressLevel, RunState, SurvivalSnapshot } from '../model/types';
 import { revealedForecasts } from '../systems/intel';
@@ -270,8 +270,25 @@ export class SurvivalScreen implements Screen {
    * 两对数字并排：外面的温度对屋里的温度，你的余粮对街区的余粮。
    * **不配任何形容词** —— 这一层的全部力量来自让玩家自己把两个数摆在一起看；
    * 一旦写下"你比邻居强多了"，它就变成炫耀，而炫耀是这个游戏一直躲开的东西。
+   *
+   * ## ★ 第三对：「你的余粮」对「随手够得到」（M4 W-08）
+   *
+   * 这一对和上面两对**不是同一种关系**：上面两对是"跟别人比"（外面 vs 屋里、
+   * 你 vs 街区），而这一对是"**跟自己的另一个数比**" ——
+   *
+   * > 你囤了 11 天，可随手够得到的只有 4 天。
+   *
+   * 它存在的理由是那笔具体的账：`supplyDays` 的分母是"货架 ∪ **纸箱**"，
+   * 所以**把 30 罐从纸箱搬到贴好胶带的架上，那块屏幕上一个数都不变**——
+   * 「搬上架」「贴胶带」「标顺手位」这三个动作在日报上完全不可见（W-08 的起因）。
+   * 现在它们是两个并排的天数，差多少一眼看得出。
+   *
+   * ⚠ **仍然零台词**：不写"你该整理了"。差值是玩家自己看见的 ——
+   * 与 §5 引擎①「游戏不评判对错」一字不冲突。
    */
   private contrastHtml(disaster: DisasterProfile, run: RunState): string {
+    const total = supplyDays(run, disaster);
+    const handy = handyDays(run, disaster);
     return `
       <section class="block">
         <h2 class="block-title">外面 / 里面</h2>
@@ -280,9 +297,24 @@ export class SurvivalScreen implements Screen {
           <div class="contrast-cell is-warm"><i>屋里</i><b>${indoorTemp(run.stats.shelter)}°C</b></div>
         </div>
         <div class="contrast-pair">
-          <div class="contrast-cell"><i>你的余粮</i><b>${supplyDays(run, disaster)} 天</b></div>
+          <div class="contrast-cell"><i>你的余粮</i><b>${total} 天</b></div>
           <div class="contrast-cell"><i>街区平均</i><b>${districtDays(run.day)} 天</b></div>
         </div>
+        ${
+          /*
+           * 只在两个数**不一样**时并排显示。
+           *
+           * 差是 0 的时候（屋里一件应急货都没上架、整批货还躺在纸箱里）并排放两个
+           * 相同的数只会让人以为这一格坏了；而差是正的时候，那一行差值本身就是
+           * 这一格全部的信息量 —— 不需要一句话去解释它。
+           */
+          total - handy > 0
+            ? `<div class="contrast-pair is-reach">
+                 <div class="contrast-cell"><i>随手够得到</i><b>${handy} 天</b></div>
+                 <div class="contrast-cell"><i>要翻才拿得到</i><b>${total - handy} 天</b></div>
+               </div>`
+            : ''
+        }
       </section>
     `;
   }

@@ -2335,6 +2335,40 @@ button:disabled {
   background: rgba(242, 201, 76, 0.14);
 }
 
+/*
+ * ★ 第三对：「随手够得到 / 要翻才拿得到」（M4 W-08）。
+ *
+ * 它与上面两对**不是同一种关系**：那两对是"跟别人比"（外面 vs 屋里、你 vs 街区），
+ * 而这一对是**跟自己的另一个数比**。所以它不能长得跟前两对一模一样 ——
+ * 那会让玩家把它读成第三个"跟别人比"的数。
+ *
+ * 视觉上只做一件事：**把两张卡片合成一张**（上面一条虚线隔开）。
+ * 理由很直接 —— 这两个数说的是同一件事（你的货）的两面，
+ * 分开摆会让它们看起来像两个独立的指标。
+ *
+ * ⚠ 刻意**不用朱红**：那个差值不是警告（§5A 规定朱红 = 警告/重要），
+ * 而"还有多少要翻"是一个中性的事实。§5 引擎①：游戏不评判对错。
+ */
+.contrast-pair.is-reach {
+  gap: 0;
+  padding-top: 6px;
+  border-top: 1px dashed var(--ink-16);
+}
+
+.contrast-pair.is-reach .contrast-cell {
+  background: transparent;
+  border-color: transparent;
+  padding: 6px 12px;
+}
+
+.contrast-pair.is-reach .contrast-cell + .contrast-cell {
+  border-left: 1.5px solid var(--ink-16);
+}
+
+.contrast-pair.is-reach .contrast-cell b {
+  font-size: 17px;
+}
+
 .need-row.is-short em {
   color: var(--vermilion);
   font-weight: 600;
