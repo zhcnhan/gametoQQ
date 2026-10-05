@@ -231,10 +231,20 @@ export class OrganizeScreen {
              整理页也要它：囤货那 7 天里，玩家绝大部分时间都在这一屏，
              而"这一局抽到的是哪一场"此前在这一屏一个字都看不到。 */ ''}
         ${windowBandHtml(this.store.run)}
-        <main class="room-scroll" data-room></main>
+        ${/* ★★ `data-scroll-host`：告诉手势层"落在这里的手势是用来滚这一块的"。
+              2026-10 用户第二次报拖拽出问题（"出一个极小的范围就会消失"）之后，
+              滚动重新归手势层接管（`.slot` 是 `touch-action: none`，
+              浏览器永不插手，也就不会发 `pointercancel` 把拖拽收掉）——
+              代价是**滚谁**这件事得由我们指出来。
+              见 `ui/drag.ts` 的 `resolveScrollHost`：它从被按住的元素往上找
+              这个属性，纸箱那一叠（下面的 `data-boxes`）也有。 */ ''}
+        <main class="room-scroll" data-room data-scroll-host></main>
         <footer class="dock">
           <div class="dock-hand" data-hand data-drop="return"></div>
-          <div class="dock-boxes" data-boxes></div>
+          ${/* ★ 同上：纸箱那一叠自己就能滚（`overflow-y: auto`，最多两行高）。
+                用**属性**而不是给 drag.ts 传一个元素引用，是因为假 DOM
+                测得出属性、测不出"这元素能不能滚"（不解析 CSS）。 */ ''}
+          <div class="dock-boxes" data-boxes data-scroll-host></div>
           <div class="dock-tools">
             <button class="btn" data-action="sort">${iconSvg('sort')}<span>按保质期排</span></button>
             ${
@@ -1126,8 +1136,10 @@ export class OrganizeScreen {
         const isEmpty = box.items.length === 0;
         return `<button class="box${isEmpty ? ' is-empty' : ''}" data-box="${box.id}" data-drop="box" aria-label="${escapeHtml(box.name)}，还有 ${box.total} 件">
           <span class="box-icon">${iconSvg('box')}</span>
-          <span class="box-name">${escapeHtml(box.name)}</span>
-          <span class="box-count">${box.total} 件</span>
+          <span class="box-meta">
+            <span class="box-name">${escapeHtml(box.name)}</span>
+            <span class="box-count">${box.total} 件</span>
+          </span>
           ${def ? `<span class="box-peek">${itemIconSvg(def.icon)}</span>` : ''}
         </button>`;
       })

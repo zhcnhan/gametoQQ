@@ -32,12 +32,36 @@ const CHROME = process.env.CHROME_PATH ?? 'C:\\Program Files\\Google\\Chrome\\Ap
 const APP_URL = process.env.APP_URL ?? 'http://127.0.0.1:5199/';
 const PORT = 9333;
 
-/** 要量的视口（宽 × 高）。第一档是用户报"看不见格子"的那一类机器 */
-const VIEWPORTS: Array<{ w: number; h: number; label: string }> = [
-  { w: 375, h: 667, label: 'iPhone SE / 老安卓' },
-  { w: 390, h: 844, label: 'iPhone 14/15' },
-  { w: 1280, h: 800, label: '桌面' },
-];
+/**
+ * 要量的视口（宽 × 高）。第一档是用户报"看不见格子"的那一类机器。
+ *
+ * ★ `VIEWPORTS=390x710,390x780` 可以覆盖这一份 —— 用户的真机（浏览器 chrome +
+ *   系统栏吃掉约 136 逻辑像素）落在**这几档之间**，而写死的那三档里没有它。
+ *   判据要用真机的高度去量，不能拿"手边正好有的那一档"顶替。
+ */
+function parseViewports(spec: string | undefined): Array<{ w: number; h: number; label: string }> {
+  if (!spec) return [];
+  return spec
+    .split(',')
+    .map((one) => one.trim())
+    .filter(Boolean)
+    .map((one) => {
+      const [w, h] = one.split('x').map((n) => Number(n.trim()));
+      if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) {
+        throw new Error(`VIEWPORTS 里这一项看不懂：${one}（要写成 390x710 这样）`);
+      }
+      return { w, h, label: `自定义 ${w} × ${h}` };
+    });
+}
+
+const OVERRIDE = parseViewports(process.env['VIEWPORTS']);
+const VIEWPORTS: Array<{ w: number; h: number; label: string }> = OVERRIDE.length
+  ? OVERRIDE
+  : [
+      { w: 375, h: 667, label: 'iPhone SE / 老安卓' },
+      { w: 390, h: 844, label: 'iPhone 14/15' },
+      { w: 1280, h: 800, label: '桌面' },
+    ];
 
 const profile = mkdtempSync(join(tmpdir(), 'probe-mobile-'));
 
@@ -167,27 +191,52 @@ const MEASURE = `(async () => {
    */
   const KEY = '__tunhuoProbeArmed';
   const armed = sessionStorage.getItem(KEY) === '1';
-  if (tun && !armed) {
-    sessionStorage.setItem(KEY, '1');
-    if (SCENE) {
+  /*
+   * ★★ 这一段"推进"必须**所有档都走一遍**，不能只在 SCENE 为空时走。
+   *
+   *   load('good') 装好的是一份**从 D-7 开始**的囤货档，落到的是开场 / 扫货那几屏，
+   *   整理页还在两步之后。第一版把推进写进了 else 分支里，于是量 good 得到的是
+   *   screen-plain（.scroll，没有 .dock-boxes）—— 数字全对、屏幕全错，
+   *   而量具只会在末尾轻描淡写地打一句"没走到整理页"。
+   *   判据是**落在哪一屏**，不是"存档装没装好"。
+   */
+  const pushTowardRoom = async (deadlineMs) => {
+    const t0 = Date.now();
+    while (!document.querySelector('.room-scroll') && Date.now() - t0 < deadlineMs) {
+      const btn = [...document.querySelectorAll('button, [data-action]')].find((el) => {
+        if (el.disabled) return false;
+        const t = (el.textContent || '').replace(/\s+/g, '');
+        return /回家整理|去整理|开始整理|下一步|继续|确认|知道了|开始/.test(t);
+      });
+      if (btn) btn.click();
+      await new Promise((r) => setTimeout(r, 400));
+    }
+  };
+
+  if (SCENE) {
+    if (!armed) {
+      sessionStorage.setItem(KEY, '1');
       try { tun.load(SCENE); } catch (e) { /* 加载失败会一直停在旧屏，下面 waitFor 会报出来 */ }
       await new Promise((r) => setTimeout(r, 1500));
       await waitFor('.room-scroll', 20000);
-    } else {
-      const t0 = Date.now();
-      while (!document.querySelector('.room-scroll') && Date.now() - t0 < 15000) {
-        try { tun.jump(-1); } catch (e) { /* 还没初始化好，下一轮再来 */ }
-        await new Promise((r) => setTimeout(r, 300));
-        /*
-         * jump(-1) 落在**扫货页**（囤货期的默认落脚点），整理页要从那儿进 ——
-         * 就是玩家走的那一步：「回家整理」。这一步点不动就说明入口改了名，
-         * 量具宁可报错也不要悄悄量错屏。
-         */
-        const home = [...document.querySelectorAll('button, [data-action]')].find((el) =>
-          /回家整理|去整理|整理/.test(el.textContent || ''));
-        if (home && !document.querySelector('.room-scroll')) home.click();
-        await new Promise((r) => setTimeout(r, 400));
-      }
+    }
+    /* 存档回来之后仍然要自己走到整理页（见上面那段注释） */
+    await pushTowardRoom(15000);
+  } else if (!armed) {
+    sessionStorage.setItem(KEY, '1');
+    const t0 = Date.now();
+    while (!document.querySelector('.room-scroll') && Date.now() - t0 < 15000) {
+      try { tun.jump(-1); } catch (e) { /* 还没初始化好，下一轮再来 */ }
+      await new Promise((r) => setTimeout(r, 300));
+      /*
+       * jump(-1) 落在**扫货页**（囤货期的默认落脚点），整理页要从那儿进 ——
+       * 就是玩家走的那一步：「回家整理」。这一步点不动就说明入口改了名，
+       * 量具宁可报错也不要悄悄量错屏。
+       */
+      const home = [...document.querySelectorAll('button, [data-action]')].find((el) =>
+        /回家整理|去整理|整理/.test(el.textContent || ''));
+      if (home && !document.querySelector('.room-scroll')) home.click();
+      await new Promise((r) => setTimeout(r, 400));
     }
   }
   await waitFor('.room-scroll', 10000);
@@ -237,7 +286,172 @@ const MEASURE = `(async () => {
     dockHand: h('.dock-hand'),
     dockBoxes: h('.dock-boxes'),
     dockBoxesCap: cs('.dock-boxes', 'max-height'),
+    /*
+     * ★★ 这一栏的**内容**有多高（M5 补）。
+     *
+     * 只量容器高度会被 max-height 骗：上限是 170px 时，两行箱子只占 102px，
+     * 剩下 68px 是**空的**，而"房间少了一截"却是因为这个上限写的。
+     * 判据必须是"内容多高 vs 上限多少"——两者差得远就说明上限该收。
+     */
+    dockBoxesScroll: (function () {
+      var el = document.querySelector('.dock-boxes');
+      return el ? Math.round(el.scrollHeight) : null;
+    })(),
+    /*
+     * 纸箱那一叠的两个数（M5 加）：一个箱子多高、能看见几行。
+     *
+     * 用户报的是这一栏太占地方、但不能一直收起来，于是这一栏的判据不是容器多高，
+     * 而是同一块高度里能看见几个箱头。只量容器高度会得出改了等于没改的错误结论：
+     * 容器被 max-height 钉住，箱子变小了它也不变。
+     */
+    box: h('.box'),
+    boxCount: document.querySelectorAll('.box').length,
+
+    /*
+     * ★★ 行数与每行个数**不能靠 getBoundingClientRect 的 top 去重来数**。
+     *
+     * 第一版就是这么数的（把 top 四舍五入之后当键）。结果 4 个一行的纸箱
+     * 被数成 27 行（100 ÷ 27 ≈ 3.7）—— 因为同一行的格子 top 会是 421 与 421.5
+     * 这种**亚像素**差，四舍五入之后就分成两个键。
+     * 判据换成"**最左边那一列有几个**"：left 最小的那些格子，一个就是一行。
+     * （left 之间也可能有亚像素差，所以同样先四舍五入再比 —— 同一列取整后必然相等。）
+     *
+     * ⚠ 这个文件里凡是写在 MEASURE 这一段里的注释，**一律不许出现反引号**：
+     *   MEASURE 本身就是反引号字符串，注释里再写一个就把字符串提前结束了
+     *   （报错是 esbuild 的 Expected ";" but found …，行号还指在几十行之前）。
+     */
+    boxPerRow: (function () {
+      var boxes = Array.prototype.slice.call(document.querySelectorAll('.box'));
+      if (!boxes.length) return null;
+      var min = Infinity;
+      for (var i = 0; i < boxes.length; i++) {
+        min = Math.min(min, Math.round(boxes[i].getBoundingClientRect().left));
+      }
+      var n = 0;
+      for (var j = 0; j < boxes.length; j++) {
+        if (Math.round(boxes[j].getBoundingClientRect().left) === min) n += 1;
+      }
+      return n;
+    })(),
+    /*
+     * ★ 名字那一格还剩多少宽（M5 补）。
+     *
+     * 横排把"名字"从整张卡的宽度挤成了"卡宽 − 图标 − 间隙 − 内边距"，
+     * 于是"粮油箱"这种三个字的名字会在真机上被截成"粮油…" —— 而这件事
+     * **任何高度数字都看不出来**。判据是 metaWidth 与 nameWidth 够不够放下
+     * 三个汉字（12px 字号 ≈ 36px）。
+     */
+    boxWidth: (function () {
+      var el = document.querySelector('.box');
+      return el ? Math.round(el.getBoundingClientRect().width) : null;
+    })(),
+    boxMetaWidth: (function () {
+      var el = document.querySelector('.box-meta');
+      return el ? Math.round(el.getBoundingClientRect().width) : null;
+    })(),
+    boxNameWidth: (function () {
+      var el = document.querySelector('.box-name');
+      return el ? Math.round(el.getBoundingClientRect().width) : null;
+    })(),
+    /*
+     * ★★ 判据不是"名字格多宽"，而是"**三个汉字要占多宽**"（M5 补）。
+     *
+     * 36px 这个数字本身说明不了任何事 —— 它够不够取决于字号与字体。
+     * 拿一个屏幕外的 span 用同一套字体量一次"粮油箱"的宽度，就能直接比出
+     * "差多少像素"，也不必凭截图猜。
+     */
+    nameNeed: (function () {
+      var probe = document.querySelector('.box-name');
+      if (!probe) return null;
+      var cs = getComputedStyle(probe);
+      var span = document.createElement('span');
+      span.textContent = '粮油箱';
+      span.style.font = cs.font;
+      span.style.position = 'absolute';
+      span.style.visibility = 'hidden';
+      span.style.whiteSpace = 'nowrap';
+      document.body.appendChild(span);
+      var w = Math.round(span.getBoundingClientRect().width);
+      span.parentNode.removeChild(span);
+      return w;
+    })(),
+    /*
+     * ★★ 卡片内部的账单（M5 补）—— 名字被截断这件事必须能一眼拆开算。
+     *
+     * .box-meta 是 flex 子项，它的宽度是"flex-basis: auto 算出来的内容宽"
+     * 与"容器剩多少"里的小者；这两个数只要不在同一行就会出现
+     * "明明还有空位，名字却被截成两个字"这种自相矛盾的读数。
+     * 所以这里把 flexGrow / scrollWidth（内容想要多宽）与实得宽一起打出来。
+     *
+     * ⚠ 同前：这一段里的注释不许出现反引号。
+     */
+    boxMetaFlexGrow: cs('.box-meta', 'flex-grow'),
+    boxMetaScrollWidth: (function () {
+      var el = document.querySelector('.box-meta');
+      return el ? Math.round(el.scrollWidth) : null;
+    })(),
+    /*
+     * ★ 名字自己"想"多宽（M5 补）：实得宽 36 到底是"够用"还是"被截"，
+     * 只有和 scrollWidth 一比才知道 —— 36 恰好等于三个字需要的宽度，
+     * 所以光看这个名字格宽度会得出完全相反的结论。
+     */
+    boxNameScrollWidth: (function () {
+      var el = document.querySelector('.box-name');
+      return el ? Math.round(el.scrollWidth) : null;
+    })(),
+    boxNameText: (function () {
+      var el = document.querySelector('.box-name');
+      return el ? el.textContent : null;
+    })(),
+    boxRows: (function () {
+      var boxes = Array.prototype.slice.call(document.querySelectorAll('.box'));
+      if (!boxes.length) return 0;
+      var min = Infinity;
+      for (var i = 0; i < boxes.length; i++) {
+        min = Math.min(min, Math.round(boxes[i].getBoundingClientRect().left));
+      }
+      var n = 0;
+      for (var j = 0; j < boxes.length; j++) {
+        if (Math.round(boxes[j].getBoundingClientRect().left) === min) n += 1;
+      }
+      return n === 0 ? 0 : Math.ceil(boxes.length / n);
+    })(),
     dockTools: h('.dock-tools'),
+    /*
+     * ★★ 这一档到底命中没有（M5 补）：把"哪些样式表里的哪条规则提到了 max-height"
+     *   全部列出来，而不是只看最终算出来的那个数。
+     *
+     * 起因：源码里写的是 min(170px, 26dvh)，浏览器报回来的却是死的 170px，
+     * 而"哪一条赢了"这个问题从计算值上完全看不出来 —— 只有把候选规则
+     * 连同它们的 mediaText 一起打出来，才能分清"规则没命中"和"规则命中了但被覆盖"。
+     */
+    dockBoxesRules: (function () {
+      var out = [];
+      for (var i = 0; i < document.styleSheets.length; i++) {
+        var rules;
+        try {
+          rules = document.styleSheets[i].cssRules;
+        } catch (e) {
+          continue;
+        }
+        if (!rules) continue;
+        for (var j = 0; j < rules.length; j++) {
+          var r = rules[j];
+          if (r.selectorText && r.selectorText.indexOf('.dock-boxes') >= 0 && r.style && r.style.maxHeight) {
+            out.push({ sel: r.selectorText, maxHeight: r.style.maxHeight, media: '' });
+          }
+          if (r.media && r.cssRules) {
+            for (var k = 0; k < r.cssRules.length; k++) {
+              var inner = r.cssRules[k];
+              if (inner.selectorText && inner.selectorText.indexOf('.dock-boxes') >= 0 && inner.style && inner.style.maxHeight) {
+                out.push({ sel: inner.selectorText, maxHeight: inner.style.maxHeight, media: r.media.mediaText });
+              }
+            }
+          }
+        }
+      }
+      return out;
+    })(),
     shelfCard: h('.shelf-card'),
     shelfHead: h('.shelf-head'),
     shelfRows: h('.shelf-rows'),
@@ -319,7 +533,33 @@ async function main(): Promise<void> {
     }
     if (m === null) throw new Error('重试四次都没量到 —— 页面一直在刷新？');
     console.log(`\n──── 落在这一屏：${m.screen}（正文容器 ${m.body}）`);
+    /*
+     * ★ 先把"这一屏的竖直账"压成一行再打整份 JSON。
+     *
+     * 判据是**一行能读完**：`房间 / 操作台 / 纸箱那一栏 / 一个纸箱` 四个数并排，
+     * 加一减一立刻看得见。整份 JSON 仍然照打（要看细节时它在下面），
+     * 但"改完到底好没好"这个问题不该靠翻八十行 JSON 来回答。
+     */
+    const boxH = (m['box'] as { height?: number } | null)?.height ?? null;
+    const hOf = (k: string): number | string => ((m[k] as { height?: number } | null)?.height ?? '—');
+    console.log(
+      `  ▸ 房间 ${hOf('bodyBox')} · 操作台 ${hOf('dock')} · 纸箱栏 ${hOf('dockBoxes')}` +
+        `（上限 ${String(m['dockBoxesCap'])}）· 一个纸箱 ${String(boxH)}` +
+        ` · 纸箱 ${String(m['boxCount'])} 个 / ${String(m['boxRows'])} 行` +
+        ` · 每行 ${String(m['boxPerRow'])} · 内容高 ${String(m['dockBoxesScroll'])}` +
+        ` · 卡宽 ${String(m['boxWidth'])} / 名字格 ${String(m['boxNameWidth'])}` +
+        ` / 三个字要 ${String(m['nameNeed'])}` +
+        ` / meta 想要 ${String(m['boxMetaScrollWidth'])} 拿到 ${String(m['boxMetaWidth'])} grow ${String(m['boxMetaFlexGrow'])}` +
+        ` / 名字「${String(m['boxNameText'])}」想要 ${String(m['boxNameScrollWidth'])}`,
+    );
     console.log(JSON.stringify(m, null, 2));
+    const rules = m['dockBoxesRules'] as { sel: string; maxHeight: string; media: string }[] | undefined;
+    if (rules) {
+      for (const r of rules) {
+        console.log(`  · 候选规则 ${r.sel} { max-height: ${r.maxHeight} }${r.media ? ` @media ${r.media}` : ''}`);
+      }
+    }
+    console.log(`  · 命中的上限 = ${String(m['dockBoxesCap'])}，实得高度 = ${String(hOf('dockBoxes'))}`);
     if (m.body !== '.room-scroll') {
       console.log('  ⚠ 没走到整理页 —— 上面这些数字量的是别的屏，别拿它下结论');
       process.exitCode = 1;

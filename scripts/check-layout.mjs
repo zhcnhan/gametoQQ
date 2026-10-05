@@ -418,7 +418,7 @@ function tapBodies(css, cls) {
 const TAP_EXEMPT = {
   'identity-card': '本身就是一张 112px 的大卡片，不需要下限',
   'shop-card': '本身就是一张 84px 的大卡片，不需要下限',
-  box: '本身就是 74px 的纸箱，不需要下限',
+  box: '纸箱里是一个 2.5px 边框的盒子，横排之后 46px 高 —— 它确实是"本身就有尺寸"，但 46 已经在 44 的门槛之上，所以这条豁免其实随时可以撤（留着只是不想让一次纯样式的改动同时改判据）',
   'save-file': '借 `.btn` 的 46px（它本身是 `.btn.save-file`）'
 };
 

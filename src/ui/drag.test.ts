@@ -102,30 +102,163 @@ describe('手势状态机（ui/drag.ts 的真实行为）', () => {
   });
 
   /*
-   * ★★★ 这一条是 2026-10 修掉"滚动方向反"之后**重写**的，它替掉的是
-   * 一条叫「长按成立前竖向滑动 → 判定为滚动，放弃手势（页面要能滚）」的用例。
+   * ★★★ 这一条 2026-10 改回来过（第三版），它对应的是真机报回来的第二个 bug。
    *
-   * 那条老用例断言的是**我们的代码**在竖向滑动时调 `onCancel` —— 也就是说
-   * 它把"手势层接管滚动"这个设计写进了断言。那个设计 2026-10 被删了，因为它
-   * 与滚动容器的合成层滚动**叠成了两层**：同一次滑动上合成器滚一遍、我们滚一遍，
-   * 玩家看到的方向取决于合成器此刻的进度，表现成"跟操作逻辑是反的"（玩家原话：
-   * "好像跟正常的上滑下拉是两层逻辑（他们俩都存在）"）。
+   * ## 三版的历史（每一版都有一条用例在守着，所以改的时候一定会被挡一下）
    *
-   * 现在的口径是「**滚动是浏览器的，手势是我们的**」（见 `ui/drag.ts` 文件头），
-   * 于是这一类滑动的正确行为是**什么都不做**：不调 onCancel（我们没资格说
-   * "这次手势作废"，浏览器还在滚）、不调 onDragStart（还没长按成立）。
-   *
-   * ⚠ 断言写成 `toEqual([])` 而不是"没有 cancel"：这两个的差别就是这条用例的全部价值。
+   *  · **第一版**：「长按成立前竖向滑动 → 判定为滚动，放弃手势」——
+   *    手势层自己写 `scrollTop`。它让滚动可用，但当时 `.room-scroll` 上还有
+   *    `-webkit-overflow-scrolling: touch`（合成层滚动），两层同时滚，
+   *    玩家看到的是"**方向是反的**"。
+   *  · **第二版**：整个交回浏览器（`.slot` 上是 `touch-action: pan-y`），
+   *    这一条被重写成「手势层什么都不做」。方向对了 —— 但浏览器接管纵向手势时
+   *    会发 `pointercancel`，把**拖拽**一起收掉。玩家一小时后报的
+   *    "**出一个极小的范围就会消失**"就是它。
+   *  · **第三版（现在）**：自己滚（`touch-action: none` + 我们在 `pointermove`
+   *    里写 `scrollTop`），**同时**把合成层那一行摘掉 —— 让同一次滑动上
+   *    只有一层逻辑。协议由 `data-scroll-host` 指定（见 `drag.ts` 的
+   *    `resolveScrollHost`）。
    */
-  it('★★ 长按成立前竖向滑动 → 手势层什么都不做（滚动归浏览器，不是我们接管）', () => {
+  it('★★ 长按成立前竖向滑动 → 接管滚动，并且真的滚了容器', () => {
+    const host = h.doc.createElement('div');
+    host.setAttribute('data-scroll-host', '');
+    host.place(0, 0, 300, 200);
+    host.scrollHeight = 900; // 内容比容器高 → 能滚
+    host.clientHeight = 200;
+    h.doc.body.appendChild(host);
+    host.appendChild(h.el);
+    mount(h);
+
+    /*
+     * ⚠ 方向：`pointermove` 的 y **变大 = 手指往下划**，于是
+     * `scrollTop` 也变大（手指往哪边划、内容就跟到哪边，与手机上的自然滚动同向）。
+     * `takeOverScroll` 写的就是 `scrollTop = before + (point.y - prev.y)`。
+     */
+    h.el.dispatch('pointerdown', pointerEvent(30, 30));
+    // 往下划 60px（远超 scrollTolerance=16），横向只挪 2px
+    h.win.dispatch('pointermove', pointerEvent(32, 90));
+    expect(host.scrollTop, '滑动的位移要真的落到容器上').toBe(60);
+    expect(h.log, '还没长按成立，不该开拖').toEqual([]);
+
+    h.win.dispatch('pointermove', pointerEvent(32, 130));
+    expect(host.scrollTop).toBe(100);
+
+    /*
+     * ★★ 抬手时**绝不能判 tap**。
+     *
+     * 这条断言是这一版真正的新东西：玩家划了一下屏幕，抬手那一刻手指底下
+     * 正好是一件物资 —— 判成 tap 就是"滚屏顺手把东西放下/拿起来了"，
+     * 而且他完全不知道发生了什么。
+     */
+    h.win.dispatch('pointerup', pointerEvent(32, 130, { buttons: 0 }));
+    expect(h.log, '滚完抬手不是 tap').toEqual([]);
+  });
+
+  it('★ 手指从容器顶端继续往回划（已经到头）→ 仍然算接管滚动，不作废这次手势', () => {
+    /*
+     * ★ 这一条守的是一个**真的写错过**的判据：`takeOverScroll` 第一版返回的是
+     * "这一次位移滚成了没有"，于是"在顶端继续往回划"（`scrollTop` 已经是 0）
+     * 会被当成"滚不动" → 手势作废 → 玩家接下来反方向划时手势早就没了，
+     * 表现成"**从顶上往回滑，滑一次就再也滚不动了**"。
+     *
+     * 正确的判据是"**这一处有没有滚动容器**"：有容器 = 这一次手势归滚动，
+     * 至于这一刻滚不滚得动是 `scrollTop` 的边界问题。
+     *
+     * ⚠ 假体的 `scrollTop` 现在**会像真浏览器那样夹取**（负数归 0）——
+     * 第一版是个普通字段，于是这一条验的东西根本不成立（`scrollTop` 会变成 -60）。
+     */
+    const host = h.doc.createElement('div');
+    host.setAttribute('data-scroll-host', '');
+    host.place(0, 0, 300, 200);
+    host.scrollHeight = 900;
+    host.clientHeight = 200;
+    host.scrollTop = 0;
+    h.doc.body.appendChild(host);
+    host.appendChild(h.el);
+    mount(h);
+
+    h.el.dispatch('pointerdown', pointerEvent(30, 90));
+    h.win.dispatch('pointermove', pointerEvent(30, 30)); // 手指往上划 = 内容往下走
+    expect(host.scrollTop, '已经在顶端，滚不动').toBe(0);
+    expect(h.log, '滚不动也不许取消这次手势').toEqual([]);
+
+    // 手指改成反方向划：这一次手势仍然是"滚动"，立刻就能滚
+    h.win.dispatch('pointermove', pointerEvent(30, 100));
+    expect(host.scrollTop, '反方向要马上生效').toBe(70);
+  });
+
+  it('★★ 滚动接管之后，长按计时器到期也不许开拖', () => {
+    /*
+     * 场景：玩家按下、划了一下（判定为滚动），然后**停在原地 300ms** ——
+     * 长按计时器照常到期并调 `beginDrag`。
+     * 没有 `if (g.scrolling) return;` 那一句，屏幕上会冒出一个幽灵，
+     * 而玩家只是在滚屏。手势的含义**只能判定一次**。
+     */
+    const host = h.doc.createElement('div');
+    host.setAttribute('data-scroll-host', '');
+    host.place(0, 0, 300, 200);
+    host.scrollHeight = 900;
+    host.clientHeight = 200;
+    h.doc.body.appendChild(host);
+    host.appendChild(h.el);
+    mount(h);
+
+    h.el.dispatch('pointerdown', pointerEvent(30, 30));
+    h.win.dispatch('pointermove', pointerEvent(30, 120));
+    h.win.tick(LONG_PRESS_MS + 60);
+    expect(h.log, '判成滚动之后不许再冒出一个幽灵').toEqual([]);
+    h.win.dispatch('pointerup', pointerEvent(30, 120, { buttons: 0 }));
+    expect(h.log).toEqual([]);
+  });
+
+  it('★ 松手之后的惯性：容器还要自己滑一段（浏览器不再帮我们滑）', () => {
+    /*
+     * `.slot` / `.box` 上是 `touch-action: none`（让浏览器接管滚动会连带
+     * 把拖拽一起 `pointercancel` 掉，见 `drag.ts` 文件头）。**"浏览器永不插手"
+     * 的另一面就是"它也不再帮你滑"** —— 而"没有惯性"是玩家抱怨过的一条，
+     * 所以这一段是我们自己写的（`startInertia`，rAF 驱动）。
+     *
+     * 假体把 rAF 也接管了：`tick(...)` 会跑掉排队的动画帧（见 `fakeDom` 的
+     * 假 window 那段），于是"滑了多少"在单测里是可推演的。
+     *
+     * ⚠ 起点**不能是 0**：手指往上划（`scrollTop` 变小）而已经在顶端时，
+     * 滚动会被夹在 0，甩动的速度算出来是 0 —— 那样这一条会变成
+     * "惯性本来就没动过"的假绿。所以先把容器摆到中间（500）。
+     */
+    const host = h.doc.createElement('div');
+    host.setAttribute('data-scroll-host', '');
+    host.place(0, 0, 300, 200);
+    host.scrollHeight = 2000; // 上界 1800，500 处在中间
+    host.clientHeight = 200;
+    host.scrollTop = 500;
+    h.doc.body.appendChild(host);
+    host.appendChild(h.el);
+    mount(h);
+
+    h.el.dispatch('pointerdown', pointerEvent(30, 190));
+    // 两次采样之间 16ms 划 40px → 2.5px/ms（一次很快的甩动），方向朝上
+    h.win.tick(16);
+    h.win.dispatch('pointermove', pointerEvent(30, 110));
+    h.win.tick(16);
+    h.win.dispatch('pointermove', pointerEvent(30, 30));
+    const atRelease = host.scrollTop;
+    expect(atRelease).toBe(340);
+    h.win.dispatch('pointerup', pointerEvent(30, 30, { buttons: 0 }));
+    h.win.tick(200);
+    expect(host.scrollTop, '松手之后还要再滑一段（同方向）').toBeLessThan(atRelease);
+  });
+
+  it('★ 没有滚动容器的调用方：竖向滑动仍然按老路作废（胶带条那条路）', () => {
+    /*
+     * 胶带块上没有 `data-scroll-host`，上一层 `.tape-shelf` 只管横向滚
+     * （它自己写着 `touch-action: pan-x`，而且留了左右 padding 当滚动的把手）。
+     * 落在胶带块上的竖向滑动既不是滚动、也不该是拖拽 —— 只能当它没发生。
+     * 这一条是**兜底**：它保证"接管滚动"没有把这条老路一起改掉。
+     */
     mount(h);
     h.el.dispatch('pointerdown', pointerEvent(30, 30));
-    h.win.dispatch('pointermove', pointerEvent(32, 90)); // 竖向 60px
-    expect(h.log, '让浏览器去滚：我们既不该取消，也不该开拖').toEqual([]);
-    // 而且这一次手势仍然"活着且还没进入拖拽"：手指抬起来只是个走了很远的 tap 候选，
-    // 位移超了容差 → 连 tap 都不算，安静结束
-    h.win.dispatch('pointerup', pointerEvent(32, 90, { buttons: 0 }));
-    expect(h.log).toEqual([]);
+    h.win.dispatch('pointermove', pointerEvent(32, 90));
+    expect(h.log).toEqual(['cancel']);
   });
 
   it('★ 浏览器接管滚动时会发 pointercancel —— 那一刻必须把手势收掉，不留幽灵', () => {

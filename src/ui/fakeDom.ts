@@ -84,6 +84,43 @@ export class FakeElement {
   ownerDocument!: FakeDocument;
   rect: FakeRect = { left: 0, top: 0, width: 0, height: 0 };
   /**
+   * ★★ 滚动位置（2026-10 补），**并且带真实浏览器的夹取**（同月第二次补）。
+   *
+   * ## 第一版为什么不够
+   *
+   * 第一版就是一个普通字段（`scrollTop = 0`）。于是 `drag.ts` 里那句
+   * `node.scrollTop = before + left` 在"已经滚到头"时**照样会写进去** ——
+   * 假体说 `scrollTop = -60`，真实浏览器说 `0`。两个后果：
+   *
+   *  ① `takeOverScroll` 里那套"滚到头就接力给外层容器"的逻辑**验不到**
+   *     （它靠 `scrollTop` 没动来发现"这一层到头了"）；
+   *  ② 更贵的一个：`left -= node.scrollTop - before` 里的 `left` 减不掉，
+   *     于是外层的 `while (node && Math.abs(left) > 0.01)` **停不下来** ——
+   *     每次都往上找一层、写一次、再往上找，直到把 `documentElement` 写穿。
+   *     实测的形态是**整个测试进程 4GB 堆崩掉**（不是某条用例红），
+   *     而报错信息（`Worker exited unexpectedly` / `JavaScript heap out of memory`）
+   *     **一个字都不提滚动**。
+   *
+   * 真实浏览器里 `scrollTop` 是可写但**会被夹取**的：负值归 0，
+   * 超过 `scrollHeight - clientHeight` 归那个上界。假体照做，
+   * 于是"滚到头"这件事在单测里与在手机上一样**看得见**。
+   *
+   * ⚠ 它必须**定义在 `scrollHeight` / `clientHeight` 之后**：夹取要用那一对，
+   *   而它们是构造时用 `Object.defineProperty` 装的（见下面那段），
+   *   普通字段的初始化顺序在构造函数体**之前**，写在类字段区会拿到 `undefined`。
+   */
+  scrollTop = 0;
+  /**
+   * 内容高度 / 可视高度（同上，2026-10 补）。
+   *
+   * 它们决定"滚到头了没有" —— `takeOverScroll` 靠这一对判断，
+   * 于是用例可以摆出"内容比容器高"（能滚）与"一样高"（滚不动）两种局面。
+   * 默认取 `rect.height`（也就是"内容正好塞满"，滚不动），
+   * 要测滚动就显式写大它。
+   */
+  scrollHeight = 0;
+  clientHeight = 0;
+  /**
    * 这个元素自己的 `pointer-events`（默认 `auto`，也就是"接受"）。
    *
    * 假体不解析 CSS，所以这里由测试**显式设置** —— 需要在测试里构造
@@ -101,6 +138,37 @@ export class FakeElement {
   constructor(tagName = 'div', className = '') {
     this.tagName = tagName.toUpperCase();
     this.classList = new FakeClassList(className);
+    /*
+     * ★ `scrollHeight` / `clientHeight` 默认跟着 `rect` 走（见上面那段）：
+     * 用 `Object.defineProperty` 而不是普通字段，是为了让 `place()` 之后
+     * 这两个数**自动跟上**（假体的尺寸几乎都是 `place()` 给的）。
+     * 用例一旦显式写过它们（`el.scrollHeight = 900`），就以显式值为准。
+     */
+    for (const key of ['scrollHeight', 'clientHeight'] as const) {
+      let explicit: number | null = null;
+      Object.defineProperty(this, key, {
+        get: () => explicit ?? this.rect.height,
+        set: (v: number) => {
+          explicit = v;
+        },
+        enumerable: true,
+        configurable: true
+      });
+    }
+    /*
+     * ★ `scrollTop` 在这里换成"可写 + 夹取"的版本（理由见字段区那一大段）。
+     * 夹取边界与 `atScrollEnd` 用的是同一对量（`scrollHeight - clientHeight`）。
+     */
+    let top = 0;
+    Object.defineProperty(this, 'scrollTop', {
+      get: () => top,
+      set: (v: number) => {
+        const max = Math.max(0, this.scrollHeight - this.clientHeight);
+        top = v < 0 ? 0 : v > max ? max : v;
+      },
+      enumerable: true,
+      configurable: true
+    });
   }
 
   get className(): string {
@@ -206,6 +274,25 @@ export class FakeElement {
     this.log.push(`release:${id}`);
   }
 
+  /**
+   * ★ 父元素（2026-10 补，`ui/drag.ts` 的滚动接管要用它往上找容器）。
+   *
+   * ## 为什么这是一个**必须补**的成员，而不是可以绕开的细节
+   *
+   * 假体里一直只有 `parent`（`appendChild` 会设它）。差一个字母，成本却是：
+   * `drag.ts` 的 `resolveScrollHost` 从手指底下的格子往上找
+   * `data-scroll-host` 时，第一跳就拿到 `undefined` → 返回 `null` →
+   * **"接管滚动"整条分支在单测里一次都没跑过**，
+   * 而它看起来只是"那个用例的断言写错了"（四个用例一起报"滚了 0 像素"）。
+   *
+   * ⚠ 返回 `null` 而不是 `undefined`：真实 DOM 里没有父节点就是 `null`，
+   * 而两处的写法（`while (node)`）对两者都能停 —— 但 `=== null` 这种断言
+   * 在假体与浏览器里会给出不同的答案，那正是假体最不该制造的分歧。
+   */
+  get parentElement(): FakeElement | null {
+    return this.parent ?? null;
+  }
+
   getBoundingClientRect(): FakeRect {
     return this.rect;
   }
@@ -220,6 +307,20 @@ export class FakeElement {
 
   getAttribute(name: string): string | null {
     return this.attributes[name] ?? null;
+  }
+
+  /**
+   * ★ 属性在不在（2026-10 补）。
+   *
+   * 补它的理由与 `removeAttribute` 那条同源：**缺一个成员的成本不是报错，
+   * 而是被测代码里某条分支静静地验不到**。
+   * 这一处具体是：`ui/drag.ts` 找滚动容器时问的是"这个元素有没有
+   * `data-scroll-host`"（纯"在不在"，与值无关），而假体没有 `hasAttribute`
+   * 就只有 `getAttribute(...) !== null` 一种写法 —— 那要求产品代码为假体改变
+   * 自己的写法，方向反了。
+   */
+  hasAttribute(name: string): boolean {
+    return name in this.attributes;
   }
 
   setAttribute(name: string, value: string): void {
@@ -512,12 +613,17 @@ export interface FakeWindow {
   setInterval(fn: () => void, ms: number): number;
   clearInterval(id: number): void;
   /**
-   * 推进**假时钟 + 假定时器**。
+   * 推进**假时钟 + 假定时器 + 假动画帧**。
    *
    * ★ 它必须同时接管 `Date.now()`，否则会有"测不到的地方"：
    * `drag.ts` 的看门狗用 `Date.now() - lastSeenAt` 判断"指针事件是不是断了"，
    * 而真实时钟在单测里几乎不动 —— 于是那段时间逻辑**没法被测**，
    * 只能靠读代码确认。这个假窗把 `Date.now` 也接管了（见 `installFakeWindow`）。
+   *
+   * ★★ 动画帧（rAF）在**时钟推到目标之后**跑，每个 tick 最多 240 帧。
+   * 惯性滚动正是靠它推的：`tick(16)` = 一帧。上限存在的理由是"帧会自己再排一帧"
+   * —— 一个不收尾的惯性能把用例挂死，所以宁可让它跑 240 帧后停手，
+   * 也不能让 `tick` 变成死循环。
    */
   tick(ms: number): void;
   now(): number;
@@ -534,6 +640,21 @@ export function installFakeClock(): void {
   };
   Date.now = () => fake;
   void realNow;
+}
+
+/**
+ * 假体里**唯一**的那个时钟（`installFakeClock` 装上去的那个）。
+ *
+ * ★★ 假体里所有跟时间有关的地方都必须读它：`setTimeout` 排期、`tick()` 判"到点了没有"、
+ * `win.now()`。曾经 `setTimeout` 用的是假 window 自己的一个计数器（起点 0），
+ * 而 `Date.now()` 用的是这个（起点 `1700000000000`）—— 两个起点差了整整一个纪元，
+ * 于是 `at <= now` 里的 `at` 看着像"未来 500 年"，**每一个定时器都不会到点**：
+ * 长按永远不成立、看门狗永远不看一眼，而用例红在"`dragStart` 没出现"这种
+ * 和时钟毫不相干的断言上（那次就是这样查了一整轮）。
+ */
+function fakeClock(): number {
+  const fn = (globalThis as unknown as Record<string, unknown>)['__fakeNow'];
+  return typeof fn === 'function' ? (fn as () => number)() : 0;
 }
 
 /** 造一个假 window，并把它装到 globalThis 上（`drag.ts` 直接引用 window/setTimeout） */
@@ -569,7 +690,7 @@ export function installFakeWindow(document: FakeDocument): FakeWindow {
     },
     setTimeout(fn, ms) {
       const id = nextId++;
-      timers.push({ at: now + ms, fn, every: false, everyMs: 0, id });
+      timers.push({ at: fakeClock() + ms, fn, every: false, everyMs: 0, id });
       return id;
     },
     clearTimeout(id) {
@@ -578,7 +699,7 @@ export function installFakeWindow(document: FakeDocument): FakeWindow {
     },
     setInterval(fn, ms) {
       const id = nextId++;
-      timers.push({ at: now + ms, fn, every: true, everyMs: ms, id });
+      timers.push({ at: fakeClock() + ms, fn, every: true, everyMs: ms, id });
       return id;
     },
     clearInterval(id) {
@@ -586,22 +707,76 @@ export function installFakeWindow(document: FakeDocument): FakeWindow {
       if (i >= 0) timers.splice(i, 1);
     },
     tick(ms) {
-      const advance = (globalThis as unknown as Record<string, unknown>)['__advanceFakeNow'];
-      if (typeof advance === 'function') (advance as (n: number) => void)(ms);
+      const nowFn = (globalThis as unknown as Record<string, unknown>)['__advanceFakeNow'];
+      const advance = typeof nowFn === 'function' ? (nowFn as (n: number) => void) : null;
+      /*
+       * ★★ 先把本地时钟**对齐到那一个唯一的时钟**（2026-10 修，代价是单测全红）。
+       *
+       * 这里曾经有一个自己的计数器 `let now = 0`，而 `setTimeout` / `setInterval`
+       * 用的是 `installFakeClock()` 里那个 `fake`（`Date.now()` 也读它）。
+       * 两个计数器的**起点差了整整一个纪元**（`1700000000000` vs `0`），
+       * 于是 `at <= now` 里的 `at` 看着像"未来 500 年"——
+       * **每一个定时器都不会到点**，长按永远不成立、看门狗永远不看一眼，
+       * 而用例红在"`dragStart` 没出现"这种和时钟毫不相干的断言上。
+       *
+       * 判据：假体里**只允许有一个时钟**。`tick()` 必须读那个时钟、
+       * 也只能推那个时钟；本地不留副本，留副本就是下一次漂移的开始。
+       */
+      now = fakeClock();
+      if (advance) advance(ms);
 
-      const target = now + ms;
+      const target = fakeClock();
+      /*
+       * ★★ 每一次 `due.fn()` 之后都必须**重新对着 `target` 判一次**
+       * （2026-10 修，代价是测试进程 4GB 堆爆）。
+       *
+       * 第一版是"把 `t.at <= target` 的都挑出来跑完"，看着很直白，但它在
+       * **重复定时器**上是个死循环：`tick(3000)` 里那条 `setInterval(600)`
+       * 每跑一次就把自己的 `at` 推到 `now + 600`，而 `now` 也随之往前走 ——
+       * 于是"下一次也 `<= target`"永远成立，`guard < 500` 跑到 500 只是把
+       * 循环留在数组里，接着又开一轮……内存一路涨到 OOM，而报错是
+       * `Ineffective mark-compacts near heap limit`，**一个字都不提定时器**。
+       *
+       * 正确判据是"这一刻（`now`）有没有到点"，而不是"有没有在窗口内"：
+       * 到点了就跑，跑完再看下一个；没到点就跳出，剩下的留给下一次 `tick`。
+       */
       for (let guard = 0; guard < 500; guard++) {
         const due = timers.filter((t) => t.at <= target).sort((a, b) => a.at - b.at)[0];
         if (!due) break;
         now = due.at;
-        if (due.every) due.at = now + due.everyMs;
-        else {
+        if (due.every) {
+          due.at = now + due.everyMs;
+          due.fn();
+        } else {
           const i = timers.indexOf(due);
           if (i >= 0) timers.splice(i, 1);
+          due.fn();
         }
-        due.fn();
       }
       now = target;
+      /*
+       * 接着推帧。
+       *
+       * ★★ 帧的预算必须在**推进 `Date.now` 之前**算好（2026-10 修，代价是 OOM）。
+       *
+       * 上面那两行已经把 `Date.now` 推到了 `target`，所以"这一趟还能跑几帧"
+       * **不能**拿 `now < target` 当判据 —— 那个条件在进入循环时就已经是假的了，
+       * 结果是一帧都不跑。第一版就是这么写的：帧排在那儿永远没人跑，
+       * 而表现是"惯性完全不动"。
+       *
+       * 正确判据是**帧自己的账**：这次 `tick(ms)` 允许跑 `ms / FRAME_MS` 帧
+       * （`tick(200)` ≈ 12 帧，与现实同构），每跑一帧扣一帧、并把时钟与
+       * `window.now()` 一起前进 16ms。谁也不能靠"给自己再排一帧"把账做平 ——
+       * 预算用完就停，动画于是自己会停下来。
+       */
+      let frame = 0;
+      while (frame < 240 && frame <= ms / FRAME_MS) {
+        if (fakeFrames().length === 0) break;
+        now += FRAME_MS;
+        advance?.(FRAME_MS);
+        runFakeFrame();
+        frame += 1;
+      }
     },
     now() {
       return now;
@@ -622,7 +797,111 @@ export function installFakeWindow(document: FakeDocument): FakeWindow {
   g['clearInterval'] = win.clearInterval.bind(win);
   g['HTMLElement'] = FakeElement;
   g['Element'] = FakeElement;
+  /*
+   * ★★ `requestAnimationFrame` 也必须是**可控**的（2026-10 补）。
+   *
+   * `ui/drag.ts` 的惯性滚动用 rAF 驱动，而真实 rAF 在 vitest 里跑的是
+   * node 的计时器 —— 18ms 一帧、要等几十帧才停，"滚完 400px"这件事
+   * **在单测里根本等不到**（用例要么挂几十秒，要么断言在动画中途取样，
+   * 变成一条会随机红的用例）。
+   *
+   * 所以帧也由 `tick()` 推：`tick(16)` 就是**一帧**。
+   * 时间戳用假时钟（`Date.now()` 已经被 `installFakeClock` 接管），
+   * 于是"衰减到什么时候停"这件事也是确定性的。
+   */
+  let frameSeq = 1;
+  let frames: { id: number; fn: (t: number) => void }[] = [];
+  /**
+   * ★★ 跑一帧之前，时钟要**再往前走一帧**（2026-10 补，和上面的假 rAF 是同一件事）。
+   *
+   * 原来 `tick(1)` 只把时钟推 1ms，然后把这 1ms 内排队的帧**全部**跑完 ——
+   * 于是同一批帧读到的 `Date.now()` 是**同一个值**。这在 `drag.ts` 的惯性里
+   * 是致命的：`dt = 0` → `move = 0` → `applied - move = 0`，而"速度衰减够了"
+   * 与"已经滚到头"两个停止条件**一个都不成立** → 每帧都自己排下一帧。
+   * 而且帧一多就滚雪球：`runFakeFrame` 只清空一次队列，那 240 次循环里每一帧
+   * 排进来的新帧都会被下一次循环**在同一趟里**跑掉 → 一次 `tick()` 跑掉几万帧，
+   * 测试进程 4GB 堆爆（报错是 `Ineffective mark-compacts near heap limit`，
+   * 一个字都不提动画）。
+   *
+   * 修法就是**帧必须有自己的时间**：每跑一帧 `Date.now()` 前进 16ms
+   * （`tick(200)` 于是约等于 12 帧，与现实同构），并且**上限跟着 `tick` 走** ——
+   * 谁也不能靠"给自己再排一帧"把时钟推出 `tick` 的窗口，动画于是自己会停。
+   */
+  const FRAME_MS = 16;
+  fakeFrames = () => frames;
+  const raf = (fn: (t: number) => void): number => {
+    const id = frameSeq++;
+    frames.push({ id, fn });
+    return id;
+  };
+  const caf = (id: number): void => {
+    // ★ 原地删（`frames = frames.filter(...)` 会把数组换成新的一个，
+    // 而 `fakeFrames()` 返回的还是旧的 —— 取消掉的帧于是照旧被跑）。
+    const i = frames.findIndex((f) => f.id === id);
+    if (i >= 0) frames.splice(i, 1);
+  };
+  g['requestAnimationFrame'] = raf;
+  g['cancelAnimationFrame'] = caf;
+  win['requestAnimationFrame'] = raf;
+  win['cancelAnimationFrame'] = caf;
   return win;
+}
+
+/**
+ * 当前假体里排队的动画帧。
+ *
+ * ★ 语义是"**永远返回同一个数组**"：`installFakeWindow` 把本次的数组放进来，
+ * `raf`/`caf`/`runFakeFrame` 都只动它、**不换它**。曾经这里是"每次取用都换一层
+ * 新数组"，结果 `raf` 往旧数组里 push、`fakeFrames()` 报 0 → 帧永远没人跑，
+ * 而"队列里还有几帧"出现了两个互相矛盾的答案（详见 `runFakeFrame` 的注释）。
+ */
+let fakeFrames: () => { id: number; fn: (t: number) => void }[] = () => [];
+
+/**
+ * 跑一帧（假体的 `requestAnimationFrame` 驱动器）。
+ *
+ * ⚠ `fakeFrames` 是**模块级的一个格子**，而 `installFakeWindow` 每次调用都会
+ * 把它换成本次那个数组 —— 于是"存一份 rAF 回调、等 `tick()` 的时候再逐个调"
+ * 这种做法在这里是**错的**：等你调的时候，格子早被下一个用例换走了，
+ * 你手里那一份回调属于上一个 window，而它们要写的 `scrollTop` 早就不该再写。
+ * 所以驱动方式是"当场把格子取空、再跑取到的那几个"。
+ *
+ * 传进来的时间戳就是假时钟的当前值 —— `tick(16)` 先把时钟推 16ms 再跑，
+ * 于是 `drag.ts` 里那套"按毫秒算的衰减"在单测里是可推演的。
+ */
+/**
+ * 假体里还排着几个动画帧。
+ *
+ * 用例用它断言"这一次交互确实排了一帧"（惯性那条路只有在真的开了动画时才有意义）——
+ * `scrollTop` 没变有好几种解释，而"队列里一帧都没有"只可能是"动画根本没开"。
+ */
+export function fakeFrameCount(): number {
+  return fakeFrames().length;
+}
+
+function runFakeFrame(): void {
+  /*
+   * ★★ 必须先**快照**，再**原地清空**（2026-10 修，代价是测试进程 4GB 堆爆）。
+   *
+   * 第一版是 `const due = fakeFrames(); fakeFrames = () => [];` —— 两处都错：
+   *
+   * ① `due` 拿的是**活数组**。`for (const f of due)` 遍历的是那个数组本身，
+   *    回调里 `raf(step)` 往同一个数组 push 的那一帧，会被**这一次遍历接着跑掉**
+   *    （数组迭代器是活的）：`step` 排帧 → 立刻被跑 → 又排帧 → …… 一趟 `tick()`
+   *    里跑掉几万帧、内存涨到 OOM。表现是 `runFakeFrame` 只"调用了一次"，
+   *    但每个回调体反复执行（日志里 `回调返回 #1` 连刷几千行，`raf` 的 id 早过了五万）。
+   * ② `fakeFrames = () => []` 换的是**模块级格子**，而 `raf`/`caf` 闭包捕获的是
+   *    `installFakeWindow` 里那个数组 —— 它们照旧往旧数组里 push，于是
+   *    "队列里还有几帧" 这个问题的答案取决于你问谁。同一个事实两个副本，
+   *    迟早对不上：判据只能是"**永远返回同一个数组，当场清空它**"。
+   *
+   * 正确的形状：快照 → 清空原数组（`raf`/`caf` 看到的是同一个它）→ 跑快照。
+   * 于是"一帧里新排的帧"留到下一帧，与浏览器一致，`while (frame <= ms / FRAME_MS)`
+   * 那个预算也才真的管得住。
+   */
+  const due = fakeFrames().slice();
+  fakeFrames().length = 0;
+  for (const f of due) f.fn(Date.now());
 }
 
 /**

@@ -285,33 +285,51 @@ if (strayWhite.length > 0) {
  * 那块区域是**合成层滚动容器**，浏览器自己也在滚。同一次滑动上两层同时存在，
  * 我们看到的 `scrollTop` 取决于合成器此刻的进度，于是方向时对时反。
  * 玩家原话："好像跟正常的上滑下拉是两层逻辑（**他们俩都存在**）"。
+ * → 修法是"把滚动整个交回浏览器"（`pan-y`、一次都不写 `scrollTop`）。
  *
- * ## 所以现在的口径是「滚动是浏览器的，手势是我们的」（别再往回改）
+ * **第五次（2026-10 玩家一小时后报的"从箱子里拖出东西，出一个极小的范围就消失"）**：
+ * 第四次那个修法**方向对了、代价错了** —— `pan-y` 的语义是"允许浏览器纵向滚
+ * 这块区域"，而浏览器一旦接管纵向手势就发 `pointercancel`，把**拖拽**一起收掉。
+ * 长按成立、幽灵刚出来，手指一往下挪就没了。拖拽是整理页的**主操作**，
+ * 这个代价换不起。
  *
- * 第四条路（2026-10 定稿）：`touch-action: pan-y` + **一次都不写 `scrollTop`**。
- * 滚动全部归浏览器（它有惯性、回弹、方向一定对、跟手，这些自己写都写不好）；
- * 我们只负责"点"与"长按拖"，长按成立（300ms）**之前**手指怎么动都与我们无关。
- * 代价是"长按成立之后纵向大距离移动"会被浏览器接管并 `pointercancel` 掉那一趟拖拽
- * —— 写在明处的取舍（见 `src/style.css` 的 `.slot`）。
+ * ## 所以现在的口径是「**这一块像素上，同一时刻只允许有一层逻辑**」（别再往回改）
  *
- * ## 真正要守的是四条（第 ①②④ 条都是这一轮按新口径写的）
+ * 第五次是**第四次与第三次的合成**，而不是回到第三次：
+ *  · 滚动归我们（`.slot` / `.box` 是 `touch-action: none`，
+ *    `scrollHost` / `takeOverScroll` 都在，`touchmove` 按着手势 `preventDefault`）；
+ *  · **同时**把合成层那一行摘掉（第 ④ 条）—— 第三次之所以失败，
+ *    是因为那两层叠在了一起，**不是因为"自己滚"这个决定错了**。
  *
- *  ① `.slot` / `.box` **显式**写着 `touch-action`，且取值必须是 `pan-y` ——
- *     "没写"会让浏览器在**任何方向**上接管（第一次那个 bug），
- *     `none` 会让这块区域**永远不参与滚动**（第二次那个 bug）；
- *  ② 既然滚动归了浏览器，**我们这边不许再有一条并行的手势层滚动**：
- *     `drag.ts` 里不许出现 `takeOverScroll` / `scrollHost` / `touchmove` 的
- *     `preventDefault` —— 任何一条回来都会重新叠出"两层逻辑"（第四次那个 bug）；
+ * ## 真正要守的是六条
+ *
+ *  ① `.slot` / `.box` **显式**写着 `touch-action: none` ——
+ *     "没写"会让浏览器在**任何方向**上接管（第一次那个 bug）；
+ *     写 `pan-y` / `manipulation` 会让浏览器**纵向**接管并发 `pointercancel`
+ *     （第五次那个 bug：拖一点点就消失）；
+ *  ② 既然滚动归我们，**手势层必须真的在滚**：`drag.ts` 里要有 `takeOverScroll`、
+ *     `scrollHost`、以及 `touchmove` 的 `preventDefault` —— 三条缺一条，
+ *     竖向滑动就会变成"谁都不管"（手指落在格子上划不动，第二次那个 bug）；
  *  ③ `.slot` / `.box` 上写着 `user-select: none`：拖拽起手就是一次按住并移动，
  *     不写它的后果是"从箱子里拖出东西的时候会复制粘贴箱子的名字"（玩家 2026-10 原话）；
- *  ④ 那么被滚的那块容器**不许**再带 `-webkit-overflow-scrolling: touch` ——
+ *  ④ 被滚的那块容器**不许**带 `-webkit-overflow-scrolling: touch` ——
  *     它就是"合成层滚动容器"的开关，而**主线程拦不住合成器**。
  *     这一条单独看很无辜（这行在 2026 年前后的移动端文章里到处都是），
  *     但它正是第四次那个 bug 的**另一半**：有它，我们写不写 `scrollTop` 都会有两层。
+ *  ⑤ 滚动容器身上要有 `data-scroll-host` 标记：手势层靠它回答"往哪儿滚"
+ *     （见 `drag.ts` 的 `resolveScrollHost`）。★ 用**标记**而不是
+ *     `scrollHeight > clientHeight`，是因为假 DOM 算不出后者 ——
+ *     而算不出的判据等于"这条分支永远没被测过"。
+ *  ⑥ `.tape-chip` 也必须是 `none`：它同样是拖拽起点，理由与 `.slot` 一模一样
+ *     （原来写的是 `pan-x pan-y`，那正是第五次那个 bug 的形状）。
  */
-for (const cls of ['slot', 'box']) {
-  // ⚠ 用"这条长规则里有没有出现这个属性"而不是"值等于某个字符串"：
-  //   一个类在样式表里有多条规则（基样式 + 窄屏档），只认某一种写法会误报。
+for (const cls of ['slot', 'box', 'tape-chip']) {
+  /*
+   * ⚠ 用"这条长规则里有没有出现这个属性"而不是"值等于某个字符串"：
+   *   一个类在样式表里有多条规则（基样式 + 窄屏档），只认某一种写法会误报。
+   * ⚠ 选择器部分不许跨过 `{` / `}`：窄屏档里 `.box { … }` 嵌在
+   *   `@media (…) { … }` 内，贪心匹配会从媒体查询的 `{` 一路吃到 `.box` 的 `{`。
+   */
   const rules = new RegExp(`\\.${cls}(?![\\w-])[^{}]*\\{[^}]*\\}`, 'gs');
   const bodies = code.match(rules) ?? [];
   const touchRule = bodies.find((b) => /touch-action\s*:/.test(b)) ?? '';
@@ -321,16 +339,18 @@ for (const cls of ['slot', 'box']) {
       `.${cls} 没有写 touch-action —— 触摸设备上从这个元素起手的拖拽会被浏览器抢去滚动，\n` +
         `    表现为"完全不跟手、拖一点点就断"，而且不会有任何报错。`
     );
-  } else if (hit[1] !== 'pan-y') {
+  } else if (hit[1] !== 'none') {
     note(
-      `.${cls} 的 touch-action 是 ${hit[1]}，不是 pan-y。\n` +
-        `    · 写成 none：这块区域**永远不参与滚动**，而整理页上格子几乎铺满可滚区 ——\n` +
-        `      于是"能滚的地方只剩货架卡之间的缝"（玩家 2026-10 报的"划不动"）；\n` +
-        `    · 写别的值或不写：浏览器会在**任何方向**上接管手势（"拖一点点就断"）。\n` +
+      `.${cls} 的 touch-action 是 ${hit[1]}，不是 none。\n` +
+        `    · 写 pan-y / manipulation：浏览器会**纵向接管**这次手势并发 pointercancel,\n` +
+        `      把长按起手的拖拽在几个像素内收掉（玩家 2026-10 报的\n` +
+        `      "从箱子里拖出东西，出一个极小的范围就会消失"）；\n` +
+        `    · 写别的值或不写：浏览器会在**任何方向**上接管（"拖一点点就断"）。\n` +
+        `    代价一侧是"滚得爽"，另一侧是"拖不动"——拖拽是这一屏的主操作。\n` +
         `    口径见 src/style.css 的 .slot 那一大段。`
     );
   }
-  if (!bodies.some((b) => /user-select\s*:\s*none/.test(b))) {
+  if (!bodies.some((b) => /user-select\s*:\s*none/.test(b)) && cls !== 'tape-chip') {
     note(
       `.${cls} 上没有 user-select: none —— 从它起手拖动 = 一次文本选择，\n` +
         `    松手后剪贴板里就躺着那一格/那个箱子的名字（玩家 2026-10 报的"复制粘贴箱子的名字"）。\n` +
@@ -340,17 +360,19 @@ for (const cls of ['slot', 'box']) {
 }
 
 /*
- * ★ ②的守卫：**手势层不许再有一条并行的手势层滚动**（第四次那个 bug 的根）。
+ * ★ ②的守卫：**手势层必须真的在滚**（第五次定稿）。
  *
- * 上一版这条守卫方向相反：它**要求** `drag.ts` 里有 `takeOverScroll`、
- * `touchmove` 带 `{ passive: false }`、`OrganizeScreen.ts` 传两处 `scrollHost`。
- * 那三条现在全变成了**反例** —— 它们一起构成"同一次滑动上两层逻辑"。
- * 守卫跟着口径掉头，而不是把口径改回来迁就守卫。
+ * ★★ 这一条**翻过两次方向**，两次都是跟着口径走，不是跟着守卫走：
+ *  · 最初（第三次）：要求有 `takeOverScroll` / `scrollHost` / `touchmove`；
+ *  · 第四次改成反例（那三条一起构成"两层逻辑"）；
+ *  · 第五次（现在）又要求它们回来 —— 因为把滚动交回浏览器的代价是
+ *    **拖拽被 `pointercancel` 收掉**，而那个毛病比"滚得爽"重。
+ * ★ 关键区别：这一次**同时**要求第 ④ 条（合成层那一行不在）——
+ *    第四次失败的原因是两层叠在一起，不是"自己滚"这个决定。
  *
- * ⚠ 探针必须跑在**去掉注释之后的源码**上。这几个词现在全都出现在
- * `drag.ts` 的说明性注释里（那正是它们的价值：后人要能查到为什么删掉），
- * 直接对整个文件做正则会把解释本身判成违规 —— 而这会逼着后人删掉解释，
- * 比不设守卫更糟。
+ * ⚠ 探针必须跑在**去掉注释之后的源码**上。这几个词全都会出现在说明性注释里
+ * （那正是它们的价值：后人要能查到为什么这么定），直接对整个文件做正则会把
+ * 解释本身判成违规 —— 而这会逼着后人删掉解释，比不设守卫更糟。
  */
 function stripComments(text) {
   return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
@@ -358,21 +380,37 @@ function stripComments(text) {
 const dragCode = stripComments(dragSrc);
 const organizeCode = stripComments(organizeSrc);
 const TAKEOVER_SIGNS = [
-  ['takeOverScroll', () => /function\s+takeOverScroll\s*\(/.test(dragCode)],
-  ['scrollHost', () => /\bscrollHost\b/.test(dragCode) || /\bscrollHost\b/.test(organizeCode)],
   [
-    'touchmove 的 preventDefault',
-    () => /addEventListener\(\s*'touchmove'/.test(dragCode) || /handleTouchMove/.test(dragCode)
+    'takeOverScroll（手势层写 scrollTop 的那一个函数）',
+    () => /function\s+takeOverScroll\s*\(/.test(dragCode),
+    '没有它，手指落在格子上时竖向滑动**谁都不管**：浏览器被 `touch-action: none` 挡住了，\n' +
+      '    我们也不写 `scrollTop` —— 玩家报的"很难划到下面的格子和其他的架子"就是它。'
+  ],
+  [
+    'scrollHost（这次手势滚哪一块容器）',
+    () => /\bscrollHost\b/.test(dragCode),
+    '接管滚动总要有人回答"滚谁"。'
+  ],
+  [
+    'touchmove 的 preventDefault（手势进行中按掉原生滚动）',
+    () => /addEventListener\(\s*'touchmove'/.test(dragCode) || /handleTouchMove/.test(dragCode),
+    '没有它，一次拖拽会同时把页面也往上拽（iOS 的橡皮筋能穿过 `touch-action`），\n' +
+      '    玩家看到幽灵与页面一起动。'
+  ],
+  [
+    'data-scroll-host（滚动容器的标记）',
+    () => /data-scroll-host/.test(organizeCode),
+    '手势层靠这个属性找容器（见 `resolveScrollHost`）。★ 它是**属性**而不是尺寸判据，\n' +
+      '    因为假 DOM 算不出 `scrollHeight > clientHeight` —— 算不出的判据等于没被测过。'
   ]
 ];
-for (const [label, probe] of TAKEOVER_SIGNS) {
-  if (probe()) {
+for (const [label, probe, why] of TAKEOVER_SIGNS) {
+  if (!probe()) {
     note(
-      `ui/drag.ts 或 ui/OrganizeScreen.ts 里又出现了 ${label} —— 手势层正在接管滚动。\n` +
-        `    那一套 2026-10 被删掉了：它与滚动容器的合成层滚动**叠成两层**，\n` +
-        `    同一次滑动上合成器滚一遍、我们滚一遍，玩家看到的方向取决于合成器此刻的进度，\n` +
-        `    表现成"跟操作逻辑是反的"（玩家原话："好像跟正常的上滑下拉是两层逻辑"）。\n` +
-        `    滚动的口径是**全部归浏览器**（见 src/style.css 的 .slot 那一大段）。`
+      `ui/drag.ts 或 ui/OrganizeScreen.ts 里找不到 ${label} —— 接管滚动的那一套不完整了。\n` +
+        `    ${why}\n` +
+        `    口径：**这一块像素上，同一时刻只允许有一层逻辑** —— 滚动归手势层，\n` +
+        `    但合成层那一行必须摘掉（第 ④ 条）。见 src/style.css 的 .slot 那一大段。`
     );
   }
 }
@@ -386,21 +424,25 @@ for (const [label, probe] of TAKEOVER_SIGNS) {
  * 所以它不是"第二层滚动"。
  *
  * 判"有没有第二层"要看的是**并行的那一条链路**：接管滚动的函数、传进来的滚动宿主、
- * 以及 `touchmove` 的 `preventDefault`（上面三条 TAKEOVER_SIGNS），
+ * 以及 `touchmove` 的 `preventDefault`（上面三条），
  * 外加被滚容器的 `-webkit-overflow-scrolling`（下面 ④）。
  * 抓 `scrollTop` 这个字符串会把这个合法的写法一起误报 ——
  * 而**误报会让人开始改守卫**，那比漏报更贵。
  */
 
 /*
- * ★ ④：被滚的那块容器不许再带 `-webkit-overflow-scrolling: touch`。
+ * ★ ④：被滚的那几块容器不许带 `-webkit-overflow-scrolling: touch`。
  *
  * 这一行在移动端文章里到处都是（"开启惯性滚动"），所以它**看起来完全无害** ——
  * 但它把这块区域提升成合成层滚动容器，滚动从此由合成器驱动。
  * 第四次那个 bug 的两半里，一半是"我们自己写 scrollTop"，另一半就是它。
+ *
+ * ★ 第五次之后名单里多了 `.dock-boxes`：纸箱那一叠自己也成了滚动容器
+ * （它现在是 `data-scroll-host`，手势层会往它的 `scrollTop` 写），
+ * 于是它带着这一行的话会**原地复发**同一个 bug。
  * 顺手也守住 `.slot` 自己：格子不是滚动容器，带上它只会让祖先里多一个合成层。
  */
-for (const cls of ['room-scroll', 'slot']) {
+for (const cls of ['room-scroll', 'dock-boxes', 'slot']) {
   const rules = new RegExp(`\\.${cls}(?![\\w-])[^{}]*\\{[^}]*\\}`, 'gs');
   const bodies = code.match(rules) ?? [];
   if (bodies.some((b) => /-webkit-overflow-scrolling\s*:\s*touch/.test(b))) {
@@ -409,6 +451,34 @@ for (const cls of ['room-scroll', 'slot']) {
         `    **合成层滚动容器**，滚动由合成器驱动，而**主线程拦不住合成器**。\n` +
         `    2026-10 玩家报的"方向是反的"正是它与"我们自己写 scrollTop"叠出来的两层。\n` +
         `    这条在移动端文章里到处都是、单独看完全无害，所以必须由守卫记着。`
+    );
+  }
+}
+
+/*
+ * ★ ⑤：滚动容器身上要有 `data-scroll-host` —— 守卫**两侧**都要看。
+ *
+ * 只看 `OrganizeScreen.ts` 里有没有这个字符串是不够的：真正会出事的局面是
+ * "模板里给容器加了类名、却忘了加标记"，于是 `resolveScrollHost` 返回 `null`、
+ * 竖向滑动悄悄退化成"什么都不做"。所以这一条同时要求：
+ *  · `style.css` 里那个类的规则在（容器存在）；
+ *  · `OrganizeScreen.ts` 里 `class="… <那个类> …"` 的那个标签上带着标记。
+ *    ★ 判据是"**同一个标签**里两个都在"，不是"两个字符串都在文件里" ——
+ *      后者在把标记加到错误的元素上时照样会绿。
+ */
+for (const cls of ['room-scroll', 'dock-boxes']) {
+  const tagRe = new RegExp(`<[a-z]+[^>]*class="[^"]*\\b${cls}\\b[^"]*"[^>]*>`, 'g');
+  const tags = organizeSrc.match(tagRe) ?? [];
+  if (tags.length === 0) {
+    note(
+      `OrganizeScreen.ts 里找不到带 class="${cls}" 的标签 —— 守卫无法确认它是不是滚动容器。\n` +
+        `    若这个类被改名了，请把这一条一起改（守卫读错了地方会比不设守卫更糟）。`
+    );
+  } else if (!tags.some((t) => /\bdata-scroll-host\b/.test(t))) {
+    note(
+      `class="${cls}" 的那个标签上没有 data-scroll-host —— 手势层找不到它，\n` +
+        `    于是落在里面的竖向滑动**谁都不管**（浏览器被 touch-action: none 挡住，我们也不知道滚谁）。\n` +
+        `    标记写在容器自己身上，见 drag.ts 的 resolveScrollHost。`
     );
   }
 }
