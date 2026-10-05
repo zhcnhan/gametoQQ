@@ -4839,8 +4839,24 @@ button:disabled {
  * 于是带子越满、日子越近，字与图方向相反；被 `ui/prophetBar.test.ts` 抓住。）
  * ★ 两个数都只算一次：界面与 CSS 都不许"顺手再算一遍"（`prophetBar.ts` 纪律 ③）。
  * ★ 用 `scaleX` 而不是 `width`：后者每帧要重排，而这一条在**每一屏**的顶上。
+ *
+ * ★★ 切格（用户 2026-10 的原话："先知日历上方位置有一个莫名其妙的黑条，修了"）。
+ *
+ * 前一版是一条**连续**的黑填充，而开局那天 `--remain` 正好是 1.000 ——
+ * 一整条实心黑，没有刻度、没有起点，读起来是分隔线或装饰，不是"还剩几天"。
+ * 一个东西只要**看不出它在量什么**，它就会被当成噪声（策划案 §10.1A 那条铁则
+ * 说的就是这件事：光有数字不够，还得让数字**看得出来**）。
+ *
+ * 现在 `--ticks`（= `STOCKPILE_DAYS`，由 `ui/prophetBar.ts` 内联）把这条线等分成
+ * **一格一天**：亮着的格子数 = "还有 N 天"里那个 N。缝画在**填充之上**
+ * （`::after` 覆盖在 `<i>` 上面），所以黑的那一段也是分格的 —— 数得出来。
+ *
+ * ⚠ 缝的颜色必须是 `.run-bar` 的底色 `--paper-2`：用 `transparent` 的话填充会从缝里
+ *   透出来，等于没切。⚠ 也别改成"每格一个 DOM 节点"：那是 7 个元素换一条 4px 的线，
+ *   而它在**九屏**的顶上都要画。
  */
 .run-bar-track {
+  position: relative;
   height: 4px;
   border-radius: 999px;
   background: var(--ink-08);
@@ -4853,6 +4869,20 @@ button:disabled {
   transform-origin: left center;
   transform: scaleX(var(--remain, 0));
   background: var(--ink);
+}
+
+.run-bar-track::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  /* 默认 7 只是兜底；正常永远由内联的 `--ticks` 说了算 */
+  background: repeating-linear-gradient(
+    to right,
+    transparent 0,
+    transparent calc(100% / var(--ticks, 7) - 2px),
+    var(--paper-2) calc(100% / var(--ticks, 7) - 2px),
+    var(--paper-2) calc(100% / var(--ticks, 7))
+  );
 }
 
 .run-bar-row {

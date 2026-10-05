@@ -164,11 +164,18 @@ export function prophetBarHtml(disasterId: string, day: number | null): string {
   /*
    * ★ 还剩多少用**内联 `--remain`**，不用 `data-*` + CSS 逐档规则：
    * 前者是一个连续量，后者要写 8 条规则、且每加一档都得记得加一条。
+   *
+   * ★★ `--ticks` 是**一格一天**（用户 2026-10 报的："先知日历上方位置有一个莫名其妙
+   * 的黑条"）。前一版只有一条连续的黑填充，而开局那天 `--remain` 正好是 **1.000**
+   * —— 满格的黑条看不出刻度，读起来就是一条分隔线／装饰，谁也不知道它在说什么。
+   * 现在按 `STOCKPILE_DAYS` 等分切格（CSS 只画缝，见 `.run-bar-track::after`），
+   * 于是"还有 N 天"与"亮着 N 格"**是同一件事的两种说法**，数得出来。
+   * ⚠ 分母必须与 `remain` 用的是同一个常数，否则字与图又会各说各话。
    */
   return `
     <section class="run-bar" data-day="${view.day === null ? '' : view.day}" style="--remain:${view.remain.toFixed(
       3
-    )}">
+    )};--ticks:${STOCKPILE_DAYS}">
       <div class="run-bar-track"><i></i></div>
       <div class="run-bar-row">
         <span class="run-bar-name">${escapeHtml(view.name)}</span>

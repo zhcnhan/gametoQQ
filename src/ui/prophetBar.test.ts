@@ -21,7 +21,7 @@
  *    （两个属性分家的表现是"看起来开着、读屏说关着"，而屏幕上没有异常）。
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import { getDisasterDef } from '../data/disaster';
+import { getDisasterDef, STOCKPILE_DAYS } from '../data/disaster';
 import { CATEGORY_LABELS } from '../data/items';
 import { severityAt } from '../model/calendar';
 import { FakeDocument, allText, asElement, installFakeWindow, type FakeElement } from './fakeDom';
@@ -199,6 +199,23 @@ describe('★ 口径：算一次就够（两处各算一遍的那种错）', () 
     expect(prophetViewOf('cold_snap', -30).remain).toBe(1);
     expect(prophetViewOf('cold_snap', 99).remain).toBe(0);
     expect(prophetViewOf('cold_snap', null).remain).toBe(0);
+  });
+
+  it('★★ 那条测量线**一格一天**：亮着的格子数就是"还有 N 天"里那个 N', () => {
+    /*
+     * 用户 2026-10 报的："先知日历上方位置有一个莫名其妙的黑条"——
+     * 那一版是连续填充，而开局那天 `--remain` 正好是 1.000，一整条实心黑，
+     * 看不出它在量什么。切成 `STOCKPILE_DAYS` 格之后，数与图必须**互相对得上**，
+     * 否则就是又一次"字说 3 天、图亮 5 格"。
+     */
+    for (const day of [-7, -6, -3, -1, 0, 4]) {
+      const view = prophetViewOf('cold_snap', day);
+      const style = barAt('cold_snap', day).querySelectorAll('.run-bar')[0]?.attributes?.['style'] ?? '';
+      expect(style, `第 ${day} 天的格数没有跟数据走`).toContain(`--ticks:${STOCKPILE_DAYS}`);
+      const lit = Math.round(view.remain * STOCKPILE_DAYS);
+      const want = day < 0 ? -day : 0; // 囤货期还剩 -day 天；D-Day 与生存期见底
+      expect(lit, `第 ${day} 天亮着的格子数与天数对不上`).toBe(Math.min(want, STOCKPILE_DAYS));
+    }
   });
 
   it('★ 认不出的灾难 id 会当场炸（不静默给一场假的）', () => {
