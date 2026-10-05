@@ -1,0 +1,67 @@
+# 发布到 GitHub Pages —— 推到 main 就自动构建、上线。
+#
+# # 唯一的坑：`--base=./`
+#
+# GitHub Pages 把仓库挂在**子路径**下（https://zhcnhan.github.io/gametoQQ/），
+# 而 Vite 默认的 base 是 `/` —— 那会让页面去域名根上找 `/assets/index-*.js`，
+# 404，然后白屏。`--base=./` 让 index.html 里写成 `./assets/…`，
+# 于是"根路径托管"（Cloudflare Pages 那类）与"子路径托管"（这一份）都能用同一份产物。
+#
+# 仓库里 `npm run build` 不带这个参数（它给根路径托管用），所以这里单独写一行；
+# 我在本地用无头 Chrome 把这份产物挂在 /gametoQQ/ 下真加载过一遍：
+# index.html / css / js / favicon 四个请求全 200，游戏渲染出来了。
+#
+# # 为什么不在这里跑 `npm run check`
+#
+# 八道门禁（含 1100+ 条测试）在**提交前**跑，红了就不提交 —— 那是纪律，
+# 不是流水线的活。流水线只做一件事：把已经绿了的那棵树发出去。
+# 让它同时当门禁，只会多一种"因为 CI 环境差别而发不出去"的失败方式。
+
+name: 发布到 GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同时只允许一份部署；新的推上来就把排队中的旧的取消
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: 构建（子路径）
+        run: npx vite build --base=./
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
