@@ -240,8 +240,13 @@ const SCHEMAS = {
       capacityFactor: 'number（0.5 ~ 1.0）',
       unusableShelfIds: 'string[]',
       healthRiskPerDay: 'number（0 ~ 3）',
-      scoreWeights: 'Record<string, number>',
-      specialMechanics: "string[]（**需要引擎支持**，见提示词第 6 节）"
+      scoreWeights: 'Record<string, number>'
+      /*
+       * ★ `specialMechanics` 2026-10 从这里删掉了（D-35）：字段整个不存在了。
+       * 它原来写着"string[]（需要引擎支持，见提示词第 6 节）" ——
+       * 一句**自认接不了线**的 schema，而校验器因此会放过任何写它的生成物。
+       * 第 17 维只剩一个编号（`data/disasterDimensions.ts` 里那段注释写明原因）。
+       */
     },
     tier: 'number 1~4（1=开局可选 / 2=通关一次 / 3=图鉴进度 / 4=成就解锁）'
   },

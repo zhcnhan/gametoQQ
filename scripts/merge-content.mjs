@@ -68,7 +68,7 @@ const FIELDS = {
   dayEvent: ['id', 'text', 'onlyShops', 'tags', 'options', 'tier', 'decision'],
   emergency: ['id', 'text', 'category', 'needOnHandy', 'lost', 'consumes', 'tier', 'decision'],
   helpRequest: ['id', 'npcId', 'text', 'demands', 'trustGain', 'trustLoss', 'thanks', 'tier', 'decision'],
-  disaster: ['id', 'name', 'family', 'level', 'tier', 'axis', 'temperatures', 'spoilRate', 'dailyDrain', 'priorityCategories', 'windowScene', 'shelterDecayPerDay', 'restEfficiency', 'carryFactor', 'actionPointDelta', 'shopSupplyFactor', 'closedShopIds', 'priceSurcharge', 'eventPoolWeights', 'npcVisitFactor', 'categoryEfficiency', 'capacityFactor', 'unusableShelfIds', 'healthRiskPerDay', 'scoreWeights', 'specialMechanics', 'calendar', 'counterIntuitive', 'decisions', 'notes'],
+  disaster: ['id', 'name', 'family', 'level', 'tier', 'axis', 'temperatures', 'spoilRate', 'dailyDrain', 'priorityCategories', 'windowScene', 'fridgeDead', 'shelterDecayPerDay', 'restEfficiency', 'carryFactor', 'actionPointDelta', 'shopSupplyFactor', 'closedShopIds', 'priceSurcharge', 'eventPoolWeights', 'npcVisitFactor', 'categoryEfficiency', 'capacityFactor', 'unusableShelfIds', 'healthRiskPerDay', 'scoreWeights', 'calendar', 'counterIntuitive', 'decisions', 'notes'],
   shop: ['id', 'name', 'blurb', 'priceFactor', 'actionCost', 'offers', 'specialty', 'tier', 'decision']
 };
 

@@ -91,10 +91,54 @@ describe('维度清单本身', () => {
       capacityFactor: 1,
       unusableShelfIds: [],
       healthRiskPerDay: 0,
-      scoreWeights: {},
-      specialMechanics: []
+      scoreWeights: {}
     });
     expect(disasterSignature(bare)).toBe(disasterSignature(neutral));
+  });
+
+  /*
+   * ★ 第 17 维（独有机制）在 2026-10 被掏空了：`specialMechanics` 字段整个删掉
+   * （引擎零读取、数据 0 场填写，四条 `notes` 自己写着"写了会静默失效"），
+   * **但编号留着** —— 它是策划案 §10B.3.1 那张表、生成提示词与四场灾难
+   * `notes` 共同引用的对外编号，删掉会让那些引用一起漂移（改历史 ≠ 别撒谎）。
+   *
+   * 这两条守的是"**掏空之后它必须彻底无害**"：既不进"用到几维"，
+   * 也不给任何两场制造签名差异 —— 否则会留下"两场只在机制名上不同"
+   * 这种**没人验证得了**的差异，而换皮判据正靠签名吃饭。
+   */
+  it('★ 第 17 维只剩编号：有这一行、读出来恒等于中性值', () => {
+    const dim = DISASTER_DIMENSIONS.find((d) => d.no === 17);
+    expect(dim?.label).toBe('独有机制');
+    const a = fakeDisaster({ id: 'a', name: 'A', dailyDrain: { fuel: 2 } });
+    const b = fakeDisaster({ id: 'b', name: 'B', dailyDrain: { fuel: 3 } });
+    expect(dim?.read(a)).toBe('');
+    expect(dim?.read(b)).toBe('');
+    expect(usedDimensions(a)).toEqual([1]);
+  });
+
+  it('★★ 掏空之后：**现有的 116 场里，没有一场"用到了第 17 维"**', () => {
+    /*
+     * 这条是"字段删干净了没有"的守卫，而它比"读出来是空串"更强：
+     * 它不管第 17 维内部怎么实现（换成别的常量、换成按文档查表，都行），
+     * 只问一句 —— **有没有哪一场因为这一维而被算成"多用了一维"**。
+     *
+     * ★ 为什么必须逐场问：`usedDimensions` 是"换皮判据"的输入，
+     * 而第 17 维是唯一一维**没有数值可读**的。谁哪天把它恢复成
+     * "读一个名字数组"，`NEUTRAL[17]` 是 `''`，于是一份
+     * `specialMechanics: ['mask']` 会立刻让那一场凭空多一维 ——
+     * L4 的下限会因此**假达标**，而没有任何别的东西会红。
+     */
+    const bad = DISASTER_DEFS.filter((d) => usedDimensions(d).includes(17)).map((d) => d.name);
+    expect(bad, `这些场被算成用到了第 17 维（独有机制）—— 那一维的字段是被有意删掉的：\n${bad.join('\n')}`).toEqual([]);
+  });
+
+  it('★ 掏空之后：两场不可能"只在第 17 维上不同"', () => {
+    // 造两份除了"没有任何东西不同"之外的任意差异，第 17 维都不该出现在 diff 里
+    const a = fakeDisaster({ id: 'a', name: 'A', dailyDrain: { fuel: 2 } });
+    const b = fakeDisaster({ id: 'b', name: 'B', dailyDrain: { fuel: 2 }, restEfficiency: 0.6 });
+    expect(usedDimensions(a)).not.toContain(17);
+    expect(usedDimensions(b)).not.toContain(17);
+    expect(sameButL1(a, b)).toBeNull(); // 第 6 维救了它们，而不是第 17 维
   });
 
   it('★ 合成维度只算一维：第 9 维里"库存减半"与"关掉五金店"是同一维的两种取值', () => {

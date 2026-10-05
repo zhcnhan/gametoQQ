@@ -149,9 +149,11 @@ export interface DisasterProfile {
    *
    * ## 为什么它是"腐坏速度"这一维里的一个取值，而不是第 18 维
    *
-   * 第 17 维（独有机制）那个字段（`specialMechanics`）至今**引擎没实现**，
-   * 写了会静默失效 —— 而这里要的是一件**真的会改数值**的事，不能挂在那种字段上。
-   * 而它读的乘数本来就是第 2 维那一个（`spoilRate × spoilFactor`）：
+   * ★ 这里原来还有一句"第 17 维那个字段至今引擎没实现，写了会静默失效" ——
+   * 2026-10 那个字段**已经删掉了**（第 17 维只剩一个维度编号，读不到任何东西，
+   * 见 `data/disasterDimensions.ts` 与 D-35）。它当时的道理仍然成立：
+   * 这里要的是一件**真的会改数值**的事，**而它读的乘数本来就是第 2 维那一个**
+   * （`spoilRate × spoilFactor`）：
    * 只是"家具那一半"在这一场里对冰箱失效。所以它算第 2 维的取值，
    * `data/disasterDimensions.ts` 的清单**不加行**（加了会让"用到几维"虚高，
    * 而那正是决策 C 花力气清掉的那笔账）。
@@ -348,14 +350,6 @@ export interface DisasterProfile {
   decisions?: readonly string[];
   /** 写明本场用到了哪些维度编号（供"维度签名"查同质化）。它由生成者写，校验器核对 */
   notes?: string;
-  /**
-   * 独有机制 key（维度 17，`level: 'L4'` 才用）。
-   *
-   * ⚠ **每加一种要有代码**：它不像别的维度那样"读一个乘数"就完事，
-   * 所以校验器只检查它**是不是已知的 key**，未知的直接判不合格 ——
-   * 否则生成物会写出一个引擎根本不认识的名字，而那一场会静默地少一条机制。
-   */
-  specialMechanics?: readonly string[];
 }
 
 export interface DayForecast {
