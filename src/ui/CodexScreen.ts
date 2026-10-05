@@ -53,6 +53,7 @@ import {
   groupByKind
 } from '../systems/achievements';
 import { ACHIEVEMENT_DEFS } from '../data/achievements';
+import { saveExchangeHtml } from './saveExchange';
 import { windowBandHtml } from './windowBand';
 import type { Screen } from './Router';
 
@@ -167,6 +168,7 @@ export class CodexScreen implements Screen {
           </nav>
           ${this.pageHtml(this.page)}
           ${this.achievementsHtml()}
+          ${saveExchangeHtml()}
         </main>
       </div>
     `;

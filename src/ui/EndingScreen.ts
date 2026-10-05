@@ -32,6 +32,7 @@ import {
 import { achievementTotal, orderedUnlocked } from '../systems/achievements';
 import { MAX_IDENTITY_LEVEL, LEVEL_BONUS_PER_STEP, levelOf } from '../systems/identity';
 import { householdTotals } from '../systems/organize';
+import { endingPageHtml, endingPageOf } from './endingPage';
 import { windowBandHtml } from './windowBand';
 import type { Screen } from './Router';
 
@@ -162,6 +163,16 @@ export class EndingScreen implements Screen {
             ${collapsed ? lastDayStrip(run) : ''}
             ${trustNote(run) ? `<p class="block-note">${escapeHtml(trustNote(run))}</p>` : ''}
             <p class="block-note">${escapeHtml(contrastNote(run, disaster))}</p>
+            ${/*
+              ★ 这句原来自己占一段（标题「接下来」，摆在正文最后）。
+              「最后一页」（`ui/endingPage.ts`）接走了那个位置之后它挪到这儿：
+              **它是实用信息**（"再来一次时该带什么"），而这一页最后该留下的
+              是那一张日历。两者都不许丢，但只有一样能收尾。
+            */ ''}
+            <p class="block-note">
+              换一个身份、换一套整理思路再来一次。这一局的物资会清空，
+              但"东西放在哪值多少体力"你已经知道了。
+            </p>
           </section>
 
           <section class="block">
@@ -257,13 +268,14 @@ export class EndingScreen implements Screen {
             }
           </section>
 
-          <section class="block">
-            <h2 class="block-title">接下来</h2>
-            <p class="block-note">
-              换一个身份、换一套整理思路再来一次。这一局的物资会清空，
-              但"东西放在哪值多少体力"你已经知道了。
-            </p>
-          </section>
+          ${/*
+            ★★ 「最后一页」（M5 工单第四组第 3 条）**故意摆在正文最后**。
+            它原本的位置上写着"接下来：换一个身份、换一套整理思路再来一次"——
+            那句话仍然有用，但它是**收尾的实用信息**，而这一页最后该留下的
+            是那一张日历（`ui/endingPage.ts`：活到最后就翻过来、没撑住就撕掉一截）。
+            把"接下来"放回上面「这一局」那一段里（见那边的注释）。
+          */ ''}
+          ${endingPageHtml(endingPageOf(survived, lasted, run.survival.shortageDays, run.seed))}
         </main>
         <footer class="dock">
           <div class="dock-tools">

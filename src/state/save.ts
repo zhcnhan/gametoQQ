@@ -132,8 +132,17 @@ export function touch(save: SaveGame): SaveGame {
   return save;
 }
 
+/**
+ * 「像一个存档」的最小判据。
+ *
+ * ⚠ `Array.isArray` 那一条不能省（2026-10 补）：`typeof [] === 'object'`，
+ * 于是 `JSON.parse('[]')` 会被当成一个**空存档**放行 —— 它的 `meta` / `run`
+ * 全是 undefined，`migrate` 会给它补出一份全新的默认档。
+ * 那正好是"导入一段坏存档码"最坏的结局：**不报错，而且把玩家现成的那一局抹掉**。
+ * 认出来是数组就当场判它不是存档，玩家看到的是"读不出来"。
+ */
 function isObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null;
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
 function asArray<T>(v: unknown): T[] {

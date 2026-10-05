@@ -43,6 +43,7 @@ const MAX_SHOWN = 3;
 /** 全表有多少场灾难（报"还有 N 场没放出来"时用；从数据算，不写死） */
 const TOTAL_DISASTERS = DISASTER_DEFS.length;
 import { iconSvg } from '../fx/icons';
+import { howToPlayHtml } from './howToPlay';
 import { windowBandHtml } from './windowBand';
 import type { Screen } from './Router';
 
@@ -122,6 +123,8 @@ export class PrologueScreen implements Screen {
         ${windowBandHtml(this.props.disasterId)}
         
         <main class="scroll">
+          ${howToPlayHtml()}
+
           <section class="block">
             <h2 class="block-title">你重生了，先决定你是谁</h2>
             <div class="identity-list">

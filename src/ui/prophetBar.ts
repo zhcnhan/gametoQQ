@@ -23,12 +23,15 @@
  *
  * ## 三条纪律
  *
- *  ① **零依赖、零图片**：一个 CSS 变量（`--progress`）画进度、一个 `data-days`
- *     画倒计时、一行 `<b>` 画强度 —— 全部是纯 CSS + 数字；
+ *  ① **零依赖、零图片**：一个 CSS 变量（`--remain`）画剩下的天数、
+ *     一个 `data-days` 画倒计时、一行 `<b>` 画强度 —— 全部是纯 CSS + 数字；
  *  ② **不碰纸墨朱红的语义**：颜色一律走 `var(--ink)` / `var(--vermilion)`；
- *  ③ ★ **比例只算一次**：`--progress` 与 `data-days` 都由 `prophetBarHtml`
+ *  ③ ★ **比例只算一次**：`--remain` 与 `data-days` 都由 `prophetBarHtml`
  *     算好写上去；CSS / 界面 / 测试都不许再"顺手重算一遍"——
  *     两处各算一遍的表现是"条走到一半、字说还有一天"，而两个数各自都算得出来。
+ *     ⚠ `--remain` 是**还剩几成**（灾前七天满格 → D-Day 见底），
+ *     方向必须与右边那句"还有 N 天"一致 —— 第一版写成了"走了多少"，见下面
+ *     `prophetViewOf` 里那段注释。
  *
  * ## ★ 它为什么与「窗外」一起返回（`ui/windowBand.ts` 调用它）
  *
@@ -44,7 +47,7 @@
  * 但强度曲线与"最要紧的两类"照旧（**没有天数就少说一句，不编一个数**）。
  */
 import { CATEGORY_LABELS } from '../data/items';
-import { getDisasterDef } from '../data/disaster';
+import { getDisasterDef, STOCKPILE_DAYS } from '../data/disaster';
 import { calendarBars, dayLabel, daysUntilDisaster, severityAt } from '../model/calendar';
 import type { DisasterProfile } from '../model/types';
 
@@ -75,8 +78,13 @@ export interface ProphetView {
   bars: { day: number; severity: number; hint: string; label: string }[];
 }
 
-/** 日历上总共有多少天要摊开（`daysUntilDisaster` 的上界：灾前七天） */
-const STOCKPILE_DAYS = 7;
+/**
+ * 日历上总共有多少天要摊开 —— 就是囤货期的天数。
+ *
+ * ★ 从 `data/disaster.ts` 取，不在这儿另写一个 `7`：
+ * 这一页的整条线（还剩几成）与"灾前七天"这句话必须同源，
+ * 两处各写一个 7 时改动一处就会静默错位（而它只在"天数只剩一两天"时看得出来）。
+ */
 
 /**
  * 把这一场 + 今天算成一份可读的视图。纯函数，不碰 DOM。

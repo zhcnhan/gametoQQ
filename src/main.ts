@@ -24,6 +24,8 @@ import { createCursor } from './model/rng';
 import { ROOM_ID } from './model/shelf';
 import type { GamePhase } from './model/types';
 import { bootstrapStore } from './state/store';
+import { decodeSaveCode } from './state/saveCode';
+import { writeSave } from './state/save';
 import { declineRequest, fulfillRequest, leaveRequest, type HelpResult } from './systems/help';
 import { createOrganizeSession, resetSession, restoreOrganizeSession } from './systems/organize';
 import { rollShopStocks } from './systems/shop';
@@ -51,6 +53,7 @@ import { OrganizeScreen } from './ui/OrganizeScreen';
 import { PendingScreen } from './ui/PendingScreen';
 import { PrologueScreen } from './ui/PrologueScreen';
 import { toggleProphet } from './ui/prophetBar';
+import { installSaveExchange } from './ui/saveExchange';
 import { Router, type Screen, type ScreenKey } from './ui/Router';
 import { HelpScreen } from './ui/HelpScreen';
 import { ShopScreen } from './ui/ShopScreen';
@@ -420,6 +423,42 @@ function installClipboardGuard(): void {
 }
 
 installClipboardGuard();
+
+/**
+ * ★ 「把这一局带走」—— 存档码的导出 / 导入（用户 2026-10 走查：存档只活在 localStorage 里）。
+ *
+ * ## 为什么导入是"写盘 + 刷新"而不是就地换掉 store
+ *
+ * 一局的东西散在三处：`store`（内存）、`session`（整理会话里"手里捏着的那件"）、
+ * 以及各屏已经画好的 DOM。就地替换只换了第一处 —— 后两处会留着上一局的残留，
+ * 而那正是"看起来成功了、玩起来处处不对"的形状。
+ *
+ * **刷新一次是唯一能把三处一起对齐的动作**，而且它顺便把"这一局换了"这件事
+ * 说得毫无歧义。代价是丢掉一屏的位置（图鉴页会关掉），这个代价可以接受：
+ * 导入存档本来就该从这一局的起点重新看。
+ *
+ * ⚠ 与 `installProphetToggle` 同一个理由挂在 `document` 上（见那个函数的注释）：
+ * 存档码那一块住在图鉴页的末尾，而图鉴页每次打开都整体重建。
+ */
+function installSaveExchangeHooks(): void {
+  installSaveExchange(
+    document,
+    () => store.save,
+    (code) => {
+      const save = decodeSaveCode(code);
+      if (!save) {
+        // 界面上已经说过"读不出来"了，这里再拦一道只是不让它写坏盘
+        console.warn('[囤货末世] 存档码解不出来，什么都没写。');
+        return;
+      }
+      writeSave(save);
+      console.info('[囤货末世] 存档已换成导入的那一局，正在重新打开。');
+      window.location.reload();
+    }
+  );
+}
+
+installSaveExchangeHooks();
 
 /**
  * ★★ 「先知日历」那一条的展开 / 收起（D-33 / 决策 E 的 ② 层）。

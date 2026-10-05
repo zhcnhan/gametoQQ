@@ -240,6 +240,50 @@ function narrowProblems(css) {
     }
     if (!item.check(body)) out.push(`\`.${item.cls}\` 的约束不对：${item.why}`);
   }
+  out.push(...tierProblems(css));
+  return out;
+}
+
+/*
+ * ────────────────────────────────────────────────────────────────────────────
+ * ★★ 为什么 320 一档合格就等于 375 / 390 也合格（省下一次"假装验过"）
+ *
+ * M5 工单 §5 写的是"320 / 375 / 390 三档零溢出"。真去验三档要有布局引擎，
+ * 没有布局引擎的地方假装有，上面已经写过两次教训 —— 所以这里换一条**真的算得清**的路：
+ *
+ *   **不验第二档与第三档，而是验"档"本身只有这么几个。**
+ *
+ * 全表在手机区间里的断点只有两个：`max-width: 365px` 与 `max-width: 400px`；
+ * 而 320 是**最小**的那一档。所以"320 不溢出"能推出 375 / 390 也不溢出，
+ * 只要**没有人往 320~429 之间再插一个新档** ——
+ * 那正是会把这条推理悄悄弄假的动作（而这种错不会有任何报错：
+ * 新档往往只为 375 那一段调尺寸，320 反而因此**变宽**）。
+ *
+ * 所以下面这条判据是"**档数不许变多**"：这个区间里的 `max-width` 断点，
+ * 只允许恰好等于 365 与 400 各一个。
+ * 加断点本身不是错 —— 但它必须**同时**把这张表与这段推理一起改掉。
+ *
+ * ⚠ `min-width: 430px` 那一个不在管辖内：它只管 ≥430，对 320/375/390 三档一视同仁。
+ */
+const PHONE_BUCKETS = [365, 400];
+/** 比 470px 宽的地方 desktop 那一段接管了，不属于手机区间 */
+const PHONE_BUCKET_MAX_PX = 470;
+
+function tierProblems(css) {
+  const out = [];
+  const clean = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const found = [...clean.matchAll(/@media\s*\(\s*max-width\s*:\s*(\d+)px\s*\)/g)].map((m) => Number(m[1]));
+  const inRange = [...new Set(found)].filter((w) => w > 320 && w < PHONE_BUCKET_MAX_PX).sort((a, b) => a - b);
+  const expected = [...PHONE_BUCKETS].sort((a, b) => a - b);
+  if (inRange.join(',') !== expected.join(',')) {
+    out.push(
+      `手机区间的 \`max-width\` 档位变了：现在是 [${inRange.join(', ')}]，` +
+        `而"320 合格 ⇒ 375/390 合格"这条推理只对 [${expected.join(', ')}] 成立。\n` +
+        `    → 新加的窄屏档会造出一段"比 320 松、比 400 紧"的宽度，` +
+        `而 375 / 390 正好落在里面：那两档从此**没有被人验过**，也不会有任何报错。\n` +
+        `    → 要么把新档并进 400 或 365，要么把这张表与上面那段推理一起改掉。`
+    );
+  }
   return out;
 }
 
@@ -269,6 +313,25 @@ if (!narrowSelfTests[0] || !narrowSelfTests[1] || !narrowSelfTests[2]) {
   process.exit(1);
 }
 
+/*
+ * ★ 档位守卫的自证（同样按纪律 §2.18：守卫要能故意失败一次）。
+ * 三个样本：① 现状那一组必须**合格** ② 往 375 插一个新档必须**判红**
+ * ③ 把 365 那一档删掉也必须**判红**（那会让 320~365 那一段失去它唯一的兜底）。
+ */
+const TIER_SAMPLES = [
+  { css: '@media(max-width:400px){.a{color:red}}@media(max-width:365px){.b{color:red}}', bad: false },
+  { css: '@media(max-width:400px){.a{color:red}}@media(max-width:375px){.c{color:red}}', bad: true },
+  { css: '@media(max-width:400px){.a{color:red}}', bad: true }
+];
+const tierSelfTests = TIER_SAMPLES.map((s) => tierProblems(s.css).length > 0 === s.bad);
+if (tierSelfTests.some((ok) => !ok)) {
+  console.error(
+    '[check-layout] ★ 档位守卫自检失败：喂给它三个样本（现状那组 / 插一个新档 / 删掉 365 那一档），' +
+      '其中至少一个判反了 —— 说明这条守卫在验空气。'
+  );
+  process.exit(1);
+}
+
 problems.push(...narrowProblems(CSS));
 
 if (problems.length > 0) {
@@ -291,5 +354,7 @@ if (problems.length > 0) {
 console.log(
   `[check-layout] 桌面宽度契约完好：${CONTRACT.length} 条都成立、` +
     `\`var(--content-max)\` 出现 ${usesContentMax} 次、自检（故意缺项必判红）通过；` +
-    `窄屏（320px）那一行 ${RUN_BAR_ITEMS.length} 段各自守住约束、自检 3 条通过。`
+    `窄屏（320px）那一行 ${RUN_BAR_ITEMS.length} 段各自守住约束、自检 3 条通过；` +
+    `手机档位只有 [${[...PHONE_BUCKETS].sort((a, b) => a - b).join(', ')}] —— ` +
+    `320 是最小那一档，所以"320 不溢出"能推出 375 / 390 也不溢出、自检 3 条通过。`
 );

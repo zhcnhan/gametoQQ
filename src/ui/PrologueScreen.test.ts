@@ -47,10 +47,18 @@ function metaWith(survivedRuns: number, seen: string[]): ReturnType<typeof creat
 
 /**
  * 第 n 个区块的标题（`h2.block-title` 是纯文本叶子，读得到）。
- * 顺序是这一页固定的两段：身份卡 → 先知日历。
+ *
+ * ⚠ 顺序按**出现次序**算，所以每加一段正文，这里的下标都要跟着改 ——
+ * 2026-10 加"怎么玩"那一段（`ui/howToPlay.ts`）时就撞过一次。
+ * 读这一页的某一段时，优先用下面的 `titleIndex` 按名字找。
  */
 function blockTitle(root: FakeElement, index: number): string {
   return root.querySelectorAll('.block-title')[index]?.textContent ?? '';
+}
+
+/** 按标题里的词找那一段的下标（比记下标稳 —— 加一段正文不会让断言说谎） */
+function titleIndex(root: FakeElement, keyword: string): number {
+  return root.querySelectorAll('.block-title').findIndex((el) => el.textContent.includes(keyword));
 }
 
 /** 第 n 个区块的说明行（`p.block-note`，多数是纯文本叶子） */
@@ -65,10 +73,13 @@ afterEach(() => {
 describe('★ 开局页显示的是**这一局真的抽到的那一场**', () => {
   it('寒潮局：身份卡下面那一段说的就是寒潮', () => {
     const root = mount('cold_snap');
-    expect(blockTitle(root, 1)).toContain('这一局会撞上什么');
+    // ★ 按名字找，不记下标：这一段的前面现在还有"怎么玩"（2026-10 加）
+    const at = titleIndex(root, '这一局会撞上什么');
+    expect(at, '开局页少了「这一局会撞上什么」那一段').toBeGreaterThan(0);
+    expect(blockTitle(root, at)).toContain('这一局会撞上什么');
     expect(allText(root)).toContain('寒潮');
-    // 身份卡 → 这一局会撞上什么，两段；日历那一整条已经搬去顶栏（D-33 / 决策 E）
-    expect(root.querySelectorAll('.block-title')).toHaveLength(2);
+    // 怎么玩 → 身份卡 → 这一局会撞上什么，三段；日历那一整条已经搬去顶栏（D-33 / 决策 E）
+    expect(root.querySelectorAll('.block-title')).toHaveLength(3);
   });
 
   it('★★ 热浪局：那一页**不许**出现"寒潮"两个字', () => {

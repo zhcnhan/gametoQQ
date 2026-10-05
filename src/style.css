@@ -1403,9 +1403,360 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+/*
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 「最后一页」—— 结算页最后那一张日历（`ui/endingPage.ts`）
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * ★★ 这一整块是**纯 CSS 的纸**：没有图片、没有 canvas、没有动画。
+ * 三样东西凑出"一张日历"：印刷纸的横纹（`repeating-linear-gradient`）、
+ * 十四格深浅不同的刻痕（`<i>` 的高度）、以及撕口（底部那道 `mask` 毛边）。
+ */
+.ending-page {
+  margin-top: 22px;
+}
+
+.ending-calendar {
+  position: relative;
+  margin-top: 10px;
+  padding: 14px 12px 16px;
+  /*
+   * ★ 底色用 `--paper-2`（比正文纸深一档）：它是**贴在台账上的一张纸**，
+   * 不是台账本身的另一段。D-33 把三档明度从 6.5 拉到 13.8 之后，
+   * 这一档的差别才真的看得见 —— 在那之前这里会糊成一片。
+   */
+  background-color: var(--paper-2);
+  /* 印刷纸的横纹（与 `.topbar` 的半调点同一个手法，只是线而不是点） */
+  background-image: repeating-linear-gradient(
+    180deg,
+    rgba(44, 44, 42, 0.05) 0 1px,
+    transparent 1px 7px
+  );
+  border: 1.5px solid var(--ink-16);
+  border-radius: 2px;
+}
+
+/*
+ * 没活到的那几天**根本不画**（`endingPage.ts` 只印 `printed` 格）——
+ * 所以"少了几格"这件事只能靠这一页自己说：底下一句 +
+ * `aria-label` 里的"剩下 N 天没印出来"。
+ */
+
+.ending-grid {
+  display: grid;
+  grid-template-columns: repeat(14, minmax(0, 1fr));
+  gap: 3px;
+}
+
+/*
+ * 一格 = 一天的刻痕。
+ *
+ * ★ 高度走 `--tick`（0.34..1，由 `endingPage.ts` 算好内联写上来）：
+ * 界面与 CSS 都不许"顺手再算一遍"（`prophetBar.ts` 那条纪律的同一条）。
+ * `align-items: flex-end` 让 14 道刻痕坐在同一条基线上 —— 那是"日历"读起来
+ * 像一个整体而不是 14 个柱子的唯一原因。
+ */
+.ending-day {
+  display: flex;
+  align-items: flex-end;
+  height: 42px;
+  border-bottom: 1.5px solid var(--ink);
+}
+
+.ending-day::after {
+  content: '';
+  display: block;
+  width: 100%;
+  height: calc(var(--tick, 0.5) * 100%);
+  background: var(--ink-40);
+  border-radius: 1px 1px 0 0;
+}
+
+/*
+ * 被撕开的那几格：刻痕只剩一道虚线印子。
+ *
+ * ★ 用虚线而不是"更淡的实线"：撕开的口子上留着的是**纸的纤维**，
+ * 一条连续的淡线读起来还是"这一天画过"。
+ */
+.ending-day.is-torn::after {
+  background: transparent;
+  border-top: 1.5px dashed var(--ink-16);
+  height: 3px;
+}
+
+/*
+ * ★★ 那个撕口本身（只在"没撑住"那一页出现）。
+ *
+ * 它挂在**整张日历**上而不是某一格上：撕掉的是一张纸的一角，
+ * 而"撕掉的那一角"必须**连着纸的边**才像撕 —— 一格一格地画锯齿，
+ * 读起来会是"这几格有花纹"。
+ *
+ * ## ⚠⚠ 为什么是"磨损的毛边"而不是锯齿（走过的弯路写在这儿）
+ *
+ * 第一版想做真锯齿，写了**两层遮罩**（上面一张盖住整张纸、下面一张只留底部 8px 的
+ * 斜条纹，两张用 `mask-composite: intersect` 相交）。它有两处会**静默**出错：
+ *
+ *  ① 只留底部那一条的遮罩写法（`mask-size: 100% 8px; mask-position: bottom left;
+ *     mask-repeat: no-repeat`）会把**整张日历削得只剩一条纸边** ——
+ *     不报错、测试也看不见（`ui/endingPage.test.ts` 的假体根本没有布局）；
+ *  ② `mask-composite` 的 WebKit 旧写法叫 `source-in`、标准写法叫 `intersect`，
+ *     写混了就是**两层遮罩相加** —— 那会变成"整张纸都是斜条纹"。
+ *
+ * 两个都不值得为一条纸边去赌，所以现在是**一条标准的 linear-gradient 遮罩**：
+ * 上面全留住、往下 7px 渐隐。读起来是"这张纸的下缘被磨掉了"，
+ * 在 42px 高的格子上与锯齿是同一层意思。
+ * 明确的锯齿留给将来真要那一版的人 —— 那时得**在真机上验一次**。
+ *
+ * `mask-image` 现在浏览器都要带 `-webkit-` 前缀（Safari 仍然只认它），
+ * 所以两条都写。**写错了也不会报错**：没有 mask 时这一页就是一张完整的纸。
+ */
+.ending-calendar[data-blank]:not([data-blank='0']) {
+  -webkit-mask-image: linear-gradient(180deg, #000 0 calc(100% - 7px), transparent 100%);
+  mask-image: linear-gradient(180deg, #000 0 calc(100% - 7px), transparent 100%);
+}
+
+/*
+ * 撕口那一条线：沿底部那道毛边勾一根虚线，让"这是撕开的"再明确一次。
+ *
+ * `inset: auto 0 -1px 0` —— 贴着纸的下缘往外 1px（与 `.window-band::after`
+ * 那条地平线同一个手法）。⚠ 它**不做动画**：这一页不庆祝。
+ */
+.ending-calendar[data-blank]:not([data-blank='0'])::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 -1px 0;
+  height: 0;
+  border-top: 1.5px dashed var(--ink-16);
+}
+
+/*
+ * ★ 这一页唯一的动效：翻过来那一下（200ms）。
+ *
+ * ⚠ **不许加庆祝类的动画**（§4A：界面不抢戏；§5A：朱红是唯一点缀色，
+ * 用它做大面积庆祝会让真正的警告跳不出来）。
+ * 这一下淡入只负责"这一页是刚翻过来的"。
+ * 底下的 `prefers-reduced-motion` 一档会把它关掉 —— 那一条在文件里已有。
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .ending-calendar {
+    animation: ending-turn 200ms var(--ease-out) both;
+  }
+}
+
+@keyframes ending-turn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) rotate(-0.4deg);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/*
+ * 窄屏：14 格 × 3px 间隙在 320px 上是每格约 19px（可用 296px）——
+ * 刻痕仍然读得出，所以这里**不做**降列数的处理。
+ * ⚠ 撕口那 7px 的渐隐在这里**不用另配一档**（曾经写着"齿距要跟着收"，
+ * 那是两层遮罩锯齿版的遗留：真锯齿的齿距确实要跟着宽度收，
+ * 而"下缘渐隐 7px"在任何宽度下都是同一件事）。
+ */
+@media (max-width: 365px) {
+  .ending-calendar {
+    padding: 12px 9px 14px;
+  }
+
+  .ending-grid {
+    gap: 2px;
+  }
+}
+
 .block-note.strong {
   color: var(--ink);
   font-size: 13px;
+}
+
+/*
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 「怎么玩」那一段（开局页，`ui/howToPlay.ts`）
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * ★★ 这一节里**一个格子的尺寸、一个色条的颜色都不写** —— 那是刻意的。
+ *
+ * 那个示例货架的 DOM 直接复用整理页那一套类名（`.shelf-row` / `.row-tape` /
+ * `.row-cells` / `.slot`），所以它的几何、配色、窄屏规则**全部跟着游戏走**
+ * （`.row-cells` 的 `--cols`、`.slot` 的 `aspect-ratio`、
+ * `@media (max-width: 400px)` 那一档自动换成 `1fr`）。
+ *
+ * 反过来做（给示例另写一套尺寸）就会**漂**：改一次格子尺寸，
+ * 示例还停在旧样子，而没有任何东西会报错 —— `windowThemes` 的 `fall`
+ * 名单手抄漂了 21 场，是同一种错误。所以这里只管**容器**：
+ * 边框、留白、以及把示例与正文分开的那一层"这是一张图"的观感。
+ */
+.howto-figure {
+  margin: 10px 0 0;
+}
+
+/*
+ * 示例货架那个框。
+ *
+ * ★ 它**不是** `.shelf-card`（整理页那种带抬头、带按钮的真货架卡片）：
+ * 这一段要教的是"贴与没贴的区别"，抬头上那三个按钮、那块木纹底
+ * 一进来就成了噪音。所以这里只画一个**台账里贴了一张照片**似的方框 ——
+ * 虚线边 + 一点内衬，读起来是"插图"而不是"可以操作的面板"。
+ * ⚠ 因此也刻意不用实心粗边框：§5A 那套层次里，实心粗边是"内容卡片"的意思。
+ */
+.howto-shelf {
+  padding: 10px 10px 12px;
+  border: 1.5px dashed var(--ink-16);
+  border-radius: var(--radius-sm);
+  background: var(--paper-2);
+}
+
+.howto-caption {
+  margin-top: 7px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--ink-70);
+  overflow-wrap: anywhere;
+}
+
+.howto-caption b {
+  color: var(--ink);
+}
+
+/*
+ * 四步。用 `<ol>` 是因为顺序真的有意义（买 → 放 → 贴 → 等），
+ * 而序号自己带一层"这是一份清单"的观感 —— 与这一作的台账气质一致。
+ *
+ * ⚠ 序号用 `--ink-40`（"几乎读不清"的那一档）而正文用 `--ink`：
+ * 序号是**导航**，不是内容；玩家要读的是那四句。
+ */
+.howto-steps {
+  margin: 10px 0 0;
+  padding-left: 1.4em;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--ink-70);
+}
+
+.howto-steps li + li {
+  margin-top: 5px;
+}
+
+.howto-steps li::marker {
+  color: var(--ink-40);
+  font-variant-numeric: tabular-nums;
+}
+
+.howto-steps b {
+  color: var(--ink);
+}
+
+/*
+ * 「把这一局带走」—— 存档码的导出 / 导入（`ui/saveExchange.ts`）。
+ *
+ * ## 为什么它长得像一张折起来的纸
+ *
+ * 这一块**大多数时候没用**（存档只在这个浏览器里，而绝大多数人不换设备），
+ * 但它承载的是"这一局会不会丢"——一件平时不该占版面、要找的时候必须找得到的事。
+ * 所以是 `<details>`：收起时只留一行 `<summary>`，与页面里其它 `block-title`
+ * 同一档字重，读起来像"这里还有一个抽屉"，而不是一个被藏起来的功能。
+ *
+ * ## 两个框为什么必须能选中
+ *
+ * 存档码有 19KB（见 `state/saveCode.ts` 文件头的实测），**不可能手抄**，
+ * 唯一的用法是"整段复制"。而 `.screen` 上有一条 `user-select: none`
+ * （见 `src/main.ts` 那句"样式管看起来能不能选，这一道管选中了也拿不走"），
+ * 所以这里必须**显式把选择打开** —— 少了这一条，玩家长按选中不了任何东西，
+ * 而表现是"按了没反应"，与"这个功能没做"一模一样。
+ *
+ * ⚠ 那两个框是 `readonly` 而不是 `disabled`：`readonly` 的框算 `isEditable`
+ * （`src/main.ts` 的 `isEditable`），于是 `installClipboardGuard` 会**放行**它的
+ * 复制 / 粘贴 —— 这是刻意的，它正是那五个事件唯一的例外。
+ */
+.save-exchange {
+  margin-top: 18px;
+}
+
+.save-fold > summary {
+  font-family: 'Songti SC', 'STSong', Georgia, serif;
+  font-size: 15px;
+  color: var(--ink);
+  cursor: pointer;
+  /* ★ 折起来那一行也要够大：手机上这是唯一的"门把手"，11px 的字点不中 */
+  padding: 4px 0;
+  list-style-position: inside;
+}
+
+.save-fold[open] > summary {
+  margin-bottom: 8px;
+}
+
+.save-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+/* 文件那条路：`<label>` 套一个藏起来的 `<input type=file>`，长得必须与按钮一致 */
+.save-file {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.save-code {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px 9px;
+  box-sizing: border-box;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-70);
+  background: var(--card);
+  border: 1.5px solid var(--ink-16);
+  border-radius: var(--radius-sm);
+  /* ★ 见文件头：它是这一段唯一被允许选中的东西 */
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-touch-callout: default;
+  resize: vertical;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+.save-code:focus {
+  border-color: var(--ink-40);
+  outline: none;
+}
+
+.save-hr {
+  margin: 16px 0 12px;
+  height: 0;
+  border: 0;
+  border-top: 1.5px dashed var(--ink-16);
+}
+
+/*
+ * 结果那一行。**三种状态各有各的颜色**，而且都不是"成功绿"——
+ * §5A 只有两条语义色：朱红（警告）与暖黄（安全 / 窗内）。
+ * 导入失败是真正的警告（它会覆盖你现在这一局），所以用朱红；
+ * 成功用暖黄 —— 它确实是"安全"那一类（存档保住了）。
+ */
+.save-msg.is-bad {
+  color: var(--vermilion);
+}
+
+.save-msg.is-ok {
+  color: var(--ink);
+}
+
+.save-msg:empty {
+  display: none;
 }
 
 /*
