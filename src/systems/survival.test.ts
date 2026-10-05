@@ -864,6 +864,48 @@ describe('M1 平衡改造：整理质量真的会变成体力，撑不住真的�
     expect(run.stats.shelter).toBe(61); // 55 − 6 + 12，越过 60 就停手
   });
 
+  it('★★ 屋里的药按这一场算效力（M4 W-04：恢复侧的接线）', () => {
+    /*
+     * 目的：钉住 `autoSupply` **把灾难传给了 `healOf`**。
+     *
+     * 这一条用的是一个 `categoryEfficiency.medicine < 1` 的灾难：断电的冬天里药照样吃，
+     * 但只值平常的八成。如果哪天有人把 `healOf(getItemDef(...), disaster)`
+     * 改回 `healOf(getItemDef(...))`（或者把乘数搬到调用方去），
+     * 这条会当场红 —— 上面那条寒潮用例**不会**（寒潮的 medicine 是 1，
+     * 乘不乘都一样，这正是"接线了但没测出来"的典型）。
+     *
+     * ⚠ 挑灾难有个硬条件：它**不能每天消耗药品**。`outbreak_flu` 的 medicine 效率也是 0.6，
+     * 但它 `dailyDrain: { medicine: 2 }` —— 每日消耗**排在自动开药之前**，
+     * 绷带会先被当成口粮吃掉。`blackout_winter` 是全表**唯一**同时满足
+     * "药效率 < 1"和"不耗药"的一场。
+     *
+     * ★★ 判据写成**同一局跑两遍再相减**，不是写死一个数。
+     *
+     * 写死 `deltas.health === 4.8` 会**假红**：那一天的账里还叠着缺货惩罚、
+     * 四维自然衰减、灾难的 `healthRiskPerDay` 等等（实测这一局是 −4.5），
+     * 药的那一份只是其中一项。相减则把那一整串背景全部约掉，
+     * 剩下的**恰好**是 `healOf` —— 判据于是只说它要说的那件事。
+     * （这个坑是跑出来才发现的：第一版断言拿到 0.3，与 4.8 差了 4.5。）
+     */
+    function healthWithBandage(bandaged: boolean): number {
+      const run = bareRun();
+      run.disasterId = 'blackout_winter'; // 药效率 0.8，每日只耗燃料与主食
+      stockFor(run, SURVIVAL_DAYS + 1);
+      if (bandaged) {
+        const slot = freePos(run);
+        put(run, slot.shelfId, slot.pos, 'bandage', 1, null);
+      }
+      run.day = 3;
+      run.stats = { health: 65, mood: 60, stamina: 50, shelter: 80 };
+      return settleSurvivalDay(run).deltas.health;
+    }
+
+    const without = healthWithBandage(false);
+    const with_ = healthWithBandage(true);
+    // 绷带 `nutrition.health` 是 2，`MEDICINE_HEAL_FACTOR` 是 3，这一场再乘 0.8
+    expect(with_ - without).toBeCloseTo(2 * 3 * 0.8, 5);
+  });
+
   it('缺货把四维压到线下 → 当天记一次硬撑，代价再叠一层（§12.3 v0.5）', () => {
     const run = bareRun(); // 空货架 = 全断
     run.day = 3;
@@ -885,10 +927,76 @@ describe('M1 平衡改造：整理质量真的会变成体力，撑不住真的�
 
     const report = settleSurvivalDay(run);
     expect(report.unreachable).toBe(3); // 三个品类各少拿 1 件（2 件 → 1 件）
-    expect(report.fromShelves).toBe(3);
+    /*
+     * ★ M4 W-03：这一局**一件都没放顺手位**，所以那 3 件全都是"没铺到手边"。
+     *
+     * 两个数在这里相等**不是巧合**，而是这一段的判据：`unreachable`（结果）
+     * 与 `handyGap`（原因）在"顺手位空着"这个极端上必须重合 ——
+     * 不重合就说明有一笔账算漏了（比如 `handyGap` 忘了按"真的没有"封顶）。
+     */
+    expect(report.handyGap).toBe(3);
+    expect(run.survival.unreachablePieces).toBe(3);
+    expect(run.survival.handyGapPieces).toBe(3);
     // 关键：这不是"没有"，是"拿不动" —— 两个数必须分得开，界面才能说对话
     expect(report.drains.every((d) => d.shortage === 0)).toBe(true);
     expect(report.hardPress).toBe(true);
+  });
+
+  it('★★ 顺手位铺到一件 → 两个数一起变（M4 W-03 的判据）', () => {
+    const run = bareRun();
+    stockFor(run, SURVIVAL_DAYS + 1);
+    run.day = 3;
+    run.stats = { health: 100, mood: 100, stamina: 20, shelter: 100 }; // 低于 EXHAUSTED_STAMINA
+
+    /*
+     * ★ 顺手位铺在**另一块货架**上（`shelf_b`），不是 `shelf_a`。
+     *
+     * 这不是图省事：`stockFor` 是游标式铺货（塞满一格换下一格），
+     * 往它已经铺好的格子里再塞一件同品类的东西**是把那一格叠高**，
+     * 于是"够得着"的那一份也跟着变 —— 那是 `stockFor` 的账，不是顺手位的账。
+     */
+    const handy = run.shelves[1]!;
+    handy.handyRank = 1;
+    put(run, 'shelf_b', { row: 0, col: 1 }, 'fuel_can', 1, null);
+
+    const report = settleSurvivalDay(run);
+    /*
+     * ★ 这一局实际发生的事（跑出来才知道，所以写下来）：
+     * `stockFor(SURVIVAL_DAYS + 1)` 把主食与饮水整整齐齐排在 `shelf_a` 上，
+     * 燃料则**溢出到 `shelf_b`**（顺手位正好是它）。往 `shelf_b` 再补 1 件燃料，
+     * 做的事就是"让燃料那一件够得着"：
+     *
+     *     unreachable 3 → 2（燃料那 1 件有顺手位撑着，不用再少拿了）
+     *     handyGap    3 → 2（顺手位现在铺对了 1 件，还差主食与饮水那 2 件）
+     *
+     * ⚠ 两个数在这里**恰好一起减 1**，那不代表它们是同一个数：
+     * 第一个在问"今天少了几件"，第二个在问"几件是铺一下就回得来的"。
+     * 上面那条"顺手位空着时两个数都是 3"才是它们相等的唯一场合。
+     */
+    expect(report.unreachable).toBe(2); // 结果账：少了 2 件
+    expect(report.handyGap).toBe(2); // 原因账：这 2 件都是"铺一下就能拿回来"的
+    expect(run.survival.handyGapPieces).toBe(2);
+    expect(run.survival.unreachablePieces).toBe(2);
+    expect(report.fromShelves).toBe(4); // 需要 6 件、实际拿到 4 件（3 件翻出来的 + 顺手位上那 1 件）
+  });
+
+  it('★★ 顺手位把三个品类都摆上 → 反而一件都不缺（两个数一起归零，而这正是它的价值）', () => {
+    const run = bareRun();
+    stockFor(run, SURVIVAL_DAYS + 2);
+    run.day = 3;
+    run.stats = { health: 100, mood: 100, stamina: 20, shelter: 100 };
+
+    const handy = run.shelves[1]!;
+    handy.handyRank = 1;
+    put(run, 'shelf_b', { row: 0, col: 0 }, 'canned_beans', 1, null);
+    put(run, 'shelf_b', { row: 0, col: 1 }, 'mineral_water', 1, null);
+    put(run, 'shelf_b', { row: 0, col: 2 }, 'fuel_can', 1, null);
+
+    const report = settleSurvivalDay(run);
+    // 顺手位上的**不用翻**，所以它们是加在"一半"之上的 —— 2 件的一半 + 1 件 = 够
+    expect(report.unreachable).toBe(0);
+    expect(report.handyGap).toBe(0);
+    expect(report.drains.every((d) => d.taken === d.need)).toBe(true);
   });
 
   it('★ 一直点"过一天"不会自动通关：断粮的人会走到 collapsed，而且撑不到第 7 天', () => {

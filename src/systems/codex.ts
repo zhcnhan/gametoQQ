@@ -41,6 +41,7 @@ import { getIdentityDef } from '../data/identities';
 import { countOfKind } from '../data/registry';
 import { NPC_DEFS } from '../data/npcs';
 import { countByItem } from '../model/consume';
+import { listedItemIds } from '../model/shelf';
 import { computeOrganizeScore, toPercent } from '../model/score';
 import type { GameStore } from '../state/store';
 import type { CodexPage, CodexState, LastRunScore, MetaProfile, RunState } from '../model/types';
@@ -68,6 +69,22 @@ export interface RunVerdict {
   fresh: CodexState;
   /** 本局新点亮的总项数 —— 结算页那句"本局新点亮 X 项"读它 */
   freshCount: number;
+  /**
+   * ★★ 这一局**第一次**被写进某一行清单的物资 id（M4 W-03 图鉴第二档）。
+   *
+   * 与 `fresh` 并列而不是塞进它：`fresh` 三页的口径是"**见过**"，
+   * 而这一档问的是"**归过位**" —— 两者是不同的账（§10B.1"职责不许重叠"）。
+   * 一件物资可能这一局第一次见到（进 `fresh.items`）却整局堆在纸箱里
+   * （不进这里），也可能早见过多次而这一局才终于想清楚它该放哪。
+   */
+  shelvedFresh: string[];
+  /**
+   * 这一档**存量**：本局结束时，生涯一共有几件物资被真正指定过位置。
+   *
+   * ★ 它是这一档的分母参照 —— 图鉴那一页上要写"归过位 X / 121"，
+   * 而"本局新增 3 件"这句话没有参照就等于没说。
+   */
+  shelvedTotal: number;
   /** 是不是破了这一灾难的最佳纪录 */
   newRecord: boolean;
   /** 破纪录之前那一个数（0 = 之前没有纪录） */
@@ -154,6 +171,19 @@ export function settleRunMeta(store: GameStore): RunVerdict | null {
   }
   const freshCount = CODEX_PAGES.reduce((n, page) => n + fresh[page].length, 0);
 
+  /*
+   * ★★ 图鉴第二档（M4 W-03）：这一局有哪些物资**真的被指定过位置**。
+   *
+   * 与上面三页同一套写法（`fresh` 用 Set 差集），但账是分开的 ——
+   * `earned` / `fresh` 口径是"见过"，这里是"归过位"。
+   *
+   * ⚠ 它必须发生在 `run` 还活着的时候（这一句就在同一段里），
+   * 而且**要在写 `metaSettled` 之前** —— 那道闸一落下，这一局就再也不能结算了。
+   */
+  const shelvedEarned = listedItemIds(run.shelves, run.zones);
+  const shelvedFresh = shelvedEarned.filter((id) => !meta.shelved.includes(id));
+  const shelvedTotal = new Set([...meta.shelved, ...shelvedEarned]).size;
+
   const previousBest = meta.bestSurvivalDays[run.disasterId] ?? 0;
   // 走到第几天 = 结算时的 day —— 走完时它正好等于 SURVIVAL_DAYS，
   // 倒下时它是停下来的那一天（"你走到 D+N"，见策划案 §12.3 v0.5 的结局措辞）
@@ -165,6 +195,9 @@ export function settleRunMeta(store: GameStore): RunVerdict | null {
     // 排序后落盘：不然"点亮顺序"会随碰到的先后而变，存档 diff 全是噪音
     meta.codex[page] = [...merged].sort();
   }
+  // 第二档同一套写法（排序后落盘，diff 才不会有噪音）——
+  // 但**分母与 `codex.items` 完全不同**，所以是另一本账，不是第四页
+  meta.shelved = [...new Set([...meta.shelved, ...shelvedEarned])].sort();
   if (newRecord) meta.bestSurvivalDays[run.disasterId] = days;
   if (run.survival.safeStreak > meta.bestSafeStreak) meta.bestSafeStreak = run.survival.safeStreak;
 
@@ -239,7 +272,9 @@ export function settleRunMeta(store: GameStore): RunVerdict | null {
   run.log.push(
     `${outcome === 'survived' ? '撑过了' : '停在了'} ${days} 天${
       freshCount > 0 ? ` · 新点亮 ${freshCount} 项` : ''
-    }${newRecord ? ' · 破了纪录' : ''}${
+    }${shelvedFresh.length > 0 ? ` · 归过位 ${shelvedFresh.length} 件` : ''}${
+      newRecord ? ' · 破了纪录' : ''
+    }${
       achievementVerdict.fresh.length > 0 ? ` · 成就 ${achievementVerdict.fresh.length} 枚` : ''
     }${leveledUp > levelBefore ? ` · ${getIdentityDef(run.identityId).name} Lv${leveledUp}` : ''}`
   );
@@ -253,6 +288,8 @@ export function settleRunMeta(store: GameStore): RunVerdict | null {
     earned,
     fresh,
     freshCount,
+    shelvedFresh,
+    shelvedTotal,
     newRecord,
     previousBest,
     achievements: achievementVerdict,

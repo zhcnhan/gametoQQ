@@ -267,6 +267,18 @@ export const ACHIEVEMENT_DEFS: readonly AchievementDef[] = [
     name: '伸手就够得到',
     kind: 'survival',
     rank: 'common',
+    /*
+     * ★ M4 W-03 改过注释（判据没动，但"它问的是哪件事"变清楚了）。
+     *
+     * 这一条只问**结果**：整局有没有出现过"屋里有货、你却拿不到"。
+     * 它**不区分原因** —— 累趴了也好、没铺顺手位也好，只要发生了就不给。
+     * 那是它该守的东西：「一次都没落到那一步」是一件完整的事。
+     *
+     * 而"失败到底是哪一种"由整理类的 `a_handy_gap` 回答 ——
+     * 两条名字里各有一个字是刻意的：**够得到**（结果）对**够不着**（原因）。
+     * 它们分属两个分类（`survival` / `organize`）也正是这个意思：
+     * 一个说你活得下来，一个说你摆得对。
+     */
     hint: '整局没有一件东西是"在屋里却没力气翻出来"的',
     when: ({ run }) => run.outcome === 'survived' && run.survival.unreachablePieces === 0
   },
@@ -285,6 +297,37 @@ export const ACHIEVEMENT_DEFS: readonly AchievementDef[] = [
   },
 
   // ———————— 整理类 ————————
+  {
+    id: 'a_handy_gap',
+    name: '够不着的那几件',
+    kind: 'organize',
+    rank: 'rare',
+    /*
+     * ## 为什么这一条必须与 `a_never_unreachable` 分开（M4 W-03）
+     *
+     * 账本上原来只有一个 `unreachablePieces`，它把两件**解决办法完全相反**的事
+     * 记成了同一笔：**体力透支**（睡一觉、少干点重活就好）与
+     * **顺手位没铺到**（只能在整理期改）。合成一笔的表现是两条路都读不出
+     * 自己那一半 —— 玩家既不知道"我差点因为累而失败"，也不知道"东西其实就在屋里"。
+     *
+     * 判据的两半都是必须的：
+     *  · `unreachablePieces > 0` —— 得**真的发生过**那次够不着。
+     *    否则一局从没累趴的人会白拿这条，而它问的恰恰是"那一刻"的事；
+     *  · `handyGapPieces === 0` —— 而那一次**顺手位全部接住了**。
+     *    这就是 §5「应急货架」在意整盘整理里最锋利的一次兑现：
+     *    你累到翻不动，门口那几件还是把你这一天接了下来。
+     *
+     * ⚠ 它**不是**「它替你挡下了」（`a_handy_saved`，那是突发事件口径）。
+     * 这一条管的是**日常消耗** —— 每天都要吃饭，每天都可能累趴。
+     *
+     * ★ 与 `a_never_unreachable` 分属两个分类也是刻意的：那条说"你活得下来"（`survival`），
+     * 这条说"你摆得对"（`organize`）。名字里各有一个字是那对区别：
+     * **够得到**（结果）对**够不着**（原因）。
+     */
+    hint: `${SURVIVAL_DAYS} 天里，每一次"翻不动"都是顺手位接住的`,
+    when: ({ run }) =>
+      run.outcome === 'survived' && run.survival.unreachablePieces > 0 && run.survival.handyGapPieces === 0
+  },
   {
     id: 'a_spotless',
     name: '一尘不染',

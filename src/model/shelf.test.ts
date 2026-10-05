@@ -10,7 +10,9 @@ import {
   fefoSorted,
   firstBatchExpiry,
   getStack,
+  isInPlaceFor,
   isShelfFEFO,
+  listedItemIds,
   makeStack,
   moveStack,
   normalizeStack,
@@ -20,6 +22,7 @@ import {
   stackCount,
   takeStack
 } from './shelf';
+import { getItemDef } from '../data/items';
 import { computeOrganizeScore } from './score';
 import { createCursor, nextInt, shuffle } from './rng';
 import type { ItemStack, Shelf, Zone } from './types';
@@ -243,6 +246,56 @@ describe('归位率与整理评分', () => {
     const withItems = dropStack(shelfA, { row: 0, col: 0 }, makeStack('canned_beans', 2, 400)) as Shelf;
     const score = computeOrganizeScore([withItems], zones, [], getDisasterDef('cold_snap'));
     expect(score.tidyShelfIds).toEqual(['tidy']);
+  });
+
+  describe('★★ 图鉴第二档"归过位"（M4 W-03）', () => {
+    it('★ 尺子与归位率是同一把：写进清单的算，空清单 / 没胶带的不算', () => {
+      let listed = shelf(2, 1, 'listed');
+      listed.zoneIds = listed.zoneIds.map(() => 'z_food');
+      listed = dropStack(listed, { row: 0, col: 0 }, makeStack('canned_beans', 1, null)) as Shelf;
+
+      let open = shelf(2, 1, 'open');
+      open.zoneIds = open.zoneIds.map(() => 'z_free');
+      open = dropStack(open, { row: 0, col: 0 }, makeStack('toolbox', 1, null)) as Shelf;
+
+      let loose = shelf(2, 1, 'loose');
+      loose = dropStack(loose, { row: 0, col: 0 }, makeStack('battery', 1, null)) as Shelf;
+
+      /*
+       * ★★ 这一条钉的是"两个数不许分家"：同一堆货，
+       * 归位率算它归位、这里就必须也认它 —— 反过来也一样。
+       * 分家之后屏幕上会出现"归位率 100%、图鉴说一件都没归过位"，
+       * 而**两边都不报错**，只有玩家看得见这个自相矛盾。
+       */
+      for (const s of [listed, open, loose]) {
+        const ids = listedItemIds([s], zones);
+        const inPlace = placementRate([s], zones) > 0;
+        expect(ids.length > 0).toBe(inPlace);
+      }
+      expect(listedItemIds([listed], zones)).toEqual(['canned_beans']);
+      expect(listedItemIds([open], zones)).toEqual([]);
+      expect(listedItemIds([loose], zones)).toEqual([]);
+    });
+
+    it('★ 顺手位**不在**这一档里（那是"不用翻"，不是"你写清楚了它该在哪"）', () => {
+      let s = shelf(2, 1, 'handy');
+      s.handyRank = 1;
+      s = dropStack(s, { row: 0, col: 0 }, makeStack('canned_beans', 1, null)) as Shelf;
+      // 顺手位管的是"够不够得着"：`isInPlaceFor` 认它，归位率/这一档都不认
+      expect(isInPlaceFor(s, 0, getItemDef('canned_beans'), zones)).toBe(true);
+      expect(placementRate([s], zones)).toBe(0);
+      expect(listedItemIds([s], zones)).toEqual([]);
+    });
+
+    it('★ 结果去重 + 排序（两行都放了罐头 → 只留一个 id；清单顺序与摆放先后无关）', () => {
+      let s = shelf(2, 2, 'dup');
+      s.zoneIds = s.zoneIds.map(() => 'z_food');
+      s = dropStack(s, { row: 0, col: 0 }, makeStack('canned_beans', 1, null)) as Shelf;
+      s = dropStack(s, { row: 1, col: 0 }, makeStack('canned_beans', 1, null)) as Shelf;
+      s = dropStack(s, { row: 1, col: 1 }, makeStack('dried_noodles', 1, null)) as Shelf;
+      // 先放面再放罐头，结果仍是字典序 —— 不然存档 diff 会随摆放先后抖动
+      expect(listedItemIds([s], zones)).toEqual(['canned_beans', 'dried_noodles']);
+    });
   });
 });
 

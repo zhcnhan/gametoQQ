@@ -86,6 +86,20 @@ interface Card {
    */
   where: string;
   lit: boolean;
+  /**
+   * ★★ **这一档的第二层信息**（M4 W-03）：这件东西**曾经被你写进某一行清单**吗。
+   *
+   * 只有物资那一页用得上（`null` = 这一页没有这一档）。
+   *
+   * ## 为什么它必须与 `lit` 分开
+   *
+   * `lit` 回答"你见过它吗"，这一格回答"**你想清楚它该放哪了吗**"。
+   * 两件事在游戏里相隔很远：从纸箱里翻出来看一眼就点亮了，
+   * 而"把它写进某一行的清单、并且真的收进去"才是这款游戏唯一的动词。
+   * 合成一个布尔值的话，图鉴就退回到"拥有 = 收集"，
+   * 而那条路上没有整理什么事（`docs/囤货末世-实施记录.md` 分维对账表第 7 行）。
+   */
+  shelved: boolean | null;
 }
 
 /** 两张名字表：模块加载时取一次，省得每次渲染都查一遍 */
@@ -120,6 +134,15 @@ export class CodexScreen implements Screen {
     const totals = this.totals();
     const litTotal = CODEX_PAGES.reduce((n, page) => n + meta.codex[page].length, 0);
     const grandTotal = CODEX_PAGES.reduce((n, page) => n + totals[page], 0);
+    /*
+     * ★★ 第二档的存量必须在**顶栏**就说一次（M4 W-03 / §10.1A 铁则）。
+     *
+     * 只在每张卡上画一枚小标是不够的：玩家扫的是顶栏那个总数，
+     * 而"归过位 37 / 121"是唯一能让他说出"我这一局把这件事推进了多少"的数。
+     * 分母与物资页那个相同（`countOfKind('item')`）—— 这一档不是第四页，
+     * 它是物资那一页上的第二层信息。
+     */
+    const shelvedTotal = new Set(meta.shelved).size;
 
     this.root.innerHTML = `
       <div class="screen screen-plain">
@@ -127,6 +150,7 @@ export class CodexScreen implements Screen {
           <div class="title">
             <h1>图鉴</h1>
             <p class="sub">点亮 ${litTotal} / ${grandTotal}</p>
+            <p class="sub" data-shelved="${shelvedTotal}">归过位 ${shelvedTotal} / ${totals.items}</p>
           </div>
           <button class="btn btn-quiet" data-action="close">返回</button>
         </header>
@@ -166,7 +190,8 @@ export class CodexScreen implements Screen {
 
     // 物资按品类分组（§10B.2 明说"按 category 分组"）—— 那正是玩家整理时的心智分组
     if (page === 'items') {
-      return CATEGORY_ORDER.map((category) => {
+      const shelvedCount = new Set(this.store.save.meta.shelved).size;
+      const groups = CATEGORY_ORDER.map((category) => {
         const group = cards.filter((c) => c.category === category);
         if (group.length === 0) return '';
         const on = group.filter((c) => c.lit).length;
@@ -178,7 +203,17 @@ export class CodexScreen implements Screen {
             <div class="codex-grid">${group.map((c) => cardHtml(c)).join('')}</div>
           </section>
         `;
-      }).join('');
+      });
+      return [
+        `
+        <section class="block">
+          <h2 class="block-title">归过位${countHtml(shelvedCount, cards.length)}</h2>
+          ${progressHtml(shelvedCount, cards.length)}
+          <p class="block-note">点亮 = 你见过它；<b>归过位</b> = 你曾把它写进某一行的清单，并且真的收了进去。收在没拆的纸箱里不算。</p>
+        </section>
+        `,
+        ...groups
+      ].join('');
     }
 
     const litCount = cards.filter((c) => c.lit).length;
@@ -194,6 +229,8 @@ export class CodexScreen implements Screen {
 
   private cardsOf(page: CodexPage, lit: Set<string>): Card[] {
     if (page === 'items') {
+      // 第二档的存量：生涯里被写进过清单的物资（`MetaProfile.shelved`）
+      const shelved = new Set(this.store.save.meta.shelved);
       return entriesOfKind('item').map((entry) => {
         // 认不出的 id 退化成"来源不明"的一格，绝不让图鉴崩在一条旧数据上
         const def = hasItemDef(entry.id) ? getItemDef(entry.id) : null;
@@ -205,7 +242,8 @@ export class CodexScreen implements Screen {
           category: def?.category ?? null,
           source: describeSources(from),
           where: fetchHint(from),
-          lit: lit.has(entry.id)
+          lit: lit.has(entry.id),
+          shelved: shelved.has(entry.id)
         };
       });
     }
@@ -243,7 +281,8 @@ export class CodexScreen implements Screen {
            * 所以这一组缺的越多，越该先说清这件事 —— 否则玩家会以为自己漏了什么。
            */
           where: on ? '' : def ? `tier ${def.tier}` : '',
-          lit: on
+          lit: on,
+          shelved: null
         };
       });
     }
@@ -256,7 +295,8 @@ export class CodexScreen implements Screen {
         category: null,
         source: '在门口遇见的',
         where: '夜里会来敲门',
-        lit: lit.has(entry.id)
+        lit: lit.has(entry.id),
+        shelved: null
       };
     });
   }
@@ -379,10 +419,24 @@ function disasterSourceHint(tier: number, progress: { survivedRuns: number; seen
  * （"原来超市不卖它，得去粮油批发站"）。
  */
 function cardHtml(card: Card): string {
+  /*
+   * ★ 图鉴第二档（M4 W-03）只给**已经点亮**的卡画那枚小标。
+   *
+   * 未点亮的卡上不该出现它：那时玩家连这东西是什么都还没见过，
+   * 追着一个"还没归过位"的空格子没有任何意义 —— 那是**第二**件事，
+   * 得先有第一件（§10B.2 那条"未点亮的格子先要给出来源"）。
+   */
+  const shelf =
+    card.shelved === null || !card.lit
+      ? ''
+      : `<span class="codex-shelf${card.shelved ? ' is-on' : ''}">${
+          card.shelved ? '归过位' : '还没归过位'
+        }</span>`;
   return `
     <div class="codex-card${card.lit ? ' is-on' : ''}">
       <span class="codex-name">${escapeHtml(card.name)}</span>
       ${card.meta ? `<span class="codex-meta">${escapeHtml(card.meta)}</span>` : ''}
+      ${shelf}
       <span class="codex-source">${escapeHtml(card.source)}</span>
     </div>
   `;

@@ -17,7 +17,7 @@ import { SHOP_DEFS } from '../data/shops';
 import { dailyDrainOf } from '../data/survival';
 import { getDisasterDef } from '../data/disaster';
 import { createCursor } from '../model/rng';
-import { makeStack } from '../model/shelf';
+import { makeStack, listedItemIds, placementRate } from '../model/shelf';
 import type { RunState } from '../model/types';
 import { SAVE_VERSION, createMetaProfile, createSaveGame, deserialize, migrate, serialize } from '../state/save';
 import { GameStore } from '../state/store';
@@ -275,8 +275,96 @@ describe('跨局结算：只发一次奖', () => {
   });
 });
 
-describe('存档 v13~v20：M2~M4 新字段的迁移与自愈', () => {
-  it('当前版本是 v20（M4 铁则欠账②：结算页要有「与上一局比」的参照物）', () => {
+/**
+ * ★★ 图鉴第二档（M4 W-03）：**"见过"与"归过位"是两本账**。
+ *
+ * 这一组要钉住三件事，每一件坏掉都是静默的：
+ *  ① 两个数**不许分家** —— 归位率说归位了、这一档就必须认它（同一把尺子）；
+ *  ② 纸箱里的不算 —— 第二档问的是"你想清楚它该放哪儿了吗"，堆在箱子里正是没想清楚；
+ *  ③ 老档**不反推** —— 从"见过"补出"归过位"就是替玩家宣称他做过一件他没做过的事。
+ */
+describe('★★ 图鉴第二档：归过位（M4 W-03）', () => {
+  /** 往第 0 块货架的第 0 行贴一张"收主食"的胶带，并放一罐罐头上去 */
+  function withTapedRow(run: RunState): RunState {
+    const shelfA = run.shelves[0]!;
+    shelfA.zoneIds = shelfA.zoneIds.map((_, row) => (row === 0 ? 'z_food' : null));
+    shelfA.slots[0]![0] = { stack: makeStack('canned_beans', 2, null) };
+    run.zones = [{ id: 'z_food', name: '主食那两行', color: '#C8372D', autoAccept: { categories: ['food'] } }];
+    return run;
+  }
+
+  it('★ 写进清单并真的放进去 → 进这一档；同一件只在纸箱里 → 不进', () => {
+    const onShelf = storeOf(withTapedRow(finishedRun()));
+    onShelf.run.boxesToUnpack = [];
+    const verdict = settleRunMeta(onShelf);
+    expect(verdict?.shelvedFresh).toEqual(['canned_beans']);
+    expect(onShelf.save.meta.shelved).toEqual(['canned_beans']);
+
+    /*
+     * 对照组：**同一件物资**（罐头，所以 `codex.items` 照样点亮）只在纸箱里。
+     * 它必须点亮、但不许进第二档 —— 这两件事的差别正是这一档存在的理由。
+     */
+    const inBox = storeOf(finishedRun()); // `finishedRun` 的罐头就在纸箱里
+    const boxVerdict = settleRunMeta(inBox);
+    expect(inBox.save.meta.codex.items).toContain('canned_beans');
+    expect(boxVerdict?.shelvedFresh).toEqual([]);
+    expect(inBox.save.meta.shelved).toEqual([]);
+  });
+
+  it('★ 两个数不许分家：**归位率 > 0 ⟺ 这一档非空**', () => {
+    const run = withTapedRow(finishedRun());
+    run.boxesToUnpack = [];
+    // 同一把尺子（`listedItemIds` 复用 `placementRate` 的那一行判定，
+    // 见 `model/shelf.ts` 的 `isStackInPlace`）
+    expect(placementRate(run.shelves, run.zones)).toBe(1);
+    expect(listedItemIds(run.shelves, run.zones)).toEqual(['canned_beans']);
+
+    // 把胶带撕掉：归位率掉到 0，这一档也必须是空的
+    run.zones = [];
+    expect(placementRate(run.shelves, run.zones)).toBe(0);
+    expect(listedItemIds(run.shelves, run.zones)).toEqual([]);
+  });
+
+  it('★ 第二局不重复计入（`shelvedFresh` 只报新的，存量取并集）', () => {
+    const store = storeOf(withTapedRow(finishedRun()));
+    store.run.boxesToUnpack = [];
+    settleRunMeta(store);
+    expect(store.save.meta.shelved).toEqual(['canned_beans']);
+
+    // 换一局：同样的罐头（第二局也归位了）+ 一件新的干货
+    const next = withTapedRow(finishedRun());
+    next.boxesToUnpack = [];
+    next.shelves[0]!.slots[0]![1] = { stack: makeStack('dried_noodles', 1, null) };
+    store.replaceRun(next);
+    const verdict = settleRunMeta(store);
+
+    expect(verdict?.shelvedFresh).toEqual(['dried_noodles']); // 罐头不重复报
+    expect(store.save.meta.shelved).toEqual(['canned_beans', 'dried_noodles']);
+    expect(verdict?.shelvedTotal).toBe(2);
+  });
+
+  it('★ 老档不反推：`codex.items` 里有一件、`shelved` 是空的 → 这一档仍然是空的', () => {
+    const store = storeOf(withTapedRow(finishedRun()));
+    store.run.boxesToUnpack = [];
+    // 模拟一份"见过但这一档还没这本账"的老档
+    store.save.meta.codex.items = ['canned_beans', 'toolbox'];
+    store.save.meta.shelved = [];
+    settleRunMeta(store);
+    // 本局真的归位了罐头 → 它进来；但 toolbox 只因为"见过"不许被补进来
+    expect(store.save.meta.shelved).toEqual(['canned_beans']);
+  });
+
+  it('★ 存量在存档里排好序（与三页同一个口径，否则 diff 全是噪音）', () => {
+    const store = storeOf(withTapedRow(finishedRun()));
+    store.run.boxesToUnpack = [];
+    settleRunMeta(store);
+    const ids = store.save.meta.shelved;
+    expect(ids).toEqual([...ids].sort());
+  });
+});
+
+describe('存档 v13~v21：M2~M4 新字段的迁移与自愈', () => {
+  it('当前版本是 v21（M4 W-03：图鉴第二档「归过位」）', () => {
     /*
      * ★ 这条断言是**故意的**：它是"改 schema 必须 +1 版本"那条规矩的报警器。
      *
@@ -285,7 +373,7 @@ describe('存档 v13~v20：M2~M4 新字段的迁移与自愈', () => {
      * 而你抬了版本号却忘了写迁移，这条会红并让你想起"迁移写了没有"。
      * 两个方向都有人守，所以它是这套自愈体系里的一个必要齿轮。
      */
-    expect(SAVE_VERSION).toBe(20);
+    expect(SAVE_VERSION).toBe(21);
   });
 
   it('★★ v17 老档：`survivedRuns` 补 0，而且**不从纪录反推**', () => {

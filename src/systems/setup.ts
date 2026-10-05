@@ -420,6 +420,9 @@ export function createStartingRun(
       shortageDays: 0,
       shortagePieces: 0,
       unreachablePieces: 0,
+      // v21（M4 W-03）：`unreachablePieces` 拆出来的那本"原因账"。
+      // 开局没累过、也没有顺手位没铺到的东西，所以真值就是 0
+      handyGapPieces: 0,
       hardPressDays: 0,
       hardPressStreak: 0,
       safeStreak: 0,

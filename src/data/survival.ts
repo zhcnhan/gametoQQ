@@ -47,6 +47,7 @@ export const EMPTY_SURVIVAL_SNAPSHOT: SurvivalSnapshot = {
   fromShelves: 0,
   fromBoxes: 0,
   unreachable: 0,
+  handyGap: 0,
   workCost: 0,
   // M4 W-06：零值 = "这个身份没有翻找省力的天赋"，也正是绝大多数身份的值
   workSaved: 0,
@@ -272,14 +273,28 @@ export const SHELTER_PER_COMFORT = 4;
 /** 庇护所低于这条线才去添被 */
 export const WARMTH_TRIGGER = 60;
 
-/** 一件医疗品能回多少健康（读 nutrition.health，没写就不回） */
-export function healOf(item: ItemDef): number {
-  return (item.nutrition.health ?? 0) * MEDICINE_HEAL_FACTOR;
+/**
+ * ★★ 一件医疗品在**这一场**能回多少健康（M4 W-04：恢复侧的维度 13）。
+ *
+ * 读 `ItemDef.nutrition.health` —— 绷带 2 / 感冒药 3，乘 `MEDICINE_HEAL_FACTOR`
+ * 再乘这一场对医疗品的 `categoryEfficiency`。
+ *
+ * ## 为什么必须收 `disaster`（W-04 欠的那一半）
+ *
+ * 维度 13（品类效率）原来只在**消耗侧**生效（`dailyDrainOf`），
+ * 而灾难文案一直在卖另一半：有些场次写的就是"药品在这一场更管用"。
+ * 只做一半的后果不是"少了个加成"，是**文案在承诺一件代码不做的事** ——
+ * 玩家读完文案去囤药，然后发现回血量与别的场一模一样。
+ *
+ * ⚠ `categoryEfficiencyOf` 自带区间夹取与坏值防御（唯一读点），这里只用。
+ */
+export function healOf(item: ItemDef, disaster: DisasterProfile): number {
+  return (item.nutrition.health ?? 0) * MEDICINE_HEAL_FACTOR * categoryEfficiencyOf(disaster, 'medicine');
 }
 
-/** 一件保暖品能回多少庇护所（读 nutrition.comfort，没写就不回） */
-export function shelterOf(item: ItemDef): number {
-  return (item.nutrition.comfort ?? 0) * SHELTER_PER_COMFORT;
+/** ★★ 一件保暖品在**这一场**能回多少庇护所（读 `nutrition.comfort`，没写就不回）。同 `healOf` */
+export function shelterOf(item: ItemDef, disaster: DisasterProfile): number {
+  return (item.nutrition.comfort ?? 0) * SHELTER_PER_COMFORT * categoryEfficiencyOf(disaster, 'warmth');
 }
 
 // ———————— 其余 ————————
@@ -379,10 +394,15 @@ export function categoryEfficiencyOf(disaster: DisasterProfile, category: Catego
  *     那一天会让"囤够了"这件事在一整个维度上失去意义（§4A 承诺任何界面
  *     都得有一条能走的路，而"不用囤也能活"比"卡住"更糟：它让玩法消失）。
  *
- * 🚧 尚未接线：同维度的另一半是"恢复类"（`healOf` / `shelterOf`，即
- * 这一场里药品与保暖**更管用**）。目前只在消耗侧生效 —— 因为恢复侧要动
- * `autoSupply` 的取用逻辑，而那属于"同一维的两半分两次做"，留给 5d 之后。
- * 这一行注释就是那笔账，别让它变成"已经做完了"的错觉。
+ * ★ 维度 13（品类效率）的**两半现在都在这里接线了**：
+ *   · 消耗侧 —— `dailyDrainOf` 下面那一行（同一个品类在这一场更不禁吃）；
+ *   · 恢复侧 —— `healOf` / `shelterOf`（药品与保暖品在这一场更管用）。
+ *     这一半原来是 W-04 记着的一笔欠账（那时只做了消耗侧，
+ *     而灾难文案一直在卖另一半），M4 收尾时补齐。
+ *
+ * ⚠ 两半都乘在**件数/单件回复量**上，没有第二处重复乘：
+ * 一旦有人既在 `healOf` 里乘、又在 `autoSupply` 里乘，表现是
+ * "这一场吃药特别管用"，而**两个数各自都算得对**，不会有任何报错。
  */
 export function dailyDrainOf(disaster: DisasterProfile): { category: CategoryId; need: number }[] {
   const merged = new Map<CategoryId, number>();

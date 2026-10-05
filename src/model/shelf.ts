@@ -675,12 +675,14 @@ export function placementRate(
      * 不是 loophole（与 v0.8 修掉的"贴一张空胶带"不同：空清单不接收任何东西）。
      */
     for (let row = 0; row < shelf.h; row++) {
-      const zone = findZone(zones, rowZoneId(shelf, row));
       for (let col = 0; col < shelf.w; col++) {
         const stack = getStack(shelf, { row, col });
         if (!stack) continue;
         total += 1;
-        if (zoneListedFor(zone, getItemDef(stack.itemId))) ok += 1;
+        // ★ 分子走 `isStackInPlace` 而不是内联一遍 —— 那一行是"什么算归位"的
+        // 唯一定义处，图鉴第二档（`listedItemIds`）读的也是它。两处各写一遍，
+        // 迟早会出现"归位率说归位了、图鉴说没有"的屏幕。
+        if (isStackInPlace(shelf, row, stack, zones)) ok += 1;
       }
     }
   }
@@ -792,6 +794,51 @@ export function countKeepsakes(shelves: readonly Shelf[]): number {
 export function isInPlaceFor(shelf: Shelf, row: number, item: ItemDef, zones: readonly Zone[]): boolean {
   if (shelf.handyRank !== null) return true;
   return zoneListedFor(findZone(zones, rowZoneId(shelf, row)), item);
+}
+
+/**
+ * ★★ **这屋里有哪些东西是"你真的给它指定过地方"的**（M4 W-03 图鉴第二档）。
+ *
+ * 口径 = `placementRate` 的分子所数的那些堆的 itemId：它**必须**是同一把尺子，
+ * 所以这里直接拿 `placementRate` 当闸门逐堆问一遍，而不是把这五行抄第二遍
+ * （抄一遍就会出现"归位率说它归位了、图鉴说没有"这种自相矛盾的屏幕 ——
+ * §12 v0.8 那次修复的全部教训就是"同一件事只能有一把尺子"）。
+ *
+ * ## ⚠ 顺手位**不在**这里（它是另一条规则）
+ *
+ * `isInPlaceFor`（W-08 那本"够不够得着"的账）把顺手位也算成够得到，
+ * 因为那块地方管的是**不用翻**。而这里问的是"**你写清楚它该在哪吗**" ——
+ * 顺手位回答不了这个问题：标记顺手位完全不要求你说出那是什么东西。
+ * 两个问题不同，读数就该不同（与 `dailyReachable` 上面那段注释同一个道理）。
+ *
+ * @returns 去过位的物资 id，已去重、按 id 排序（落盘 diff 才不会有噪音）
+ */
+export function listedItemIds(shelves: readonly Shelf[], zones: readonly Zone[]): string[] {
+  const found = new Set<string>();
+  for (const shelf of shelves) {
+    for (const pos of readingOrder(shelf)) {
+      const stack = getStack(shelf, pos);
+      if (!stack) continue;
+      if (isStackInPlace(shelf, pos.row, stack, zones)) found.add(stack.itemId);
+    }
+  }
+  return [...found].sort();
+}
+
+/**
+ * 单堆版本的"归位了吗" —— 与 `placementRate` 数分子时那一行逐字同义。
+ *
+ * ★ 存在的理由与 `listedItemIds` 一样：**同一把尺子不许有两个写法**。
+ * 归位率那边是内联的一行 `zoneListedFor(...)`，这里把它提成有名字的函数，
+ * 于是"什么算归位"这句话在整个仓库里只有一处定义。
+ */
+export function isStackInPlace(
+  shelf: Shelf,
+  row: number,
+  stack: ItemStack,
+  zones: readonly Zone[]
+): boolean {
+  return zoneListedFor(findZone(zones, rowZoneId(shelf, row)), getItemDef(stack.itemId));
 }
 
 /**

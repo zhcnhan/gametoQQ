@@ -216,6 +216,11 @@ describe('存档 schema 与迁移', () => {
       shortageDays: 0,
       shortagePieces: 0,
       unreachablePieces: 0,
+      /*
+       * v21（M4 W-03）：`unreachablePieces` 拆出来的那本"原因账"。
+       * 从 v5 一路补上来的档**没有累趴过**，所以 0 是真值（见 `normalizeSurvival`）。
+       */
+      handyGapPieces: 0,
       hardPressDays: 0,
       hardPressStreak: 0,
       // M2（v13）：安全感连击从 0 起算 —— 老档没有"连击"这个概念，补 0 是诚实的
@@ -417,6 +422,45 @@ describe('存档 schema 与迁移', () => {
       expect(back?.meta.version).toBe(SAVE_VERSION);
       // 版本抬上去了，但一份 v19 记录下来的"上一局"不该被继承成这一局的参照物
       expect(back?.meta.lastRunScore).toEqual(good);
+    });
+  });
+
+  /*
+   * ★★ 图鉴第二档（v21，M4 W-03）。
+   *
+   * 这一档唯一的风险是**反推**：老档的 `codex.items` 里躺着一批"见过"的物资，
+   * 而这一档问的是"归过位"。从前者补出后者，就是替玩家宣称他做过一件他没做过的事 ——
+   * 而这个字段存在的全部意义就是那件事**真的发生过**。
+   */
+  describe('v21：图鉴第二档（归过位）', () => {
+    it('★ 老档（版本号小于 21）→ 补空数组，**绝不从 `codex.items` 反推**', () => {
+      const raw = serialize({
+        meta: {
+          version: 20,
+          identityLevels: {},
+          codex: { items: ['canned_beans', 'toolbox'], disasters: [], npcs: [] }
+        } as never,
+        run: createStartingRun(5),
+        savedAt: 1,
+        syncVersion: 1,
+        deviceId: 'dev'
+      });
+      const back = deserialize(raw);
+      expect(back?.meta.version).toBe(SAVE_VERSION);
+      expect(back?.meta.shelved).toEqual([]);
+      // 而"见过"那一页原样留着（两本账，互不干涉）
+      expect(back?.meta.codex.items).toEqual(['canned_beans', 'toolbox']);
+    });
+
+    it('★ 字段形状坏掉（不是字符串数组）→ 滤掉坏的，只留字符串', () => {
+      const raw = serialize({
+        meta: { ...createMetaProfile(), shelved: ['canned_beans', 7, null, 'toolbox'] } as never,
+        run: createStartingRun(5),
+        savedAt: 1,
+        syncVersion: 1,
+        deviceId: 'dev'
+      });
+      expect(deserialize(raw)?.meta.shelved).toEqual(['canned_beans', 'toolbox']);
     });
   });
 

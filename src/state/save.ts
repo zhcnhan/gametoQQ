@@ -80,8 +80,13 @@ export const STORAGE_KEY = 'tunhuo.save';
  *        `MetaProfile` 增加 `lastRunScore`（上一局的三个整理比率 + 灾难 + 天数 + 结局）。
  *        老档补 `null`：**绝不反推** —— 老档没有这份记录，而"编一个上一局"
  *        会造出一个撒谎的对比箭头，比不显示更坏（界面在 `null` 时不画对比）。
+ *  - v21：M4 W-03「图鉴加第二档」—— `MetaProfile` 增加 `shelved`
+ *        （生涯里**曾被写进某一行清单**的物资 id）。
+ *        老档补 `[]`，同样**绝不反推**：从 `codex.items`（"见过"）补出
+ *        "归过位"，就是替玩家宣称他做过一件他没做过的事 ——
+ *        而这一档存在的全部意义就是那件事真的发生过。
  */
-export const SAVE_VERSION = 20;
+export const SAVE_VERSION = 21;
 /** 落盘节流上限（提示词 0：debounce ≤ 300ms） */
 export const SAVE_DEBOUNCE_MS = 250;
 
@@ -97,6 +102,7 @@ export function createMetaProfile(): MetaProfile {
     version: SAVE_VERSION,
     identityLevels: {},
     codex: { items: [], disasters: [], npcs: [] },
+    shelved: [],
     bestSurvivalDays: {},
     bestSafeStreak: 0,
     survivedRuns: 0,
@@ -389,6 +395,15 @@ function normalizeMeta(meta: MetaProfile): MetaProfile {
       disasters: strList(codex.disasters),
       npcs: strList(codex.npcs)
     },
+    /*
+     * 图鉴第二档（M4 W-03）："曾被写进某一行清单的物资"。
+     *
+     * ★ 与 `achievements` / `totalShelved` 同一个口径 —— **刻意不反推**。
+     * 老档的 `codex.items` 里那一批是"见过"，而这一档问的是"归过位"。
+     * 从"见过"补出"归过位"，等于替玩家宣称他做过一件他没做过的事，
+     * 而这个字段存在的全部意义就是那件事**真的发生过**。
+     */
+    shelved: strList(meta.shelved),
     bestSurvivalDays: isObject(meta.bestSurvivalDays)
       ? (meta.bestSurvivalDays as Record<string, number>)
       : {},
@@ -617,6 +632,9 @@ export function migrateV5ToV6(save: SaveGame): SaveGame {
       shortageDays: 0,
       shortagePieces: 0,
       unreachablePieces: 0,
+      // v21（M4 W-03）：待补的第三个字段（见 `normalizeSurvival` 里那一段的理由）。
+      // 这里同样补 0 —— 从 v5 一路补上来的档本来就没累趴过，0 是真值
+      handyGapPieces: 0,
       hardPressDays: 0,
       hardPressStreak: 0,
       safeStreak: 0,
@@ -973,6 +991,19 @@ function normalizeRun(save: SaveGame): SaveGame | null {
       typeof survival.shortageDays === 'number' && survival.shortageDays >= 0 ? Math.round(survival.shortageDays) : 0,
     shortagePieces: Math.max(0, num(survival.shortagePieces)),
     unreachablePieces: Math.max(0, num(survival.unreachablePieces)),
+    /*
+     * v21（M4 W-03）：`unreachablePieces` 拆出来的那本"原因账"。
+     *
+     * 旧档 `num()` 给 **0** —— 而 0 在这里**不是**"他真的每次都把顺手位铺满了"，
+     * 是"这本账当时还不存在"。两个意思在数上撞成同一个 0，所以**不能反推**：
+     * 从 `unreachablePieces` 里倒扣一笔就是替玩家宣称他做过一件他没做过的事
+     * （与 `meta.shelved` 那条同一个纪律）。
+     *
+     * ⚠ 后果要认下来：老档读进来时 `handyGapPieces = 0`，
+     * 于是成就「够不着的那几件」在本局里**可能**比它该有的更容易达成。
+     * 可接受 —— 它只影响一个计数，而且下一局从 0 重新数起就对了。
+     */
+    handyGapPieces: Math.max(0, num(survival.handyGapPieces)),
     hardPressDays:
       typeof survival.hardPressDays === 'number' && survival.hardPressDays >= 0
         ? Math.round(survival.hardPressDays)
@@ -1013,6 +1044,11 @@ function normalizeRun(save: SaveGame): SaveGame | null {
       fromShelves: Math.max(0, num(last.fromShelves)),
       fromBoxes: Math.max(0, num(last.fromBoxes)),
       unreachable: Math.max(0, num(last.unreachable)),
+      /*
+       * v21（M4 W-03）：同上，旧档 `num()` 给 0 —— 而 0 在这里就是真值
+       * （"昨天那笔损失里没有一件是顺手位没铺到的"），不需要迁移。
+       */
+      handyGap: Math.max(0, num(last.handyGap)),
       workCost: Math.max(0, num(last.workCost)),
       /*
        * M4 W-06：旧档没有这个字段 → `num()` 给 0，正好是它的真值

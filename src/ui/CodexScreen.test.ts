@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 图鉴界面的守护测试（§10B.2 / 补 D-16）。
  *
  * ## 为什么它值得一个测试，而不是"肉眼看一眼"
@@ -272,12 +272,31 @@ describe('图鉴界面：★★ 进度条与"还缺什么、去哪儿补"（铁�
       .querySelectorAll('.codex-bar-fill')
       .map((el) => Number(/--fill:\s*([\d.]+)/.exec(el.getAttribute('style') ?? '')?.[1] ?? 'NaN'));
 
+  /**
+   * ★ M4 W-03 之后物资页上多了**一根不属于任何品类的条** ——
+   * "归过位"那一档（第二层信息，分母同为全部物资，见 `CodexScreen.pageHtml`）。
+   * 它排在最前面，所以品类那几根是 `slice(1)`。
+   *
+   * 有了这一对 helper，"第 i 根条就是第 i 个品类"这个前提就只剩一处 ——
+   * 将来再往物资页顶部加一条，只需要改这两个函数（而不是每一条断言）。
+   */
+  const categoryFills = (root: FakeElement): number[] => fills(root).slice(1);
+  const shelvedFill = (root: FakeElement): number => fills(root)[0]!;
+
   it('★ 每个品类都有一根条，而且**条数与品类数对得上**（漏一组不会有任何报错，只能数）', () => {
     ctx = setup();
     const groups = CATEGORY_ORDER.filter((c) =>
       entriesOfKind('item').some((e) => hasItemDef(e.id) && getItemDef(e.id).category === c)
     );
-    expect(ctx.root.querySelectorAll('.codex-bar')).toHaveLength(groups.length);
+    expect(categoryFills(ctx.root)).toHaveLength(groups.length);
+    // 而且每一根都属于它那一组：第 i 根条的 aria-label 里的分母就是第 i 组的大小
+    groups.forEach((category, i) => {
+      const total = entriesOfKind('item').filter(
+        (e) => hasItemDef(e.id) && getItemDef(e.id).category === category
+      ).length;
+      const bar = ctx.root.querySelectorAll('.codex-bar')[i + 1]!;
+      expect(bar.getAttribute('aria-label')).toBe(`0 / ${total}`);
+    });
   });
 
   it('★ 全空的档：每根条都是 0，而且**数字照旧在**（条不能把数字换掉）', () => {
@@ -291,12 +310,12 @@ describe('图鉴界面：★★ 进度条与"还缺什么、去哪儿补"（铁�
 
   it('★★ 点亮一件之后，**那一组的**条真的长了一格（不是随便哪根条）', () => {
     ctx = setup();
-    const before = fills(ctx.root);
+    const before = categoryFills(ctx.root);
     const item = entriesOfKind('item').find((e) => hasItemDef(e.id))!;
     const def = getItemDef(item.id);
     ctx.store.save.meta.codex.items = [item.id];
     ctx.screen.render();
-    const after = fills(ctx.root);
+    const after = categoryFills(ctx.root);
 
     const groups = CATEGORY_ORDER.filter((c) =>
       entriesOfKind('item').some((e) => hasItemDef(e.id) && getItemDef(e.id).category === c)
@@ -307,6 +326,54 @@ describe('图鉴界面：★★ 进度条与"还缺什么、去哪儿补"（铁�
     after.forEach((v, i) => {
       if (i !== at) expect(v).toBe(before[i]!);
     });
+    /*
+     * ★ 而且**"归过位"那一档一根都不许动**：
+     * 它问的是"你想清楚它该放哪了吗"，与"你见过它吗"是两本账。
+     * 这一条钉的正是那两本账不许互相漏 —— 漏了的话，
+     * 图鉴第二档就退化成"点亮"的复印件，而屏幕上不会有任何区别。
+     */
+    expect(shelvedFill(ctx.root)).toBe(0);
+  });
+
+  it('★★ 第二档：归过位那一件**在卡片上留下了痕迹**，而且只有它', () => {
+    ctx = setup();
+    const items = entriesOfKind('item').filter((e) => hasItemDef(e.id));
+    const [a, b] = [items[0]!, items[1]!];
+    // 两件都点亮，但只有 a 归过位
+    ctx.store.save.meta.codex.items = [a.id, b.id];
+    ctx.store.save.meta.shelved = [a.id];
+    ctx.screen.render();
+
+    const chips = texts(ctx.root, '.codex-shelf');
+    // 只有**点亮**的卡才画这一枚（未点亮的连它是什么都还没见过）
+    expect(chips).toHaveLength(2);
+    expect(chips.filter((t) => t === '归过位')).toHaveLength(1);
+    expect(chips.filter((t) => t === '还没归过位')).toHaveLength(1);
+
+    // 而且它挂在对的那张卡上（按文档顺序，a 在 b 前面）
+    const names = texts(ctx.root, '.codex-name');
+    expect(names.indexOf(getItemDef(a.id).name)).toBeLessThan(names.indexOf(getItemDef(b.id).name));
+    const first = ctx.root.querySelectorAll('.codex-shelf')[0]!;
+    expect(first.textContent).toBe('归过位');
+
+    // 顶栏那两个数都在（存量必须有参照 —— "归过位 1 / 121"）
+    const subs = texts(ctx.root, '.sub');
+    expect(subs[1]).toBe(`归过位 1 / ${countOfKind('item')}`);
+  });
+
+  it('★★ 第二档：往那一档里加一件 → **那根条长一格，别的都不动**', () => {
+    ctx = setup();
+    const items = entriesOfKind('item').filter((e) => hasItemDef(e.id));
+    ctx.store.save.meta.codex.items = items.map((e) => e.id);
+    ctx.screen.render();
+    const before = categoryFills(ctx.root);
+
+    ctx.store.save.meta.shelved = [items[0]!.id];
+    ctx.screen.render();
+
+    expect(shelvedFill(ctx.root)).toBeGreaterThan(0);
+    // 品类那几根是"见过多少"，与第二档无关 —— 一根都不许动
+    expect(categoryFills(ctx.root)).toEqual(before);
   });
 
   it('★ 集齐一组 → `is-full`（全满与差一件在一根细条上分不出来）', () => {

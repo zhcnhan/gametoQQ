@@ -50,6 +50,10 @@ function goodRun(over: Partial<RunState> = {}): RunState {
   run.day = SURVIVAL_DAYS;
   run.survival.shortagePieces = 0;
   run.survival.unreachablePieces = 0;
+  // ★ M4 W-03：这一局的"原因账"必须一起归零 —— 「伸手就够得到」与
+  // 「够不着的那几件」读的是两个字段，只清一个会让下面那些用例
+  // 在一个**自相矛盾的局面**上判（比如"一件没够不着，却有 2 件够不着的原因"）
+  run.survival.handyGapPieces = 0;
   run.survival.hardPressDays = 0;
   run.survival.cleanDays = SURVIVAL_DAYS;
   run.survival.minStamina = 100;
@@ -320,6 +324,67 @@ describe('逐条判据：达成 / 差一点 / 边界', () => {
     expect(id(metaWith(), quiet, 'a_handy_saved')).toBe(false);
   });
 
+  /*
+   * ★★ M4 W-03：把 `unreachablePieces` 那一笔账拆成两本之后的两条用例。
+   *
+   * 它们必须**成对**：一条问结果（有没有够不着），一条问原因（够不着的是不是
+   * 挪到顺手位就能拿回来）。两条判据读的是两个不同的字段，而它们在任何一局里
+   * 都同时成立 —— 所以只有分开断，才能保证将来改其中一条时
+   * 不会顺手把另一条的语义也改了（与上面那对"没失手过 / 真的挡下过"同一个理由）。
+   */
+  it('★ 伸得到：只看**结果**，不问原因（有一件够不着就不给）', () => {
+    expect(id(metaWith(), goodRun(), 'a_never_unreachable')).toBe(true);
+
+    const tired = goodRun();
+    tired.survival.unreachablePieces = 2;
+    tired.survival.handyGapPieces = 2; // 纯属没铺顺手位
+    expect(id(metaWith(), tired, 'a_never_unreachable')).toBe(false);
+
+    const tiredButCovered = goodRun();
+    tiredButCovered.survival.unreachablePieces = 2;
+    tiredButCovered.survival.handyGapPieces = 1; // 有一件是顺手位接住的
+    expect(id(metaWith(), tiredButCovered, 'a_never_unreachable')).toBe(false);
+  });
+
+  it('★ 够不着的那几件：真的累趴过，而每一次都是顺手位接住的', () => {
+    /*
+     * 反例先来：**一次都没累趴过**的人不该拿这条。
+     * 它的两半判据里 `unreachablePieces > 0` 就是挡这个的 ——
+     * 少了它，`handyGapPieces === 0` 在一局从没透支过的局上也成立，
+     * 这条成就就变成了「伸手就够得到」的复印件。
+     */
+    const neverTired = goodRun();
+    expect(neverTired.survival.unreachablePieces).toBe(0);
+    expect(id(metaWith(), neverTired, 'a_handy_gap')).toBe(false);
+
+    // 累趴过、而且**每一次都靠顺手位接住了**：这才是它要的那局
+    const covered = goodRun();
+    covered.survival.unreachablePieces = 4;
+    covered.survival.handyGapPieces = 0;
+    expect(id(metaWith(), covered, 'a_handy_gap')).toBe(true);
+
+    // 有一次是该铺没铺的：不给 —— 哪怕只差一件
+    const missedOne = goodRun();
+    missedOne.survival.unreachablePieces = 4;
+    missedOne.survival.handyGapPieces = 1;
+    expect(id(metaWith(), missedOne, 'a_handy_gap')).toBe(false);
+  });
+
+  it('★ 两本账不许分家：够得着的那一局里，原因账一定是 0', () => {
+    /*
+     * 这条是**结构**断言，不是语义断言：`unreachablePieces === 0` 时
+     * `handyGapPieces` 只可能是 0（算式里带了"按真的没有的量封顶"）。
+     *
+     * 它挡的是"两个数各自都算得对、合起来却自相矛盾"的那种局面 ——
+     * 屏幕上会同时出现"一件都没够不着"和"其中 2 件是没铺到手边"。
+     */
+    const clean = goodRun();
+    expect(clean.survival.unreachablePieces).toBe(0);
+    expect(clean.survival.handyGapPieces).toBe(0);
+    expect(id(metaWith(), clean, 'a_never_unreachable')).toBe(true);
+    expect(id(metaWith(), clean, 'a_handy_gap')).toBe(false);
+  });
+
   it('★ 先见之明：买过这一场的刚需品类才算（刚需从灾难定义读，不另抄一份）', () => {
     // 寒潮的刚需是 fuel / warmth
     const fuelIds = ITEM_DEFS.filter((d) => d.category === 'fuel').map((d) => d.id);
@@ -338,7 +403,7 @@ describe('逐条判据：达成 / 差一点 / 边界', () => {
   it('倒下的那一局不发任何"走完"类的成就', () => {
     const dead = goodRun({ outcome: 'collapsed' });
     const fresh = settle(metaWith(), dead);
-    for (const want of ['a_silent_winter', 'a_no_shortage', 'a_never_unreachable', 'a_spotless', 'a_composed', 'a_all_handy', 'a_foresight']) {
+    for (const want of ['a_silent_winter', 'a_no_shortage', 'a_never_unreachable', 'a_handy_gap', 'a_spotless', 'a_composed', 'a_all_handy', 'a_foresight']) {
       expect(fresh, `${want} 不该在倒下的那一局发`).not.toContain(want);
     }
   });

@@ -3541,6 +3541,39 @@ button:disabled {
   color: var(--ink-40);
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+ * ★★ 图鉴第二档：**归过位**（M4 W-03）
+ *
+ * ## 为什么它不能长得像"点亮"
+ *
+ * 图鉴的规矩是"图鉴不发光、成就才发光"（§10B.1），点亮那件事已经用
+ * 实线边框 + 不透明字说完了。这一档说的**不是同一件事** ——
+ * 它是"你想清楚它该放哪了吗"，所以它必须一眼看出是**第二层**信息，
+ * 而不是让玩家以为这是另一种点亮。
+ *
+ * 做法：做成卡片里的一小枚**标记**，只有拿到手时才上朱红。
+ * 未归过位的那一档刻意留成灰字 —— 它读起来是"还差一件待办"，
+ * 而不是"你没做到"（§5 引擎①：这款游戏不judge玩家）。
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+.codex-shelf {
+  align-self: flex-start;
+  margin-top: 1px;
+  padding: 0 5px;
+  border-radius: 999px;
+  border: 1px solid var(--ink-16);
+  font-size: 10px;
+  line-height: 15px;
+  letter-spacing: 0.04em;
+  color: var(--ink-40);
+}
+
+.codex-shelf.is-on {
+  border-color: var(--vermilion);
+  color: var(--vermilion);
+  background: rgba(200, 55, 45, 0.06);
+}
+
 .codex-source {
   font-size: 11px;
   color: var(--ink-40);

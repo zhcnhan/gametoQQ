@@ -273,6 +273,14 @@ export interface SurvivalReport {
   fromBoxes: number;
   /** 有货但没力气翻到的件数（体力见底的那天才 > 0） */
   unreachable: number;
+  /**
+   * ★ M4 W-03：上面那些里，**就在屋里、只是不在顺手位上**的件数。
+   *
+   * 与 `SurvivalState.handyGapPieces` 同一个口径（算式与理由都写在那里）。
+   * 日报要它，是因为 `unreachable` 一个数说不出"明天该做什么"：
+   * `handyGap > 0` → 那几件挪到门口那块就好了；`handyGap === 0` → 铺对了，纯粹是累。
+   */
+  handyGap: number;
   hardPress: boolean;
   /** 今天是硬撑里的哪一档（`'none'` = 没在硬撑） */
   hardPressLevel: HardPressLevel;
@@ -366,6 +374,14 @@ export function settleSurvivalDay(run: RunState, cursor?: RngCursor): SurvivalRe
   /** 真的没有的那些（不含"有货但拿不动"）。它与 shortageUnits 分开累计，结算页要用它说清栽在哪 */
   let realShortageUnits = 0;
   let unreachableUnits = 0;
+  /**
+   * ★ M4 W-03：`unreachableUnits` 里"本来在屋里、只是不在顺手位上"的那一截。
+   *
+   * 算式与口径见 `SurvivalState.handyGapPieces` —— 那里是唯一一处文档，
+   * 这里只负责按它累加。**必须与 `unreachableUnits` 在同一处算**：
+   * 拆到别的函数里算的表现是两把尺子量同一件事，而两边都"算得对"。
+   */
+  let handyGapUnits = 0;
   let fromBoxes = 0;
   let takenPieces = 0;
   for (const { category, need: baseNeed } of dailyDrainOf(disaster)) {
@@ -385,13 +401,27 @@ export function settleSurvivalDay(run: RunState, cursor?: RngCursor): SurvivalRe
     //   （"你现在这个样子能撑几天"），所以它读 `isInPlaceFor`。
     //   两个问题不同，读数不同，注释写在这里免得下一个人把它们统一掉。
     const handy = countOnHandy(run.shelves, category);
-    const reachable = exhausted
-      ? Math.min(need, Math.max(0, Math.ceil(need * EXHAUSTED_REACH)) + handy)
-      : need;
+    /*
+     * 体力见底那一天，**光靠翻**最多能取到多少（`EXHAUSTED_REACH` 那一半）。
+     *
+     * ★ 单独取个名字，是因为下面有两笔账要用它，而它们问的不是同一件事：
+     *   · `unreachable` —— **结果**账：今天总共少了多少件；
+     *   · `handyGap`   —— **原因**账：其中有多少件是本该铺在顺手位上的。
+     * 内联成一坨的表现是"两笔账各自都能对上"，而下一个人改其中一半不会有任何报错。
+     */
+    const byHand = Math.max(0, Math.ceil(need * EXHAUSTED_REACH));
+    const reachable = exhausted ? Math.min(need, byHand + handy) : need;
     const result = consumeCategory(run.shelves, run.zones, run.boxesToUnpack, category, reachable);
     run.shelves = result.shelves;
     run.boxesToUnpack = result.boxes;
     const unreachable = need - reachable;
+    /*
+     * ⚠ 只在**体力见底**那天记：没透支的时候 `reachable === need`，
+     * 上面那个 `max(0, …)` 会因为 `byHand` 小于 `need` 而算出正数 ——
+     * 那是"你今天需要 3 件、一半是 2 件"这种毫无意义的差，不是任何人的问题。
+     * 判据必须与 `reachable` 挂钩，不能只看 `handy` 够不够。
+     */
+    const handyGap = exhausted ? Math.min(Math.max(0, byHand - handy), Math.max(0, unreachable)) : 0;
     drains.push({
       category,
       need,
@@ -404,6 +434,7 @@ export function settleSurvivalDay(run: RunState, cursor?: RngCursor): SurvivalRe
     shortageUnits += result.shortage + unreachable;
     realShortageUnits += result.shortage;
     unreachableUnits += unreachable;
+    handyGapUnits += handyGap;
     takenPieces += result.taken;
     fromBoxes += result.fromBoxes;
   }
@@ -485,6 +516,7 @@ export function settleSurvivalDay(run: RunState, cursor?: RngCursor): SurvivalRe
   // 累计件数（结算页读它）：天数会被"缺 1 件"和"缺 5 件"糊成同一个数，件数不会
   run.survival.shortagePieces += realShortageUnits;
   run.survival.unreachablePieces += unreachableUnits;
+  run.survival.handyGapPieces += handyGapUnits;
 
   /*
    * ④.5 **健康风险**（维度 15，§10B.3.1 的 L3）：硬扛的代价。
@@ -669,6 +701,7 @@ export function settleSurvivalDay(run: RunState, cursor?: RngCursor): SurvivalRe
     fromShelves,
     fromBoxes,
     unreachable: unreachableUnits,
+    handyGap: handyGapUnits,
     workCost,
     workSaved,
     workHauled,
@@ -704,7 +737,20 @@ export function settleSurvivalDay(run: RunState, cursor?: RngCursor): SurvivalRe
     run.log.push(`${stamp} · 翻找花了 ${workCost} 点体力`);
   }
   if (unreachableUnits > 0) {
-    run.log.push(`${stamp} · 翻不动，少拿了 ${unreachableUnits} 件`);
+    /*
+     * ★ M4 W-03：这一句原来只有前半段，把两种**解决办法相反**的情况糊成了一句。
+     *
+     * 现在分开写：屋里翻得出的那些（`handyGapUnits`）是**整理期能改**的，
+     * 剩下的是**累**。两句都写出来，玩家才会在下一次整理时知道该动什么 ——
+     * 而"该动什么"是日报唯一该回答的问题（与 `shortagePieces` 的注释同一条纪律）。
+     *
+     * ⚠ 顺序是"先能改的、后改不了的"：先读到的应该是他明天就能做的事。
+     */
+    if (handyGapUnits > 0) {
+      run.log.push(`${stamp} · 翻不动，少拿了 ${unreachableUnits} 件，其中 ${handyGapUnits} 件就在屋里、只是不在顺手位上`);
+    } else {
+      run.log.push(`${stamp} · 翻不动，少拿了 ${unreachableUnits} 件（顺手位上的都够到了）`);
+    }
   }
   // 没睡踏实要写进日志：它是三条体力流失路径（劳作 / 缺货 / 受冻）里唯一不写在
   // ④⑤ 里的，不记下来玩家只会看到"体力莫名少回了一半"
@@ -771,6 +817,7 @@ export function settleSurvivalDay(run: RunState, cursor?: RngCursor): SurvivalRe
     fromShelves,
     fromBoxes,
     unreachable: unreachableUnits,
+    handyGap: handyGapUnits,
     hardPress,
     hardPressLevel: todayTier?.level ?? 'none',
     usedMedicine: supply.usedMedicine,
@@ -801,12 +848,20 @@ interface SupplyOutcome {
  */
 function autoSupply(run: RunState, current: { health: number; shelter: number }): SupplyOutcome {
   const out: SupplyOutcome = { usedMedicine: 0, usedWarmth: 0, heal: 0, warmth: 0 };
+  /*
+   * ★ M4 W-04：恢复侧的维度 13 —— 有些灾难就是"药品 / 保暖品在这一场更管用"。
+   *
+   * `healOf` / `shelterOf` 收 `disaster` 而不是在这里乘一遍：
+   * 取一件药的**全部**消费者只有这一处，把乘数摊在调用方会让
+   * "一件药回多少"这件事有两个说法（将来加一个"手动用药"就会分家）。
+   */
+  const disaster = getDisasterDef(run.disasterId);
 
   let health = current.health;
   while (out.usedMedicine < SUPPLY_MAX_PER_DAY && health < MEDICINE_TRIGGER) {
     const drawn = drawOne(run, 'medicine');
     if (!drawn) break;
-    const heal = healOf(getItemDef(drawn.itemId));
+    const heal = healOf(getItemDef(drawn.itemId), disaster);
     if (heal <= 0) break; // 这个品类里没有任何能回血的物资，别再空转
     out.usedMedicine += 1;
     out.heal += heal;
@@ -817,7 +872,7 @@ function autoSupply(run: RunState, current: { health: number; shelter: number })
   while (out.usedWarmth < SUPPLY_MAX_PER_DAY && shelter < WARMTH_TRIGGER) {
     const drawn = drawOne(run, 'warmth');
     if (!drawn) break;
-    const warm = shelterOf(getItemDef(drawn.itemId));
+    const warm = shelterOf(getItemDef(drawn.itemId), disaster);
     if (warm <= 0) break;
     out.usedWarmth += 1;
     out.warmth += warm;

@@ -155,7 +155,8 @@ export class EndingScreen implements Screen {
                 lasted,
                 hardPressDays: run.survival.hardPressDays,
                 shortPieces: run.survival.shortagePieces,
-                unreachablePieces: run.survival.unreachablePieces
+                unreachablePieces: run.survival.unreachablePieces,
+                handyGapPieces: run.survival.handyGapPieces
               })
             )}</p>
             ${collapsed ? lastDayStrip(run) : ''}
@@ -189,6 +190,19 @@ export class EndingScreen implements Screen {
               freshCount > 0
                 ? `<p class="block-note warm">本局新点亮 <b>${freshCount}</b> 项。</p>`
                 : '<p class="block-note">这一局没有新点亮的。</p>'
+            }
+            ${
+              /*
+               * ★ 图鉴第二档（M4 W-03）："归过位"那本账**必须在结算页也说一句**。
+               *
+               * 它是这一档唯一的"增量"表达 —— 玩家在图鉴页只看到存量
+               * （`归过位 37 / 121`），而"我这一局推进了几件"这句话只有结算页说得出。
+               * 与"本局新点亮 N 项"并列，但**刻意不说 0 件**：
+               * 那一局没归位任何新东西不是需要被告知的事（§5 引擎① 不 judge）。
+               */
+              (verdict?.shelvedFresh.length ?? 0) > 0
+                ? `<p class="block-note warm">其中 <b>${verdict?.shelvedFresh.length ?? 0}</b> 件是你第一次想清楚它该放哪儿的。</p>`
+                : ''
             }
             <div class="stat-grid is-triple">
               ${CODEX_PAGES.map((page) => {
@@ -494,8 +508,16 @@ function runStory(input: {
   hardPressDays: number;
   shortPieces: number;
   unreachablePieces: number;
+  /**
+   * ★ M4 W-03：`unreachablePieces` 里"就在屋里、只是不在顺手位上"的那一截。
+   *
+   * 结算页是**这一局唯一一次总结**，所以它必须把两种死法分开说：
+   * "还有货、你没力气"跟"货就堆在你手边那格里、你没铺顺手位"，
+   * 玩家下一局该改的事完全相反。
+   */
+  handyGapPieces: number;
 }): string {
-  const { survived, lasted, hardPressDays, shortPieces, unreachablePieces } = input;
+  const { survived, lasted, hardPressDays, shortPieces, unreachablePieces, handyGapPieces } = input;
 
   if (!survived) {
     // 没撑住的时候，"缺的是吃的"和"缺的是力气"是两种完全不同的死法，必须分开说
@@ -515,7 +537,18 @@ function runStory(input: {
   const parts: string[] = [];
   if (hardPressDays > 0) parts.push(`有 ${hardPressDays} 天在硬撑`);
   if (shortPieces > 0) parts.push(`前后短了 ${shortPieces} 件口粮`);
-  if (unreachablePieces > 0) parts.push(`还有 ${unreachablePieces} 件在屋里、没力气翻出来`);
+  if (unreachablePieces > 0) {
+    /*
+     * ★ 分岔在这里：`handyGapPieces > 0` 说明"翻不出来"这件事**有整理期的解法**。
+     * 两句都只在有内容时才多说一句 —— 顺手位铺对了的局不该被多说一句废话，
+     * 那会让"铺对了"和"没铺"在结算页上长得一样（§10.1A 要的正是这两句不同）。
+     */
+    parts.push(
+      handyGapPieces > 0
+        ? `还有 ${unreachablePieces} 件在屋里、没力气翻出来（其中 ${handyGapPieces} 件本来放顺手位就够得到）`
+        : `还有 ${unreachablePieces} 件在屋里、没力气翻出来（顺手位上那几件倒是都够到了）`
+    );
+  }
 
   const head = parts.join('，');
   if (hardPressDays > 0) return `${head}。撑是撑过来了。`;
