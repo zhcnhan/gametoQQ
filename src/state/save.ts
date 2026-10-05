@@ -768,6 +768,56 @@ function normalizeRun(save: SaveGame): SaveGame | null {
   run.log = asArray(run.log);
   run.trust = isObject(run.trust) ? (run.trust as Record<string, number>) : {};
   if (typeof run.seed !== 'number') run.seed = Date.now() >>> 0;
+
+  /*
+   * ———————— ★★ 两个"必须由自愈补齐"的数字 ————————
+   *
+   * ⚠⚠ 这两段原来住在 `migrateV0ToV1` 里，而那里**只有 v0 的档会经过** ——
+   * 于是**每一个**从存档读回来的局都带着 `undefined` 跑完全程。
+   * 症状是用户在真机截图里能看见的一行字：
+   *
+   *     屋里进过水：靠地那 undefined 排，每块家具各少了一排。
+   *
+   * （`renderSinkNote` 的判据是 `rows <= 0`，而 `undefined <= 0` 是 **false**，
+   *   所以它不但没被拦下，还走进了"淹过水"那一支。）同类的一行字还有
+   *   「情报」那一格 —— 顶栏说"离灾难还有 N 天"时它就在旁边。
+   *
+   * 教训不是"少写一个 if"，而是：**自愈要写在每一次读档都会经过的那条路上**
+   * （`migrate` 的最后一步就是 `normalizeRun`）。写在某一个迁移函数里，
+   * 受益的只有"恰好从那个版本升上来"的档，而项目里几乎不存在这种档。
+   */
+
+  /*
+   * 情报（D-13，2026-10 加的字段）。
+   *
+   * ★ 旧档没有它 —— 默认给 **1**（不是 0）：开局本来就该知道"今天"那一天，
+   * 而 0 会让一个正在进行的旧档在日历上连今天都看不到，
+   * 那是"自愈时把玩家已有的东西弄丢"这一类错误。
+   */
+  if (typeof run.intel !== 'number' || !Number.isFinite(run.intel)) run.intel = 1;
+  if (run.intel < 0) run.intel = 0;
+  /*
+   * 水位（M4 W-05，2026-10 加的字段）。
+   *
+   * ★ 旧档没有它 —— 默认给 **0**，不是别的数：那时候还没有会淹水的机制，
+   * "这一局一排都没少"正是它们的真实情况（与上面 `intel` 相反，所以两条不能抄）。
+   * 上限按 `HOME_SINK_MAX_ROWS` 夹一次：这是个"只增不减"的账本，
+   * 而它进界面的方式之一是一句人话（"屋子已经少了 N 排"），
+   * 手改存档塞进一个 99 会让那句话变成胡说。
+   */
+  if (typeof run.homeSinkRows !== 'number' || !Number.isFinite(run.homeSinkRows)) run.homeSinkRows = 0;
+  if (run.homeSinkRows < 0) run.homeSinkRows = 0;
+  if (run.homeSinkRows > HOME_SINK_MAX_ROWS) run.homeSinkRows = HOME_SINK_MAX_ROWS;
+  /*
+   * 交过几单（`systems/help.ts` 里 `draft.deliveredOrders += 1`）。
+   *
+   * ⚠ 它与上面两条是**同一个毛病**：默认值原来只写在 `migrateV0ToV1` 里，
+   * 于是非 v0 的老档读回来是 `undefined`，而它的去处是 `+= 1`
+   * —— 一加就成 `NaN`，再显示就是"交过 NaN 单"。
+   */
+  if (typeof run.deliveredOrders !== 'number' || !Number.isFinite(run.deliveredOrders)) {
+    run.deliveredOrders = 0;
+  }
   // 兜底：任何非 UnpackBox 形态的箱（例如手改过的档）一律丢弃，宁可开新局也不让 UI 崩
   run.boxesToUnpack = asArray<unknown>(run.boxesToUnpack).filter(
     (box): box is UnpackBox => isObject(box) && typeof box.id === 'string' && Array.isArray(box.items)
@@ -1406,28 +1456,6 @@ export function migrateV0ToV1(save: SaveGame): SaveGame {
     if (!isObject(run.stats)) {
       run.stats = { health: 100, mood: 70, stamina: 100, shelter: 100 };
     }
-    if (typeof run.deliveredOrders !== 'number') run.deliveredOrders = 0;
-  /*
-   * 情报（D-13，2026-10 加的字段）。
-   *
-   * ★ 旧档没有它 —— 默认给 **1**（不是 0）：开局本来就该知道"今天"那一天，
-   * 而 0 会让一个正在进行的旧档在日历上连今天都看不到，
-   * 那是"自愈时把玩家已有的东西弄丢"这一类错误。
-   */
-  if (typeof run.intel !== 'number' || !Number.isFinite(run.intel)) run.intel = 1;
-  if (run.intel < 0) run.intel = 0;
-  /*
-   * 水位（M4 W-05，2026-10 加的字段）。
-   *
-   * ★ 旧档没有它 —— 默认给 **0**，不是别的数：那时候还没有会淹水的机制，
-   * "这一局一排都没少"正是它们的真实情况（与 `intel` 那条相反，所以两条不能抄）。
-   * 上限按 `HOME_SINK_MAX_ROWS` 夹一次：这是个"只增不减"的账本，
-   * 而它进界面的方式之一是一句人话（"屋子已经少了 N 排"），
-   * 手改存档塞进一个 99 会让那句话变成胡说。
-   */
-  if (typeof run.homeSinkRows !== 'number' || !Number.isFinite(run.homeSinkRows)) run.homeSinkRows = 0;
-  if (run.homeSinkRows < 0) run.homeSinkRows = 0;
-  if (run.homeSinkRows > HOME_SINK_MAX_ROWS) run.homeSinkRows = HOME_SINK_MAX_ROWS;
     if (!run.phase) run.phase = 'organize';
     if (typeof run.day !== 'number') run.day = 0;
     if (!run.identityId) run.identityId = 'default';

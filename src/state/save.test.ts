@@ -15,6 +15,7 @@ import { createStartingRun } from '../systems/setup';
 import { onlyZoneIdOf } from '../model/shelf';
 import { SURVIVAL_DAYS } from '../data/disaster';
 import { EMPTY_SURVIVAL_SNAPSHOT } from '../data/survival';
+import { HOME_SINK_MAX_ROWS } from '../model/sink';
 import { bootstrapStore } from './store';
 
 describe('存档 schema 与迁移', () => {
@@ -47,6 +48,93 @@ describe('存档 schema 与迁移', () => {
 
   it('未来版本存档拒绝读取（避免写坏别人的档）', () => {
     expect(migrate({ meta: { version: SAVE_VERSION + 1 }, run: null })).toBeNull();
+  });
+
+  /*
+   * ★★ 这条是拿"真机截图"当判据写出来的。
+   *
+   * 无头浏览器里 load 一份测试档（`src/tools/save-100boxes.txt`），整理页顶栏
+   * 渲染出这么一行字：
+   *
+   *     屋里进过水：靠地那 undefined 排，每块家具各少了一排。
+   *
+   * 根因不在界面：`intel` 与 `homeSinkRows` 那两段自愈**原本住在
+   * `migrateV0ToV1` 里**，而那条路只有 v0 的档会经过 —— 于是**每一个**
+   * 从存档读回来的局都带着 `undefined` 跑完全程（`renderSinkNote` 的判据是
+   * `rows <= 0`，而 `undefined <= 0` 是 false，所以它还被当成"淹过水"渲染）。
+   *
+   * 所以这条用例故意用**一份"什么数字都没有"的档**：它守的不是某个具体版本，
+   * 而是"**从存档进来的数字不许是 undefined**"这条口径本身。
+   */
+  it('★★ 缺数字的老档：情报补 1、水位补 0，而且都不许留下 undefined', () => {
+    const thin = {
+      meta: { version: SAVE_VERSION - 1 },
+      savedAt: 1700000000000,
+      run: {
+        shelves: [],
+        zones: [],
+        boxesToUnpack: [],
+        stats: { health: 100, mood: 70, stamina: 100, shelter: 100 },
+        trust: {},
+        log: [],
+        phase: 'organize',
+        day: -1,
+        identityId: 'default',
+        disasterId: 'cold_snap',
+        cash: 0,
+        seed: 7
+        // 刻意不写 intel / homeSinkRows / deliveredOrders —— 这就是老档的样子
+      }
+    };
+    const migrated = migrate(thin);
+    expect(migrated).not.toBeNull();
+    /*
+     * 情报默认 **1**（不是 0）：开局本来就该知道"今天"是哪一天，
+     * 给 0 会让一个正在进行的旧档在日历上连今天都看不到。
+     */
+    expect(migrated?.run?.intel).toBe(1);
+    /* 水位默认 **0**：那时候还没有会淹水的机制，"一排都没少"就是它们的实情 */
+    expect(migrated?.run?.homeSinkRows).toBe(0);
+    expect(migrated?.run?.deliveredOrders).toBe(0);
+    /*
+     * ★ 这一句才是这条用例的重点：**读完的那一份里不许有 undefined**。
+     *   （写成数组是为了失败时能直接看见是哪一个字段漏了。）
+     */
+    const nums = {
+      intel: migrated?.run?.intel,
+      homeSinkRows: migrated?.run?.homeSinkRows,
+      deliveredOrders: migrated?.run?.deliveredOrders
+    };
+    for (const [name, v] of Object.entries(nums)) {
+      expect(typeof v, `${name} 必须是数字（undefined 会一路渲染到屏幕上）`).toBe('number');
+    }
+  });
+
+  it('★★ 手改坏的水位：99 会被夹回上限、负数归零（它进界面的方式是一句人话）', () => {
+    const base = {
+      meta: { version: SAVE_VERSION },
+      savedAt: 1700000000000,
+      run: {
+        shelves: [],
+        zones: [],
+        boxesToUnpack: [],
+        stats: { health: 100, mood: 70, stamina: 100, shelter: 100 },
+        trust: {},
+        log: [],
+        phase: 'organize',
+        day: -1,
+        identityId: 'default',
+        disasterId: 'cold_snap',
+        cash: 0,
+        seed: 7,
+        intel: 1,
+        homeSinkRows: 99
+      }
+    };
+    const high = migrate(base);
+    expect(high?.run?.homeSinkRows).toBe(HOME_SINK_MAX_ROWS);
+    const low = migrate({ ...base, run: { ...base.run, homeSinkRows: -4 } });
+    expect(low?.run?.homeSinkRows).toBe(0);
   });
 
   it('v1 旧档（待拆箱是二维数组）能迁到 v2：补稳定 id 与箱型，物资一件不丢', () => {
