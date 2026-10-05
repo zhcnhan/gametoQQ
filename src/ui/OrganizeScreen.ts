@@ -42,6 +42,7 @@ import {
 } from '../systems/organize';
 import { attachLongPress, attachPointerGesture } from './drag';
 import { expiryText, isExpiringSoon, shelfLabel, stackLabel } from './labels';
+import { windowBandHtml } from './windowBand';
 import { ZoneSheet } from './zoneSheet';
 
 export interface OrganizeScreenProps {
@@ -180,6 +181,10 @@ export class OrganizeScreen {
           -->
           <div class="tape-shelf" data-tape-shelf></div>
         </header>
+        ${/* ★ 顶栏底下那一条"窗外"（2026-10 用户："任何东西都要让我有感知"）。
+             整理页也要它：囤货那 7 天里，玩家绝大部分时间都在这一屏，
+             而"这一局抽到的是哪一场"此前在这一屏一个字都看不到。 */ ''}
+        ${windowBandHtml(this.store.run)}
         <main class="room-scroll" data-room></main>
         <footer class="dock">
           <div class="dock-hand" data-hand data-drop="return"></div>

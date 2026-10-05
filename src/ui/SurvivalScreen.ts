@@ -26,6 +26,7 @@ import type { GameStore } from '../state/store';
 import { isShutOut } from '../systems/help';
 import { householdTotals } from '../systems/organize';
 import { TRADE_COST_PIECES, tradeCooldownLeft } from '../systems/trade';
+import { disasterTagHtml, windowBandHtml } from './windowBand';
 import type { Screen } from './Router';
 
 export interface SurvivalScreenProps {
@@ -59,6 +60,10 @@ export class SurvivalScreen implements Screen {
     this.root.innerHTML = `
       <div class="screen screen-plain">
         <header class="topbar" data-head></header>
+        ${/* ★ 顶栏底下那一条"窗外"（用户 2026-10："任何东西都要让我有感知"）——
+             它让"这一局是哪一场"在**每一屏**上都看得见，而此前只有数字不同。
+             颜色全部来自 `data/windowThemes.ts`，见 `ui/windowBand.ts` 的注释。 */ ''}
+        ${windowBandHtml(this.store.run)}
         <main class="scroll" data-main></main>
         <footer class="dock" data-dock></footer>
       </div>
@@ -87,6 +92,7 @@ export class SurvivalScreen implements Screen {
           <h1 class="is-stamp">${dayLabel(day)}</h1>
           <p class="sub">${sub}</p>
         </div>
+        ${disasterTagHtml(run)}
       </div>
     `;
 

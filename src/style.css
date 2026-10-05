@@ -3128,6 +3128,158 @@ button:disabled {
 
 /* ———————— 成就：朱红印章 ———————— */
 
+/* ═══════════════════════════════════════════════════════════════════════
+ * ★★ 「窗外」那一条光带（2026-10 用户："任何东西都要让我有感知"）
+ *
+ * ## 为什么是一条 34px 的带子，而不是整块背景
+ *
+ * §5A 的底是**纸**。整屏铺一层天空会把"手账"变成风景画，而且 M2 花一整轮
+ * 立起来的那三档边框层次会全被压掉。所以它只在顶栏底下压一条：
+ * 像手账页眉上随手画的一道天光，占的地方极小，而"今天是什么天"每天撞进眼睛里。
+ *
+ * ## 三层，都是纯 CSS（零图片、零依赖）
+ *
+ *   ① 底色 —— `--sky`，由 `ui/windowBand.ts` 按这一场的 `windowScene` 拼好；
+ *   ② 窗棂 —— 两条 `repeating-linear-gradient`（竖一道、横一道），极淡；
+ *   ③ 飘着的东西 —— `.window-band-fall`，由**那一场的 `fall` 类型**决定形状
+ *      （雪是圆点、灰是斜短划、雨是竖线、尘是细横），用 `box-shadow` 铺一层稀疏的点。
+ *
+ * ⚠ 颜色一个都不是这里定的：它们来自 `data/windowThemes.ts`，而那张表
+ * 在数据层就避开了朱红与暖黄（`windowThemes.test.ts` 钉着两条红线）。
+ */
+.window-band {
+  position: relative;
+  flex: 0 0 auto;
+  height: 34px;
+  background: var(--sky);
+  border-bottom: 1.5px solid var(--ink-16);
+  overflow: hidden;
+}
+
+/* 窗棂：正十字。压得很淡，只在浅色天空上看得见一丝 */
+.window-band-glass {
+  position: absolute;
+  inset: 0;
+  background-image: repeating-linear-gradient(
+      90deg,
+      transparent 0 46px,
+      rgba(44, 44, 42, 0.14) 46px 47.5px
+    ),
+    repeating-linear-gradient(180deg, transparent 0 15px, rgba(44, 44, 42, 0.1) 15px 16px);
+}
+
+/* 飘着的东西：默认没有 */
+.window-band-fall {
+  position: absolute;
+  inset: 0;
+}
+
+/*
+ * 四类"飘着的东西"。形状刻意各不相同 —— 那也是"这一场看起来不一样"的一部分：
+ * 雪是圆的、灰是斜的、雨是竖的、尘是横的。
+ */
+.window-band.is-blizzard .window-band-fall,
+.window-band.is-snow-blocked-door .window-band-fall,
+.window-band.is-deep-freeze-outdoor .window-band-fall,
+.window-band.is-endless-winter-slide .window-band-fall,
+.window-band.is-vortex-swing .window-band-fall,
+.window-band.is-ice-load-collapse .window-band-fall,
+.window-band.is-ice-jam .window-band-fall,
+.window-band.is-cold-quarantine .window-band-fall,
+.window-band.is-quake-cold .window-band-fall,
+.window-band.is-cold-epidemic .window-band-fall {
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.85) 1.4px, transparent 1.6px);
+  background-size: 26px 17px;
+}
+
+.window-band.is-ash-dimmed-sky .window-band-fall,
+.window-band.is-burning-district .window-band-fall,
+.window-band.is-quake-fire .window-band-fall,
+.window-band.is-gas-main-blast .window-band-fall,
+.window-band.is-smoke-drift .window-band-fall,
+.window-band.is-chemical-plume .window-band-fall,
+.window-band.is-acid-haze .window-band-fall,
+.window-band.is-coal-smoke .window-band-fall,
+.window-band.is-spore-wall .window-band-fall,
+.window-band.is-mold-blackout .window-band-fall,
+.window-band.is-fire-heat-blackout .window-band-fall {
+  background-image: repeating-linear-gradient(
+    115deg,
+    rgba(255, 255, 255, 0.5) 0 5px,
+    transparent 5px 13px
+  );
+}
+
+.window-band.is-rain-flood .window-band-fall,
+.window-band.is-typhoon-edge .window-band-fall,
+.window-band.is-mud-runoff .window-band-fall,
+.window-band.is-release-gate .window-band-fall,
+.window-band.is-main-burst .window-band-fall,
+.window-band.is-sewer-back .window-band-fall,
+.window-band.is-acid-rain .window-band-fall,
+.window-band.is-roof-drip .window-band-fall,
+.window-band.is-tsunami-wall .window-band-fall,
+.window-band.is-dam-wall .window-band-fall,
+.window-band.is-mold-rain .window-band-fall,
+.window-band.is-thaw-mud .window-band-fall,
+.window-band.is-cold-drizzle .window-band-fall,
+.window-band.is-hail-crater .window-band-fall,
+.window-band.is-supercell-rain .window-band-fall,
+.window-band.is-tornado-path .window-band-fall,
+.window-band.is-flood-outbreak .window-band-fall,
+.window-band.is-typhoon-dry-tap .window-band-fall,
+.window-band.is-flood-riot .window-band-fall,
+.window-band.is-damp-wall .window-band-fall {
+  background-image: repeating-linear-gradient(
+    96deg,
+    transparent 0 4px,
+    rgba(255, 255, 255, 0.42) 4px 5px,
+    transparent 5px 11px
+  );
+}
+
+.window-band.is-sand-haze .window-band-fall,
+.window-band.is-dust-plume .window-band-fall,
+.window-band.is-dust-drought .window-band-fall,
+.window-band.is-dust-riot .window-band-fall,
+.window-band.is-cold-dust .window-band-fall,
+.window-band.is-locust-sky .window-band-fall,
+.window-band.is-dry-hot-wind .window-band-fall,
+.window-band.is-foehn-wall .window-band-fall,
+.window-band.is-cracked-wall .window-band-fall,
+.window-band.is-after-shock .window-band-fall,
+.window-band.is-blocked-slope .window-band-fall,
+.window-band.is-settling-belt .window-band-fall,
+.window-band.is-tunnel-plug .window-band-fall,
+.window-band.is-caved-mine-zone .window-band-fall,
+.window-band.is-span-roof-collapse .window-band-fall {
+  background-image: repeating-linear-gradient(
+    0deg,
+    rgba(255, 255, 255, 0.45) 0 1px,
+    transparent 1px 9px
+  );
+}
+
+/*
+ * ★ 灾难名那一枚小标记（顶栏右侧）。它用的是**同一份颜色**（`--tint`）——
+ * 于是"那条天光"与"这一场叫什么"在玩家眼里是同一件事。
+ *
+ * ⚠ 边框颜色不是朱红：朱红在 §5A 里专指警告 / 分区 / 拟声字，
+ * 而这一枚只是"这一场叫什么"。
+ */
+.disaster-tag {
+  flex: 0 0 auto;
+  align-self: center;
+  padding: 1px 7px 2px;
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  color: var(--ink-70);
+  border: 1.5px solid var(--tint, var(--ink-16));
+  border-radius: 4px;
+  background: var(--card);
+  transform: rotate(-1.5deg);
+}
+
 .seal-group {
   margin: 10px 0 5px;
   font-size: 12px;
