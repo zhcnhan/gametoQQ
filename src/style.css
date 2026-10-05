@@ -3710,19 +3710,54 @@ button:disabled {
     --content-max: 470px;
   }
 
-  .scroll,
-  .room-scroll {
+  /*
+   * ★★ 两处**居中失败的写法**在这里被修掉（2026-10，用户报"电脑上 UI 会错乱"）。
+   *
+   * ## 症状
+   *
+   * 桌面上正文缩成**一条细柱**：身份卡的文案竖着排、一个字一行。
+   * 而手机上完全正常 —— 于是"响应式的小屏那一半是对的、大屏那一半坏了"。
+   *
+   * ## 根因：`padding-inline: max(12px, (100vw − 470px) / 2)`
+   *
+   * 这一行原来长这样（M2 那次桌面适配），它想用"左右各撑开一半剩余空间"来居中。
+   * 在 1920 宽的窗口上：只算 `100vw` 是 960px/边 —— 看起来对得上，
+   * 而**`100vw` 含纵向滚动条的宽度**（约 15~17px），而 `.scroll` 的包含块
+   * **不含**它。于是 2 × 725px 的 padding 一摆上去，内容盒算出来是**负数**，
+   * 浏览器把它夹到 **0** —— 那块正文就剩一条缝。
+   *
+   * ★ 更根本的错是**第二个**：flex 子项上的 `margin-inline: auto` 会**吸走剩余空间**，
+   * 于是子项按 `fit-content` 收缩 —— 而"收缩到内容宽度"在一条被 padding 挤没的
+   * 轨道上就等于**塌成一条线**。所以居中不能靠 `margin: auto` 给 flex 子项，
+   * 要靠 **`width: 100%` + `max-width` + `margin: auto`** 三件一起
+   * （有了确定的宽度，auto 外边距分的才是"两侧各多少"）。
+   *
+   * ## 为什么 vw 换掉了
+   *
+   * `100vw` 与包含块差一个滚动条，是这一类的经典坑；而 `width: 100%` 是**包含块的 100%**，
+   * 与滚动条无关。**同一个视觉结果，少一个不确定性。**
+   */
+  .scroll {
+    width: 100%;
     max-width: var(--content-max);
     margin-inline: auto;
-    /* 上下内边距沿用各自原来的值，这里只接管左右 */
-    padding-inline: max(12px, (100vw - var(--content-max)) / 2);
+    /* 左右内边距沿用手机上的 12px（那一份在 `.scroll` 的基础规则里）——
+       显式写回来，免得这条覆盖规则把它清掉 */
+    padding-inline: 12px;
   }
 
   /*
-   * 整理页是唯一例外：它没有左右内边距（那是为了 375px 上塞下 6 × 56px 的触点），
-   * 而货架网格自己会居中，所以这里只居中容器、不加内边距。
+   * 整理页是唯一例外：它**不能**跟着收窄。
+   *
+   * 货架网格的固有宽度是 **471px**（6 × 76 + 5 × 3）—— 比 `--content-max` 的 470 **宽 1px**。
+   * 所以这一屏继续吃满整宽、由网格自己居中（`.room-scroll` 的 `padding-inline: 0`）。
+   * ⚠ 写成 `max-width: none` 是**必须**的：只写 `width: 100%` 会留着上面那条
+   * `max-width: 470px`（同一个媒体查询里，后者仍然生效），货架就会被裁掉一列。
    */
   .room-scroll {
+    width: 100%;
+    max-width: none;
+    margin-inline: 0;
     padding-inline: 0;
   }
 
@@ -3740,6 +3775,25 @@ button:disabled {
   .dock-hand,
   .dock-boxes {
     max-width: var(--content-max);
+  }
+
+  /*
+   * ★ 顶栏里的那几行也要收到同一个宽度里。
+   *
+   * 它们是 `.topbar` 的直接子元素（`flex: 0 0 auto` 的纵向堆叠），
+   * 所以同样是"给 `max-width` 就够、**不许**给 `margin: auto`"。
+   *
+   * 不收的话，桌面上会出现"标题贴在最左、正文在中间"——用户 2026-10 的截图里
+   * 那正是最扎眼的一条（`.topbar` 自己必须保持整宽，它的纸底与点阵是页眉的一部分）。
+   */
+  .topbar-row,
+  .topbar .score,
+  .topbar .tape-shelf {
+    max-width: var(--content-max);
+    margin-inline: auto;
+    /* 上面那一条给的是"吸走剩余空间"的 auto —— 这里必须再补 width，
+       否则它们会收缩成内容宽度（见 `.scroll` 那段注释里的同一个坑） */
+    width: 100%;
   }
 }
 

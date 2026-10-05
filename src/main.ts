@@ -40,6 +40,7 @@ import {
   startSurvival,
   type PhaseResult
 } from './systems/phases';
+import { switchDisaster } from './systems/switchDisaster';
 import { createStartingShelves, disasterProgressOf, newRunWithDisaster } from './systems/setup';
 import { CodexScreen } from './ui/CodexScreen';
 import { EndingScreen } from './ui/EndingScreen';
@@ -364,19 +365,15 @@ document.addEventListener('visibilitychange', () => {
 function applyDisasterFromUrl(): void {
   const param = new URLSearchParams(window.location.search).get('disaster');
   if (!param) return;
-  const def = DISASTER_DEFS.find((d) => d.id === param || d.name === param);
-  if (!def) {
-    console.warn(`[囤货末世] ?disaster=${param} 认不出这一场（可以用 id 或中文名）。`);
-    return;
-  }
   store.commit((draft) => {
-    draft.disasterId = def.id;
-    draft.shelves = createStartingShelves(ROOM_ID, def.id);
-    draft.shopStocks = [];
+    const result = switchDisaster(draft, param);
+    if (!result.ok) console.warn(`[囤货末世] ?disaster=${param} —— ${result.message}`);
+    else console.info(`[囤货末世] ?disaster ${result.message}`);
   });
-  ensureDayStocks(store);
-  router.render();
-  console.info(`[囤货末世] ?disaster 换成了「${def.name}」（${def.id}）`);
+  if (store.run.disasterId === DISASTER_DEFS.find((d) => d.id === param || d.name === param)?.id) {
+    ensureDayStocks(store);
+    router.render();
+  }
 }
 applyDisasterFromUrl();
 
@@ -482,23 +479,23 @@ if (import.meta.env.DEV) {
       );
       return;
     }
-    const def = DISASTER_DEFS.find((d) => d.id === which || d.name === which);
-    if (!def) {
-      console.warn(`[囤货末世] 没有叫「${which}」的灾难。不带参数调用可以看到池子。`);
-      return;
-    }
+    /*
+     * ★ 换灾难的**逻辑**住在 `systems/switchDisaster.ts`（可以被单测跑到），
+     * 这里只负责"接上 store 与 router"。
+     *
+     * 之所以要这么切：用户报"指令只发一句话、页面毫无变化"时，
+     * 我发现那个函数**一次都没被测试跑过** —— 它住在 `main.ts` 的 DEV 块里，
+     * 而 `main.ts` 一 import 就装配整个应用，测不了。
+     * 于是它的唯一验收方式是"人工敲一下看屏幕"，而屏幕上那一条带子
+     * 当时还被 `style.css` 里一段坏注释吃掉了。
+     */
     store.commit((draft) => {
-      draft.disasterId = def.id;
-      draft.shelves = createStartingShelves(ROOM_ID, def.id);
-      draft.shopStocks = [];
+      const result = switchDisaster(draft, which);
+      if (result.ok) console.info(`[囤货末世] ${result.message}`);
+      else console.warn(`[囤货末世] ${result.message}`);
     });
     ensureDayStocks(store);
     router.render();
-    console.info(
-      `[囤货末世] 换成了「${def.name}」：${def.level} · ${def.family} · ` +
-        `capacityFactor ${def.capacityFactor ?? 1}、unusableShelfIds [${(def.unusableShelfIds ?? []).join(',')}] ` +
-        `→ 屋里 ${store.run.shelves.length} 块、每块 ${store.run.shelves[0]?.h ?? 0} 排`
-    );
   };
 
   /**
