@@ -572,7 +572,9 @@ function coldHouseNote(run: RunState): string {
 
 /** 明日预告（§9 界面清单第 5 条的最后一项）。它让"今天要不要省着过"变成一个可以想的问题 */
 function tomorrowHint(disaster: DisasterProfile, day: number): string {
-  if (day >= SURVIVAL_DAYS) return '最后一天了。撑过去，寒潮就过去了。';
+  // ★ "撑过去，X 就过去了"里的 X 是**这一场**的名字（M4 决策 A）——
+  //   写死"寒潮"在 116 场都能被抽到之后会当场撒谎，而这一句是最后一天的收尾
+  if (day >= SURVIVAL_DAYS) return `最后一天了。撑过去，${disaster.name}就过去了。`;
   return hintAt(disaster, day + 1);
 }
 

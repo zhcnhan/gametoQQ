@@ -7,7 +7,14 @@
  * 身份 / 灾难 / 日历 / 每日库存都不在这里，它们在 data/ 与 systems/phases.ts。
  */
 import { BOX_DEFS, type BoxDef } from '../data/boxes';
-import { FIRST_STOCKPILE_DAY, M1_DISASTER_ID, disasterModifiersOf } from '../data/disaster';
+import {
+  FIRST_STOCKPILE_DAY,
+  M1_DISASTER_ID,
+  disasterModifiersOf,
+  disasterPool,
+  hasDisasterDef,
+  type DisasterProgress
+} from '../data/disaster';
 import { furnitureDefOf } from '../data/furniture';
 import { getItemDef } from '../data/items';
 import { EMPTY_SURVIVAL_SNAPSHOT, NEVER_TRADED } from '../data/survival';
@@ -20,6 +27,65 @@ export const STARTING_SHELF_COUNT = 3;
 const KEEP = 4;
 export const STARTING_BOX_COUNT = 3;
 export const SHELF_IDS = ['shelf_a', 'shelf_b', 'shelf_c'] as const;
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  这一局抽到哪一场灾难（M4 决策 A 的落地 / 工单 W-01）
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * ## 抽签**不碰 run 的 seed 游标**（这条是硬约束，不是风格问题）
+ *
+ * 用的是同一个 `seed`，但开一条**自己的游标**（`createCursor(seed)` 之后就丢）。
+ * 于是抽签既确定（同 seed 同结果）、又与 `run.seed` 那条主序列**完全无关**。
+ *
+ * 为什么非要这样：`run.seed` 的游标位置是三条永久回归探针的基线
+ * （好档活满 14 天 / 乱档 D+10 倒 / D+2 补救能活）。只要抽签多消耗一次随机数，
+ * 探针里每一次后续随机都换一条序列 —— 曲线整体漂移，而**原因看不出来**
+ * （§4.4 那条"探针的输入必须与内容量无关"，我在这里是提前躲开的）。
+ *
+ * ## 池子按 tier 阶梯放量（用户 2026-10 拍板的那条）
+ *
+ * 见 `data/disaster.ts` 的 `DISASTER_TIER_GATES`。一句话：第一局必然是寒潮
+ * （阶梯第一档只有它），之后撑得越久、见过得越多，池子越大。
+ *
+ * @param progress 跨局账本里那两个数（撑过几次 / 见过几场）
+ * @param seed 这一局的种子 —— 与 `RunState.seed` 同一个数
+ */
+export function rollDisasterId(progress: DisasterProgress, seed: number): string {
+  const pool = disasterPool(progress);
+  // 池子永远非空（tier 1 那一档就是寒潮），但兜底一下：一个空池子会让开局抛异常，
+  // 而"抽不到灾难"不该是一种能崩掉开局的失败
+  if (pool.length === 0) return M1_DISASTER_ID;
+  // ★ 自己的流：`createCursor` + 一次 `pick`，用完即弃，不写回任何地方
+  return pick(createCursor(seed >>> 0), pool).id;
+}
+
+/** `MetaProfile` 里抽签要读的那两个数（收成一个结构，见 `DisasterProgress`） */
+export function disasterProgressOf(meta: { survivedRuns?: number; codex?: { disasters?: readonly string[] } }): DisasterProgress {
+  const runs = meta.survivedRuns;
+  const seen = meta.codex?.disasters?.length;
+  return {
+    survivedRuns: typeof runs === 'number' && Number.isFinite(runs) && runs > 0 ? Math.floor(runs) : 0,
+    seenDisasters: typeof seen === 'number' && Number.isFinite(seen) && seen > 0 ? Math.floor(seen) : 0
+  };
+}
+
+/**
+ * 开新局用的那一对：**先定种子，再按阶梯抽灾难**。
+ *
+ * 它存在的理由是顺序：`rollDisasterId` 要读 seed，而 `createStartingRun`
+ * 的默认 seed 是当场现摇的（`randomSeed()`）。两处各写一遍"先摇种子"
+ * 迟早会出现"界面显示的那一场"与"真的铺进房间的那一场"不是同一场 ——
+ * 而那正是 W-01 要修掉的那种静默错位。所以收成一个函数，调用方只拿结果。
+ */
+export function newRunWithDisaster(meta: {
+  survivedRuns?: number;
+  codex?: { disasters?: readonly string[] };
+}): RunState {
+  const seed = randomSeed();
+  return createStartingRun(seed, { disasterId: rollDisasterId(disasterProgressOf(meta), seed) });
+}
+
 
 /**
  * 开局的家具。
@@ -56,11 +122,19 @@ export const SHELF_IDS = ['shelf_a', 'shelf_b', 'shelf_c'] as const;
  *     （`toggleHandy`），而这里只影响"开局时有哪些家具" ——
  *     被拆掉的块从列表里消失，它上面本来就没有标记。
  *
- * DEFERRED(D-32): 这个函数**默认参数是寒潮**，而 `createStartingRun` 调它时
- * 传的也是硬编码的 `M1_DISASTER_ID`（见下面那行）—— 而寒潮是 L1 教学灾难，
- * **没写 `capacityFactor` / `unusableShelfIds`**。于是这一整维从来没生效过：
- * 全表 43 场写了 `capacityFactor`、31 场写了 `unusableShelfIds`，一场都没用上。
- * 详见 `src/meta/deferred.ts` 的 D-32。
+ * ## ★ 这一维的接线经过（D-32，2026-10 清偿）
+ *
+ * 这两个字段在这个函数里**从 M3 起就是通的**，而它整整一维没生效过 —— 因为
+ * `createStartingRun` 把实参写成了 `M1_DISASTER_ID`，而寒潮是 L1 教学样板，
+ * **没写** `capacityFactor` / `unusableShelfIds`。于是全表 43 场 / 31 场写了
+ * 空间代价、一场都没被玩家碰到。
+ *
+ * ★ 教训值得留在这里：**"这个字段通了"与"它生效了"是两件事** ——
+ * 上面那两段注释当时读起来完全正确，而下游一次都没跑到。
+ * 所以现在那条接线由 `systems/setup.test.ts` 钉着（按 43 场里真实的一场
+ * 造出开局，断死"少了哪块、矮了几排"），而不是靠这段注释自证。
+ *
+ * @param disasterId 这一局真正抽到的那一场（不传 = 寒潮，测试与夹具用）
  */
 export function createStartingShelves(
   roomId: string = ROOM_ID,
@@ -74,9 +148,44 @@ export function createStartingShelves(
     .slice(0, Math.max(1, STARTING_SHELF_COUNT - mods.unusableShelfIds.length))
     .map((id, i) => {
       // 整屋小一圈 → 每块少掉底下的几排（至少留一排）
-      const usableH = Math.max(1, Math.round(SHELF_H * mods.capacityFactor));
+      const usableH = rowsFor(SHELF_H, mods.capacityFactor);
       return createShelf(id, roomId, kinds[i] ?? 'shelf', SHELF_W, usableH, null);
     });
+}
+
+/**
+ * 「整屋小一圈」落成几排 —— **一律向下取整**。
+ *
+ * ## 为什么是 floor 而不是 round（这条改过一版，值得记）
+ *
+ * 每一块货架只有 4 排，而 `capacityFactor` 是一个 0.5~1 的连续乘数 ——
+ * 所以"乘出来的行数"必须落到整数排上，而**取整方式决定了这一维是真的生效
+ * 还是静默失效**。实测（`scripts/_probe-rounding.ts`，43 场逐个过一遍）：
+ *
+ * | 乘数 | ×4 排 | `round`（旧） | `floor`（新） |
+ * | --- | --- | --- | --- |
+ * | 0.65 | 2.6 | 3 | 2 |
+ * | 0.70 / 0.72 | 2.8 / 2.88 | 3 | 2 |
+ * | 0.75 / 0.80 / 0.85 | 3.0 / 3.2 / 3.4 | 3 | 3 |
+ * | **0.90** | 3.6 | **4 ← 一排都没少** | 3 |
+ *
+ * 也就是说 `round` 在那 **10 场**上把"屋子小了一圈"抬回成"什么都没发生"，
+ * 其中就包含**凌汛**（唯一的 0.90 —— 它本来会一格都不少）与
+ * `地震` / `爆管` / `地陷` 那一类"屋子塌了一块"的场次。
+ *
+ * ★ 那正是 D-32 那一整类错误（"写了 ≠ 生效了"）在一个更小的尺度上重演：
+ * 数据写了、校验器认它、维度签名把它算成"用到第 14 维"，而玩家那边什么都没发生。
+ * 所以口径是：**只要 `capacityFactor < 1，就必须真的少掉至少一排`** ——
+ * 一个"乘了但没变"的乘数比"没写"更坏，因为下一个人会以为这一场有空间代价。
+ *
+ * @param full 这块家具本来的排数
+ * @param factor 灾难的 `capacityFactor`（≥1 时按 1 算：灾难不该让屋子变大）
+ */
+export function rowsFor(full: number, factor: number): number {
+  const cap = Math.max(0.5, Math.min(1, factor));
+  // 乘数 = 1 时原样返回（floor 会把它算成同一件事，但这样读起来更直白）
+  if (cap >= 1) return Math.max(1, Math.round(full));
+  return Math.max(1, Math.floor(full * cap));
 }
 
 export function boxDefAt(index: number): BoxDef {
@@ -124,8 +233,9 @@ export function addFurniture(
 ): Shelf[] {
   const roomId = opts.roomId ?? ROOM_ID;
   const def = furnitureDefOf(kind);
-  const cap = Math.max(0.5, Math.min(1, opts.spoilFactor ?? 1));
-  const usableH = Math.max(1, Math.round(def.h * cap));
+  // 与开局那几块**同一个函数**算排数（`rowsFor`）—— 两边各写一遍取整，
+  // 迟早会出现"买来的那块比开局的矮一排"（而那种差没人看得出来）
+  const usableH = rowsFor(def.h, opts.spoilFactor ?? 1);
 
   // id：优先用调用方给的池子（`SHELF_IDS` 那种固定名单），否则按现有块数递增
   const pool = opts.ids ?? [];
@@ -208,15 +318,6 @@ export function createStartingBoxes(
 }
 
 /**
- * 开新局：**停在 prologue**（§9.1 开局界面）。
- *
- * 身份与现金都还是空的，等玩家在开局页点完身份卡，由 `systems/phases.ts` 的
- * `chooseIdentity()` 一次性填上并推进到囤货期第一天。这样"选身份"也是一个原子存档点。
- *
- * seed 落盘策略：存的是"已经用掉的游标值"，后续任何随机（点位库存、事件抽取）
- * 都从这个游标继续走，于是同档同序。
- */
-/**
  * D-Day 的四维起点。
  *
  * ⚠ 这个常量住在 **`data/survival.ts`** 里，这里只是转出去给调用点用。
@@ -227,21 +328,54 @@ export function createStartingBoxes(
 import { STARTING_STATS } from '../data/survival';
 export { STARTING_STATS };
 
-export function createStartingRun(seed: number = randomSeed()): RunState {
+/**
+ * 开新局：**停在 prologue**（§9.1 开局界面）。
+ *
+ * 身份与现金都还是空的，等玩家在开局页点完身份卡，由 `systems/phases.ts` 的
+ * `chooseIdentity()` 一次性填上并推进到囤货期第一天。这样"选身份"也是一个原子存档点。
+ *
+ * seed 落盘策略：存的是"已经用掉的游标值"，后续任何随机（点位库存、事件抽取）
+ * 都从这个游标继续走，于是同档同序。
+ *
+ * ## ★ `opts.disasterId`：这一局抽到哪一场（M4 决策 A / W-01）
+ *
+ * **真实的生产路径一定会传它**（`main.ts` 走 `newRunWithDisaster`，那边先按
+ * tier 阶梯抽签再进来）。不传时回落到寒潮，这份默认值是给**测试与夹具**用的：
+ *
+ *  · 三条永久回归探针必须钉死灾难 —— 它们的基线（好档活满 14 天 / 乱档 D+10 倒）
+ *    是在寒潮上量出来的，而且"同一份货 + 同一个身份 = 同一个结果"是它们的前提；
+ *  · `scripts/make-save.mjs` 与九个 `src/tools/save-*.txt` 夹具同理。
+ *
+ * ⚠ 所以这里**不是**"随机抽一场"的落点 —— 抽签在 `rollDisasterId`，
+ * 而它要读跨局账本。把随机塞进这个函数会让每一个测试都变得不可复现。
+ *
+ * 同一行决定了**两件事**：`run.disasterId`（全局规则读它）与
+ * `createStartingShelves` 的实参（空间维度读它）。在 M4 之前后者写死寒潮，
+ * 于是 `capacityFactor`（43 场写了）与 `unusableShelfIds`（31 场写了）
+ * **一场都没生效过** —— 见 `src/meta/deferred.ts` 的 D-32（已清偿）。
+ */
+export function createStartingRun(
+  seed: number = randomSeed(),
+  opts: { disasterId?: string } = {}
+): RunState {
   const cursor = createCursor(seed);
+  // 存档可以被手改，而 `getDisasterDef` 对未知 id 会抛 —— 所以这里先问一句。
+  // 与 `systems/phases.ts` 的 `chooseIdentity` 挡"没有这个身份"是同一条纪律。
+  const disasterId = opts.disasterId && hasDisasterDef(opts.disasterId) ? opts.disasterId : M1_DISASTER_ID;
   const run: RunState = {
     phase: 'prologue',
     day: FIRST_STOCKPILE_DAY,
     identityId: '',
     // §10B.3：熟练度等级在 `chooseIdentity` 那一刻才定；开局页上还没有身份，所以是 1
     identityLevel: 1,
-    // ★ 显式传 `disasterId`（下面那一行的同一场灾难）。
-    //   不传的话会走默认值 `M1_DISASTER_ID`，而"选的那一场"与"铺房间用的那一场"
-    //   一旦分家，空间限制（维度 14）就会**静默套错灾难** ——
-    //   这行参数是给将来"开局页选灾难"留的接线点：那时两边都要用选中的那个 id。
-    disasterId: M1_DISASTER_ID,
+    // ★ 全局规则与**铺房间**用同一个 id。这两处一旦分家，空间限制（维度 14）
+    //   就会静默套错灾难 —— 玩家看到的日历是一场，货架却按另一场砍
+    //   （那正是 M4 之前那个 bug 的形状：日历写着寒潮，而寒潮没有空间维度，
+    //    所以"少了一整块货架"这件事从来没有发生过）
+    disasterId,
     cash: 0,
-    shelves: createStartingShelves(ROOM_ID, M1_DISASTER_ID),
+    shelves: createStartingShelves(ROOM_ID, disasterId),
+
     zones: [],
     // 重生前家里就有的三箱货（§4.1 第0段"重生开局"）—— 不让玩家对着空货架开场
     boxesToUnpack: createStartingBoxes(cursor, STARTING_BOX_COUNT, FIRST_STOCKPILE_DAY),

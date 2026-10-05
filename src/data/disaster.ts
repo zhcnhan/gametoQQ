@@ -9,7 +9,7 @@
  * severity 取 0..1 的连续值：M1 阶段 C 的每日消耗加成、阶段 M2 的窗外天气渲染
  * 都直接乘这个数，不用再做一次映射。
  */
-import type { CategoryId, DayForecast, DisasterProfile } from '../model/types';
+import type { CategoryId, ContentTier, DayForecast, DisasterProfile } from '../model/types';
 
 export const STOCKPILE_DAYS = 7; // 囤货期天数（§8：7 天）
 /**
@@ -25,6 +25,125 @@ export const SURVIVAL_DAYS = 14; // 生存期目标天数（§12.3 v0.7）
 
 /** 囤货期第一天（也是先知日历的起点） */
 export const FIRST_STOCKPILE_DAY = -STOCKPILE_DAYS;
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  ★ 开局的**灾难阶梯**（M4 决策 A，2026-10 用户拍板）
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * ## 它解的是哪笔账
+ *
+ * 116 场灾难从 M3 起就躺在表里，而**实机每一局都是寒潮** ——
+ * 因为 `systems/setup.ts` 把 `M1_DISASTER_ID` 写死了。于是：
+ *
+ *  · `capacityFactor`（**43 场**写了）与 `unusableShelfIds`（**31 场**写了）
+ *    **一场都没生效过**，而那两维是 17 个维度里仅有的两个会改变
+ *    "什么东西该放哪儿"的其中之一；
+ *  · 寒潮是 L1 教学灾难（只用 4 维、不写空间维度），所以几十场写了空间代价的
+ *    灾难，玩家永远碰不到。
+ *
+ * ## 为什么不是"开局随便抽一场"
+ *
+ * 用户 2026-10 在三个选项里选了**按 tier 阶梯放量**：第一局固定寒潮
+ * （它是唯一的 L1，是教学关），之后**撑得越久、见过得越多，池子越大**。
+ * 理由是"一局就想让玩家看懂 200 件物资，结果是他一件也记不住"
+ * （见 `model/types.ts` 的 `ContentTier`）—— 灾难比物资重得多，
+ * 一开局就把 106 场 L3 困境局摊在面前，等于把教学关删掉。
+ *
+ * ## 阶梯的形状（每一档都写清"它凭什么解锁"）
+ *
+ * | 进哪一档 | 条件 | 这时池子里有几场 |
+ * | --- | --- | --- |
+ * | tier 1（只有寒潮） | 还没撑过任何一局 | 1 |
+ * | tier ≤ 2 | 撑到最后 1 次 | 33 |
+ * | tier ≤ 3 | 撑到最后 3 次 | 110 |
+ * | tier ≤ 4 | 撑到最后 5 次 **或** 图鉴里见过 8 场 | 116 |
+ *
+ * ★ 两个条件**取更宽的那个**（`Math.max`），而不是"都满足"：
+ * 一个只走完 3 次但每局都撞上不同家族的玩家，见过的世界比一个
+ * 反复刷同一场 5 次的玩家宽 —— 门槛要认这件事。
+ *
+ * ★ 而 tier 4 那条"见过 8 场"是**图鉴上看得见的进度**，
+ * 与「见过 4 场」那条成就（`a_all_disasters`）同一把尺子，
+ * 所以玩家不必猜"我还差什么"。
+ *
+ * ## 口径边界（写给下一个改这里的人）
+ *
+ * · **门槛只读两个数**：`survivedRuns`（撑过几次）与 `codex.disasters.length`
+ *   （见过几场）。都用现成的字段 —— 不新增存档字段，也就不需要迁移；
+ * · 它**不改单局里的任何公式**（与 §10B.3 "等级只改开局条件"同一条纪律）：
+ *   阶梯只决定**抽到哪一场**，而那一场内部的规则一个字都不动；
+ * · 所以三条永久回归探针**不受它影响** —— 它们自己钉死灾难 id
+ *   （见 `systems/setup.ts` 的 `createStartingRun` 参数）。
+ */
+export const DISASTER_TIER_GATES: Readonly<Record<ContentTier, DisasterTierGate>> = {
+  1: { need: 0, seen: 0, why: '开局就是它 —— 唯一的 L1，教学关' },
+  2: { need: 1, seen: null, why: '撑到最后一次' },
+  3: { need: 3, seen: null, why: '撑到最后三次' },
+  4: { need: 5, seen: 8, why: '撑到最后五次，或图鉴里见过八场' }
+};
+
+/**
+ * 阶梯的一档：两个条件取**更宽**的那个（见上面 `DISASTER_TIER_GATES` 的注释）。
+ */
+export interface DisasterTierGate {
+  /** 撑到最后几次 */
+  need: number;
+  /**
+   * 图鉴里见过几场；**`null` = 这一档不看他**。
+   *
+   * ⚠ 这一格我连着写错两次，两个错都值得留着（§2.17 那一类：
+   * 数字本身没错，错在它被当成"没有条件"用了）：
+   *
+   *  ① 先写 `0` —— 而 `0 >= 0` 对一个刚开档的玩家**恒真**，
+   *     于是全新档直接开到 tier 3（110 场），"第一局固定寒潮"当场失效；
+   *  ② 再改 `-1` —— 照样恒真（`0 >= -1`）。**任何数字都会在某个进度上成立**，
+   *     所以"不生效"这件事根本不能用一个数表示，只能是 `null`。
+   *
+   * 发现方式：一次性探针（`scripts/_probe-disaster-ladder.ts`）打印每一档的
+   * 池子大小 —— 它第一行就报"全新档 → 池子 110 场"。**没跑那个探针的话，
+   * 这个错会一路走到玩家面前**（每一局都是随机的，而玩家以为第一局是寒潮）。
+   */
+  seen: number | null;
+  /** 界面/文档里那句话 */
+  why: string;
+}
+
+/** 算阶梯只需要这两个数 —— 收成一个结构，是为了让调用点不必造一整个 MetaProfile */
+export interface DisasterProgress {
+  /** `MetaProfile.survivedRuns` */
+  survivedRuns: number;
+  /** `MetaProfile.codex.disasters.length` */
+  seenDisasters: number;
+}
+
+/** 现在最高能抽到哪一档（1~4） */
+export function disasterTopTier(progress: DisasterProgress): ContentTier {
+  let top: ContentTier = 1;
+  for (const tier of [1, 2, 3, 4] as const) {
+    const gate = DISASTER_TIER_GATES[tier];
+    const seenOk = gate.seen !== null && progress.seenDisasters >= gate.seen;
+    if (progress.survivedRuns >= gate.need || seenOk) top = tier;
+  }
+  return top;
+}
+
+/**
+ * 这一局**能抽到**哪些灾难（按表里的顺序）。
+ *
+ * ★ 池子永远非空：tier 1 那一档就是寒潮，所以第一局必然抽到它。
+ * 这也是"第一局固定寒潮"这句话的**实现方式** —— 它不是一句特判，
+ * 而是阶梯第一档只有一场这个事实。
+ */
+export function disasterPool(progress: DisasterProgress): readonly DisasterProfile[] {
+  const top = disasterTopTier(progress);
+  return DISASTER_DEFS.filter((d) => d.tier <= top);
+}
+
+/** 还锁着几场（开局页要报"还有 N 场没见过"这种话时用它） */
+export function lockedDisasterCount(progress: DisasterProgress): number {
+  return DISASTER_DEFS.length - disasterPool(progress).length;
+}
 
 const COLD_SNAP_CALENDAR: readonly DayForecast[] = [
   { day: -7, severity: 0, hint: '多云，6°C。寒潮还在七天之外。' },

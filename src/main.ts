@@ -8,6 +8,7 @@
  */
 import './style.css';
 import { CATEGORY_ORDER } from './data/items';
+import { getDisasterDef } from './data/disaster';
 import { getIdentityDef } from './data/identities';
 import { ACTION_POINTS_PER_DAY } from './data/shops';
 import { initAudio, playSfx } from './fx/audio';
@@ -32,7 +33,7 @@ import {
   startSurvival,
   type PhaseResult
 } from './systems/phases';
-import { createStartingRun } from './systems/setup';
+import { newRunWithDisaster } from './systems/setup';
 import { CodexScreen } from './ui/CodexScreen';
 import { EndingScreen } from './ui/EndingScreen';
 import { NightScreen } from './ui/NightScreen';
@@ -56,7 +57,13 @@ const fxRoot = document.createElement('div');
 fxRoot.className = 'fx-layer';
 document.body.appendChild(fxRoot);
 
-const store = bootstrapStore(() => createStartingRun());
+/*
+ * ★ 开新局这一下**必须带上跨局账本**（M4 决策 A）：这一局抽到哪一场灾难
+ * 由 tier 阶梯决定（第一局必然是寒潮，见 `data/disaster.ts` 的 `DISASTER_TIER_GATES`）。
+ * `bootstrapStore` 把 meta 交进来，所以这里不必自己去读一次存档 ——
+ * 而"读两次"正是会出现"界面显示的那一场与铺进房间的那一场不是同一场"的地方。
+ */
+const store = bootstrapStore((meta) => newRunWithDisaster(meta));
 const session = createOrganizeSession();
 
 /*
@@ -116,7 +123,9 @@ function setCodex(open: boolean): void {
 
 function restart(): void {
   resetSession(session);
-  store.replaceRun(createStartingRun());
+  // ★ 重开也要按阶梯重抽：玩家可能刚在上一局撑到了最后，
+  //   池子因此变大（见 `systems/setup.ts` 的 `newRunWithDisaster`）
+  store.replaceRun(newRunWithDisaster(store.save.meta));
   router.render();
 }
 
@@ -132,7 +141,9 @@ function consumePhase(result: PhaseResult): void {
         break;
       case 'disasterLanded':
         playSfx('crush');
-        showToast(fxRoot, '寒潮登陆');
+        // ★ 报的是**这一局那一场**的名字，不是写死的"寒潮"（M4 决策 A）。
+        //   116 场都能被抽到之后，一句写死的浮字会当场变成一个 bug。
+        showToast(fxRoot, `${getDisasterDef(store.run.disasterId).name}登陆`);
         break;
       case 'nightFell':
         // 入夜的表现交给 NightScreen 自己（它要在同一个屏幕里把四维摊开给玩家看），
@@ -203,6 +214,9 @@ function makeScreen(key: ScreenKey): Screen {
   switch (key) {
     case 'prologue':
       return new PrologueScreen(root as HTMLElement, {
+        // ★ 这一页显示的必须是**这一局真的抽到的那一场**（M4 决策 A）——
+        //   它就是铺房间用的那个 id。写死常量会让这一页对着热浪局念寒潮的日历。
+        disasterId: store.run.disasterId,
         // §10B.3：开局页要读跨局账本（身份熟练度 + 哪些身份解锁了）
         meta: store.save.meta,
         onConfirm: (identityId) => {

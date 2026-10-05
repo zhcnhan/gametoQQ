@@ -15,7 +15,7 @@
  *
  * 关于 `survival_day` / `help_request`：属阶段 C/D，阶段 A 不会产生这两个 phase。
  */
-import { FIRST_STOCKPILE_DAY, SURVIVAL_DAYS } from '../data/disaster';
+import { FIRST_STOCKPILE_DAY, SURVIVAL_DAYS, getDisasterDef } from '../data/disaster';
 import { getIdentityDef, hasIdentityDef } from '../data/identities';
 import { NIGHT_SLEEP, findNightEvent } from '../data/nightEvents';
 import { ACTION_POINTS_PER_DAY } from '../data/shops';
@@ -384,7 +384,10 @@ function startNextDay(run: RunState, cursor: RngCursor): PhaseEvent {
     run.carLoad = 0;
     run.currentShopId = null;
     run.night = null; // 夜里的事留在昨天
-    run.log.push('D-Day · 寒潮登陆。');
+    // ★ 写的是**这一局那一场**的名字（M4 决策 A）。写死"寒潮登陆"在只有一场时
+    //   读起来是对的，而 116 场都能被抽到之后，那一行会在热浪局里撒谎 ——
+    //   而它是玩家在 D-Day 那天读到的**唯一一句话**。
+    run.log.push(`D-Day · ${getDisasterDef(run.disasterId).name}登陆。`);
     // D-Day 本身**不结算**：灾难刚落地，第一顿还没吃。结算从 D+1 开始（见 startSurvival）
     return { type: 'disasterLanded', day: 0 };
   }

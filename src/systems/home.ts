@@ -21,6 +21,7 @@
  * 本文件因此**一行都不碰 handyRank** —— 那是刻意的：
  * 把它写进来的话，下一个人会自然而然地以为"每间房可以各有各的顺手位"。
  */
+import { disasterModifiersOf } from '../data/disaster';
 import { ROOM_DEFS, allRoomIds, roomDefOf } from '../data/rooms';
 import { addFurniture, SHELF_IDS } from './setup';
 import { unlockedRoomIds } from './unlock';
@@ -106,8 +107,30 @@ export function addFurnitureToHome(
    * 交给 `setup.addFurniture` 去造 —— 它已经处理好了三件事
    * （id 唯一 / 认不出的房间退回客厅 / `handyRank` 一律 null），
    * 这里不重复实现。**顺手位全屋唯一这条约束就在那个函数里守着。**
+   *
+   * ★★ `spoilFactor` 是 M4 补上的（W-01 顺手修的那条真 bug），而它值得留一段说明：
+   *
+   * `addFurniture` 的签名里一直有 `opts.spoilFactor`，注释还写着
+   * "与开局那三块用**同一把尺子**" —— 而**生产路径从来没传过它**，
+   * 于是每一次加家具都走 `?? 1`，**买来的家具永远是满高**。
+   *
+   * 为什么它今天才发作：在 M4 之前实机每一局都是寒潮，而寒潮**没写**
+   * `capacityFactor`（它是 1）。所以"买的家具拿满高"与"开局那三块拿满高"
+   * 恰好一致 —— 这个 bug 被"只有一场灾难"挡着。W-01 让 43 场
+   * `capacityFactor < 1` 的灾难真的能被抽到之后，它就变成：
+   * **100 元能把灾难吃掉的那一排空间买回来。**
+   *
+   * ⚠ 只传 `capacityFactor`，**不传 `unusableShelfIds`** —— 那是刻意的：
+   * 那一位说的是"这一场这块**本来就有**的地方没了"，而玩家花钱新加的一块
+   * 不欠那笔账（否则"加家具"在那一场里会变成随机失效，玩家完全读不懂）。
+   * 这条边界与 §10.2.4 的"更大的空间才是奖励"是同一条：灾难能罚
+   * "你原本的空间"，罚不了"你花钱买来的"。
    */
-  const shelves = addFurniture(run.shelves, kind, { roomId: room.id, ids: SHELF_IDS });
+  const shelves = addFurniture(run.shelves, kind, {
+    roomId: room.id,
+    ids: SHELF_IDS,
+    spoilFactor: disasterModifiersOf(run.disasterId).capacityFactor
+  });
   return { shelves, added: true, roomId: room.id };
 }
 

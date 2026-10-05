@@ -5,7 +5,7 @@
  *  - ui/ 不允许直接改数据，只能调用 systems/ 暴露的命令函数；
  *  - 命令函数内部通过 `store.commit(mutator)` 一次性改完再落盘，保证"每个玩家动作 = 一个存档点"。
  */
-import type { RunState, SaveGame } from '../model/types';
+import type { MetaProfile, RunState, SaveGame } from '../model/types';
 import { SAVE_VERSION, createSaveGame, createSaveScheduler, loadSave, touch, type SaveScheduler } from './save';
 import { resolveStorage, type StorageLike } from './storage';
 
@@ -139,8 +139,22 @@ export class GameStore {
 /**
  * 启动装配：读档 → 有档就用档；没档（或档坏了）就用 factory 开新局。
  * 返回的 store 已经持有已落盘的初始状态。
+ *
+ * ## ★ 为什么 `factory` 要收一个 `meta`（M4 决策 A）
+ *
+ * 开新局这一步从 M4 起要读**跨局账本**：这一局抽到哪一场灾难由 tier 阶梯决定
+ * （撑过几次 / 见过几场，见 `data/disaster.ts` 的 `DISASTER_TIER_GATES`）。
+ * 而 `meta` 恰好是 `bootstrapStore` 手里有、调用方拿不到的那个东西 ——
+ * 让调用方自己去 `loadSave()` 再读一遍，等于把"哪一个 meta 才是权威"
+ * 变成两个答案（§2.8 的老毛病）。
+ *
+ * 旧签名 `() => RunState` 仍然成立（多余参数可以忽略），所以测试里的
+ * `() => createStartingRun(1)` 一个字都不用改。
  */
-export function bootstrapStore(factory: () => RunState, storage: StorageLike = resolveStorage()): GameStore {
+export function bootstrapStore(
+  factory: (meta: MetaProfile) => RunState,
+  storage: StorageLike = resolveStorage()
+): GameStore {
   const existing = loadSave(storage);
   if (existing && existing.run) {
     const store = new GameStore(existing, createSaveScheduler(storage));
@@ -148,8 +162,9 @@ export function bootstrapStore(factory: () => RunState, storage: StorageLike = r
     store.persistNow();
     return store;
   }
-  const store = new GameStore(existing ?? createSaveGame(null), createSaveScheduler(storage));
-  const run = factory();
+  const save = existing ?? createSaveGame(null);
+  const store = new GameStore(save, createSaveScheduler(storage));
+  const run = factory(save.meta);
   // 老档的 meta（图鉴/纪录）要保住，只换 run
   store.replaceRun(run);
   store.flush();

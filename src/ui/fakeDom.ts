@@ -556,6 +556,21 @@ export function installFakeWindow(document: FakeDocument): FakeWindow {
  * 它刻意**不**实现：文本节点、实体解码、命名空间、`<script>` 里含 `<`。
  * 这套界面是自产的、可控的模板，够用 —— 一旦不够用，测试会当场炸出来（querySelector 返回空），
  * 而不是悄悄给出错误结果。
+ *
+ * ★★ **一条会骗人的边界**（M4 写开局页测试时踩到的，记在这里免得下一个人重踩）：
+ *
+ * 它只判"这里面有没有子标签"（`/<[a-zA-Z]/`）。**有**子标签 → 走 `parseHtml`
+ * 递归，而**这一层的纯文本被整个丢掉**（没有文本节点承载它）；
+ * **没有**子标签 → 才把内容塞进 `textContent`。
+ *
+ * 于是 `最要紧的是 <b>燃料</b> 和 <b>保暖</b>。` 这种混排文本里，
+ * "最要紧的是"**在假 DOM 里根本不存在** —— 而在真浏览器里它好端端地在那儿。
+ * 后果不是"测试红了"，恰恰相反：**断言这一句的测试会永远失败，
+ * 而断言它不存在的测试会永远通过**（后者更危险）。
+ *
+ * 所以：**要么把那一句放进一个纯文本叶子元素**（`OrganizeScreen` 的
+ * `.room-label` 就是这么加出来的，"房名与计数是两件事，分开之后样式也各自独立"），
+ * **要么就别断言它** —— 别让一条读不到字的断言伪装成"这屏没问题"。
  */
 function parseHtml(html: string, doc: FakeDocument, parent: FakeElement, depth = 0): void {
   if (depth > 60) throw new Error('[fakeDom] HTML 嵌套超过 60 层，疑似病理循环');

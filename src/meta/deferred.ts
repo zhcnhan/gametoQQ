@@ -868,38 +868,42 @@ export const DEFERRED_ITEMS: readonly DeferredItem[] = [
   },
   {
     id: 'D-32',
-    kind: 'code',
+    kind: 'process',
     title: '116 场灾难只有数据、没有入口 —— 开局固定寒潮，而它是唯一没写空间维度的那一场',
     impact:
-      '**2026-10 相关度审查时发现的，而且是那次审查最重的一条。**\n\n' +
-      '## 事实\n\n' +
-      '`systems/setup.ts:236,238` 是 `createStartingRun` 里的 `disasterId: M1_DISASTER_ID`\n' +
-      '与 `createStartingShelves(ROOM_ID, M1_DISASTER_ID)` —— **硬编码寒潮**。\n' +
-      '此后没有任何生产代码改它（全仓 grep：只剩 `state/save.ts` 的存档自愈）。\n\n' +
-      '而**寒潮是 L1 教学灾难，它没写 `capacityFactor` / `unusableShelfIds`** ——\n' +
-      '于是灾难的**空间限制那一整维（#14）从来没生效过**：\n' +
-      '全表 **43 场**写了 `capacityFactor`、**31 场**写了 `unusableShelfIds`，一场都没用上。\n\n' +
-      '## 为什么它最重\n\n' +
-      '灾难的 17 个影响维度里，审查判定**只有 2 个**真的改变"什么东西该放哪儿"\n' +
-      '（#3 刚需排序、#14 空间限制）。而 #14 正是这里没生效的那个 ——\n' +
-      '**于是今天真正在改变放置决定的，只有"刚需排序"这一个维度。**\n\n' +
-      '★ 而 #14 的代码是**写通了的**：`systems/setup.ts:41-49` 的注释把口径说得很清楚\n' +
-      '（"两者都是**乘在盘面上**，不是乘在数值上 …… 也是『整理这件事本身变难』\n' +
-      '最直接的兑现方式"）。它只差把参数从"寒潮"换成"这一局真正抽到的那场灾难"。\n\n' +
-      '## 它同时挡住/污染了别的东西\n\n' +
-      ' · `setup.ts:232-235` 的注释自己承认这里是"给将来『开局页选灾难』留的接线点" ——\n' +
-      '   所以这一条与"开局能选灾难"是**同一件事**；\n' +
-      ' · D-31（冰箱永远更优）的实数论证完全建立在"实机只有寒潮"上；\n' +
-      ' · D-30 附带的那条 bug（买来的家具不按 `capacityFactor` 砍矮）也只在\n' +
-      '   `capacityFactor < 1` 的灾难上才发作 —— 同样被这一条挡着。\n\n' +
-      '★ 建议口径：把 `disasterId` 变成**玩家在开局页选的**（或者在 M4 先做"随机抽一场"），\n' +
-      '并把 `createStartingShelves` 的参数从 `M1_DISASTER_ID` 换成 `run.disasterId`。\n' +
-      '**它让哪个决定不同**：一场 `capacityFactor: 0.6` + `unusableShelfIds: [\'shelf_a\']`\n' +
-      '的局里，玩家开局就少一整块货架和底下一排 —— "棉被我放哪"从"随便"变成\n' +
-      '"只有这几个位置"，而那正是 §10.2.4 说的"更大的空间才是奖励"的反面。',
-    plan: 'M4（工单 W-01，优先级最高：它是"一行参数换来一整维生效"）',
-    markedIn: ['systems/setup.ts'],
-    status: 'open'
+      '**已清偿（M4 工单 W-01，2026-10）。**\n\n' +
+      '## 原来的账（留在这里，因为它的形状值得记住）\n\n' +
+      '`systems/setup.ts` 的 `createStartingRun` 把 `disasterId` 与\n' +
+      '`createStartingShelves` 的实参都写成 `M1_DISASTER_ID` —— **硬编码寒潮**，\n' +
+      '此后没有任何生产代码改它。而寒潮是 L1 教学灾难，它**没写**\n' +
+      '`capacityFactor` / `unusableShelfIds`，于是灾难的**空间限制那一整维（#14）\n' +
+      '从来没生效过**：全表 **43 场**写了 `capacityFactor`、**31 场**写了\n' +
+      '`unusableShelfIds`，一场都没用上。\n\n' +
+      '★ 而 #14 的代码是**写通了的**（`systems/setup.ts` 的注释把口径说得很清楚），\n' +
+      '它只差把参数从"寒潮"换成"这一局真正抽到的那场灾难"。\n' +
+      '**这是本项目"写了 ≠ 生效了"这个失败形状里最贵的一条** —— 而它不是靠读代码\n' +
+      '发现的，是靠 2026-10 那次相关度审查逐条取证。\n\n' +
+      '## 清偿方式（三条一起）\n\n' +
+      ' · **抽签**：`systems/setup.ts` 的 `rollDisasterId(progress, seed)` ——\n' +
+      '   用**自己的 RNG 流**（`createCursor(seed)` 用完即弃），所以不扰动 `run.seed`\n' +
+      '   那条主序列，三条永久回归探针的基线一位都不漂；\n' +
+      ' · **阶梯**：`data/disaster.ts` 的 `DISASTER_TIER_GATES` —— 用户 2026-10 选的\n' +
+      '   是"按 tier 阶梯放量"（第一局固定寒潮，之后撑得越久 / 见过越多，池子越大）。\n' +
+      '   实测：全新档 1 场 → 撑过 1 次 33 场 → 撑过 3 次 110 场 → 撑过 5 次（或见过 8 场）116 场；\n' +
+      ' · **接线**：`run.disasterId` 同时决定全局规则与**铺房间**（同一个 id），\n' +
+      '   而开局页 / D-Day 文案 / 结算浮字全部改成读这一场（不再写死"寒潮"）。\n\n' +
+      '## 顺手修掉的那条真 bug\n\n' +
+      '`addFurniture` 的 `opts.spoilFactor` 在生产路径（`systems/home.ts`）上\n' +
+      '**从来没被传过**，注释却写着"与开局那三块用同一把尺子" ——\n' +
+      '于是买来的家具永远满高，**100 元就能把灾难吃掉的空间买回来**。\n' +
+      '它被"只有寒潮"挡着（寒潮的 `capacityFactor` 是 1，两条路恰好一致），\n' +
+      '而 W-01 一让 43 场生效，它当场就发作。已接线并加断言。\n\n' +
+      '⚠ 只传 `capacityFactor`，**不传** `unusableShelfIds`：那一位是"这一场这块\n' +
+      '**本来就有**的地方没了"，而花钱新加的一块不欠那笔账。',
+    plan: 'M4 工单 W-01（已完成）',
+    markedIn: [],
+    status: 'done',
+    resolvedIn: 'M4 W-01（2026-10）—— 开局按 tier 阶梯抽灾难 + 空间维度接线 + addFurniture 吃 capacityFactor'
   }
 ];
 

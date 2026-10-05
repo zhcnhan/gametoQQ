@@ -4,8 +4,21 @@
  * 分层纪律：本文件只读 data/ 的静态表；写操作一律通过 props.onConfirm 交回给 systems。
  * 「先知落差」是爽点①，所以日历必须**开局就给全**（§6.1），让玩家在选身份时就能算账：
  * 寒潮要燃料，夜班员的燃料便宜 20% —— 这个念头应该由界面自己浮出来，不要靠教学文案点破。
+ *
+ * ## ★ 这一页显示的必须是**这一局真的抽到的那一场**（M4 决策 A）
+ *
+ * 在 W-01 之前这里读的是 `M1_DISASTER_ID`（写死寒潮）：日历、温度、刚需品类
+ * 全是寒潮那一份。而 `run.disasterId` 一旦能是别的一场，那一页就会**撒谎** ——
+ * 玩家照着"要燃料和棉被"囤了 7 天，D-Day 来了才发现是热浪。
+ *
+ * ★ 所以 `disasterId` 是**从 run 传进来的**，不是这一页自己算的：
+ * 它就是 `systems/setup.ts` 铺房间用的那个 id。两处各读一次源
+ * （这里读常量、那里读 run）正是这个 bug 的形状。
+ *
+ * ★ 也是选①而不是"开局页让玩家选"的一个好处：玩家在开局页**就知道**
+ * 自己抽到了哪一场，所以"先知知道该囤什么"这条身份设定仍然成立。
  */
-import { M1_DISASTER_ID, getDisasterDef } from '../data/disaster';
+import { getDisasterDef } from '../data/disaster';
 import { CATEGORY_LABELS } from '../data/items';
 import { calendarBars, dayLabel } from '../model/calendar';
 import type { IdentityDef, MetaProfile } from '../model/types';
@@ -29,6 +42,13 @@ export interface PrologueScreenProps {
   /** 玩家按下「就这么定了」，参数是选中的身份 id */
   onConfirm: (identityId: string) => void;
   onRestart: () => void;
+  /**
+   * ★ 这一局抽到的那一场灾难（`run.disasterId`）。
+   *
+   * 传 id 而不是传整个 run：这一页只读它一个字段（日历 / 温度 / 刚需品类
+   * 全部从 `DisasterProfile` 上读），传 run 会让"这一页能改什么"变得看不出来。
+   */
+  disasterId: string;
   /**
    * 跨局账本（§10B.3 的身份熟练度与分批都要读它）。
    *
@@ -62,7 +82,7 @@ export class PrologueScreen implements Screen {
   }
 
   render(): void {
-    const disaster = getDisasterDef(M1_DISASTER_ID);
+    const disaster = getDisasterDef(this.props.disasterId);
     const bars = calendarBars(disaster);
     const dday = disaster.calendar.find((f) => f.day === 0);
     const canConfirm = this.selected !== null;
