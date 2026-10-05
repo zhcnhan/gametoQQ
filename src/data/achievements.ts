@@ -37,9 +37,12 @@
 import { ITEM_DEFS } from './items';
 import { SURVIVAL_DAYS, getDisasterDef, hasDisasterDef } from './disaster';
 import { NPC_DEFS } from './npcs';
+import { NEVER_TRADED } from './survival';
 import type { CategoryId, CodexState, MetaProfile, RunState } from '../model/types';
 
-/** 成就的分类。它决定图鉴/成就页上的分组标题，也是"这批成就偏哪一类"的自查口径 */
+/**
+ * 成就的分类。它决定图鉴/成就页上的分组标题，也是"这批成就偏哪一类"的自查口径
+ */
 export type AchievementKind = 'codex' | 'survival' | 'organize' | 'extreme' | 'hidden';
 
 export const ACHIEVEMENT_KIND_LABELS: Record<AchievementKind, string> = {
@@ -59,6 +62,64 @@ export const ACHIEVEMENT_KIND_ORDER: readonly AchievementKind[] = [
 ];
 
 /**
+ * ★★ 成就的**等级**（2026-10 用户要的："难度低的和难度高的都用不同的炫酷特效标记，分等级"）。
+ *
+ * ## 为什么等级要写成数据字段，而不是按 `kind` 猜
+ *
+ * 用户的原话：
+ *
+ * > "给一些灾难弄一些特殊的成就，还有各类奇葩成就，反正多弄一点有收集感，
+ * >  难度低的和难度高的都用不同的炫酷特效标记，分等级"
+ *
+ * `kind` 回答的是"这条成就偏哪一类"（图鉴 / 生存 / 整理…），
+ * 而"有多难"是**另一条轴** —— 同为 `survival`，「活过 14 天」与
+ * 「一件口粮都没缺地活过 14 天」差着量级。用 `kind` 当难度会当场错。
+ *
+ * 所以等级是一条独立的数据，**评审时逐条标**，由测试盯着三条性质：
+ *  ① 每一档都要有人（不许出现空档，否则"分等级"在界面上看不出来）；
+ *  ② 高档不许比低档**更容易**（人工评审，测试只能钉"存在性"与分布）；
+ *  ③ 印章的视觉差异必须真的存在（见 `ui/CodexScreen.ts` 的 `sealClassOf`）。
+ */
+export type AchievementRank = 'common' | 'rare' | 'epic';
+
+export const ACHIEVEMENT_RANK_LABELS: Record<AchievementRank, string> = {
+  common: '常',
+  rare: '罕',
+  epic: '极'
+};
+
+/** 从低到高。界面按它排序，测试按它核"每一档都有人" */
+export const ACHIEVEMENT_RANK_ORDER: readonly AchievementRank[] = ['common', 'rare', 'epic'];
+
+export interface AchievementDef {
+  id: string;
+  /** 章名。手机竖屏一行放得下为准（≤ 10 字） */
+  name: string;
+  kind: AchievementKind;
+  /** ★ 难度等级（决定印章的样式与分量，见 `AchievementRank`） */
+  rank: AchievementRank;
+  /**
+   * 只属于**某一场灾难**的成就（用户要的"给一些灾难弄一些特殊的成就"）。
+   *
+   * 填了它之后，成就卡上会多一行"寒潮"这样的小字，图鉴那页也能按灾难收拢 ——
+   * 而**判据里仍然要自己写** `run.disasterId === '...'`：
+   * 这个字段是**给人看的分类**，不是判据（两处合一的话，
+   * 加一条只改一半就会造出"标着寒潮、判定却与灾难无关"的假标签）。
+   */
+  disaster?: string;
+  /**
+   * 一句话说清**判据**，给玩家看的。
+   *
+   * ★ 它必须写"怎么才算达成"而不是"你真棒"。成就页上一行"未解锁"配一句
+   * 模糊的赞美，等于没告诉玩家还能去做什么 —— 而收集欲正是靠那个做起来的
+   * （同 §10B.2 对图鉴的要求：「未点亮的那一格要看得见轮廓与从哪儿来的提示」）。
+   */
+  hint: string;
+  /** 判定。只会被调用一次（解锁那一刻），所以它可以是"贵"的 */
+  when: (ctx: AchievementContext) => boolean;
+}
+
+/**
  * 判定一条成就时能看到的全部东西。
  *
  * ★ 注意这里**没有 `store`**，也没有任何"现在几点""第几局"之类的东西。
@@ -74,7 +135,6 @@ export interface AchievementContext {
   /** 这一局**已经**点亮的图鉴三页（= 生涯 ∪ 本局，见 `settleRunMeta` 的合并顺序） */
   codex: CodexState;
 }
-
 export interface AchievementDef {
   id: string;
   /** 章名。手机竖屏一行放得下为准（≤ 10 字） */
@@ -133,6 +193,7 @@ export const ACHIEVEMENT_DEFS: readonly AchievementDef[] = [
     id: 'a_canned_connoisseur',
     name: '罐头鉴赏家',
     kind: 'codex',
+    rank: 'rare',
     hint: '点亮图鉴里全部带 canned 标签的物资',
     when: ({ codex }) => {
       const all = ITEM_DEFS.filter((d) => d.tags.includes('canned')).map((d) => d.id);
@@ -143,6 +204,7 @@ export const ACHIEVEMENT_DEFS: readonly AchievementDef[] = [
     id: 'a_drink_full',
     name: '有水就行',
     kind: 'codex',
+    rank: 'common',
     hint: '点亮图鉴里全部带 drink 标签的物资',
     when: ({ codex }) => {
       const all = ITEM_DEFS.filter((d) => d.tags.includes('drink')).map((d) => d.id);
@@ -153,6 +215,7 @@ export const ACHIEVEMENT_DEFS: readonly AchievementDef[] = [
     id: 'a_medkit_full',
     name: '药箱齐了',
     kind: 'codex',
+    rank: 'common',
     hint: '点亮图鉴里全部带 medkit 标签的物资',
     when: ({ codex }) => {
       const all = ITEM_DEFS.filter((d) => d.tags.includes('medkit')).map((d) => d.id);
@@ -163,6 +226,7 @@ export const ACHIEVEMENT_DEFS: readonly AchievementDef[] = [
     id: 'a_all_disasters',
     name: '都见过了',
     kind: 'codex',
+    rank: 'common',
     hint: '灾难图鉴点亮 4 场',
     /*
      * ★ 口径写成"≥4"而不是"= 全部"：灾难表会一路涨到 §10B.3.2 的 112~116 场，
@@ -175,6 +239,7 @@ export const ACHIEVEMENT_DEFS: readonly AchievementDef[] = [
     id: 'a_all_npcs',
     name: '这栋楼都认识了',
     kind: 'codex',
+    rank: 'rare',
     hint: '关系图鉴点亮全部人物',
     when: ({ codex }) => NPC_DEFS.length > 0 && NPC_DEFS.every((n) => codex.npcs.includes(n.id))
   },
@@ -184,6 +249,7 @@ export const ACHIEVEMENT_DEFS: readonly AchievementDef[] = [
     id: 'a_silent_winter',
     name: '不发一言的冬天',
     kind: 'survival',
+    rank: 'rare',
     hint: `零求援活过 ${SURVIVAL_DAYS} 天`,
     when: ({ run }) =>
       run.outcome === 'survived' && run.day >= SURVIVAL_DAYS && !helpedAnyone(run)
@@ -192,6 +258,7 @@ export const ACHIEVEMENT_DEFS: readonly AchievementDef[] = [
     id: 'a_no_shortage',
     name: '一件没短',
     kind: 'survival',
+    rank: 'rare',
     hint: `活过 ${SURVIVAL_DAYS} 天，而且前后一件口粮都没缺`,
     when: ({ run }) => run.outcome === 'survived' && run.survival.shortagePieces === 0
   },
@@ -199,6 +266,7 @@ export const ACHIEVEMENT_DEFS: readonly AchievementDef[] = [
     id: 'a_never_unreachable',
     name: '伸手就够得到',
     kind: 'survival',
+    rank: 'common',
     hint: '整局没有一件东西是"在屋里却没力气翻出来"的',
     when: ({ run }) => run.outcome === 'survived' && run.survival.unreachablePieces === 0
   },
@@ -206,6 +274,7 @@ export const ACHIEVEMENT_DEFS: readonly AchievementDef[] = [
     id: 'a_composed',
     name: '一路从容',
     kind: 'survival',
+    rank: 'epic',
     hint: '整局体力从没掉到 50 以下，也没硬撑过一天',
     /*
      * 判据用 `minStamina`（历史最低）而不是 `stats.stamina`（此刻）——
@@ -220,6 +289,7 @@ export const ACHIEVEMENT_DEFS: readonly AchievementDef[] = [
     id: 'a_spotless',
     name: '一尘不染',
     kind: 'organize',
+    rank: 'epic',
     hint: `归位率与临期优先双双 1.00，活过 ${SURVIVAL_DAYS} 天`,
     /*
      * `cleanDays` 是"每天结算时两率都满、且一件没缺"的天数（见 `SurvivalState.cleanDays`）。
@@ -232,6 +302,7 @@ export const ACHIEVEMENT_DEFS: readonly AchievementDef[] = [
     id: 'a_all_handy',
     name: '门口那一块',
     kind: 'organize',
+    rank: 'rare',
     hint: '一整期没让突发事件得手过一次',
     /*
      * 判据：走完 + **一次"受创"都没有**（`emergencyHurtCount === 0`）。
@@ -249,6 +320,7 @@ export const ACHIEVEMENT_DEFS: readonly AchievementDef[] = [
     id: 'a_storekeeper',
     name: '仓库管理员',
     kind: 'extreme',
+    rank: 'common',
     hint: '生涯累计把 300 件东西搬上货架',
     /*
      * ★ 口径是**跨局累计**（`meta.totalShelved`），不是单局。
@@ -262,6 +334,7 @@ export const ACHIEVEMENT_DEFS: readonly AchievementDef[] = [
     id: 'a_full_house',
     name: '一格不剩',
     kind: 'extreme',
+    rank: 'common',
     hint: '结算时屋里还剩 200 件以上，而且撑过来了',
     when: ({ run, meta }) => run.outcome === 'survived' && meta.totalShelved >= 200
   },
@@ -271,6 +344,7 @@ export const ACHIEVEMENT_DEFS: readonly AchievementDef[] = [
     id: 'a_foresight',
     name: '先见之明',
     kind: 'hidden',
+    rank: 'rare',
     hint: '在灾难来之前就囤下过这一场最缺的那类东西，并且撑过去了',
     /*
      * ## 这条是全案**唯一**允许新增的那一点埋点（§10B.2 原文点名）
@@ -299,6 +373,7 @@ export const ACHIEVEMENT_DEFS: readonly AchievementDef[] = [
     id: 'a_stubborn',
     name: '就是不认输',
     kind: 'hidden',
+    rank: 'common',
     hint: '在同一个灾难上倒下过，后来又走完了它',
     /*
      * 它奖励"输得起"这件事。
@@ -324,6 +399,180 @@ export const ACHIEVEMENT_DEFS: readonly AchievementDef[] = [
       // 上一次纪录停在中间 = 那一局倒在半路
       return prev > 0 && prev < SURVIVAL_DAYS;
     }
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  2026-10 新增（用户要的"多弄一点有收集感 + 各类奇葩成就"）
+  // ═══════════════════════════════════════════════════════════════════════
+  //
+  // ⚠ **判据只读已有的账**（纪律①）：下面用到的字段全都在 `SurvivalState` /
+  // `MetaProfile` 里躺着，**一个新埋点都没有加**。而 `run.survival.*` 是
+  // **单局累计值**（不是最后一天的快照），所以"一整期都没……"这类判据是成立的 ——
+  // 这一条很要紧：拿快照写会造出"最后一天恰好没发生就算数"的假成就。
+
+  // ———————— 灾难专属（用户点名的"给一些灾难弄一些特殊的成就"）————————
+  {
+    id: 'a_disaster_cold_fuel',
+    name: '烧得起',
+    kind: 'survival',
+    rank: 'rare',
+    disaster: 'cold_snap',
+    hint: '寒潮局撑过 14 天，而且一件口粮都没缺过',
+    /*
+     * ★ 判据用 `shortagePieces === 0`（整局一件都没缺）而不是"燃料够不够"——
+     * 后者要按品类分摊缺口，而账本只记总件数。
+     * 所以描述写的是"一件口粮都没缺过"，与判据**逐字对应**：
+     * 宁可描述朴素，不许描述撒谎（这条项目里立过好几次）。
+     */
+    when: ({ run }) =>
+      run.disasterId === 'cold_snap' && run.outcome === 'survived' && run.survival.shortagePieces === 0
+  },
+  {
+    id: 'a_disaster_heat_water',
+    name: '一件没坏',
+    kind: 'survival',
+    rank: 'rare',
+    disaster: 'heat_wave',
+    hint: '热浪局撑过 14 天，而且一件东西都没在屋里放坏',
+    when: ({ run }) =>
+      run.disasterId === 'heat_wave' && run.outcome === 'survived' && run.survival.spoiled === 0
+  },
+  {
+    id: 'a_disaster_flood_low',
+    name: '高处见',
+    kind: 'organize',
+    rank: 'epic',
+    disaster: 'flood_urban',
+    hint: '洪水局撑过 14 天，而且没有一件东西是"在屋里却没力气翻出来"的',
+    when: ({ run }) =>
+      run.disasterId === 'flood_urban' && run.outcome === 'survived' && run.survival.unreachablePieces === 0
+  },
+  {
+    id: 'a_disaster_blackout_cold',
+    name: '摸黑也找得到',
+    kind: 'organize',
+    rank: 'rare',
+    disaster: 'blackout_winter',
+    /*
+     * ⚠ 判据改过一次，值得记：我第一版写的是 `run.survival.scattered === 0`
+     * （"那几次翻找一行都没翻乱"）—— 而 `scattered` **只在当日快照
+     * `survival.last` 上**（`SurvivalState` 里没有累计值），所以那个判据
+     * 问的是"最后一天有没有翻乱"，不是"整局"。`tsc` 当场把它挡下来了。
+     *
+     * ★ 这正是 `emergencyHurtCount` 的注释里写过的那个坑：
+     * **快照回答"现在"，累计回答"历史"** —— 写成就时用错一个，
+     * 就会造出"最后一天恰好没发生就算数"的假成就。
+     * 所以这里换成 `cleanDays`（每日累计的"这一天挑不出毛病"）。
+     */
+    hint: '大停电局撑过 14 天，而且有 5 天整理得挑不出毛病',
+    when: ({ run }) =>
+      run.disasterId === 'blackout_winter' && run.outcome === 'survived' && run.survival.cleanDays >= 5
+  },
+  {
+    id: 'a_disaster_dust_air',
+    name: '喘得上气',
+    kind: 'survival',
+    rank: 'rare',
+    disaster: 'sandstorm_air',
+    hint: '沙暴局撑过 14 天，而且一天都没硬撑过',
+    when: ({ run }) =>
+      run.disasterId === 'sandstorm_air' && run.outcome === 'survived' && run.survival.hardPressDays === 0
+  },
+
+  // ———————— 奇葩类（做得到、但你想不到自己会做到）————————
+  {
+    id: 'a_never_handy',
+    name: '就是没用顺手位',
+    kind: 'organize',
+    rank: 'rare',
+    hint: '整局一件东西都没放进顺手位，还是撑过来了',
+    /*
+     * ★ 这是一条**反着奖励**的成就：它承认另一种活法（§5 引擎①「不整理也能活」）。
+     *
+     * 判据的两半各有讲究：
+     *  · `emergencyHurtCount > 0` —— 说明突发事件**真的得手过**，
+     *    也就是他没靠顺手位躲过任何一次（与「门口那一块」正好互为反面）；
+     *  · `unreachablePieces === 0` —— 他一次都没落到"有货却翻不出来"，
+     *    所以这不是"运气好"，是**真的靠别的方式活下来了**。
+     */
+    when: ({ run }) =>
+      run.outcome === 'survived' && run.survival.unreachablePieces === 0 && run.survival.emergencyHurtCount > 0
+  },
+  {
+    id: 'a_spoil_feast',
+    name: '坏了个够',
+    kind: 'extreme',
+    rank: 'common',
+    hint: '一局里放坏了 20 件以上',
+    /// 它**奖励失败**：把"我囤了一屋子、最后全烂了"变成一个可以收集的结果。
+    when: ({ run }) => run.survival.spoiled >= 20
+  },
+  {
+    id: 'a_no_medicine',
+    name: '一片药没吃',
+    kind: 'survival',
+    rank: 'rare',
+    /*
+     * ## ★ 这条的判据改过两次，两次都是"用了只活在当天的快照"
+     *
+     *  ① 第一版：`run.survival.usedMedicine === 0` —— `tsc` 当场挡住了
+     *     （那个字段在 `survival.last` 上，不在 `SurvivalState` 上）；
+     *  ② 第二版：换成 `emergencyHurtCount === 0`，而它与已有的
+     *     「门口那一块」**判据完全相同**（那是一条重复成就，比没有更糟：
+     *     玩家会看到两枚一模一样的印章）。
+     *
+     * 现在用的是 `shelter` 的**终值**：它不问"你有没有用药"，
+     * 而问"**你根本没用上**"——屋子一直没垮，所以药箱是满的。
+     * 这与「屋里一直暖和」是同一条链的两端，但那一条读的是"有没有硬撑"
+     * （四维层面），这一条读的是终局庇护所（屋子本身还成不成个家）。
+     */
+    hint: '撑过 14 天，而且到最后屋子还是好好的（庇护所没跌破 60）',
+    when: ({ run }) => run.outcome === 'survived' && run.stats.shelter >= 60
+  },
+  {
+    id: 'a_warm_house',
+    name: '屋里一直暖和',
+    kind: 'survival',
+    rank: 'common',
+    hint: '撑过 14 天，而且一次都没硬撑过',
+    when: ({ run }) => run.outcome === 'survived' && run.survival.hardPressDays === 0
+  },
+  {
+    id: 'a_no_trade',
+    name: '一次门都没敲',
+    kind: 'hidden',
+    rank: 'rare',
+    hint: '撑过 14 天，而且一次都没拿东西去换',
+    when: ({ run }) => run.outcome === 'survived' && run.survival.lastTradeDay <= NEVER_TRADED
+  },
+  {
+    id: 'a_safe_streak_7',
+    name: '连着七天没出事',
+    kind: 'survival',
+    rank: 'rare',
+    hint: '连续 7 天没缺口、没翻不出来、也没硬撑',
+    when: ({ run }) => run.outcome === 'survived' && run.survival.safeStreak >= 7
+  },
+  {
+    id: 'a_clean_half',
+    name: '半程不犯错',
+    kind: 'organize',
+    rank: 'rare',
+    hint: '有 7 天做到"归位率与临期优先双满、一件没缺"',
+    /**
+     * 它是「一尘不染」（要求 14 天**每天**满分）的**中间档** ——
+     * 那一条在当前内容下近乎不可达，而"中间档"正是用户要的"收集感"：
+     * 一条追不到顶的成就只会让人放弃那一整栏。
+     */
+    when: ({ run }) => run.outcome === 'survived' && run.survival.cleanDays >= 7
+  },
+  {
+    id: 'a_hoarder_500',
+    name: '搬了五百件',
+    kind: 'extreme',
+    rank: 'common',
+    hint: '生涯累计把 500 件东西搬上货架',
+    when: ({ meta }) => meta.totalShelved >= 500
   }
 ];
 

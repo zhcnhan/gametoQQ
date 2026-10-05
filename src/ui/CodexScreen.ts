@@ -45,7 +45,7 @@ import { countOfKind, entriesOfKind, sourcesOfItem } from '../data/registry';
 import { TIER_LABELS } from '../model/types';
 import type { CategoryId, CodexPage } from '../model/types';
 import type { GameStore } from '../state/store';
-import { bestOf, CODEX_PAGE_LABELS, CODEX_PAGES } from '../systems/codex';
+import { bestOf, CODEX_PAGE_LABELS, CODEX_PAGES, disasterName } from '../systems/codex';
 import { disasterProgressOf } from '../systems/setup';
 import {
   ACHIEVEMENT_KIND_LABELS,
@@ -262,11 +262,29 @@ export class CodexScreen implements Screen {
                 ${group.defs
                   .map((def) => {
                     const on = unlocked.has(def.id);
+                    /*
+                     * ★★ 等级决定这一枚印章长什么样（2026-10 用户要的
+                     * "难度低的和难度高的都用不同的炫酷特效标记，分等级"）。
+                     *
+                     * 三档在**同一个隐喻**里拉开分量（§5A 的纸墨朱红不许动）：
+                     *
+                     * | 档 | 印面 | 记号 | 特效 |
+                     * | --- | --- | --- | --- |
+                     * | 常 | 单圈细线 | 一个「印」 | 无 |
+                     * | 罕 | 双圈 | 「印」+ 角标 | 落印时压一下 |
+                     * | 极 | 双圈 + 实心朱红 | 实心印 + 角标 | 落印时压一下 + 一圈金边涟漪 |
+                     *
+                     * ⚠ **不做循环播放的动画**：一整页几十枚印章同时闪会变成噪音，
+                     * 而 §5A 的克制纪律（"安静的那一档"）刚在 M2 花过一轮才立起来。
+                     * 所以"炫"只出现在**落印那一瞬间**。
+                     */
+                    const rank = def.rank;
                     return `
-                      <div class="seal${on ? ' is-on' : ''}">
+                      <div class="seal is-${rank}${on ? ' is-on' : ''}">
                         <span class="seal-mark">${on ? '印' : ''}</span>
                         <span class="seal-body">
                           <b>${escapeHtml(def.name)}</b>
+                          ${def.disaster ? `<u class="seal-tag">${escapeHtml(disasterName(def.disaster))}</u>` : ''}
                           <i>${escapeHtml(def.hint)}</i>
                         </span>
                       </div>

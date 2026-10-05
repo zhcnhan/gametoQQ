@@ -20,6 +20,7 @@
  * 刚好达成、差一点没达成、以及坏值。
  */
 import { describe, expect, it } from 'vitest';
+import { ACHIEVEMENT_RANK_ORDER } from '../data/achievements';
 import {
   ACHIEVEMENT_DEFS,
   ACHIEVEMENT_KIND_ORDER,
@@ -28,7 +29,7 @@ import {
   findAchievement,
   priorityItemIdsOf_测试用
 } from '../data/achievements';
-import { SURVIVAL_DAYS } from '../data/disaster';
+import { SURVIVAL_DAYS, hasDisasterDef } from '../data/disaster';
 import { ITEM_DEFS } from '../data/items';
 import { createMetaProfile } from '../state/save';
 import { createStartingRun } from './setup';
@@ -100,6 +101,62 @@ describe('成就表本身：形状与分类', () => {
       (a) => `${a.id} name=${a.name.length} hint=${a.hint.length}`
     );
     expect(long).toEqual([]);
+  });
+});
+
+/**
+ * ★★ 成就的**等级**（2026-10 用户要的"难度低的和难度高的都用不同的炫酷特效标记，分等级"）
+ *
+ * 等级是**一条独立的数据轴**（不是从 `kind` 推的）：同为生存类，
+ * 「活过 14 天」与「一件口粮都没缺地活过 14 天」差着量级。
+ *
+ * 守三件事：
+ *  ① 每一档都要有人 —— 空档会让"分等级"在界面上根本看不出来；
+ *  ② 每一档都要有多种**特效标记**（界面上是印章的形状与颜色，见 `ui/CodexScreen`）；
+ *  ③ 高档不许烂大街：`common` 不能吃掉全部（那是"等级白标了"的另一种形式）。
+ */
+describe('★★ 成就分等级：三档都要有人，而且高档不许烂大街', () => {
+  it('★ 三档都有内容（有一档空着 = "分等级"这件事在界面上看不出来）', () => {
+    for (const rank of ACHIEVEMENT_RANK_ORDER) {
+      const n = ACHIEVEMENT_DEFS.filter((a) => a.rank === rank).length;
+      expect(n, `等级 ${rank} 一条成就都没有`).toBeGreaterThan(0);
+    }
+  });
+
+  it('★ 低档占多数、高档是少数（等级才读得出分量）', () => {
+    const count = (rank: string): number => ACHIEVEMENT_DEFS.filter((a) => a.rank === rank).length;
+    const common = count('common');
+    const epic = count('epic');
+    expect(common, '「常」那一档太少了 —— 等级没有区分度').toBeGreaterThanOrEqual(3);
+    expect(epic, '「极」那一档比「常」还多 —— 那不难').toBeLessThan(common);
+  });
+
+  it('★ 每一条的 rank 都是合法值（写错字会静默落到"没有等级"）', () => {
+    const bad = ACHIEVEMENT_DEFS.filter((a) => !ACHIEVEMENT_RANK_ORDER.includes(a.rank)).map((a) => a.id);
+    expect(bad, '这些成就的 rank 不是三档之一').toEqual([]);
+  });
+
+  it('★ 灾难专属成就：标了 `disaster` 的必须在判据里真的读这一场', () => {
+    /*
+     * `disaster` 是**给人看的分类**，不是判据（见那个字段的注释）——
+     * 所以这里只能验"标了它的成就确实与灾难有关"：
+     * 判据的源码里必须出现 `disasterId`。
+     *
+     * ⚠ 这条是个**弱判据**（它读不到"是哪一场"），但弱判据胜过没有：
+     * 它拦得住"随手复制一条成就、忘了改判据"那类错 ——
+     * 而那会让玩家在寒潮局里拿到"热浪专属"的印章。
+     */
+    const tagged = ACHIEVEMENT_DEFS.filter((a) => a.disaster !== undefined);
+    expect(tagged.length, '一条灾难专属成就都没有（用户点名要的）').toBeGreaterThanOrEqual(3);
+    const bad = tagged.filter((a) => !a.when.toString().includes('disasterId')).map((a) => a.id);
+    expect(bad, '这些成就标了灾难专属，判据里却没读 disasterId').toEqual([]);
+  });
+
+  it('★ 标了灾难的成就，那个灾难 id 必须在表里（认不出的 id 会在界面上显示成一串英文）', () => {
+    const bad = ACHIEVEMENT_DEFS.filter((a) => a.disaster !== undefined && !hasDisasterDef(a.disaster)).map(
+      (a) => `${a.id} → ${a.disaster}`
+    );
+    expect(bad).toEqual([]);
   });
 });
 

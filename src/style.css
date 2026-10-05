@@ -3203,6 +3203,122 @@ button:disabled {
   color: var(--ink-40);
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+ * ★★ 成就的**等级**（2026-10 用户要的"难度低的和难度高的都用不同的炫酷特效标记，分等级"）
+ *
+ * 三档在**同一个隐喻**里拉开分量 —— 纸墨朱红一个都不动（§5A）：
+ *
+ * | 档 | 印面 | 记号 | 落印那一刻 |
+ * | --- | --- | --- | --- |
+ * | 常 `.is-common` | 单圈细线 | 一个「印」 | 什么都不发生 |
+ * | 罕 `.is-rare` | 双圈 | 「印」 | 压一下（`seal-drop`） |
+ * | 极 `.is-epic` | 双圈 + **实心朱红** | 反白印 | 压一下 + 一圈赭黄涟漪 |
+ *
+ * ## 两条刻意的边界
+ *
+ *  ① **不做循环动画**：一整页几十枚印章同时闪会变成噪音，而 §5A 那条
+ *     "安静的那一档"是 M2 花了一整轮才立起来的。所以"炫"只出现在
+ *     **落印那一瞬间**（`animation` 各跑一次就停）；
+ *  ② **涟漪用赭黄（`#E0A32E`），不是暖黄**：§5A 规定暖黄只用于"安全 / 窗内"，
+ *     而这里的金边表达的是**分量**。赭黄是分区色板里那个印刷色，
+ *     这是它第一次被用在"等级"上。
+ */
+.seal.is-rare {
+  border-style: solid;
+  border-color: var(--ink-16);
+}
+
+.seal.is-rare .seal-mark {
+  border-style: solid;
+  /* 双圈：外圈实线 + 内圈细线（用 inset 阴影当内圈，不占布局） */
+  box-shadow: inset 0 0 0 3px var(--card), inset 0 0 0 4.5px currentColor;
+}
+
+.seal.is-epic {
+  position: relative;
+  border: 2px solid var(--vermilion);
+  background: var(--card);
+}
+
+.seal.is-epic .seal-mark {
+  color: var(--card);
+  background: var(--vermilion);
+  border: 2px solid var(--vermilion);
+  box-shadow: inset 0 0 0 3px var(--vermilion), inset 0 0 0 4.5px var(--card);
+}
+
+/* 落印：只跑一次。`is-on` 渲染时就在，所以它等于"这一枚已经盖下去了" */
+.seal.is-on.is-rare .seal-mark,
+.seal.is-on.is-epic .seal-mark {
+  animation: seal-drop 0.42s cubic-bezier(0.2, 1.4, 0.4, 1) 1;
+}
+
+.seal.is-on.is-epic::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: var(--radius-sm);
+  border: 2px solid #e0a32e;
+  opacity: 0;
+  pointer-events: none;
+  animation: seal-ring 0.72s ease-out 1;
+}
+
+/*
+ * 灾难专属成就的那一行小字（"寒潮"这种）。
+ * `<u>` 只是"带标记的小字"的语义占位，样式全部重写 —— 下划线在这里没有含义。
+ */
+.seal-tag {
+  align-self: flex-start;
+  text-decoration: none;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  padding: 0 5px 1px;
+  color: var(--vermilion);
+  border: 1px solid var(--vermilion);
+  border-radius: 3px;
+  transform: rotate(-2deg);
+}
+
+.seal:not(.is-on) .seal-tag {
+  color: var(--ink-40);
+  border-color: var(--ink-16);
+}
+
+@keyframes seal-drop {
+  0% {
+    transform: rotate(-3deg) scale(1.6);
+    opacity: 0.2;
+  }
+  60% {
+    transform: rotate(-3deg) scale(0.94);
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(-3deg) scale(1);
+  }
+}
+
+@keyframes seal-ring {
+  0% {
+    opacity: 0.9;
+    transform: scale(0.92);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.06);
+  }
+}
+
+/* 减少动态偏好：动画全停（三档照样分得开 —— 靠的是印面形状与颜色，不是动效） */
+@media (prefers-reduced-motion: reduce) {
+  .seal.is-on.is-rare .seal-mark,
+  .seal.is-on.is-epic .seal-mark,
+  .seal.is-on.is-epic::after {
+    animation: none;
+  }
+}
+
 /* 结算页上"本局新盖的印"那一排 */
 .seal-row {
   display: flex;
