@@ -236,15 +236,21 @@ export class OrganizeScreen {
               滚动重新归手势层接管（`.slot` 是 `touch-action: none`，
               浏览器永不插手，也就不会发 `pointercancel` 把拖拽收掉）——
               代价是**滚谁**这件事得由我们指出来。
-              见 `ui/drag.ts` 的 `resolveScrollHost`：它从被按住的元素往上找
-              这个属性，纸箱那一叠（下面的 `data-boxes`）也有。 */ ''}
+              见 `ui/drag.ts` 的 `resolveScrollHost`：它从被按住的元素往上找这个属性。
+              ★ 全屏**只许有这一处**：见下面 `data-boxes` 那一段
+              （两个滚动容器就是"滑动方向是反的"那个报障的根因）。 */ ''}
         <main class="room-scroll" data-room data-scroll-host></main>
         <footer class="dock">
           <div class="dock-hand" data-hand data-drop="return"></div>
-          ${/* ★ 同上：纸箱那一叠自己就能滚（`overflow-y: auto`，最多两行高）。
-                用**属性**而不是给 drag.ts 传一个元素引用，是因为假 DOM
-                测得出属性、测不出"这元素能不能滚"（不解析 CSS）。 */ ''}
-          <div class="dock-boxes" data-boxes data-scroll-host></div>
+          ${/* ★★ 这里**故意没有** `data-scroll-host`（2026-10 修"滑动反向"时拿掉的）。
+                纸箱那一叠自己 `overflow-y: auto`，于是它**同时**是一个滚动容器；
+                如果落在这里的手势去滚它、落在别处的手势去滚房间，屏幕上就有两个
+                能独立滚的窗口 —— 手指在箱子上下拉，动的是箱子；往上推到货架上，
+                动的却是整页。玩家报的"滑动方向是反的"就是这个：**不是方向错了，
+                是滚的东西不一样**。
+                现在全屏只有 `.room-scroll` 一个滚动容器，手势滚到它的边界还会
+                接力给外层，而"箱子那一叠"由「收起」把手来管（它本来就是为这个造的）。 */ ''}
+          <div class="dock-boxes" data-boxes></div>
           <div class="dock-tools">
             <button class="btn" data-action="sort">${iconSvg('sort')}<span>按保质期排</span></button>
             ${

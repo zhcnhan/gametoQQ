@@ -440,6 +440,9 @@ for (const [label, probe, why] of TAKEOVER_SIGNS) {
  * ★ 第五次之后名单里多了 `.dock-boxes`：纸箱那一叠自己也成了滚动容器
  * （它现在是 `data-scroll-host`，手势层会往它的 `scrollTop` 写），
  * 于是它带着这一行的话会**原地复发**同一个 bug。
+ * ★ 第六次（M5）它不再是 `data-scroll-host` 了（见下面 ⑤ 那一段），
+ * 但**它仍然是一块能滚的区域**，所以这一条对它照样成立：只要它还可能被谁滚，
+ * 带上 `-webkit-overflow-scrolling` 就是在给自己准备一次"方向反了"。
  * 顺手也守住 `.slot` 自己：格子不是滚动容器，带上它只会让祖先里多一个合成层。
  */
 for (const cls of ['room-scroll', 'dock-boxes', 'slot']) {
@@ -465,8 +468,22 @@ for (const cls of ['room-scroll', 'dock-boxes', 'slot']) {
  *  · `OrganizeScreen.ts` 里 `class="… <那个类> …"` 的那个标签上带着标记。
  *    ★ 判据是"**同一个标签**里两个都在"，不是"两个字符串都在文件里" ——
  *      后者在把标记加到错误的元素上时照样会绿。
+ *
+ * ★★ **第六次（M5）：`.dock-boxes` 从名单里拿掉了** —— 这是一个取舍，不是疏漏。
+ *
+ * 它从第五次开始带着 `data-scroll-host`，理由是"它自己 `overflow-y: auto`"。
+ * 结果是屏幕上**同时有两个能滚的窗口**：手指落在纸箱上动的是纸箱那一栏，
+ * 推到货架上动的才是整页。玩家报的原话是"滑动方向是反的"—— 他看到的不是方向错了，
+ * 是**滚的东西不一样**。于是全屏只留 `.room-scroll` 一处滑动（那段注释在
+ * `OrganizeScreen.ts:247` 一带）。
+ *
+ * 代价要说清：手指落在**纸箱上**的竖向滑动不再滚 `.dock-boxes`（`.box` 自己
+ * `touch-action: none`）；缝里、四个按钮上、手里那块牌子上都还能滚。
+ * "纸箱那一栏一滚就朝反方向跳"这个毛病，比"少一个滚动入口"重得多。
+ *
+ * ⚠ 这一条因此**不能**笼统地写成"每个滚动容器都要注册"：那样会把手势层逼回两层逻辑。
  */
-for (const cls of ['room-scroll', 'dock-boxes']) {
+for (const cls of ['room-scroll']) {
   const tagRe = new RegExp(`<[a-z]+[^>]*class="[^"]*\\b${cls}\\b[^"]*"[^>]*>`, 'g');
   const tags = organizeSrc.match(tagRe) ?? [];
   if (tags.length === 0) {

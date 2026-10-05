@@ -24,7 +24,7 @@
  * 整理页的 `.tape-shelf` 比别的屏多一块（44px + 10px），已在下面单独标注。
  */
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -282,10 +282,55 @@ const MEASURE = `(async () => {
     runTrack: h('.run-bar-track'),
     body,
     bodyBox: h(body),
+    /*
+     * ★★ 顶栏里每一块各占多高（M5 补，用户在真机上第二次说"还是太紧凑"）。
+     *
+     * 上一轮量到的是"顶栏一共 184px"这种**合计**，而"该砍哪一块"完全看不出来。
+     * 判据必须是拆开的那几个数：标题行 / 四格台账 / 胶带架。
+     */
+    titleRow: h('.title'),
+    topbarHead: h('.topbar-head'),
+    topbarTools: h('.topbar-tools'),
     dock: h('.dock'),
     dockHand: h('.dock-hand'),
     dockBoxes: h('.dock-boxes'),
     dockBoxesCap: cs('.dock-boxes', 'max-height'),
+    /* ★ 纸箱那一栏的抬头（"还没拆的箱子" + 「收起」），它在手机上是一整行、约 40px */
+    boxesHead: h('.boxes-head'),
+    boxFold: h('.boxes-fold'),
+    /* ★ 手里那块牌子自己占多高（.dock-hand 就是它的容器；.hand-card 不存在） */
+    handCard: h('.dock-hand'),
+    /* ★ 窗外那条带子的**整条**（.run-bar = 带子 + 先知日历行），用来看配比 */
+    windowBand: h('.window-band'),
+    /*
+     * ★★ "合计对不上"时必须能量到剩下的那一块（M5 补）。
+     *
+     * 第一次拆账时十块加起来 560px，而视口 710px —— 差 150px。
+     * 那 150px 就是 .topbar 与 .dock 自己的 padding 与内部 gap，
+     * 一个个量出来才能把账做平；否则"还差 150px"会一直被当成量具坏了。
+     */
+    topbarPad: (function () {
+      var el = document.querySelector('.topbar');
+      if (!el) return null;
+      var s = getComputedStyle(el);
+      return {
+        top: Math.round(parseFloat(s.paddingTop)),
+        bottom: Math.round(parseFloat(s.paddingBottom)),
+        gap: Math.round(parseFloat(s.rowGap) || 0),
+        children: el.children.length,
+      };
+    })(),
+    dockPad: (function () {
+      var el = document.querySelector('.dock');
+      if (!el) return null;
+      var s = getComputedStyle(el);
+      return {
+        top: Math.round(parseFloat(s.paddingTop)),
+        bottom: Math.round(parseFloat(s.paddingBottom)),
+        gap: Math.round(parseFloat(s.rowGap) || 0),
+        children: el.children.length,
+      };
+    })(),
     /*
      * ★★ 这一栏的**内容**有多高（M5 补）。
      *
@@ -560,6 +605,38 @@ async function main(): Promise<void> {
       }
     }
     console.log(`  · 命中的上限 = ${String(m['dockBoxesCap'])}，实得高度 = ${String(hOf('dockBoxes'))}`);
+    /*
+     * ★★ "太紧凑"是一道减法题：710px 减去哪几块。
+     *
+     * 判据是**每一块都点名，并且加起来等于 710**（误差只允许来自取整）。
+     * 只报"内容区还剩多少"永远得不出"该砍谁"——上一轮我砍的是纸箱，
+     * 而用户第二次说"还是太紧凑"，说明砍错了地方或砍得不够。
+     */
+    const parts: [string, number][] = [
+      ['标题行', hOf('topbarRow') as number],
+      ['四格台账', hOf('score') as number],
+      ['胶带架', hOf('tapeShelf') as number],
+      ['窗外那条带子', hOf('windowBand') as number],
+      ['先知日历行', hOf('runBarRow') as number],
+      ['房间（可滚）', hOf('bodyBox') as number],
+      ['手里那块牌子', hOf('handCard') as number],
+      ['纸箱栏抬头', hOf('boxesHead') as number],
+      ['纸箱栏', hOf('dockBoxes') as number],
+      ['四个按钮', hOf('dockTools') as number],
+    ];
+    for (const [name, h] of parts) {
+      const w = typeof h === 'number' ? String(h).padStart(4) : '   —';
+      console.log(`  · ${name}  ${w}px`);
+    }
+    const sum = parts.reduce((n, [, h]) => n + (typeof h === 'number' ? h : 0), 0);
+    const tp = m['topbarPad'] as { top: number; bottom: number; gap: number; children: number } | null;
+    const dp = m['dockPad'] as { top: number; bottom: number; gap: number; children: number } | null;
+    const pad = (p: typeof tp): number => (p ? p.top + p.bottom + p.gap * Math.max(0, p.children - 1) : 0);
+    const padSum = pad(tp) + pad(dp);
+    console.log(
+      `  · 十块合计 ${sum}px ＋ 顶栏内边距/间隙 ${pad(tp)}px ＋ 操作台内边距/间隙 ${pad(dp)}px` +
+        ` = ${sum + padSum}px ／ 视口 ${vp.h}px ／ 差 ${vp.h - sum - padSum}px`,
+    );
     if (m.body !== '.room-scroll') {
       console.log('  ⚠ 没走到整理页 —— 上面这些数字量的是别的屏，别拿它下结论');
       process.exitCode = 1;
@@ -577,6 +654,12 @@ async function main(): Promise<void> {
         format: 'png',
         captureBeyondViewport: false,
       });
+      /*
+       * ★ 目录要自己建：`SHOT_DIR` 指到一个不存在的路径时，第一张图就
+       *   `ENOENT` 把整趟量测打断（报错文案里只有路径，看起来像"量具坏了"）。
+       *   量具是给下一次改动用的，不该要求调用者先手动 mkdir。
+       */
+      mkdirSync(process.env['SHOT_DIR'], { recursive: true });
       const file = join(process.env['SHOT_DIR'], `${vp.w}x${vp.h}.png`);
       writeFileSync(file, Buffer.from(shot.data, 'base64'));
       console.log(`  📷 ${file}`);
