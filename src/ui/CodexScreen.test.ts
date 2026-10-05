@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 图鉴界面的守护测试（§10B.2 / 补 D-16）。
  *
  * ## 为什么它值得一个测试，而不是"肉眼看一眼"
@@ -27,7 +27,9 @@
  * 另一条已知边界（§3.2）：假体的**层叠顺序**不可靠，所以这里一条几何/遮挡都不测。
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import { countOfKind } from '../data/registry';
+import { CATEGORY_ORDER, getItemDef, hasItemDef } from '../data/items';
+import { countOfKind, entriesOfKind } from '../data/registry';
+import { SHOP_DEFS } from '../data/shops';
 import { createSaveGame } from '../state/save';
 import { GameStore } from '../state/store';
 import { createStartingRun } from '../systems/setup';
@@ -257,6 +259,96 @@ describe('图鉴界面：成就段（§10B.2 的印章）', () => {
     expect(hints.filter((h) => h.trim().length === 0)).toEqual([]);
     // 名字也在（不是只有判据）
     expect(leafTexts(ctx.root, '.seal-body', 'b').length).toBe(hints.length);
+  });
+});
+
+describe('图鉴界面：★★ 进度条与"还缺什么、去哪儿补"（铁则欠账③）', () => {
+  let ctx: Ctx;
+  afterEach(() => ctx.screen.dispose());
+
+  /** 量一根条的填充量（挂在 `<i class="codex-bar-fill">` 的内联样式上） */
+  const fills = (root: FakeElement): number[] =>
+    root
+      .querySelectorAll('.codex-bar-fill')
+      .map((el) => Number(/--fill:\s*([\d.]+)/.exec(el.getAttribute('style') ?? '')?.[1] ?? 'NaN'));
+
+  it('★ 每个品类都有一根条，而且**条数与品类数对得上**（漏一组不会有任何报错，只能数）', () => {
+    ctx = setup();
+    const groups = CATEGORY_ORDER.filter((c) =>
+      entriesOfKind('item').some((e) => hasItemDef(e.id) && getItemDef(e.id).category === c)
+    );
+    expect(ctx.root.querySelectorAll('.codex-bar')).toHaveLength(groups.length);
+  });
+
+  it('★ 全空的档：每根条都是 0，而且**数字照旧在**（条不能把数字换掉）', () => {
+    ctx = setup();
+    expect(fills(ctx.root).every((f) => f === 0)).toBe(true);
+    // 标题行里的 `0 / N` 还在
+    const counts = texts(ctx.root, '.codex-count');
+    expect(counts.length).toBeGreaterThan(0);
+    expect(counts.every((t) => /^\d+ \/ \d+$/.test(t.trim()))).toBe(true);
+  });
+
+  it('★★ 点亮一件之后，**那一组的**条真的长了一格（不是随便哪根条）', () => {
+    ctx = setup();
+    const before = fills(ctx.root);
+    const item = entriesOfKind('item').find((e) => hasItemDef(e.id))!;
+    const def = getItemDef(item.id);
+    ctx.store.save.meta.codex.items = [item.id];
+    ctx.screen.render();
+    const after = fills(ctx.root);
+
+    const groups = CATEGORY_ORDER.filter((c) =>
+      entriesOfKind('item').some((e) => hasItemDef(e.id) && getItemDef(e.id).category === c)
+    );
+    const at = groups.indexOf(def.category);
+    expect(after[at]!).toBeGreaterThan(before[at]!);
+    // 别的组不许跟着动
+    after.forEach((v, i) => {
+      if (i !== at) expect(v).toBe(before[i]!);
+    });
+  });
+
+  it('★ 集齐一组 → `is-full`（全满与差一件在一根细条上分不出来）', () => {
+    ctx = setup();
+    const group = entriesOfKind('item').filter((e) => hasItemDef(e.id) && getItemDef(e.id).category === 'water');
+    ctx.store.save.meta.codex.items = group.map((e) => e.id);
+    ctx.screen.render();
+    expect(ctx.root.querySelectorAll('.codex-bar.is-full')).toHaveLength(1);
+  });
+
+  it('★★ 汇总说清"还缺几件 + 去哪儿补"，而且**去哪儿是从注册表算的**', () => {
+    ctx = setup();
+    const missing = texts(ctx.root, '.codex-missing');
+    expect(missing.length).toBeGreaterThan(0);
+    // 每一条都必须报一个数字，且必须报一个地点（"还缺 N 件。"后面什么都不说等于没说）
+    for (const line of missing) {
+      expect(line).toMatch(/还缺 \d+ 件/);
+      expect(line.length).toBeGreaterThan('还缺 0 件：。'.length);
+    }
+    // 至少有一条真的点出了某家店（新档什么都没点亮 → 全部物资都缺）
+    const shops = SHOP_DEFS.map((s) => s.name);
+    expect(missing.some((line) => shops.some((name) => line.includes(name)))).toBe(true);
+  });
+
+  it('★ 缺的数字与卡片上的未点亮数**对得上**（两处各算一遍早晚会漂）', () => {
+    ctx = setup();
+    const dark = ctx.root.querySelectorAll('.codex-card').filter((c) => !c.classList.contains('is-on')).length;
+    const claimed = texts(ctx.root, '.codex-missing').reduce((sum, line) => {
+      const n = /还缺 (\d+) 件/.exec(line);
+      return sum + Number(n?.[1] ?? 0);
+    }, 0);
+    // 物资页分品类汇总，灾难/NPC 页各一条 —— 这里只看物资页：它等于全部未点亮的物资
+    expect(claimed).toBe(dark);
+  });
+
+  it('★ 全都点亮时不报"还缺 0 件"（填满之后再挂一句就是噪音）', () => {
+    ctx = setup();
+    // 把三页全部点亮
+    ctx.store.save.meta.codex.items = entriesOfKind('item').map((e) => e.id);
+    ctx.store.save.meta.codex.npcs = entriesOfKind('npc').map((e) => e.id);
+    ctx.screen.render();
+    expect(texts(ctx.root, '.codex-missing')).toEqual([]);
   });
 });
 

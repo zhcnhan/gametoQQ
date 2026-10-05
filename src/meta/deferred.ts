@@ -953,24 +953,33 @@ export const DEFERRED_ITEMS: readonly DeferredItem[] = [
     status: 'open'
   },
   /*
-   * D-34：铁则「任何东西都要让我有感知」的三处欠账 —— ★ 已完成两处
+   * D-34：铁则「任何东西都要让我有感知」的三处欠账 —— ★ 三处都做完了
    */
   {
     id: 'D-34',
     kind: 'process',
-    title: '★ 铁则「任何东西都要让我有感知」：三处欠账已完成两处，剩图鉴进度',
+    title: '★ 铁则「任何东西都要让我有感知」：三处欠账**都做完了**（留一条"做到了什么程度"的存档）',
     impact:
       '用户在 2026-10 拍下的铁则（「任何东西都要让我有感知」）落地时，**自己点名了三处**\n' +
-      '"现在只看得到数字"的地方，并写进了策划案 §10.1A。三处的现况：\n\n' +
-      ' ✅ **商店的限购与涨价** —— 已做（`systems/shop.ts` 的 `priceStressOf` +\n' +
-      '   `ui/ShopScreen.ts` 的 `priceHtml` / `priceStressFlagHtml`）：扫货页每件报\n' +
+      '"现在只看得到数字"的地方，并写进了策划案 §10.1A。三处**都已落地**：\n\n' +
+      ' ✅ **商店的限购与涨价** —— `systems/shop.ts` 的 `priceStressOf` +\n' +
+      '   `ui/ShopScreen.ts` 的 `priceHtml` / `priceStressFlagHtml`：扫货页每件报\n' +
       '   "比这一场的平常价贵 N%"，并且**进店之前**店卡上就有"今天贵 N%"。\n' +
-      ' ✅ **结算页的几个比率** —— 已做（`model/score.ts` 的 `GRADE_STEPS` / `gradeWith`\n' +
-      '   + `ui/EndingScreen.ts` 的 `scoreRow`）：每行有档位刻度线、\n' +
+      ' ✅ **结算页的几个比率** —— `model/score.ts` 的 `GRADE_STEPS` / `gradeWith`\n' +
+      '   + `ui/EndingScreen.ts` 的 `scoreRow`：每行有档位刻度线、\n' +
       '   "还差 N% 到「有条不紊」"，以及与上一局的差值（跨局快照见\n' +
       '   `MetaProfile.lastRunScore`，存档 v20）。\n' +
-      ' ⬜ **图鉴的进度** —— 仍只有 `12 / 116` 这种数字，而 §10B.2 要求"看得见从哪儿来"\n' +
-      '   （灾难页做过一版来源提示，物资 / NPC 页还没做）。\n\n' +
+      ' ✅ **图鉴的进度** —— `ui/CodexScreen.ts` 的 `progressHtml` / `missingHtml` /\n' +
+      '   `fetchHint`：每组一节，标题行照旧带 `N / M` 数字，数字下面多一根进度条\n' +
+      '   （集齐转 `is-full`），再一行"还缺 N 件：超市、粮油批发站在卖"。\n' +
+      '   ★ 那一行的去处**从注册表算**（`Card.where` ← `sourcesOfItem`），\n' +
+      '   所以改一家店的 `offers`，卡片与汇总会一起变 —— 不是手写的第二份名单。\n' +
+      '   ★ 缺的东西一件都说不出从哪儿来时走 `is-stuck` 报朱红：那是**内容侧的错**\n' +
+      '   （D-16 就是它），不该长得像一句普通提示。\n\n' +
+      '## 这条为什么留着（三处都做完了还 open）\n\n' +
+      '留的不是欠账，是**验收口径**：三处的"做到了什么程度"写在上面，\n' +
+      '将来谁要动这三块界面，先读一遍这里，别把非数字的那一半删掉换回纯数字\n' +
+      '（§10.1A 的判据②"写了 ≠ 生效了"要求逐维对账，而这三处正是对账的样本）。\n\n' +
       '## 顺带记一个已知的界面小缺口（不单独开工单）\n\n' +
       '结算页的三行"比上一局"**在刷新之后会消失**：`settleRunMeta` 有幂等闸\n' +
       '（`run.metaSettled`），第二遍返回 `null`，于是"上一局是什么"这个\n' +

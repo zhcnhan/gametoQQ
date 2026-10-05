@@ -3236,6 +3236,67 @@ button:disabled {
   color: var(--ink-40);
 }
 
+/* ★★ 图鉴的进度条（铁则 §10.1A 欠账③）
+ *
+ * 与结算页那三行（`.score-row-bar`）是**同一条铁则的两次落地**，
+ * 所以刻意长得像：一眼就该认成"同一件事的两种大小"。
+ * 差别只有粗细与配色 —— 图鉴的条是"收集"，不是"成绩"，
+ * 所以平时走墨色（`--ink`），**集齐才变朱红**（`is-full`）。
+ * 反过来写（平时朱红）会让一页里六根红条同时喊，谁也不显眼。
+ */
+.codex-bar {
+  display: block;
+  position: relative;
+  margin: 4px 0 6px;
+  height: 6px;
+  border: 1px solid var(--ink-16);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.codex-bar-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: calc(var(--fill, 0) * 100%);
+  background: var(--ink-40);
+  transition: width var(--fast) var(--ease-out);
+}
+
+.codex-bar.is-full {
+  border-color: var(--ink);
+}
+
+.codex-bar.is-full .codex-bar-fill {
+  background: var(--ink);
+}
+
+/* ★ 还缺什么、去哪儿补（`missingHtml`）
+ *
+ * 这一行是**可执行的目标**，不是灰注释 —— 所以它比卡片的字略深、
+ * 并且"还缺 N 件"加粗。而 `is-stuck`（缺的东西一件都说不出从哪儿来）
+ * 走朱红：那是**内容侧的错**，D-16 就是它，不该长得像一句普通提示。
+ */
+.codex-missing {
+  margin: 0 0 6px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ink-70);
+}
+
+.codex-missing b {
+  color: var(--ink);
+}
+
+.codex-missing.is-stuck {
+  color: var(--vermilion);
+}
+
+.codex-missing.is-stuck b {
+  color: var(--vermilion);
+}
+
 .codex-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));

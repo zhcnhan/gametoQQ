@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 图鉴界面（§9 界面清单第 7 条 / 补 D-16 / §10B.2）。
  *
  * ## 它在补什么
@@ -74,6 +74,17 @@ interface Card {
   category: CategoryId | null;
   /** 来源提示。**空串永远不该出现** —— 没有来源要明确说出来，见 `describeSources` */
   source: string;
+  /**
+   * 「去哪儿找」那一句（2026-10 铁则欠账③）。
+   *
+   * 与 `source` 是**同一份数据的两种说法**，而不是两次推导：
+   *  · `source` 挂在**每一张卡**上（`超市在卖`）—— 玩家低头看具体缺哪一件时读它；
+   *  · `where` 是给**整组**做汇总用的短句（`超市、粮油批发站在卖`）——
+   *     玩家抬头问"这一组我该去哪儿补"时读它。
+   *
+   * 两者都由 `describeSources` / `fetchHint` 从注册表算出来（§10B.5 那条"不手写"）。
+   */
+  where: string;
   lit: boolean;
 }
 
@@ -161,15 +172,21 @@ export class CodexScreen implements Screen {
         const on = group.filter((c) => c.lit).length;
         return `
           <section class="block">
-            <h2 class="block-title">${CATEGORY_LABELS[category]}<em class="codex-count">${on} / ${group.length}</em></h2>
+            <h2 class="block-title">${CATEGORY_LABELS[category]}${countHtml(on, group.length)}</h2>
+            ${progressHtml(on, group.length)}
+            ${missingHtml(group)}
             <div class="codex-grid">${group.map((c) => cardHtml(c)).join('')}</div>
           </section>
         `;
       }).join('');
     }
 
+    const litCount = cards.filter((c) => c.lit).length;
     return `
       <section class="block">
+        <h2 class="block-title">${CODEX_PAGE_LABELS[page]}${countHtml(litCount, cards.length)}</h2>
+        ${progressHtml(litCount, cards.length)}
+        ${missingHtml(cards)}
         <div class="codex-grid">${cards.map((c) => cardHtml(c)).join('')}</div>
       </section>
     `;
@@ -180,12 +197,14 @@ export class CodexScreen implements Screen {
       return entriesOfKind('item').map((entry) => {
         // 认不出的 id 退化成"来源不明"的一格，绝不让图鉴崩在一条旧数据上
         const def = hasItemDef(entry.id) ? getItemDef(entry.id) : null;
+        const from = sourcesOfItem(entry.id);
         return {
           id: entry.id,
           name: def?.name ?? entry.id,
           meta: def ? `${CATEGORY_LABELS[def.category]} · ${TIER_LABELS[def.tier]}` : '',
           category: def?.category ?? null,
-          source: describeSources(sourcesOfItem(entry.id)),
+          source: describeSources(from),
+          where: fetchHint(from),
           lit: lit.has(entry.id)
         };
       });
@@ -211,16 +230,19 @@ export class CodexScreen implements Screen {
       return entriesOfKind('disaster').map((entry) => {
         const def = hasDisasterDef(entry.id) ? getDisasterDef(entry.id) : null;
         const on = litDisasters.has(entry.id);
+        const hint = !on && def ? disasterSourceHint(def.tier, progress) : '';
         return {
           id: entry.id,
           name: def?.name ?? entry.id,
           meta: def ? `${def.family} · ${def.level}` : '',
           category: null,
-          source: on
-            ? `活到过 D+${bestOf(meta, entry.id)}`
-            : def
-              ? disasterSourceHint(def.tier, progress)
-              : '这一场不在表里了',
+          source: on ? `活到过 D+${bestOf(meta, entry.id)}` : hint || '这一场不在表里了',
+          /*
+           * 灾难的"去哪儿找"就是"**什么时候轮到它**"：tier 阶梯没到的那些
+           * 不是"你运气不好"，而是"还差几场活到最后的局"（`DISASTER_TIER_GATES`）。
+           * 所以这一组缺的越多，越该先说清这件事 —— 否则玩家会以为自己漏了什么。
+           */
+          where: on ? '' : def ? `tier ${def.tier}` : '',
           lit: on
         };
       });
@@ -233,6 +255,7 @@ export class CodexScreen implements Screen {
         meta: def?.blurb ?? '',
         category: null,
         source: '在门口遇见的',
+        where: '夜里会来敲门',
         lit: lit.has(entry.id)
       };
     });
@@ -365,6 +388,70 @@ function cardHtml(card: Card): string {
   `;
 }
 
+/** `点亮 12 / 57` 那一个小计数（标题行末尾） */
+function countHtml(on: number, total: number): string {
+  return `<em class="codex-count">${on} / ${total}</em>`;
+}
+
+/**
+ * ★★ **进度条**（2026-10 铁则 §10.1A 欠账③）。
+ *
+ * ## 补的是哪一笔账
+ *
+ * 图鉴原来只有 `12 / 57` 这种数字。数字的问题是它**只回答"多少"、
+ * 不回答"还剩多少"** —— 而玩家扫一眼时想知道的恰恰是后者：
+ * 这一组是不是快齐了、值不值得再为它跑一趟。一个百分比条一眼就答完，
+ * `43 / 57` 得先做一次减法。
+ *
+ * ★ 与结算页那三行是同一条铁则的两次落地，也用了同一套做法：
+ * **数字照旧留着**（`countHtml`），非数字的表达**加在它旁边**，
+ * 而不是把数字换成一根条 —— 换掉的话就变成"看得见但说不准"了。
+ *
+ * 填满时给一个 `is-full`：集齐这一组是值得标记一下的事，
+ * 而"全满"与"差一件"在一条 470px 宽的细条上有时候分不太出来。
+ */
+function progressHtml(on: number, total: number): string {
+  if (total <= 0) return '';
+  const full = on >= total;
+  return `
+    <span class="codex-bar${full ? ' is-full' : ''}" role="img" aria-label="${on} / ${total}">
+      <i class="codex-bar-fill" style="--fill:${Math.max(0, Math.min(1, on / total))}"></i>
+    </span>
+  `;
+}
+
+/**
+ * ★★ 一组里**还缺什么、去哪儿补**（铁则欠账③的那半句"看得见从哪儿来"）。
+ *
+ * ## 为什么要有它 —— 卡片上那行来源还不够
+ *
+ * 每张卡确实已经写了"超市在卖"，但一组 9 件里缺了 5 件时，
+ * 玩家得**逐张读五遍**才能拼出"我还得去一趟超市和粮油批发站"。
+ * 这句汇总就是替他把那五遍读完 —— 它只报**去哪儿**，不重复报"缺哪几件"
+ * （缺的是哪几件，卡片就在下面，点着看比列一行字更清楚）。
+ *
+ * ★ `where` 取自卡片（而卡片取自注册表），所以**这句汇总不可能漂**：
+ * 改一家店的 offers，卡片与汇总会一起变。手写一句"去超市看看"就会漂。
+ *
+ * 已集齐时不输出任何东西 —— 一组的进度条填满之后，
+ * 再挂一句"还缺 0 件"就是噪音。
+ */
+function missingHtml(cards: readonly Card[]): string {
+  const missing = cards.filter((c) => !c.lit);
+  if (missing.length === 0) return '';
+  const places = [...new Set(missing.map((c) => c.where).filter((w) => w !== ''))];
+  const head = `<b>还缺 ${missing.length} 件</b>`;
+  if (places.length === 0) {
+    /*
+     * 缺的东西一件都说不出从哪儿来 —— 这是**内容侧的错**（D-16 就是它），
+     * 所以要说出来，而不是留空。当年 `hot_water_bag_gift` 谁都拿不到，
+     * 而屏幕上完全看不出这件事。
+     */
+    return `<p class="codex-missing is-stuck">${head}，但它们在表里都没有来源。</p>`;
+  }
+  return `<p class="codex-missing">${head}：${escapeHtml(places.join('、'))}。</p>`;
+}
+
 /**
  * "从哪儿来"那句话（§10B.2 要求它从注册表推导，不手写）。
  *
@@ -382,6 +469,21 @@ function describeSources(sources: { shops: string[]; boxes: string[] }): string 
     parts.push(`${sources.boxes.map((id) => BOX_NAMES[id] ?? id).join('、')}开得出`);
   }
   return parts.length > 0 ? parts.join('；') : '还没有来源';
+}
+
+/**
+ * 「去哪儿补」的短句（`missingHtml` 那一行读它，见 `Card.where`）。
+ *
+ * 与 `describeSources` 共用同一份 `ItemSource`，只是**不说"在卖 / 开得出"**
+ * —— 汇总那一行里"超市、粮油批发站在卖"已经由外面统一说了，
+ * 每一处再带一遍动词会变成"超市在卖、粮油批发站在卖在卖"。
+ * 两种说法摆在一起时，动词归位在**句子**上，而不是在**每个名字**上。
+ */
+function fetchHint(sources: { shops: string[]; boxes: string[] }): string {
+  const parts: string[] = [];
+  for (const id of sources.shops) parts.push(`${SHOP_NAMES[id] ?? id}在卖`);
+  for (const id of sources.boxes) parts.push(`${BOX_NAMES[id] ?? id}开得出`);
+  return parts.join('、');
 }
 
 function escapeHtml(text: string): string {
