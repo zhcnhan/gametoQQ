@@ -3,7 +3,21 @@
  *
  * 两条操作路径都要有（§9）：
  *  - 点选-点放：手指抬起时没怎么移动 → 判定为 tap
- *  - 长按拖拽：触摸长按 220ms 后进入拖拽；鼠标则移动 6px 即进入拖拽（不强迫鼠标长按）
+ *  - 长按拖拽：触摸长按 300ms 后进入拖拽；鼠标则移动 6px 即进入拖拽（不强迫鼠标长按）
+ *
+ * ═══════════════════════════════════════════════════════════════════════
+ * ★★ 本层**不接管滚动**（2026-10 删掉了整套 `scrollHost` / `takeOverScroll`）
+ * ═══════════════════════════════════════════════════════════════════════
+ *
+ * 滚动全部归浏览器：可拖的元素（`.slot` / `.box`）写着 `touch-action: pan-y`。
+ * 这一层的职责只剩"点"与"长按拖"，长按成立**之前**手指怎么动都与我们无关。
+ *
+ * 为什么不再自己滚 —— 一句话：**主线程拦不住合成器**。
+ * 上一版为了"拖拽必须我们说了算"把滚动也接了过来（`touch-action: none` +
+ * `scrollTop +=`），而当时的滚动容器带着 `-webkit-overflow-scrolling: touch`
+ * （合成层滚动），浏览器自己也在滚同一块区域 —— 同一次滑动上两层逻辑同时存在，
+ * 玩家看到的方向取决于合成器此刻的进度，表现成"跟操作逻辑是反的"。
+ * 详见 `src/style.css` 里 `.slot` 与 `.room-scroll` 两段。
  *
  * ═══════════════════════════════════════════════════════════════════════
  * ★★ 为什么 window 上的监听器**只在模块加载时挂一次**（M2 重写）
@@ -40,79 +54,33 @@ export interface GestureHandlers {
   onDragMove?: (point: Point) => void;
   /** 松手（point 是松手位置，落点判定交给 ui 用 elementFromPoint 做） */
   onDragEnd?: (point: Point) => void;
-  /** 手势被打断 / 判定为滚动 */
+  /** 手势被打断（浏览器开始滚页面、窗口失焦、元素被换掉…） */
   onCancel?: () => void;
 }
 
 export interface GestureOptions {
   /** 触摸进入拖拽所需的按住时长（毫秒） */
   longPressMs?: number;
-  /** 判定为"移动了/要滚动"的像素阈值 */
+  /** 判定为"移动了"的像素阈值（鼠标专用；触摸靠长按，不看位移） */
   moveTolerance?: number;
   /** 点了但停留过久不算 tap 的上限 */
   tapMaxMs?: number;
-  /**
-   * 长按成立**之前**，手指竖向移动多少像素就判定为"玩家想滚动页面"（放弃手势）。
-   *
-   * 它按**方向**用（见 `handleMove`）：竖向移动才算滚动意图，横向不算 ——
-   * 格子里的东西只能横向拖，而手指刚按下时抖十几像素实在太容易了。
-   * 原来用"总位移超过 12px 就放弃"，于是**大部分想拖拽的手势在长按成立前就被放弃**
-   * （玩家报的"手机上拖不动"）。
-   */
-  scrollTolerance?: number;
-  /**
-   * ★★ 这块区域**由我们自己滚**（玩家 2026-10 第二次报的"正常拖动又不正常了"）。
-   *
-   * ## 为什么必须自己滚，而不是交回给浏览器
-   *
-   * 这条是 `.slot` 上 `touch-action` 那两难的另一半，两次都踩过：
-   *
-   *  · `touch-action: none` → 浏览器**永远不滚动这块区域**（格子铺满整块可滚区，
-   *    于是"能滚的地方只剩货架卡之间的缝"，玩家第一次报的就是这个）；
-   *  · `touch-action: manipulation` → 浏览器**接管**纵向手势去滚动，
-   *    并在接管时发 `pointercancel` —— 而我们的长按计时器还在，300ms 一到
-   *    `beginDrag` 照常开拖，**玩家看到的是一个不跟手的幽灵**（第二次报的"正常拖动又不正常"）。
-   *
-   * 两者不能兼得的原因在于"谁来决定这次手势是什么"只能有一个答案。
-   * 既然拖拽必须我们说了算，那就把滚动也一起接过来：`touch-action: none` 保住手势，
-   * 竖向移动越过 `scrollTolerance` 时**由我们调用 `scrollTop`**。
-   *
-   * ⚠ 代价写在这里：这条路**没有惯性滚动**（手指抬起就停），
-   * 而且一次手势里是"滚动"就不能再变回"拖拽"（反之亦然）——
-   * 两个方向的取舍都指向同一个原则：**手势的含义只能被判定一次**。
-   */
-  scrollHost?: HTMLElement | null;
 }
 
-/**
- * 补全默认值之后的选项。
- *
- * ⚠ `scrollHost` **不在 `Required<>` 里**：它不是"有个默认值"的参数，而是一个
- * "这个调用方有没有自己接管滚动"的开关 —— 没传就是 `undefined`（见 `takeOverScroll`）。
- * 把它塞进 `Required<>` 会逼着 `DEFAULTS` 写一个假的默认元素出来，那个元素一旦被真的
- * `scrollTop +=` 就是往一个游离节点上写，**不报错、也没有任何视觉效果**。
- */
-type ResolvedOptions = Required<Omit<GestureOptions, 'scrollHost'>> & Pick<GestureOptions, 'scrollHost'>;
+type ResolvedOptions = Required<GestureOptions>;
 
-const DEFAULTS: Required<Omit<GestureOptions, 'scrollHost'>> = {
+const DEFAULTS: Required<GestureOptions> = {
   /*
    * ★ 300ms，不是 220ms（2026-10 玩家反馈后的调整）。
    *
-   * 用户报的原话是"下滑上滑的效果不好，容易无效，尤其是在物品整理页面"。
-   * 那个问题的根子是"谁来决定这次手势"只能有一个答案，两次都踩过：
+   * ★ 300ms，不是 220ms（2026-10 玩家反馈"下滑上滑的效果不好，容易无效"之后）。
    *
-   *  · `.slot` 上 `touch-action: none` → 浏览器**永远不滚这块区域**
-   *    （格子铺满整块可滚区，于是"能滚的地方只剩货架卡之间的缝"）；
-   *  · 改成 `manipulation` → 浏览器接管纵向手势去滚，并顺手发 `pointercancel`，
-   *    而我们这边**长按计时器还活着，300ms 一到照样开拖** ——
-   *    玩家看到的是一个不跟手的幽灵（第二次报的"正常拖动又不正常了"）。
-   *
-   * 现在的口径：`touch-action: none` 拿回手势，滚动由手势层自己接管
-   * （`GestureOptions.scrollHost`），而**这个阈值就是"滚动 / 拖拽"的分界线**。
+   * 他当时报的是滚动不灵，而滚动早就不归这一层管了（见文件头）——
+   * 但**这个数仍然是那条账的一部分**，因为它是"这一次手势算点、还是算拖拽"的分界线：
    *
    *  · 一次"想滚一下屏幕"的滑动，从按下到手指真的移动，经常要 200ms 出头
    *    （拿起手机、找准位置、再推）。220ms 的窗口太窄 —— 手一迟疑就跨过去了，
-   *    于是那次滑动直接被判成拖拽。玩家看到的仍然是"划不动"。
+   *    于是那次滑动在浏览器还没开始 pan 之前就被我们判成了拖拽（一个不跟手的幽灵）。
    *
    * 300ms 是把这条边界往"先当作滚动"那一侧推：想拖的人按住不动不会在意
    * 多等 80ms（他本来就要停一下瞄准落点），想滚的人几乎不会再被截胡。
@@ -127,8 +95,7 @@ const DEFAULTS: Required<Omit<GestureOptions, 'scrollHost'>> = {
    */
   longPressMs: 300,
   moveTolerance: 12,
-  tapMaxMs: 500,
-  scrollTolerance: 24
+  tapMaxMs: 500
 };
 
 /**
@@ -158,13 +125,6 @@ interface ActiveGesture {
   lastButtons: number;
   pointerId: number;
   onWindowSettled: (() => void) | null;
-  /**
-   * ★ 这一次手势已经被判定成"滚动"（见 `GestureOptions.scrollHost`）。
-   *
-   * 判定只发生一次：一旦是滚动，剩下的路程全部用来 `scrollTop`，
-   * 而且**长按计时器不会再生效**（否则一个想滚的人会在滚到一半时被拖拽截胡）。
-   */
-  scrolling: boolean;
 }
 
 let active: ActiveGesture | null = null;
@@ -183,7 +143,7 @@ let installedOn: unknown = null;
  * 手势层的诊断开关（与 ui 层同名）：控制台 `__tunhuoTrace = true` 打开。
  *
  * 加它的原因很具体：手机的日志里出现"每 6px 就被打断一次"，
- * 而"谁打断了它"有**五条**不同的路径（滚动判定 / 看门狗 / pointercancel /
+ * 而"谁打断了它"有**四条**不同的路径（看门狗 / pointercancel /
  * window blur / 新的 pointerdown 顶掉）。不打出来就只能靠猜 —— 猜了三轮了。
  *
  * ★ 2026-10 补了两条曾经"安静地不做任何事"的路径的日志：
@@ -215,29 +175,11 @@ function installWindowListeners(): void {
   window.addEventListener('pointermove', handleMove);
   window.addEventListener('pointerup', handleUp);
   window.addEventListener('pointercancel', handleCancel);
-  /*
-   * ★ 接管了滚动的那一次手势，必须把 `touchmove` 的默认行为也吃掉。
-   *
-   * `.slot` 上的 `touch-action: none` 本来就已经让浏览器不管这块区域了，
-   * 这一条是**第二道**防线：`touch-action` 只作用在它写着的那个元素上，
-   * 而手势可能在别处（纸箱、胶带条）起手，那些地方的 `touch-action` 是另一个值。
-   * 不吃掉的话，同一次滑动会**页面上滚一遍 + 我们滚一遍**（两倍速）。
-   *
-   * ⚠ `{ passive: false }` 是必须的：Chrome 从 56 起把 window 上的 `touchmove`
-   * 默认设成 passive，那时 `preventDefault()` 会**被忽略且只在控制台抱怨**——
-   * 也就是"写了但不生效"，正是本仓库最防的那一类。
-   */
-  window.addEventListener('touchmove', handleTouchMove, { passive: false });
   // 页面被切走/隐藏时（切窗口、系统弹层）把手势收掉，别留个幽灵在屏幕上
   window.addEventListener('blur', () => {
     traceDrag('cancel 来源=window blur');
     cancelActive();
   });
-}
-
-function handleTouchMove(e: TouchEvent): void {
-  if (!active?.scrolling) return;
-  if (e.cancelable) e.preventDefault();
 }
 
 function clearLongPressTimer(g: ActiveGesture): void {
@@ -300,28 +242,10 @@ function startWatchdog(): void {
 
 function beginDrag(g: ActiveGesture, point: Point): void {
   if (g.dragging) return;
-  if (g.scrolling) return; // 这次手势已经是"滚动"了，不能再变成拖拽
   g.dragging = true;
   g.el.classList.add('is-dragging');
   traceDrag(`beginDrag at ${Math.round(point.x)},${Math.round(point.y)}`);
   g.handlers.onDragStart?.(point);
-}
-
-/**
- * ★★ 把这次手势判定成"滚动"，并自己滚（见 `GestureOptions.scrollHost`）。
- *
- * 返回是否真的滚了。返回 false 时调用方**不要**收手势 ——
- * `scrollHost` 是可选参数，没传的调用方（胶带条那几处）仍然走"放弃手势"的老路。
- *
- * 它同时给 `touchmove` 的那个 `preventDefault` 当判据：只有"我们已经接管了滚动"
- * 的手势才该吃掉浏览器的默认滚动，否则页面会滚两倍。
- */
-function takeOverScroll(g: ActiveGesture, deltaY: number): boolean {
-  const host = g.opts.scrollHost;
-  if (!host) return false;
-  g.scrolling = true;
-  host.scrollTop += deltaY;
-  return true;
 }
 
 function handleMove(e: PointerEvent): void {
@@ -330,38 +254,37 @@ function handleMove(e: PointerEvent): void {
   g.lastSeenAt = now();
   g.lastButtons = e.buttons;
   const point = { x: e.clientX, y: e.clientY };
-  const prev = g.last;
   g.last = point;
-  if (g.scrolling) {
-    // 已经接管了滚动：这一趟剩下的路程全部用来滚，不再判任何别的东西
-    takeOverScroll(g, point.y - prev.y);
+  if (g.dragging) {
+    g.handlers.onDragMove?.(point);
     return;
   }
-  if (!g.dragging) {
-    if (e.pointerType === 'mouse') {
-      if (distance(point, g.start) > 6) beginDrag(g, point);
-      return;
-    }
-    /*
-     * 长按还没成立：按**方向**判断滚动意图（见 GestureOptions.scrollTolerance）。
-     * ⚠ 这一条也打日志：它是一条**安静地放弃手势**的路径，
-     * 而"安静地放弃"在测试里与"什么都没发生"长得一模一样。
-     */
-    const dy = Math.abs(point.y - g.start.y);
-    const dx = Math.abs(point.x - g.start.x);
-    traceDrag(`move 未定格 dy=${Math.round(dy)} dx=${Math.round(dx)} 阈值=${g.opts.scrollTolerance}`);
-    if (dy > g.opts.scrollTolerance && dy > dx) {
-      if (takeOverScroll(g, point.y - prev.y)) {
-        traceDrag(`滚动接管 dy=${Math.round(dy)} dx=${Math.round(dx)}`);
-        return;
-      }
-      traceDrag(`cancel 来源=滚动判定 dy=${Math.round(dy)} dx=${Math.round(dx)}`);
-      settle(g);
-      g.handlers.onCancel?.();
-    }
+  if (e.pointerType === 'mouse') {
+    if (distance(point, g.start) > 6) beginDrag(g, point);
     return;
   }
-  g.handlers.onDragMove?.(point);
+  /*
+   * ★★ 触摸、长按还没成立：**什么也不做，把这次移动让给浏览器**。
+   *
+   * ## 这里以前有一整套"滚动接管"，2026-10 删掉了
+   *
+   * 上一版在长按成立前按方向判滚动（竖向移动越过 `scrollTolerance` 就
+   * `host.scrollTop +=`），理由是 `.slot` 上写着 `touch-action: none`
+   * —— 浏览器永远不滚那块区域，所以"滚"这件事只能我们自己干。
+   *
+   * 那条路的账单是**两层逻辑**：`.room-scroll` 上有 `-webkit-overflow-scrolling: touch`
+   * （合成层滚动容器），浏览器自己也在滚同一块区域，于是同一次滑动上
+   * 合成器滚一遍、我们再滚一遍。玩家报的"方向是反的"就是这两层在打架。
+   * **主线程拦不住合成器**，所以只要"我们自己滚"这条路还在，这个 bug 就修不掉。
+   *
+   * 现在 `.slot` / `.box` 是 `touch-action: pan-y`：竖向滚动**整个归浏览器**
+   * （惯性、回弹、方向都对，这些自己写都写不好），我们一次都不写 `scrollTop`。
+   * 代价是"长按成立**之后**纵向大距离移动"会被浏览器接管并 `pointercancel` 掉
+   * —— 那一趟拖拽作废（物资落回原处），这是写在明处的取舍。
+   *
+   * ⚠ 所以这个分支**看起来像"什么都没干"是刻意的**，不是漏写了。
+   * 别再往这里加"判定滚动"的代码：那会把刚修掉的第二层逻辑请回来。
+   */
 }
 
 function handleUp(e: PointerEvent): void {
@@ -450,8 +373,7 @@ export function attachPointerGesture(
       lastSeenAt: now(),
       lastButtons: e.buttons,
       pointerId: e.pointerId,
-      onWindowSettled: null,
-      scrolling: false
+      onWindowSettled: null
     };
     active = g;
     startWatchdog();

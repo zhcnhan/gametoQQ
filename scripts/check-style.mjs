@@ -262,57 +262,75 @@ if (strayWhite.length > 0) {
 
 // ———————— ⑤ 可拖拽元素必须"管住浏览器的默认手势"，而且不许被选走 ————————
 /*
- * `.slot` / `.box` 上必须有 `touch-action: none`，而且整条"自己滚"的链路要在。
- *
- * ## 这一条修过**三次**，三次的原因各不相同（值得读完再改）
+ * ★★ 这一条修过**四次**，四次的原因各不相同（值得读完再改）。
  *
  * **第一次（写这条守卫的原因）**：格子原来没设 `touch-action`，浏览器按默认策略
  * 认为"这块区域可以滚动页面"，于是手指按住并移动几像素后会**接管**手势去滚动，
  * 同时发 `pointercancel` —— 我们这边收到就按"被打断"收尾。
  * 玩家报的"手机上拖拽完全不跟手、拖出极小的范围就断"正是这个，
  * 而拖拽诊断日志把它量成了"每约 6px 一次 cancelDrag"。
- * 当时的修法是 `touch-action: none`，并在这里钉住。
  *
  * **第二次（2026-10 玩家报的"划不动"）**：`none` 的意思不只是"别抢我的拖拽"，
  * 它是"**这块区域永远不参与滚动**"。而整理页上格子几乎铺满整块可滚区 ——
  * 于是能滚的地方只剩货架卡之间的缝，手指落在格子上就一动不动。
  * 玩家原话："我很难划到下面的格子和其他的架子（除非手指刚好放在货架边缘）"。
- * 当时的修法是改成 `manipulation`，并把这条守卫**反过来**写成"不许是 none"。
  *
  * **第三次（2026-10 玩家报的"正常的拖动又不正常了"）**：`manipulation` 让浏览器
  * 接管纵向手势去滚，可它照样会发 `pointercancel` —— 而我们的长按计时器还活着，
  * 300ms 一到 `beginDrag` 照常开拖。玩家看到的是一个不跟手的幽灵。
  *
- * ## 所以真正要守的是什么（三条，最后一条是这一轮补的）
+ * **第四次（2026-10 玩家报的"方向是反的 / 两层逻辑"）**：第三次的修法是
+ * `none` + **我们自己滚**（`drag.ts` 的 `takeOverScroll` 往 `roomEl.scrollTop` 写），
+ * 而 `.room-scroll` 当时带着 `-webkit-overflow-scrolling: touch` ——
+ * 那块区域是**合成层滚动容器**，浏览器自己也在滚。同一次滑动上两层同时存在，
+ * 我们看到的 `scrollTop` 取决于合成器此刻的进度，于是方向时对时反。
+ * 玩家原话："好像跟正常的上滑下拉是两层逻辑（**他们俩都存在**）"。
  *
- *  ① `.slot` / `.box` 显式写着 `touch-action: none` —— 手势归我们，浏览器别插手；
- *  ② 既然归了我们，**滚动就得自己接**：`drag.ts` 里有 `takeOverScroll`，
- *     而 `OrganizeScreen.ts` 真的把 `scrollHost: this.roomEl` 传给了两处手势
- *     （格子与纸箱）。少任何一半，第二次那个"划不动"就原地复现 ——
- *     而它**不会报错、不会红**，只有玩家能看出来。
+ * ## 所以现在的口径是「滚动是浏览器的，手势是我们的」（别再往回改）
+ *
+ * 第四条路（2026-10 定稿）：`touch-action: pan-y` + **一次都不写 `scrollTop`**。
+ * 滚动全部归浏览器（它有惯性、回弹、方向一定对、跟手，这些自己写都写不好）；
+ * 我们只负责"点"与"长按拖"，长按成立（300ms）**之前**手指怎么动都与我们无关。
+ * 代价是"长按成立之后纵向大距离移动"会被浏览器接管并 `pointercancel` 掉那一趟拖拽
+ * —— 写在明处的取舍（见 `src/style.css` 的 `.slot`）。
+ *
+ * ## 真正要守的是四条（第 ①②④ 条都是这一轮按新口径写的）
+ *
+ *  ① `.slot` / `.box` **显式**写着 `touch-action`，且取值必须是 `pan-y` ——
+ *     "没写"会让浏览器在**任何方向**上接管（第一次那个 bug），
+ *     `none` 会让这块区域**永远不参与滚动**（第二次那个 bug）；
+ *  ② 既然滚动归了浏览器，**我们这边不许再有一条并行的手势层滚动**：
+ *     `drag.ts` 里不许出现 `takeOverScroll` / `scrollHost` / `touchmove` 的
+ *     `preventDefault` —— 任何一条回来都会重新叠出"两层逻辑"（第四次那个 bug）；
  *  ③ `.slot` / `.box` 上写着 `user-select: none`：拖拽起手就是一次按住并移动，
- *     不写它的后果是"从箱子里拖出东西的时候会复制粘贴箱子的名字"（玩家 2026-10 原话）。
- *
- * 把判据写成"必须等于某个取值"会**误报**：`.tape-chip` 那一类用 `pan-x` 也是对的。
+ *     不写它的后果是"从箱子里拖出东西的时候会复制粘贴箱子的名字"（玩家 2026-10 原话）；
+ *  ④ 那么被滚的那块容器**不许**再带 `-webkit-overflow-scrolling: touch` ——
+ *     它就是"合成层滚动容器"的开关，而**主线程拦不住合成器**。
+ *     这一条单独看很无辜（这行在 2026 年前后的移动端文章里到处都是），
+ *     但它正是第四次那个 bug 的**另一半**：有它，我们写不写 `scrollTop` 都会有两层。
  */
-const TOUCH_ACTION_REQUIRED = ['slot', 'box'];
-for (const cls of TOUCH_ACTION_REQUIRED) {
-  const rule = new RegExp(`\\.${cls}\\s*\\{[^}]*touch-action\\s*:\\s*([a-z-]+)`, 's');
-  const hit = rule.exec(code);
+for (const cls of ['slot', 'box']) {
+  // ⚠ 用"这条长规则里有没有出现这个属性"而不是"值等于某个字符串"：
+  //   一个类在样式表里有多条规则（基样式 + 窄屏档），只认某一种写法会误报。
+  const rules = new RegExp(`\\.${cls}(?![\\w-])[^{}]*\\{[^}]*\\}`, 'gs');
+  const bodies = code.match(rules) ?? [];
+  const touchRule = bodies.find((b) => /touch-action\s*:/.test(b)) ?? '';
+  const hit = /touch-action\s*:\s*([a-z-]+)/.exec(touchRule);
   if (!hit) {
     note(
       `.${cls} 没有写 touch-action —— 触摸设备上从这个元素起手的拖拽会被浏览器抢去滚动，\n` +
         `    表现为"完全不跟手、拖一点点就断"，而且不会有任何报错。`
     );
-  } else if (hit[1] !== 'none') {
+  } else if (hit[1] !== 'pan-y') {
     note(
-      `.${cls} 的 touch-action 是 ${hit[1]}，不是 none —— 浏览器会接管纵向手势去滚动，\n` +
-        `    并且**照样发 pointercancel**；而我们的长按计时器不会因此停下，\n` +
-        `    于是 300ms 一到照样开拖（2026-10 玩家报的"正常的拖动又不正常了"）。\n` +
-        `    要滚动请走 drag.ts 的 scrollHost 那条路，别把手势让回给浏览器。`
+      `.${cls} 的 touch-action 是 ${hit[1]}，不是 pan-y。\n` +
+        `    · 写成 none：这块区域**永远不参与滚动**，而整理页上格子几乎铺满可滚区 ——\n` +
+        `      于是"能滚的地方只剩货架卡之间的缝"（玩家 2026-10 报的"划不动"）；\n` +
+        `    · 写别的值或不写：浏览器会在**任何方向**上接管手势（"拖一点点就断"）。\n` +
+        `    口径见 src/style.css 的 .slot 那一大段。`
     );
   }
-  if (!new RegExp(`\\.${cls}\\s*\\{[^}]*user-select\\s*:\\s*none`, 's').test(code)) {
+  if (!bodies.some((b) => /user-select\s*:\s*none/.test(b))) {
     note(
       `.${cls} 上没有 user-select: none —— 从它起手拖动 = 一次文本选择，\n` +
         `    松手后剪贴板里就躺着那一格/那个箱子的名字（玩家 2026-10 报的"复制粘贴箱子的名字"）。\n` +
@@ -322,34 +340,77 @@ for (const cls of TOUCH_ACTION_REQUIRED) {
 }
 
 /*
- * ★ ②的"另一半"：手势归了我们之后，滚动必须真的被接过去。
+ * ★ ②的守卫：**手势层不许再有一条并行的手势层滚动**（第四次那个 bug 的根）。
  *
- * 这一条**跨两个文件**，所以只能锚具体符号 —— 而它锚的正是"改了 A 忘了改 B"
- * 那种漏法。三条一起看才成立：
- *   · `drag.ts` 里有 `takeOverScroll`（真的调 `scrollTop` 的那个函数）；
- *   · `drag.ts` 里 `touchmove` 带 `{ passive: false }`（否则 preventDefault 被忽略，
- *     表现是"页面滚一遍、我们再滚一遍"两倍速）；
- *   · `OrganizeScreen.ts` 里两处手势都传了 `scrollHost`。
+ * 上一版这条守卫方向相反：它**要求** `drag.ts` 里有 `takeOverScroll`、
+ * `touchmove` 带 `{ passive: false }`、`OrganizeScreen.ts` 传两处 `scrollHost`。
+ * 那三条现在全变成了**反例** —— 它们一起构成"同一次滑动上两层逻辑"。
+ * 守卫跟着口径掉头，而不是把口径改回来迁就守卫。
+ *
+ * ⚠ 探针必须跑在**去掉注释之后的源码**上。这几个词现在全都出现在
+ * `drag.ts` 的说明性注释里（那正是它们的价值：后人要能查到为什么删掉），
+ * 直接对整个文件做正则会把解释本身判成违规 —— 而这会逼着后人删掉解释，
+ * 比不设守卫更糟。
  */
-if (!/function takeOverScroll\(/.test(dragSrc)) {
-  note(
-    `ui/drag.ts 里没有 takeOverScroll —— 而 .slot/.box 的 touch-action 是 none，\n` +
-      `    浏览器已经不滚这块区域了。少了它，格子上的滑动**彻底不滚**（第二次那个 bug）。`
-  );
+function stripComments(text) {
+  return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 }
-if (!/addEventListener\('touchmove',\s*handleTouchMove,\s*\{\s*passive:\s*false\s*\}/.test(dragSrc)) {
-  note(
-    `ui/drag.ts 的 touchmove 监听没带 { passive: false } —— window 上的 touchmove 默认是\n` +
-      `    passive 的，preventDefault() 会被**忽略且不报错**，表现是同一次滑动滚两倍速。`
-  );
+const dragCode = stripComments(dragSrc);
+const organizeCode = stripComments(organizeSrc);
+const TAKEOVER_SIGNS = [
+  ['takeOverScroll', () => /function\s+takeOverScroll\s*\(/.test(dragCode)],
+  ['scrollHost', () => /\bscrollHost\b/.test(dragCode) || /\bscrollHost\b/.test(organizeCode)],
+  [
+    'touchmove 的 preventDefault',
+    () => /addEventListener\(\s*'touchmove'/.test(dragCode) || /handleTouchMove/.test(dragCode)
+  ]
+];
+for (const [label, probe] of TAKEOVER_SIGNS) {
+  if (probe()) {
+    note(
+      `ui/drag.ts 或 ui/OrganizeScreen.ts 里又出现了 ${label} —— 手势层正在接管滚动。\n` +
+        `    那一套 2026-10 被删掉了：它与滚动容器的合成层滚动**叠成两层**，\n` +
+        `    同一次滑动上合成器滚一遍、我们滚一遍，玩家看到的方向取决于合成器此刻的进度，\n` +
+        `    表现成"跟操作逻辑是反的"（玩家原话："好像跟正常的上滑下拉是两层逻辑"）。\n` +
+        `    滚动的口径是**全部归浏览器**（见 src/style.css 的 .slot 那一大段）。`
+    );
+  }
 }
-const SCROLL_HOST_USES = (organizeSrc.match(/scrollHost:\s*this\.roomEl/g) ?? []).length;
-if (SCROLL_HOST_USES < 2) {
-  note(
-    `ui/OrganizeScreen.ts 里只找到 ${SCROLL_HOST_USES} 处 scrollHost: this.roomEl（应该是 2：格子 + 纸箱）。\n` +
-      `    .slot/.box 上的 touch-action: none 让浏览器不再滚这块区域，\n` +
-      `    没传 scrollHost 的那一处就是"手指落上去划不动"（2026-10 玩家报过两次）。`
-  );
+/*
+ * ⚠ 这里**刻意不**设"`OrganizeScreen.ts` 里不许出现 scrollTop"这一条守卫。
+ *
+ * 它看起来像是同一件事的判据，其实不是：`renderRoom` 里有合法的一对
+ * "重绘前记下 `roomEl.scrollTop`、重绘后写回去"（`:840` / `:874`）——
+ * 中间是一次 `innerHTML` 整块换，不记的话每次放下东西都会跳回顶部。
+ * 那对读写发生在**重绘的同步过程里**，不与任何手势并行，
+ * 所以它不是"第二层滚动"。
+ *
+ * 判"有没有第二层"要看的是**并行的那一条链路**：接管滚动的函数、传进来的滚动宿主、
+ * 以及 `touchmove` 的 `preventDefault`（上面三条 TAKEOVER_SIGNS），
+ * 外加被滚容器的 `-webkit-overflow-scrolling`（下面 ④）。
+ * 抓 `scrollTop` 这个字符串会把这个合法的写法一起误报 ——
+ * 而**误报会让人开始改守卫**，那比漏报更贵。
+ */
+
+/*
+ * ★ ④：被滚的那块容器不许再带 `-webkit-overflow-scrolling: touch`。
+ *
+ * 这一行在移动端文章里到处都是（"开启惯性滚动"），所以它**看起来完全无害** ——
+ * 但它把这块区域提升成合成层滚动容器，滚动从此由合成器驱动。
+ * 第四次那个 bug 的两半里，一半是"我们自己写 scrollTop"，另一半就是它。
+ * 顺手也守住 `.slot` 自己：格子不是滚动容器，带上它只会让祖先里多一个合成层。
+ */
+for (const cls of ['room-scroll', 'slot']) {
+  const rules = new RegExp(`\\.${cls}(?![\\w-])[^{}]*\\{[^}]*\\}`, 'gs');
+  const bodies = code.match(rules) ?? [];
+  if (bodies.some((b) => /-webkit-overflow-scrolling\s*:\s*touch/.test(b))) {
+    note(
+      `.${cls} 上又出现了 -webkit-overflow-scrolling: touch —— 它把这块区域变成\n` +
+        `    **合成层滚动容器**，滚动由合成器驱动，而**主线程拦不住合成器**。\n` +
+        `    2026-10 玩家报的"方向是反的"正是它与"我们自己写 scrollTop"叠出来的两层。\n` +
+        `    这条在移动端文章里到处都是、单独看完全无害，所以必须由守卫记着。`
+    );
+  }
 }
 
 // ———————— ⑥ 覆盖层必须"不吃指针事件" ————————

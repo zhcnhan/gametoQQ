@@ -1252,12 +1252,6 @@ export class OrganizeScreen {
           onDragMove: (point) => this.moveDrag(point),
           onDragEnd: (point) => this.endDrag(point),
           onCancel: () => this.cancelDrag()
-        }, {
-          /*
-           * ★ 格子自己滚不动（`.slot` 上是 `touch-action: none`，理由见 style.css）。
-           * 所以竖向滑动由手势层接管，交给这一块容器去滚 —— 它就是 `<main data-room>`。
-           */
-          scrollHost: this.roomEl
         })
       );
     });
@@ -1295,13 +1289,6 @@ export class OrganizeScreen {
           onDragMove: (point) => this.moveDrag(point),
           onDragEnd: (point) => this.endDrag(point),
           onCancel: () => this.cancelDrag()
-        }, {
-          /*
-           * 纸箱也在 `.dock-boxes` 里、同样 `touch-action: none`。
-           * 但**滚动的是屋子**（`roomEl`）而不是那一栏：手机上手指落在箱子上往下划，
-           * 想要的是看见下面的货架 —— 那一栏本来就只占一屏的一角。
-           */
-          scrollHost: this.roomEl
         })
       );
     });

@@ -101,14 +101,49 @@ describe('手势状态机（ui/drag.ts 的真实行为）', () => {
     expect(h.log[h.log.length - 1]).toBe('dragEnd');
   });
 
-  it('★ 长按成立前竖向滑动 → 判定为滚动，放弃手势（页面要能滚）', () => {
+  /*
+   * ★★★ 这一条是 2026-10 修掉"滚动方向反"之后**重写**的，它替掉的是
+   * 一条叫「长按成立前竖向滑动 → 判定为滚动，放弃手势（页面要能滚）」的用例。
+   *
+   * 那条老用例断言的是**我们的代码**在竖向滑动时调 `onCancel` —— 也就是说
+   * 它把"手势层接管滚动"这个设计写进了断言。那个设计 2026-10 被删了，因为它
+   * 与滚动容器的合成层滚动**叠成了两层**：同一次滑动上合成器滚一遍、我们滚一遍，
+   * 玩家看到的方向取决于合成器此刻的进度，表现成"跟操作逻辑是反的"（玩家原话：
+   * "好像跟正常的上滑下拉是两层逻辑（他们俩都存在）"）。
+   *
+   * 现在的口径是「**滚动是浏览器的，手势是我们的**」（见 `ui/drag.ts` 文件头），
+   * 于是这一类滑动的正确行为是**什么都不做**：不调 onCancel（我们没资格说
+   * "这次手势作废"，浏览器还在滚）、不调 onDragStart（还没长按成立）。
+   *
+   * ⚠ 断言写成 `toEqual([])` 而不是"没有 cancel"：这两个的差别就是这条用例的全部价值。
+   */
+  it('★★ 长按成立前竖向滑动 → 手势层什么都不做（滚动归浏览器，不是我们接管）', () => {
     mount(h);
     h.el.dispatch('pointerdown', pointerEvent(30, 30));
     h.win.dispatch('pointermove', pointerEvent(32, 90)); // 竖向 60px
-    expect(h.log).toEqual(['cancel']);
-    // 而且这一次手势彻底结束：后续抬起不该再有任何回调
+    expect(h.log, '让浏览器去滚：我们既不该取消，也不该开拖').toEqual([]);
+    // 而且这一次手势仍然"活着且还没进入拖拽"：手指抬起来只是个走了很远的 tap 候选，
+    // 位移超了容差 → 连 tap 都不算，安静结束
     h.win.dispatch('pointerup', pointerEvent(32, 90, { buttons: 0 }));
-    expect(h.log).toEqual(['cancel']);
+    expect(h.log).toEqual([]);
+  });
+
+  it('★ 浏览器接管滚动时会发 pointercancel —— 那一刻必须把手势收掉，不留幽灵', () => {
+    mount(h);
+    h.el.dispatch('pointerdown', pointerEvent(30, 30));
+    h.win.tick(LONG_PRESS_MS + 60); // 长按成立，进入拖拽
+    expect(h.log).toEqual(['dragStart']);
+    /*
+     * 手指在长按成立**之后**改为纵向大距离移动：`touch-action: pan-y` 允许浏览器
+     * 开始滚页面，它会发 `pointercancel`。这一趟拖拽作废（物资落回原处）——
+     * 这是写在明处的取舍（见 `.slot` 那段注释），但**手势必须结束**，
+     * 否则长按计时器与 `is-dragging` 会留到下一次手势里去。
+     */
+    h.win.dispatch('pointercancel', pointerEvent(30, 30, { buttons: 0 }));
+    expect(h.log).toEqual(['dragStart', 'cancel']);
+    // 收干净了：之后抬起不该再有回调
+    h.win.dispatch('pointerup', pointerEvent(30, 30, { buttons: 0 }));
+    expect(h.log).toEqual(['dragStart', 'cancel']);
   });
 
   /*
