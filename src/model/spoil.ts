@@ -22,7 +22,7 @@
  *
  * model/ 层纪律：纯函数，不碰任何浏览器 API。
  */
-import { spoilFactorOf } from '../data/furniture';
+import { spoilFactorOf, type FridgeDead } from '../data/furniture';
 import { getItemDef } from '../data/items';
 import { cloneShelf, getStack, readingOrder, setSlotStack } from './shelf';
 import type { ItemBatch, ItemStack, Shelf } from './types';
@@ -92,23 +92,32 @@ export interface SpoilSweep {
  *
  * 现在每个容器**各算各的虚拟天**：
  *
- * ```
+ * ```text
  * vDay_容器 = virtualDay(day, 灾难.spoilRate × 家具.spoilFactor)
  * ```
  *
  *  · **货架** → 按自家 `kind` 的乘数（冰箱 0.4 / 柜子 0.75 / 普通 1）；
  *  · **纸箱** → 固定 1（"纸箱不是冰箱"这句话在代码里就是这个 1）。
  *
+ * ## ★ 断电（M4 收尾，D-31 的另一半）
+ *
+ * `opts.fridgeDead` 为真时**冰箱按 1 算** —— 它变成"一个箱子"。
+ * 这一条不是新维度，而是**同一个乘数的另一种取值**：17 维里的"腐坏速度"
+ * 原本只会调快调慢，"电有没有"是它第一个**会翻转家具强弱**的取值。
+ * 判据在灾难自己身上（`DisasterProfile.fridgeDead`），这一层不认识灾难。
+ *
  * @param shelves 全部家具
  * @param boxes 还没拆的纸箱
  * @param day **真实天**（不是虚拟天 —— 虚拟天从这里才算得出来）
  * @param disasterSpoilRate 这一场灾难的 `spoilRate`
+ * @param opts.fridgeDead 这一场断电了没有（见上）
  */
 export function spoilEverything(
   shelves: readonly Shelf[],
   boxes: readonly { id: string; defId: string; items: ItemStack[] }[],
   day: number,
-  disasterSpoilRate: number
+  disasterSpoilRate: number,
+  opts: FridgeDead = {}
 ): SpoilSweep {
   const tally = new Map<string, number>();
   const add = (itemId: string, count: number): void => {
@@ -117,8 +126,8 @@ export function spoilEverything(
   };
 
   const nextShelves = shelves.map((shelf) => {
-    // ★ 这一块自己的虚拟天：灾难的倍率 × 这一种家具的乘数
-    const vDay = virtualDay(day, disasterSpoilRate * spoilFactorOf(shelf.kind));
+    // ★ 这一块自己的虚拟天：灾难的倍率 × 这一种家具的乘数（断电时冰箱按 1）
+    const vDay = virtualDay(day, disasterSpoilRate * spoilFactorOf(shelf.kind, opts));
     let next = cloneShelf(shelf);
     for (const pos of readingOrder(next)) {
       const stack = getStack(next, pos);

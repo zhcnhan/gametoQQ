@@ -120,10 +120,10 @@ describe('addFurniture：加一块家具', () => {
 
   it('★ 灾难的空间限制照旧生效（与开局那三块用同一把尺子）', () => {
     // 0.72 × 4 排 = 2.88 → 2 排（向下取整，见 `setup.ts` 的 `rowsFor`）
-    const after = addFurniture([], 'fridge', { spoilFactor: 0.72 });
+    const after = addFurniture([], 'fridge', { capacityFactor: 0.72 });
     expect(after[0]!.h).toBe(Math.floor(furnitureDefOf('fridge').h * 0.72));
     // 再小也至少留一排 —— 一格都没有不是难度，是卡死（§4A）
-    const tiny = addFurniture([], 'fridge', { spoilFactor: 0.01 });
+    const tiny = addFurniture([], 'fridge', { capacityFactor: 0.01 });
     expect(tiny[0]!.h).toBeGreaterThanOrEqual(1);
   });
 
@@ -287,10 +287,11 @@ describe('★★ 生产路径：买来的家具不许把灾难吃掉的空间买
     expect(bought.added).toBe(true);
     expect(bought.shelves.length).toBe(run.shelves.length + 1);
     // ② 而它照旧吃容量乘数（与开局那几块同一把尺子）
-    expect(newShelf.h).toBe(Math.round(furnitureDefOf('shelf').h * 0.85));
+    //    ★ 口径是 **floor**（`rowsFor`："乘了就必须真的少一排"），不是 round
+    expect(newShelf.h).toBe(Math.floor(furnitureDefOf('shelf').h * 0.85));
     // ③ 对照：把「摘块」这件事单独拿出来 —— `addFurniture` 完全不知道 `unusableShelfIds`，
     //    所以哪怕容量乘数是 1，新那块也不会被"摘掉"（它压根不在那张名单里）
-    const added = addFurniture(run.shelves, 'shelf', { spoilFactor: 1 });
+    const added = addFurniture(run.shelves, 'shelf', { capacityFactor: 1 });
     expect(added[added.length - 1]!.h).toBe(furnitureDefOf('shelf').h);
   });
 });

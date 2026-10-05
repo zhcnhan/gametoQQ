@@ -259,3 +259,73 @@ describe('§10B.3.1 L2 维度：逐维实测', () => {
     expect(outdoorTemp(99, 'cold_snap')).toBe(outdoorTemp(14, 'cold_snap')); // 夹到最后一档
   });
 });
+
+describe('★★ fridgeDead：断电那一场，冰箱只是个箱子（M4 收尾，D-31）', () => {
+  /*
+   * ## 这一组为什么存在
+   *
+   * `fridgeDead` 是"冰箱的代价"（在此之前冰箱同价同格而腐坏乘数最低，
+   * 是**严格支配**另外两种家具的选项 —— 见 `meta/deferred.ts` 的 D-31）。
+   * 它有两个容易坏的地方，各有一条守卫：
+   *
+   *  ① **加错场次**：它是"**电力中断**"这个叙事事实的编码，不是"天太热"。
+   *     如果给热浪也加上，冰箱在最该值钱的那几场里反而变成箱子 ——
+   *     那不是"让家具平衡"，那是**把一件家具废掉**。
+   *     判据只能落在文本上，因为数据里没有别的字段能证明"这场断电了"。
+   *  ② **加了但不生效**：这正是 D-32 那一整类（"写了 ≠ 生效了"）。
+   *     所以这里不只查字段，还**真的摆同一件货、跑同一段腐坏**，比件数。
+   */
+
+  /** 断电证据：散文字段里必须真的写了这几件事之一 */
+  const EVIDENCE = ['断电', '停电', '冰箱', '冷藏', '冷链'];
+  /** 只查"人读的散文"字段 —— 它们在 `data/disaster.ts` 里每场都写得很实 */
+  const PROSE_FIELDS = ['axis', 'counterIntuitive', 'decisions', 'notes', 'hint'];
+
+  const proseOf = (def: DisasterProfile): string => {
+    const parts: string[] = [];
+    const rec = def as unknown as Record<string, unknown>;
+    for (const key of PROSE_FIELDS) {
+      const v = rec[key];
+      if (typeof v === 'string') parts.push(v);
+    }
+    // calendar 里每一档的 hint 也算（`typhoon_land` 的断电证据就写在 notes 上、
+    // 而 `super_thunderstorm` 写在 axis 与 hint 上 —— 两个字段都得看）
+    const cal = rec['calendar'];
+    if (Array.isArray(cal)) {
+      for (const day of cal) {
+        const hint = (day as Record<string, unknown>)['hint'];
+        if (typeof hint === 'string') parts.push(hint);
+      }
+    }
+    return parts.join('\n');
+  };
+
+  it('★ 每一场标了 fridgeDead 的，散文本里真的有"电断了"这件事', () => {
+    const marked = DISASTER_DEFS.filter((d) => d.fridgeDead === true);
+    // 先确认这一组不是空转（若某次重构把字段删了，这条会先红）
+    expect(marked.length, '一场都没标 fridgeDead —— 字段是不是被删了？').toBeGreaterThan(0);
+    const bad: string[] = [];
+    for (const def of marked) {
+      const text = proseOf(def);
+      if (!EVIDENCE.some((w) => text.includes(w))) bad.push(`${def.id}（${def.name}）`);
+    }
+    expect(bad, `这些场标了 fridgeDead，但文案里没有任何断电 / 停电 / 冰箱 / 冷藏 / 冷链的说法：\n${bad.join('\n')}`).toEqual([]);
+  });
+
+  it('★★ 而热度类灾难**一场都不许标**（那几场冰箱正是最该值钱的）', () => {
+    /*
+     * 这条是①的反面：上面那条只能保证"标了的都有证据"，
+     * 保证不了"该不标的没标" —— 而**加错**比漏加更坏：
+     * 漏加只是少一个取舍，加错会让"买冰箱"在热浪里变成买了个箱子。
+     *
+     * 名单写死（不靠关键词判断）：这几场都是"气温本身是压力源"，
+     * 而它们没有任何断电叙事 —— 冰箱在其中是**唯一能救鲜食的东西**。
+     */
+    const HEAT_FAMILY = ['heat_wave', 'qiulaohu', 'super_heat', 'ganrefeng', 'huannuan'];
+    for (const id of HEAT_FAMILY) {
+      const def = DISASTER_DEFS.find((d) => d.id === id);
+      expect(def, `找不到 ${id}`).toBeDefined();
+      expect(def!.fridgeDead, `${id} 是热度类灾难，冰箱在那场必须还能用`).not.toBe(true);
+    }
+  });
+});

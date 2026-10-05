@@ -63,11 +63,42 @@ export interface GestureOptions {
 }
 
 const DEFAULTS: Required<GestureOptions> = {
-  longPressMs: 220,
+  /*
+   * ★ 300ms，不是 220ms（2026-10 玩家反馈后的调整）。
+   *
+   * 用户报的原话是"下滑上滑的效果不好，容易无效，尤其是在物品整理页面"。
+   * 根子是 `.slot` 上的 `touch-action: none`（已改成 `manipulation`，见
+   * `style.css` 那一段长注释），但**这个阈值把同一种难受放大了**：
+   *
+   *  · 一次"想滚一下屏幕"的滑动，从按下到手指真的移动，经常要 200ms 出头
+   *    （拿起手机、找准位置、再推）。220ms 的窗口太窄 —— 手一迟疑就跨过去了，
+   *    浏览器刚准备滚，我们这边已经把这次手势**变成拖拽**；
+   *  · 一旦变成拖拽，从格子上起手的那次滑动就彻底不滚了（那条本来正是
+   *    `touch-action: none` 时期的老毛病）。玩家看到的仍然是"划不动"。
+   *
+   * 300ms 是把这条边界往"先当作滚动"那一侧推：想拖的人按住不动不会在意
+   * 多等 80ms（他本来就要停一下瞄准落点），想滚的人几乎不会再被截胡。
+   *
+   * ⚠ 别再往下调。这条的代价是**对称的**：调小会让滚动变难，调大只让
+   * 拖拽慢 80ms —— 两种错法的难受程度不一样。
+   *
+   * ★ 导出给测试用（`src/ui/drag.test.ts` 与 `tapeShelf.test.ts` 里那些
+   * `tick(260)` 原来写死了"220 + 40"）。写死的话，改这个数会让几条用例
+   * **静默变成"什么手势都没发生"** —— 断言里看到的是空数组，
+   * 与"手势层根本不工作"长得一模一样，而它会指向完全错误的方向。
+   */
+  longPressMs: 300,
   moveTolerance: 12,
   tapMaxMs: 500,
   scrollTolerance: 24
 };
+
+/**
+ * 长按进入拖拽所需的毫秒数（导出给测试用 —— 见 `longPressMs` 上方那段）。
+ *
+ * 测试里请用 `LONG_PRESS_MS + 60` 这种写法，**不要写死数字**。
+ */
+export const LONG_PRESS_MS = DEFAULTS.longPressMs;
 
 function distance(a: Point, b: Point): number {
   return Math.hypot(a.x - b.x, a.y - b.y);

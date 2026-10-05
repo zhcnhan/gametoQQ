@@ -5,7 +5,7 @@
  * 命令返回的 OrganizeEvent 才是表现层的输入（音效 / 拟声字 / 压扁动画）。
  */
 import { getDisasterDef } from '../data/disaster';
-import { FURNITURE_DEFS, furnitureDefOf } from '../data/furniture';
+import { FURNITURE_DEFS, furnitureDefOf, furniturePriceOf } from '../data/furniture';
 import { CATEGORY_LABELS, getItemDef } from '../data/items';
 import { ZONE_COLORS } from '../data/palette';
 import { initAudio, isMuted, playSfx, setMuted } from '../fx/audio';
@@ -20,7 +20,6 @@ import { roomForNewFurniture, roomsOf, type RoomView } from '../systems/home';
 import { isSurvivalOrganize } from '../systems/phases';
 import { lockedRooms, survivedRuns } from '../systems/unlock';
 import {
-  FURNITURE_PRICE,
   SNAP_PREFER_PX,
   SNAP_PREFER_TOUCH_PX,
   addFurnitureCommand,
@@ -172,6 +171,17 @@ export class OrganizeScreen {
    * 那只是少一次点击，不是一个会丢的状态。
    */
   private addOpen = false;
+  /**
+   * 纸箱那一栏展不展开（`true` = 展开）。
+   *
+   * ★ 2026-10 玩家要求："让下面那个箱子的一栏可以被折叠展开"。
+   * 他要的是做法，真问题是**手机上一屏装不下**："顶栏 + 纸箱栏 + 三块货架 +
+   * 工具条"，而工具条固定在底下不随内容滚 —— 被它吃掉的高度没有任何办法找回来。
+   *
+   * 默认展开是**故意的**：拆箱是整理页最常做的事，一进来就藏起来会让它变远。
+   * 与 `addOpen` 同一条纪律：会话态，不进存档（刷新之后回到展开）。
+   */
+  private boxesOpen = true;
   private drag: DragState = { active: false, source: 'shelf' };
   /**
    * 上一次渲染用的视图（给吸附偏好查"这一行是哪张胶带"用）。
@@ -952,27 +962,38 @@ export class OrganizeScreen {
       return `<button class="btn" data-action="explain" data-explain="家里放不下了：每间房能放几块是固定的，${name}还锁着。解锁条件是**把一整局跑完**（囤货期 + 生存期，撑满或倒下都算）——再跑完 ${left} 局就开，它自带 3 块空位。">${iconSvg('box')}<span>放不下了 · ${name}还锁着</span></button>`;
     }
     const cash = this.store.run.cash;
-    const afford = cash >= FURNITURE_PRICE;
     /*
-     * ★ 展开三个选择，而不是弹对话框。
+     * ★ 四种家具都摆出来（2026-10 清偿 D-30：`floor` 原来被这一行滤掉，
+     * 全仓没有第二个购买入口 —— 于是"地面"这件家具玩家一辈子见不到，
+     * 而它是四件里唯一真有取舍的：便宜 40 元，但只有 12 格，且什么保护都没有）。
+     *
+     * 「加家具 N 起」用最便宜那件当门槛：门槛写死 100 会让 60 元的家具
+     * 摆在一个显示"要 100"的按钮下面。
+     */
+    const cheapest = Math.min(...FURNITURE_DEFS.map((d) => furniturePriceOf(d.kind)));
+    /*
+     * ★ 展开四个选择，而不是弹对话框。
      *
      * 手机上没有 hover，而"加家具"是一个**要挑种类**的动作
-     * （冰箱 / 柜子 / 货架的腐坏乘数不同）。做一个对话框要处理遮罩、
-     * 焦点、返回键；而三个并排的小按钮说的是同一件事，还少一层。
+     * （货架 / 冰箱 / 柜子 / 地面四者的格数与腐坏乘数不同）。做一个对话框要处理
+     * 遮罩、焦点、返回键；而四个并排的小按钮说的是同一件事，还少一层。
      * 展开后**不自动收起** —— 玩家可能想连着加两块。
+     *
+     * ★ 每颗按钮把**价钱写在名字旁边**，钱不够时给"差 N"而**不置灰**（§4A 那条
+     * 界面纪律：灰按钮只说"不行"，"差 40"说的是"你离它有多远"）。
+     * 价钱不写进 `title` —— 手机上永远看不到 title。
      */
-    const picks = FURNITURE_DEFS.filter((d) => d.kind !== 'floor')
-      .map(
-        (d) =>
-          `<button class="mini" data-action="add-furniture" data-kind="${d.kind}" title="${escapeHtml(d.why)}"${
-            afford ? '' : ' disabled'
-          }>${escapeHtml(d.label)}</button>`
-      )
-      .join('');
+    const picks = FURNITURE_DEFS.map((d) => {
+      const price = furniturePriceOf(d.kind);
+      const short = price - cash;
+      return `<button class="mini is-price" data-action="add-furniture" data-kind="${d.kind}" data-price="${price}" title="${escapeHtml(d.why)}">${escapeHtml(d.label)}<b class="mini-price">${price}</b>${
+        short > 0 ? `<em class="btn-note">差 ${short}</em>` : ''
+      }</button>`;
+    }).join('');
     return `
       <div class="add-furniture">
-        <button class="btn" data-action="toggle-add">${iconSvg('box')}<span>加家具 ${FURNITURE_PRICE}</span>${
-          afford ? '' : `<em class="btn-note">差 ${FURNITURE_PRICE - cash}</em>`
+        <button class="btn" data-action="toggle-add">${iconSvg('box')}<span>加家具 ${cheapest} 起</span>${
+          cash >= cheapest ? '' : `<em class="btn-note">差 ${cheapest - cash}</em>`
         }</button>
         ${
           this.addOpen
@@ -1010,12 +1031,28 @@ export class OrganizeScreen {
       })
       .join('');
 
+    /*
+     * ★ 折叠态：一条 34px 的摘要（有几箱、共几件），整条可点开。
+     *
+     * 判据用 `view.boxes.length` 而**不是** `boxItems.length` —— 这一栏说的就是
+     * "还没拆的纸箱"，箱子拆空了也仍然占一个格子（`is-empty` 那一档）。
+     */
+    const folded = `<button class="boxes-fold" data-action="toggle-boxes" aria-expanded="false">
+        ${iconSvg('box')}<span>纸箱 ${view.boxes.length} 个 · 共 ${view.boxes.reduce((n, b) => n + b.total, 0)} 件</span><em>展开</em>
+      </button>`;
+
     this.dockEl.querySelector('[data-hand]')?.classList.toggle('has-item', hand !== null);
     const handHost = this.dockEl.querySelector('[data-hand]');
     if (handHost) handHost.innerHTML = handHtml;
     const boxHost = this.dockEl.querySelector('[data-boxes]');
     if (boxHost) {
-      boxHost.innerHTML = boxes || '<p class="box-empty-hint">箱子都拆完了。货架归你管。</p>';
+      boxHost.classList.toggle('is-folded', !this.boxesOpen);
+      boxHost.innerHTML = !this.boxesOpen
+        ? folded
+        : `<div class="boxes-head">
+             <span class="boxes-title">还没拆的箱子</span>
+             <button class="mini" data-action="toggle-boxes" aria-expanded="true">收起</button>
+           </div>${boxes || '<p class="box-empty-hint">箱子都拆完了。货架归你管。</p>'}`;
       this.bindBoxGestures();
     }
 
@@ -1183,9 +1220,34 @@ export class OrganizeScreen {
         // 而"展开一个选择"不该有那个副作用
         this.renderDock(buildView(this.store, this.session));
         return;
+      case 'toggle-boxes':
+        /*
+         * 纸箱那一栏折叠/展开（2026-10 玩家要求）。
+         *
+         * 与 `toggle-add` 同一套做法：**只重画 dock，不动房间** ——
+         * 整屏重绘会把货架滚动位置重置，而玩家折叠纸箱正是为了去看下面的货架，
+         * 一折就把滚动弹回顶部等于白折。
+         */
+        playSfx('pick');
+        this.boxesOpen = !this.boxesOpen;
+        this.renderDock(buildView(this.store, this.session));
+        return;
       case 'add-furniture': {
         const kind = hit.dataset['kind'] as Shelf['kind'] | undefined;
         if (!kind) return;
+        /*
+         * ★ 钱不够时在**界面层**先说一句，并给足信息（差多少）。
+         *
+         * 这一道与 `addFurnitureCommand` 里的拒绝是**故意重复**的：命令层读的是
+         * 存档里的 `cash`，界面层读的是玩家眼里那个数字 —— 两者本该一致，
+         * 但"差别只有多少"这句话只有界面说得出（按钮不再是灰的，见 §4A）。
+         */
+        const price = furniturePriceOf(kind);
+        const short = price - this.store.run.cash;
+        if (short > 0) {
+          showToast(this.fxLayer, `现金不够：这种家具 ${price} 元，还差 ${short} 元`, 'warn');
+          return;
+        }
         const result = addFurnitureCommand(this.store, this.session, kind);
         this.consume(result);
         if (result.ok) {

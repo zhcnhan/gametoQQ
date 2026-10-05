@@ -168,3 +168,79 @@ describe('★★ 整理页的两种形状（W-09 决策 B）', () => {
     expect(ctx.store.run.actionPoints).toBe(GO_HOME_AP_COST - 1);
   });
 });
+
+/*
+ * ★★ 纸箱那一栏能折叠（2026-10 玩家要求）。
+ *
+ * ## 玩家原话与它真正要解决的问题
+ *
+ * > "让下面那个箱子的一栏可以被折叠展开"
+ *
+ * 他给的是做法，问题是**手机上一屏装不下**："顶栏 + 纸箱栏 + 三块货架 + 工具条"，
+ * 而工具条（dock）是固定的、不随内容滚 —— 被它吃掉的高度**没有任何办法找回来**。
+ * 所以折叠的意义不是"界面更干净"，而是**把高度还给 `.room-scroll`**：
+ * 折起来之后玩家能看到下面那块货架。
+ *
+ * ## 为什么要有守卫
+ *
+ * 这件事坏掉的形状是"点了一下没反应"—— 不报错、不红字，只是那个按钮
+ * 永远停在同一个状态。而它有两个各自独立、都能单独坏掉的一半：
+ *  ① `boxesOpen` 那个开关有没有被点击翻转（`case 'toggle-boxes'` 在不在）；
+ *  ② 翻转之后**那一栏的 HTML 有没有跟着换**（`boxHost.innerHTML` 那一次赋值）。
+ * 只验①的话，一个"翻转了但没重画"的实现照样全绿。所以两条分开写。
+ */
+describe('★★ 纸箱那一栏能折叠（玩家要求，2026-10）', () => {
+  it('默认是展开的 —— 拆箱是整理页最常做的事', () => {
+    const ctx = stockpile();
+    expect(ctx.root.querySelectorAll('[data-action="toggle-boxes"]')).toHaveLength(1);
+    // 展开态给的是"收起"这个出口，而且箱子本身那一段标题在
+    expect(ctx.root.innerHTML).toContain('还没拆的箱子');
+    expect(ctx.root.innerHTML).toContain('收起');
+  });
+
+  it('★ 点一下变成折起来的摘要（并且给出"展开"这个出口）', () => {
+    const ctx = stockpile();
+    ctx.click('toggle-boxes');
+    // ② 那一栏真的换了：标题没了，摘要来了
+    expect(ctx.root.innerHTML).not.toContain('还没拆的箱子');
+    expect(ctx.root.innerHTML).toContain('纸箱');
+    expect(ctx.root.innerHTML).toContain('展开');
+    // 而且那个按钮还在（否则就再也展不开了 —— 一个单向的门）
+    expect(ctx.root.querySelectorAll('[data-action="toggle-boxes"]')).toHaveLength(1);
+  });
+
+  it('★ 再点一下能展开回来（可逆，不是单向的门）', () => {
+    const ctx = stockpile();
+    ctx.click('toggle-boxes');
+    ctx.click('toggle-boxes');
+    expect(ctx.root.innerHTML).toContain('还没拆的箱子');
+    expect(ctx.root.innerHTML).toContain('收起');
+  });
+
+  it('★★ 折起来时那一栏的高度**真的还回去了**（挂了 is-folded 这个类）', () => {
+    /*
+     * 这才是折叠的全部意义（见上面那段"玩家原话"）。
+     * `is-folded` 是 `style.css` 里唯一一处把 `.dock-boxes` 的
+     * `max-height` / `overflow` 解除掉的地方 —— 少了这个类，
+     * 屏幕上会显示摘要，但那一栏仍然占着原来那么高，"折叠"等于白折。
+     */
+    const ctx = stockpile();
+    const host = ctx.root.querySelectorAll('[data-boxes]')[0];
+    expect(host, '找不到纸箱那一栏的 host（data-boxes）').toBeDefined();
+    expect(host!.classList.contains('is-folded')).toBe(false);
+    ctx.click('toggle-boxes');
+    expect(ctx.root.querySelectorAll('[data-boxes]')[0]!.classList.contains('is-folded')).toBe(true);
+  });
+
+  it('★ 折叠状态不许偷偷进存档（它是一次会话里的事）', () => {
+    /*
+     * 与 `addOpen`（加家具那个展开）同一条纪律：界面长什么样**不是存档的一部分**。
+     * 它坏掉的表现很隐蔽 —— 玩家折起箱子、关掉页面、明天回来发现
+     * 箱子还是折着的，而他完全不记得自己折过。
+     */
+    const ctx = stockpile();
+    const before = JSON.stringify(ctx.store.run);
+    ctx.click('toggle-boxes');
+    expect(JSON.stringify(ctx.store.run)).toBe(before);
+  });
+});

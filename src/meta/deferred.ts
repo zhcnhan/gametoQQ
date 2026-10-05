@@ -824,7 +824,21 @@ export const DEFERRED_ITEMS: readonly DeferredItem[] = [
       '今天不发作只是因为实机只有寒潮（见 D-31）。',
     plan: 'M4（与 D-31 一起：让四种家具真的有取舍）',
     markedIn: ['data/furniture.ts'],
-    status: 'open'
+    status: 'done',
+    resolvedIn:
+      'M4 收尾 —— **两层都接上了**：\n\n' +
+      ' ① 购买入口放开：`ui/OrganizeScreen.ts` 去掉了那句 `filter((d) => d.kind !== "floor")`，\n' +
+      '    四种家具都能买；\n' +
+      ' ② **它不再是 0 元**：定价搬进 `data/furniture.ts`（`FURNITURE_FLOOR_PRICE = 60`、\n' +
+      '    唯一读点 `furniturePriceOf(kind)`），12 格卖 60 元 ≈ 5 元/格，比 24 格那三种的\n' +
+      '    4.2 元/格略贵 —— 贵的这 20% 是"我现在就要地方、不等攒够"的价钱。\n' +
+      '    0 元会让"先铺两块地面"变成不用想的一步，而**不用想的决定不算决定**。\n\n' +
+      '★ 原方案里写的"会被进水类灾难吃掉"（`unusableShelfIds` 那一套）**没有做**，\n' +
+      '理由是它落在"灾难怎么罚空间"上，而那一半已经由 W-01 的 `capacityFactor` 接线管着；\n' +
+      '再叠一层"地面先被水吃"会让同一件事有两条规则。**"便宜 + 小"本身已经足够构成取舍。**\n\n' +
+      '⚠ 附带那条 bug 也已修（同一个提交）：`systems/home.ts` 传的实参名与 `addFurniture` 的选项名\n' +
+      '对不上（传的是 `capacityFactor`，选项叫 `spoilFactor`）—— 现已改名对齐，\n' +
+      '"100 元把灾难吃掉的空间买回来"这条不再成立。'
   },
   {
     id: 'D-31',
@@ -864,7 +878,25 @@ export const DEFERRED_ITEMS: readonly DeferredItem[] = [
       '    `:17560` 写着"**冰箱停摆**让腐坏加速"。把已经写好的话变成机制就够了。',
     plan: 'M4（与 D-30 一起：让四种家具真的有取舍）',
     markedIn: ['data/furniture.ts'],
-    status: 'open'
+    status: 'done',
+    resolvedIn:
+      'M4 收尾 —— 给冰箱的代价**长在它自己的工况上，不长在容量上**。\n\n' +
+      ' ① **断电那一场它只是个箱子**：`DisasterProfile.fridgeDead`（`model/types.ts`）+ ' +
+      '`spoilFactorOf(kind, { fridgeDead })`（`data/furniture.ts`）—— 断电时冰箱的 `spoilFactor` ' +
+      '从 0.4 顶回 **1**，与货架等价。已标 **14 场**（`typhoon_land` / `tsunami` / ' +
+      '`super_thunderstorm` / `tornado` / `freezing_rain_storm` / `riot_curfew` / ' +
+      '`blackout_winter` / `heat_blackout` / `heat_blackout_fire` / `mold_blackout` / ' +
+      '`blackout_riot` / `subway_collapse` / `post_fire` / `grid_collapse`），' +
+      '判据是"**电力中断**"而不是"天太热"—— 所以热浪 / 秋老虎 / 超级热浪 / 干热风 / 回暖 ' +
+      '**故意不加**：那几场冰箱正是最该值钱的时候。\n' +
+      ' ② **柜子第一次有了自己的场合**：断电场里柜子（0.75）严格优于冰箱（1.0）。' +
+      '这正好接上原来那条实数分析里"冰箱的优势只活在一个 4.9 天宽的窗口里"—— ' +
+      '现在那个窗口外还有第二种情形。\n\n' +
+      '★ **否决了"改小（`h: 3`）或改贵（140）"那条路**：那会让玩家按"每格多少钱"比价，' +
+      '而冰箱在这把尺子上永远输 —— 结果是废掉一件家具，不是让它有取舍。\n' +
+      '★ `data/disasterDimensions.ts` 的 17 维清单**不加行**：`fridgeDead` 是第 2 维' +
+      '（腐坏速度）的另一种取值，不是第 18 维。加了会让"用到几维"虚高，' +
+      '而那正是决策 C 花力气清掉的那笔账。'
   },
   {
     id: 'D-32',

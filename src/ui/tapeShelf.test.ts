@@ -23,7 +23,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { deserialize } from '../state/save';
 import { GameStore } from '../state/store';
 import { createOrganizeSession } from '../systems/organize';
-import { __resetGesturesForTest } from './drag';
+import { __resetGesturesForTest, LONG_PRESS_MS } from './drag';
 import { OrganizeScreen } from './OrganizeScreen';
 import {
   FakeDocument,
@@ -154,7 +154,7 @@ function tap(win: FakeWindow, el: FakeElement, at: [number, number]): void {
  */
 function drag(win: FakeWindow, el: FakeElement, from: [number, number], to: [number, number]): void {
   el.dispatch('pointerdown', pointerEvent(from[0], from[1]));
-  win.tick(300); // 长按定格 → 进入拖拽态
+  win.tick(LONG_PRESS_MS + 60); // 长按定格 → 进入拖拽态
   win.dispatch('pointermove', pointerEvent(to[0], to[1]));
   win.dispatch('pointerup', pointerEvent(to[0], to[1], { buttons: 0 }));
 }

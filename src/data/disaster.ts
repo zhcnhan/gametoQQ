@@ -922,6 +922,7 @@ export const DISASTER_DEFS: readonly DisasterProfile[] = [
       [-1]: 26
     },
     spoilRate: 1.3,
+    fridgeDead: true,
     dailyDrain: {
       food: 1,
       water: 1
@@ -2486,6 +2487,7 @@ export const DISASTER_DEFS: readonly DisasterProfile[] = [
       [-1]: 22
     },
     spoilRate: 3,
+    fridgeDead: true,
     dailyDrain: {
       water: 3,
       medicine: 1
@@ -5907,6 +5909,7 @@ export const DISASTER_DEFS: readonly DisasterProfile[] = [
       [-1]: 17
     },
     spoilRate: 1.6,
+    fridgeDead: true,
     dailyDrain: {
       water: 1,
       food: 1
@@ -6063,6 +6066,7 @@ export const DISASTER_DEFS: readonly DisasterProfile[] = [
       [-1]: 24
     },
     spoilRate: 1.9,
+    fridgeDead: true,
     dailyDrain: {
       food: 1,
       medicine: 1
@@ -6377,6 +6381,7 @@ export const DISASTER_DEFS: readonly DisasterProfile[] = [
       [-1]: -1
     },
     spoilRate: 0.7,
+    fridgeDead: true,
     dailyDrain: {
       fuel: 1,
       medicine: 1
@@ -9105,6 +9110,7 @@ export const DISASTER_DEFS: readonly DisasterProfile[] = [
       [-1]: 12
     },
     spoilRate: 1.4,
+    fridgeDead: true,
     dailyDrain: {
       food: 1,
       medicine: 1
@@ -13531,6 +13537,7 @@ export const DISASTER_DEFS: readonly DisasterProfile[] = [
       [-1]: -8
     },
     spoilRate: 1.6,
+    fridgeDead: true,
     dailyDrain: {
       fuel: 3,
       food: 1
@@ -13688,6 +13695,7 @@ export const DISASTER_DEFS: readonly DisasterProfile[] = [
       [-1]: 38
     },
     spoilRate: 2.6,
+    fridgeDead: true,
     dailyDrain: {
       water: 3,
       medicine: 1
@@ -14975,6 +14983,7 @@ export const DISASTER_DEFS: readonly DisasterProfile[] = [
       [-1]: 40
     },
     spoilRate: 3,
+    fridgeDead: true,
     dailyDrain: {
       water: 3,
       medicine: 2
@@ -15303,6 +15312,7 @@ export const DISASTER_DEFS: readonly DisasterProfile[] = [
       [-1]: 26
     },
     spoilRate: 2.8,
+    fridgeDead: true,
     dailyDrain: {
       medicine: 1,
       fuel: 1
@@ -15786,6 +15796,7 @@ export const DISASTER_DEFS: readonly DisasterProfile[] = [
       [-1]: 16
     },
     spoilRate: 2,
+    fridgeDead: true,
     dailyDrain: {
       food: 1,
       water: 1
@@ -16744,6 +16755,7 @@ export const DISASTER_DEFS: readonly DisasterProfile[] = [
       [-1]: 8
     },
     spoilRate: 1.4,
+    fridgeDead: true,
     dailyDrain: {
       food: 1,
       medicine: 1
@@ -16899,6 +16911,7 @@ export const DISASTER_DEFS: readonly DisasterProfile[] = [
       [-1]: 14
     },
     spoilRate: 2,
+    fridgeDead: true,
     dailyDrain: {
       water: 1,
       medicine: 1
@@ -17535,6 +17548,7 @@ export const DISASTER_DEFS: readonly DisasterProfile[] = [
       [-1]: 10
     },
     spoilRate: 2.2,
+    fridgeDead: true,
     dailyDrain: {
       food: 1,
       water: 1

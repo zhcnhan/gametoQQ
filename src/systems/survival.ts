@@ -248,8 +248,11 @@ export function settleSurvivalDay(run: RunState, cursor?: RngCursor): SurvivalRe
   const disaster = getDisasterDef(run.disasterId);
   const severity = severityAt(disaster, run.day);
   // 腐坏：**每个容器各算各的虚拟天**（灾难的 spoilRate × 家具的 spoilFactor）。
-  // 冰箱 / 柜子在这里第一次真的起作用 —— 见 model/spoil.ts 与 data/furniture.ts
-  const sweep = spoilEverything(run.shelves, run.boxesToUnpack, run.day, disaster.spoilRate);
+  // 冰箱 / 柜子在这里第一次真的起作用 —— 见 model/spoil.ts 与 data/furniture.ts。
+  // ★ `fridgeDead`：断电那一场冰箱按 1 算（D-31 的另一半，M4 收尾）
+  const sweep = spoilEverything(run.shelves, run.boxesToUnpack, run.day, disaster.spoilRate, {
+    fridgeDead: disaster.fridgeDead === true
+  });
   run.shelves = sweep.shelves;
   run.boxesToUnpack = sweep.boxes;
   run.survival.spoiled += sweep.total;

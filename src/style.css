@@ -295,18 +295,34 @@ body::before {
   position: relative;
   aspect-ratio: 1 / 1;
   /*
-   * ★★ `touch-action: none` —— 这是"手机上拖拽完全不跟手、拖出极小的范围就断"的根因。
+   * ★★ `touch-action: manipulation`（2026-10 从 `none` 改回来）。
+   *
+   * ## 原来为什么写 `none`
    *
    * 格子原来没设它，于是浏览器按默认策略认为"这块区域可以滚动页面"：
    * 手指按住并移动几像素之后，浏览器**接管**了这次手势去滚动，
    * 同时向页面发 `pointercancel` —— 我们这边收到就按"手势被打断"收尾。
    * 拖拽诊断的日志里正是"每约 6px 就出现一次 cancelDrag"。
    *
-   * 设成 none 之后，**从格子上起手的手势不再被浏览器抢走**（滚动仍可从
-   * 货架卡的留白、卡片之间的缝、以及页面其它区域发起 —— 格子本身不大）。
-   * 这是"拖动"这个交互在触摸设备上能工作的前提条件，不是可选项。
+   * ## 为什么 `none` 又是错的（玩家 2026-10 报的）
+   *
+   * > "在触屏上，下滑上滑的效果不好，容易无效，尤其是在物品整理页面，
+   * >  我很难划到下面的格子和其他的架子（除非手指刚好放在货架边缘）"
+   *
+   * `touch-action: none` 的意思是"**这块区域永远不参与滚动**"—— 它不只是
+   * "别抢我的拖拽"，它把滚动本身也一起禁掉了。而整理页上格子几乎铺满了
+   * 整块可滚区，于是**能滚的地方只剩货架卡之间的缝**：
+   * 手指落在缝隙里就能滑，落在格子上就一动不动。玩家的观察完全准确。
+   *
+   * `manipulation` 才是这里要的：允许浏览器滚动与捏合之外的默认手势，
+   * 只禁掉**双击缩放**（那才是会打断连续点按的那个）。
+   * 拖拽那一边由手势层自己保证：手指竖直移动超过 `scrollTolerance`（24px）
+   * 就判定为"玩家想滚动"并主动放弃手势 —— 所以在真正开始拖之前，
+   * 两边是**一致**的（都认为这是滚动），不会互相打架。
+   *
+   * ⚠ 别再把这一行改回 `none`。改回去的表现不是报错，是"划不动"。
    */
-  touch-action: none;
+  touch-action: manipulation;
   /* 375px 视口 → 57.2px；390px → 59.7px。触点硬约束（提示词 0 第 7 条） */
   min-height: 56px;
   min-width: 0;
@@ -556,6 +572,64 @@ body::before {
   padding-right: 2px;
 }
 
+/*
+ * ★ 折叠态（2026-10 用户："让下面那个箱子的一栏可以被折叠展开"）。
+ *
+ * 折叠之后这一栏只剩一行摘要，`max-height` 那一套全部让位 ——
+ * 于是 `.dock` 矮一大截，`.room-scroll` 就多出一大截。
+ * **这才是这个功能真正的用处**：手机上一屏装不下"顶栏 + 三块货架 + 工具条"，
+ * 而工具条是固定不滚的，被它吃掉的高度没有任何办法找回来。
+ */
+.dock-boxes.is-folded {
+  display: block;
+  max-height: none;
+  overflow: visible;
+}
+
+.boxes-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.boxes-title {
+  font-size: 11px;
+  color: var(--ink-40);
+}
+
+/* 折叠摘要：整条都是按钮，所以它同时也是最容易点中的那个目标 */
+.boxes-fold {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 34px;
+  padding: 4px 10px;
+  border: 1.5px dashed var(--ink-40);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  /* 与其它可点目标同一条纪律：不许被当成双击缩放（§2.4） */
+  touch-action: manipulation;
+}
+
+.boxes-fold .ico {
+  width: 16px;
+  height: 16px;
+}
+
+.boxes-fold em {
+  margin-left: auto;
+  font-style: normal;
+  font-size: 11px;
+  color: var(--ink-70);
+}
+
 .box {
   position: relative;
   display: flex;
@@ -570,8 +644,8 @@ body::before {
   color: inherit;
   font: inherit;
   cursor: pointer;
-  /* 同 `.slot`：纸箱也要能拖，所以不许浏览器把手势抢去滚动 */
-  touch-action: none;
+  /* 同 `.slot`：纸箱也要能拖，但**不能**因此把这一栏的滚动也禁掉（2026-10 修） */
+  touch-action: manipulation;
   transform: rotate(-1.2deg);
   transition: transform var(--fast) var(--ease-out);
 }
@@ -3199,6 +3273,34 @@ button:disabled {
   font-size: 11px;
   color: var(--ink-40);
   white-space: nowrap;
+}
+
+/*
+ * ★ 带价钱的小按钮（M4 收尾，D-30）。
+ *
+ * 放开"地面"之后四种家具不再同价，于是每颗按钮必须报自己的价 ——
+ * 而"报在哪儿"有两种坏法：写进名字里（`地面 60`）会让四种名字不等长、
+ * 一排看过去参差不齐；用 `title` 则**手机上永远看不到**（没有 hover）。
+ * 所以价钱单独一个 `<b>`，比名字小一号、墨色浅一档 ——
+ * 扫一眼能比价，读名字时又不抢戏。
+ */
+.mini.is-price {
+  /* 价钱与"差 N"都要跟名字一起排，所以这里允许换行 */
+  flex-wrap: wrap;
+  justify-content: center;
+  row-gap: 1px;
+  line-height: 1.25;
+}
+
+.mini-price {
+  font-weight: 400;
+  font-size: 10px;
+  color: var(--ink-70);
+}
+
+/* 名字与价钱之间留一点缝，免得读成"地面60"一个词 */
+.mini.is-price .mini-price::before {
+  content: ' ';
 }
 
 /* "还差 N 元"：不上朱红 —— 差钱是处境，不是警告（与商店里那句同一条纪律） */

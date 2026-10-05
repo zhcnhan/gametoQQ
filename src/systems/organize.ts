@@ -7,6 +7,7 @@
  */
 import { getBoxDef, STRAY_BOX_ID } from '../data/boxes';
 import { getDisasterDef } from '../data/disaster';
+import { FURNITURE_STANDARD_PRICE, furniturePriceOf } from '../data/furniture';
 import { CATEGORY_ORDER, getItemDef } from '../data/items';
 import { DEFAULT_ZONE_COLOR } from '../data/palette';
 import { LIVING_ROOM_ID, roomDefOf } from '../data/rooms';
@@ -998,8 +999,15 @@ export function toggleHandy(store: GameStore, shelfId: string): CommandResult {
  * 所以定价取的是**一床棉被的两倍上下**（棉被 45）：一件家具 ≈ 100 元。
  * 那个价位的意思是"买得起，但要少买几罐燃料" ——
  * 与 §6.2 的三约束同一条松紧度。
+ *
+ * ★ M4 收尾（D-30）：**价钱不再是一个常数**。地面（12 格）放开购买之后，
+ * 它得比 24 格那三种便宜 —— 否则它永远是最后一个被选的。
+ * 唯一读点是 `data/furniture.ts` 的 `furniturePriceOf(kind)`；
+ * 下面这个常量只是"标准价"这个名字，真正的表在那边（**定价长在定义旁边**，
+ * 免得"界面报价"与"命令扣钱"变成两份来源 —— 那种漂开的表现是
+ * 按钮上写 60、实际扣 100，而不是任何一条报错）。
  */
-export const FURNITURE_PRICE = 100;
+export const FURNITURE_PRICE = FURNITURE_STANDARD_PRICE;
 
 export function addFurnitureCommand(
   store: GameStore,
@@ -1017,14 +1025,15 @@ export function addFurnitureCommand(
   const room = roomForNewFurniture(store.save.meta, run);
   if (!room) return reject('家里放不下了 —— 去解锁一间新房');
 
-  if (run.cash < FURNITURE_PRICE) return reject(`现金不够（要 ${FURNITURE_PRICE}）`);
+  const price = furniturePriceOf(kind);
+  if (run.cash < price) return reject(`现金不够（要 ${price}）`);
 
   const plan = addFurnitureToHome(store.save.meta, run, kind);
   if (!plan.added) return reject('家里放不下了');
 
   store.commit((draft) => {
     draft.shelves = plan.shelves;
-    draft.cash -= FURNITURE_PRICE;
+    draft.cash -= price;
   });
 
   const added = store.run.shelves[store.run.shelves.length - 1];

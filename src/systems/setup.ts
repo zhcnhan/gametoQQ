@@ -223,19 +223,24 @@ export function boxDefAt(index: number): BoxDef {
  * @param shelves 现在的全部家具
  * @param kind 要加的家具种类（认不出 → 普通货架）
  * @param opts.roomId 放进哪间房（默认 `ROOM_ID`；将来 `rooms` 变数据后由调用方给）
- * @param opts.spoilFactor 灾难的空间限制（维度 14）—— 与开局那三块用同一把尺子
- * @returns **新的**数组（不改入参，配合原子存档）
+ * @param opts.capacityFactor 灾难的空间限制（维度 14）—— 与开局那三块用同一把尺子
+ *
+ * ⚠ **这个选项原来叫 `spoilFactor`**（2026-10 改名）。名字错得不算小：
+ * `spoilFactor` 在 `data/furniture.ts` 里是"腐坏速度乘数"（冰箱 0.4），
+ * 而这个选项吃的是 `capacityFactor`（砍排数，0.6~1.0）。两者刚好都在 0~1 之间，
+ * 所以传错了**不会报错、也不会崩** —— 只会让买来的那块家具矮一排，
+ * 而"矮一排"这件事没有任何界面会说。见 `meta/deferred.ts` 的 D-30。
  */
 export function addFurniture(
   shelves: readonly Shelf[],
   kind: Shelf['kind'],
-  opts: { roomId?: string; spoilFactor?: number; ids?: readonly string[] } = {}
+  opts: { roomId?: string; capacityFactor?: number; ids?: readonly string[] } = {}
 ): Shelf[] {
   const roomId = opts.roomId ?? ROOM_ID;
   const def = furnitureDefOf(kind);
   // 与开局那几块**同一个函数**算排数（`rowsFor`）—— 两边各写一遍取整，
   // 迟早会出现"买来的那块比开局的矮一排"（而那种差没人看得出来）
-  const usableH = rowsFor(def.h, opts.spoilFactor ?? 1);
+  const usableH = rowsFor(def.h, opts.capacityFactor ?? 1);
 
   // id：优先用调用方给的池子（`SHELF_IDS` 那种固定名单），否则按现有块数递增
   const pool = opts.ids ?? [];

@@ -71,6 +71,20 @@ export const MIN_SPOIL_FACTOR = 0.4;
  * 顺序有意义：它同时是**解锁顺序**（见 `systems/setup.ts` 的开局配置与
  * §10.2.4 的"新货架 → 新家具类型 → 更大的家"）——
  * 先给普通的，再给需要"想一下放什么"的。
+ *
+ * ## ★ M4 收尾：这里第一次真的有三个互不支配的选项
+ *
+ * | 家具 | 格 | 腐坏 | 它的代价 |
+ * | --- | --- | --- | --- |
+ * | 货架 | 24 | ×1 | 什么都不保护 |
+ * | 冰箱 | 24 | ×0.4 | **断电那一场按 ×1 算**（`fridgeDead`） |
+ * | 柜子 | 24 | ×0.75 | 冻不着"受潮"那一路的极端，但也不怕断电 |
+ * | 地面 | 12 | ×1 | 只有一半的地方（60 元而不是 100） |
+ *
+ * 于是"买哪一种"这一问在一场里的答案是**跟着灾难变的**：
+ * 断电类灾难里冰箱与货架等价 → 柜子与地面才有位置；
+ * 一场 3.0 腐坏的热浪里，冰箱才是首选。这正是 §10.2.4 要的
+ * "同一个整理动作、新的策略维度"。
  */
 export const FURNITURE_DEFS: readonly FurnitureDef[] = [
   {
@@ -85,13 +99,23 @@ export const FURNITURE_DEFS: readonly FurnitureDef[] = [
     kind: 'fridge',
     label: '冰箱',
     /*
-     * DEFERRED(D-31): 冰箱**严格支配**另外两种 —— 同价（`FURNITURE_PRICE` 100）、
-     * 同格（24），而 `spoilFactor` 最低（0.4 < 0.75 < 1）。
-     * 而下面那句 `why` 写的"装别的占地方"**在代码里不存在**（冰箱与货架一样是 24 格）。
-     * 于是"三选一"里有**两个永远不会被选**的决定。详见 `src/meta/deferred.ts` 的 D-31。
+     * ★ D-31 已清偿（M4 收尾）：冰箱**不再严格支配**另外两种。
+     *
+     * 它原来是同价、同格、`spoilFactor` 最低的一个 —— 于是"三选一"里
+     * 有两个决定永远不会被选。现在的两处代价是：
+     *
+     *  ① **断电那一场它按 1 算**（`fridgeDead`）。「电网崩了」「酷暑断电」
+     *     那一类场次里，冰箱与普通货架**一模一样** —— 花同样的钱买了一个
+     *     在最需要它的时候会停摆的东西；
+     *  ② 它**仍然只减缓腐坏**：不改变你能放多少、也不改变取用成本。
+     *
+     * ⚠ 不走"把它改小 / 改贵"那条路（那是最早的候选），理由：
+     * 100 元买 24 格是**容量档**的定价，冰箱要是 18 格，玩家就会拿它跟
+     * 100 元 24 格的货架直接比"每格多少钱"，而那条账算下来冰箱永远输 ——
+     * 那不叫取舍，叫废掉一件家具。**代价要长在它自己的工况上，不长在容量上。**
      */
     spoilFactor: 0.4,
-    why: '断电之后它仍然是个箱子：装鲜食能多撑一阵，装别的占地方',
+    why: '装鲜食能多撑一阵 —— 但断电那一场它就只是个箱子',
     w: 6,
     h: 4
   },
@@ -108,19 +132,51 @@ export const FURNITURE_DEFS: readonly FurnitureDef[] = [
     label: '地面',
     spoilFactor: 1,
     /*
-     * DEFERRED(D-30): 这一种**玩家碰不到** —— 唯一的购买入口
-     * `ui/OrganizeScreen.ts` 明确把它滤掉了，全仓没有第二个入口。
-     * 而它是四种家具里**唯一在格数上有取舍的**（12 格、0 元），
-     * 另外三种同价同格、只差 `spoilFactor`（见 D-31）。
-     * 详见 `src/meta/deferred.ts` 的 D-30。
+     * ★ D-30 已清偿（M4 收尾）：这一种**现在买得到**。
+     *
+     * 原来唯一的购买入口 `ui/OrganizeScreen.ts` 明确把它滤掉了，全仓没有第二个
+     * 入口 —— 而它恰好是四种家具里**唯一在格数上真的让步的**（12 格，只有别的
+     * 一半）。一件"免费、但只能放一半"的家具本来正是最干净的那种取舍，
+     * 却被藏了起来：当初大概是怕白嫖，于是干脆不给。
+     *
+     * 现在它的价钱是 **60 元**（`FURNITURE_FLOOR_PRICE`）而不是 0：
+     *  · 0 元会让"先铺两块地面"变成不用想的一步，而**不用想的决定不算决定**；
+     *  · 60 元买 12 格 ≈ 5 元/格，比 100 元买 24 格（≈ 4.2 元/格）略贵 ——
+     *    贵的这 20% 就是"我现在就要地方、不等攒够"的价钱。
      */
-    why: '不占家具位，但和纸箱一样什么保护都没有（留给"更大的家"用）',
+    why: '便宜，但只有一半的地方 —— 而且什么保护都没有',
     w: 6,
     h: 2
   }
 ];
 
 const BY_KIND = new Map(FURNITURE_DEFS.map((d) => [d.kind, d]));
+
+/**
+ * 每种家具的价钱（元）。**唯一定价处** —— 界面与命令都读它。
+ *
+ * ## 为什么定价长在这里，而不是在 `systems/organize.ts` 的那个 `FURNITURE_PRICE`
+ *
+ * 那个常量（100）从 M2 起就是"加一块家具"的价钱，而它只在**一条**路径上被读
+ * （整理页那个按钮）。现在多了一种价钱的家具，如果再写第二个常量，
+ * "界面报价"与"命令扣钱"就有两份来源 —— 而它们漂开的表现不是报错，
+ * 是**按钮上说 60、扣了 100**（§2.19 那个形状）。
+ *
+ * 所以价钱跟着定义走：`furniturePriceOf(kind)` 是唯一读点。
+ *
+ * ## 为什么只有地面不一样
+ *
+ * 货架 / 冰箱 / 柜子同价（100）是 M2 就定下的容量档定价：24 格一块。
+ * 地面只有 12 格，收一样的钱会让它**永远不值得买**（半价都嫌贵：
+ * 它连腐坏保护都没有）。60 元 ≈ 5 元/格，比那三种的 4.2 元/格略贵 ——
+ * 贵的这 20% 就是"我现在就要地方、不等攒够"的价钱。
+ */
+export const FURNITURE_STANDARD_PRICE = 100;
+export const FURNITURE_FLOOR_PRICE = 60;
+
+export function furniturePriceOf(kind: FurnitureKind | string | undefined): number {
+  return furnitureDefOf(kind).kind === 'floor' ? FURNITURE_FLOOR_PRICE : FURNITURE_STANDARD_PRICE;
+}
 
 export function hasFurnitureDef(kind: unknown): kind is FurnitureKind {
   return typeof kind === 'string' && BY_KIND.has(kind as FurnitureKind);
@@ -137,17 +193,34 @@ export function furnitureDefOf(kind: string | undefined): FurnitureDef {
   return BY_KIND.get(kind as FurnitureKind) ?? FURNITURE_DEFS[0]!;
 }
 
+/** 「这一场是不是断了电」——断电时冰箱按普通箱子算（`spoilFactor` 抬到 1） */
+export interface FridgeDead {
+  /**
+   * `true` = 这一场断电：**冰箱的 `spoilFactor` 按 1 算**，与普通货架一样。
+   *
+   * 它由灾难自己的 `DisasterProfile.fridgeDead` 决定（不是这里读 `disasterId`）——
+   * 这一层**不认识灾难**，只认识"电有没有"。见 `model/types.ts` 那个字段的注释。
+   */
+  fridgeDead?: boolean;
+}
+
 /**
  * 这一块家具在这一场灾难下的**实际腐坏速度乘数**。
  *
- * = 家具自己的 `spoilFactor`，夹到 `[MIN_SPOIL_FACTOR, 1]`。
+ * = 家具自己的 `spoilFactor`，夹到 `[MIN_SPOIL_FACTOR, 1]`；
+ * **断电那一场里冰箱按 1 算**（`opts.fridgeDead`）——
+ * 它是 17 维之外唯一一处"家具的强弱随灾难翻转"，
+ * 也是"三选一里没有谁能通吃"这条验收（M4 验收口径第 5 条）的承重墙。
  *
  * ⚠ 它**不含**灾难的 `spoilRate` —— 那个由调用方乘上去（`model/spoil.ts`）。
  * 分开的理由：这一层只管"家具能做什么"，"这一场有多糟"是灾难的事。
  * 两件事混在一个函数里，将来一定会有人想在这里读 `disasterId`。
+ * （断电之所以能进来，是因为它是**家具自己的工况**，不是"这场有多糟"。）
  */
-export function spoilFactorOf(kind: string | undefined): number {
-  const raw = furnitureDefOf(kind).spoilFactor;
+export function spoilFactorOf(kind: string | undefined, opts: FridgeDead = {}): number {
+  const def = furnitureDefOf(kind);
+  // ★ 断电：冰箱只剩"一个箱子"这个身份 —— 而箱子不做腐坏保护（纸箱的乘数就是 1）
+  const raw = opts.fridgeDead === true && def.kind === 'fridge' ? 1 : def.spoilFactor;
   if (!Number.isFinite(raw)) return 1;
   return Math.max(MIN_SPOIL_FACTOR, Math.min(1, raw));
 }

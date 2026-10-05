@@ -111,10 +111,41 @@ export class FakeElement {
     for (const c of value.split(/\s+/)) if (c) this.classList.add(c);
   }
 
+  /**
+   * ★★ 序列化**当前**子树（不是"我上次被设成了什么"）。
+   *
+   * ## 这个 getter 原来只是把 `_html` 原样吐回去，那是一处很坏的假体缺陷
+   *
+   * `OrganizeScreen` 的写法是"整屏写成一个字符串，其中留几个空 host
+   * （`<div data-boxes></div>`），挂载后再 `host.innerHTML = ...` 填内容"。
+   * 而旧 getter 返回的是**构造时那个字符串**（host 还是空的），于是：
+   *
+   * ```ts
+   * root.innerHTML.includes('还没拆的箱子')   // ← 假体说 false，浏览器里明明有
+   * ```
+   *
+   * 它是 2026-10 做"纸箱栏可折叠"时被找出来的（第 4 个假体缺陷，前三个见
+   * `isConnected` / `dispatch` 不冒泡 / 布尔属性）。真正危险的方向是**反过来**：
+   * 断言"某段文字**不该**出现"时，旧 getter 会因为"静态模板里本来就没有它"
+   * 而**通过** —— 一条永远绿的守卫，比一条红的守卫坏得多。
+   *
+   * 所以现在按真实语义走一遍树：属性照写、子元素递归、直接文本段保留
+   * （与 `parseHtml` 的读取口径一致 —— 它不做文本节点，只存"这一段直接文本"）。
+   */
   get innerHTML(): string {
+    return this.children.map((child) => serializeEl(child)).join('');
+  }
+  /**
+   * 最近一次被赋的原始字符串。
+   *
+   * ★ 它**只在两个地方**还该被读：① `parseHtml` 的往返自检；
+   * ② 想确认"这段 HTML 里有没有某个**静态**片段"（比如"这个 host 在模板里存在"）。
+   * **凡是想问"屏幕上现在有没有这几个字"，用 `innerHTML`（序列化）或选择器** ——
+   * 用这个字段会得到"模板里写没写"，那是另一个问题。
+   */
+  get rawHtml(): string {
     return this._html;
   }
-  /** 存字符串，并**真的解析成子元素树**（`querySelectorAll` 依赖它） */
   private _html = '';
   set innerHTML(value: string) {
     this._html = value;
@@ -753,6 +784,61 @@ function applyAttributes(el: FakeElement, attrText: string): void {
     if (name in BOOLEAN_ATTRS) (el as unknown as Record<string, boolean>)[name] = true;
     if (m[2] !== undefined) re.lastIndex = m.index + m[0].length;
   }
+}
+
+/**
+ * 把一棵假体子树写回 HTML 字符串（`get innerHTML` 用它）。
+ *
+ * ## 它与 `parseHtml` 是一对，必须按同一份口径往返
+ *
+ * `parseHtml` 存下来的东西只有三样：**属性表**（`el.attributes`）、
+ * **classList**、**直接文本**（`el.textContent`，不含子孙的字）。所以序列化时：
+ *
+ * - `class` **从 `classList.value` 重建**，不从 `attributes['class']` 取 ——
+ *   产品代码 `el.classList.add('is-folded')` 只动 classList，而解析时 `class`
+ *   在 `attributes` 里也有一份，两边同时写就会输出重复的 `class` 属性；
+ * - 其余属性逐一输出，`dataset` 里那些**没有对应 attributes 项**的补成 `data-k`
+ *   （产品代码 `el.dataset['snap'] = '1'` 正是这种），键名按 `data-kebab-case` 还原；
+ * - 自闭合标签（`svg` / `path` / `rect` / …）写成 `<tag .../>`：`parseHtml` 对它们
+ *   的处理是"读到一个标签就只前进一位"，本来就拿不到内部内容（图标是静态的）；
+ * - 值里的 `"` 与 `&` 做转义，免得往返一次就散架。
+ *
+ * ★ 往返**不可能字节级一致**（属性顺序、自闭合写法、空白折叠都会变），
+ * 所以自检只能断言"关键结构还在"，别写 `toBe(original)`。
+ */
+function serializeEl(el: FakeElement): string {
+  const tag = el.tagName.toLowerCase();
+  const attrs: string[] = [];
+  if (el.classList.value) attrs.push(`class="${escapeAttr(el.classList.value)}"`);
+  for (const [name, value] of Object.entries(el.attributes)) {
+    if (name === 'class') continue;
+    attrs.push(`${name}="${escapeAttr(value)}"`);
+  }
+  for (const [key, value] of Object.entries(el.dataset)) {
+    const name = `data-${key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`;
+    if (name in el.attributes) continue;
+    attrs.push(`${name}="${escapeAttr(value)}"`);
+  }
+  const head = attrs.length > 0 ? `<${tag} ${attrs.join(' ')}` : `<${tag}`;
+  if (SELF_CLOSING_TAGS.has(tag)) return `${head}/>`;
+  /*
+   * 直接文本与子元素的先后：`parseHtml` 把直接文本段整体存进 `textContent`，
+   * 不记它在兄弟之间的位置。这里统一**先子元素、后文本** —— 产品代码写出来的
+   * 文本段几乎都在最后（`<span class="x">名字</span>`）或者整段都是文本。
+   */
+  const inner = `${el.children.map((child) => serializeEl(child)).join('')}${el.textContent !== '' ? escapeText(el.textContent) : ''}`;
+  return inner === '' ? `${head}></${tag}>` : `${head}>${inner}</${tag}>`;
+}
+
+/** 下面这几个标签解析时就不带内部内容，序列化也写成自闭合 */
+const SELF_CLOSING_TAGS = new Set(['svg', 'path', 'rect', 'circle', 'line', 'polyline', 'polygon', 'input', 'br', 'img']);
+
+function escapeAttr(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+
+function escapeText(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 /** HTML 布尔属性：出现即为真，与值无关（见 `applyAttributes` 里那段注释） */

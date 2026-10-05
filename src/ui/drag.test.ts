@@ -13,7 +13,7 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import { type FakeElement, type FakeWindow, FakeDocument, asElement, installFakeWindow, pointerEvent } from './fakeDom';
-import { __resetGesturesForTest, attachPointerGesture } from './drag';
+import { __resetGesturesForTest, LONG_PRESS_MS, attachPointerGesture } from './drag';
 
 interface Harness {
   doc: FakeDocument;
@@ -91,7 +91,7 @@ describe('手势状态机（ui/drag.ts 的真实行为）', () => {
     mount(h);
     h.el.dispatch('pointerdown', pointerEvent(30, 30));
     // 长按 220ms 成立
-    h.win.tick(260);
+    h.win.tick(LONG_PRESS_MS + 60);
     expect(h.log).toEqual(['dragStart']);
     // 横向拖过 12px —— 旧实现会在这里放弃手势（"拖不动"的根因）
     h.win.dispatch('pointermove', pointerEvent(80, 32));
@@ -137,7 +137,7 @@ describe('手势状态机（ui/drag.ts 的真实行为）', () => {
   it('★ 看门狗不许误伤"长按后停住不动"（玩家在想放哪儿）', () => {
     mount(h);
     h.el.dispatch('pointerdown', pointerEvent(30, 30));
-    h.win.tick(260); // 长按成立
+    h.win.tick(LONG_PRESS_MS + 60); // 长按成立
     expect(h.log).toEqual(['dragStart']);
     // 手指停住不动，但**按键仍然按着**（buttons 还是 1）
     h.win.tick(3000);

@@ -153,6 +153,80 @@ describe('★★ 冰箱真的有效果了（D-02 清偿的核心断言：这是�
   });
 });
 
+describe('★★ 断电那一场，冰箱只是个箱子（M4 收尾，D-31 的另一半）', () => {
+  /*
+   * ## 这条守的是什么
+   *
+   * D-31 的原文是"冰箱严格支配另外两种家具"：同价、同格、腐坏乘数最低。
+   * 在半数灾难上，那个支配是**对的**（冰箱就该是最强的保护）。
+   * 问题只在"**永远**"两个字 —— 而给冰箱的代价**不能长在容量或价格上**
+   * （那样玩家按"每格多少钱"比价，冰箱永远输 = 废掉一件家具），
+   * 只能长在它自己的工况上：**断电**。
+   *
+   * 所以这里断言的不是"冰箱变弱了"，而是"**柜子第一次有了自己的场合**"。
+   * 这两句在代码里看起来一样，在文档里不一样 —— 前者会诱使人把
+   * `fridgeDead` 加在热浪上（那几场冰箱正是最该值钱的）。
+   *
+   * ⚠ 参数是第 5 个：`spoilEverything(shelves, boxes, day, rate, { fridgeDead })`。
+   * 它是**可选**的（既有调用不用改），但"可选"也意味着**忘了传不会报错** ——
+   * 生产路径那一边由 `systems/survival.ts` 传 `disaster.fridgeDead`，
+   * 而 `data/disasterModifiers.test.ts` 守着"哪些场标了、哪些场不许标"。
+   */
+  const day = 6;
+  const rate = 3; // 热浪那一档的倍率，用来放大差别
+
+  const spoilDead = (kind: 'shelf' | 'cabinet' | 'fridge', e: number, dead: boolean): number =>
+    spoilEverything([shelf(kind, stack(e))], [], day, rate, { fridgeDead: dead }).total;
+
+  it('★ 断电时冰箱退化成普通货架：同一批货、同一天，结果与货架完全相同', () => {
+    // 到期 10：virtualDay(6, 3×0.4) = 7.2 < 10 → 有电时保得住
+    expect(spoilDead('fridge', 10, false)).toBe(0);
+    // 断电：乘数顶回 1 → virtualDay(6, 3) = 18 > 10 → 与普通货架一样坏光
+    expect(spoilDead('fridge', 10, true)).toBe(3);
+    expect(spoilDead('fridge', 10, true)).toBe(spoilDead('shelf', 10, true));
+  });
+
+  it('★★ 断电时**柜子**严格优于冰箱 —— 这才是新出现的那层取舍', () => {
+    /*
+     * 取一个"柜子保得住、冰箱（断电）保不住"的日子：
+     *   柜子 virtualDay(6, 3 × 0.75) = 13.5
+     *   冰箱 virtualDay(6, 3 × 1)    = 18
+     * 到期日 15 落在两者之间 —— 于是"断电那一场该买柜子"从一个说法变成了算式。
+     */
+    expect(spoilDead('cabinet', 15, true)).toBe(0);
+    expect(spoilDead('fridge', 15, true)).toBe(3);
+  });
+
+  it('★ 断电只碰冰箱：货架与柜子一个字节都不变', () => {
+    for (const kind of ['shelf', 'cabinet'] as const) {
+      for (const e of [9, 14, 15, 50]) {
+        expect(spoilDead(kind, e, true), `${kind} 到期 ${e}`).toBe(spoilDead(kind, e, false));
+      }
+    }
+  });
+
+  it('★ 有电时冰箱照旧是最强的那一档（这条防的是"改过头"）', () => {
+    expect(spoilDead('fridge', 15, false)).toBe(0);
+    expect(spoilDead('cabinet', 15, false)).toBe(0);
+    expect(spoilDead('shelf', 15, false)).toBe(3);
+  });
+
+  it('★ 断电不会"制造"腐坏：灾难本身不腐坏时，断电也什么都不坏', () => {
+    // 寒潮倍率 0.5、断电 → virtualDay(14, 0.5 × 1) = 7 < 10 → 照样不坏
+    expect(spoilEverything([shelf('fridge', stack(10))], [], 14, 0.5, { fridgeDead: true }).total).toBe(0);
+  });
+
+  it('★ 纸箱永远等于灾难本身的倍率 —— 断电不改变这一点', () => {
+    // 纸箱不是冰箱，所以"冰箱断电"这条对它无论如何都该是零影响
+    const box = { id: 'box_1', defId: 'mixed_box', items: [stack(10)] } as unknown as Parameters<
+      typeof spoilEverything
+    >[1][number];
+    const on = spoilEverything([], [box], day, rate, { fridgeDead: false }).total;
+    const dead = spoilEverything([], [box], day, rate, { fridgeDead: true }).total;
+    expect(dead).toBe(on);
+  });
+});
+
 describe('★ "不改批次"这条性质：搬进搬出不留脏状态', () => {
   it('腐坏结算**不改** `expiresAtDay`，只改"拿什么虚拟天去比"', () => {
     /*

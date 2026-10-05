@@ -129,7 +129,9 @@ export function addFurnitureToHome(
   const shelves = addFurniture(run.shelves, kind, {
     roomId: room.id,
     ids: SHELF_IDS,
-    spoilFactor: disasterModifiersOf(run.disasterId).capacityFactor
+    // ★ 2026-10 改名：这个选项原来叫 `spoilFactor`，而它吃的是 `capacityFactor`
+    //   （砍排数）—— 两者都在 0~1 之间，传错了不报错也不崩，只会让新家具矮一排
+    capacityFactor: disasterModifiersOf(run.disasterId).capacityFactor
   });
   return { shelves, added: true, roomId: room.id };
 }
