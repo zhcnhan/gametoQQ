@@ -152,6 +152,60 @@ export function basePriceOf(run: RunState, line: { price: number }): number {
 }
 
 /**
+ * ★★ **今天这一件比这一场的平常价贵多少**（2026-10 铁则：数字要看得见）。
+ *
+ * ## 它补的是哪一笔账
+ *
+ * `priceSurcharge`（维度 10）是 116 场灾难里 **90 场**都写了的那一维，
+ * 它从 M4 W-01 起真的生效了 —— 而玩家**看不到它**：扫货页只报一个绝对价，
+ * 没有参照物，于是"这一场物价贵 40%"这件事在屏幕上等于不存在。
+ *
+ * ## 口径（必须与 `rollShopStocks` 严格一致，否则会造出第二个真相来源）
+ *
+ * 生成时烘进 `line.price` 的倍率是：
+ *
+ * ```
+ * priceOf(物资, 点位, 身份) × dayPriceFactor(day, 灾难) × (1 + priceSurcharge)
+ * ```
+ *
+ * 而 `basePriceOf` 又在上面叠了一层**事件**倍率（`run.shopPriceFactor`）。
+ * 所以"去掉灾难与事件之后"的单价只有一个正确算法：把这两段**都**除掉。
+ *
+ * ★ 用 `disasterModifiersOf` / `dayPriceFactor` 这两个**现成的读点**，
+ * 而不是自己再算一遍灾难加成 —— 本项目在限购那一处吃过"两边各算一份"的亏。
+ */
+export function priceStressOf(run: RunState, line: { price: number }): {
+  /** 去掉灾难加成与事件加成之后的单价（这一场天的"平常价"） */
+  base: number;
+  /** 今天比平常贵百分之几（四舍五入后的整数；0 = 不贵） */
+  percent: number;
+} {
+  const mods = disasterModifiersOf(run.disasterId);
+  const mul = dayPriceFactor(run.day, run.disasterId) * (1 + mods.priceSurcharge) * run.shopPriceFactor;
+  const actual = basePriceOf(run, line);
+  /*
+   * ★ 平常价要**四舍五入**，不能 `floor`。
+   *
+   * 第一版写的是 `Math.max(1, Math.round(actual / mul))`，它在 `mul < 1` 时
+   * 会把参照物**抬到比实价还高**（`actual` 本身是 floor 过的，除以一个小于 1 的数
+   * 会放大那一层舍入误差）—— 于是"今天更便宜"会被报成"**贵了 40%**"，
+   * 方向整个反了。而且 `mul` 极小时会算出 `base = 1`、`percent` 直接 `NaN`。
+   *
+   * 换成四舍五入之后，`actual / base` 会**贴着** `mul`（同一层舍入量级），
+   * 于是"比平常价贵多少"才真的是在说 `mul` 那件事。
+   */
+  const base = Math.max(1, Math.round(actual / Math.max(0.05, mul)));
+  let percent = Math.round((actual / base - 1) * 100);
+  /*
+   * 舍入残差归一：两件都取整到"元"之后，差几分的账不该报成几个百分点。
+   * 差价不到 5% 就是"价钱一样"（这个阈值只看**残差的量级**，不看真实涨幅 ——
+   * 真实的涨幅不可能只有 4%，因为 `priceSurcharge` 的最小档是 10%）。
+   */
+  if (Math.abs(actual - base) / base < 0.05) percent = 0;
+  return { base, percent };
+}
+
+/**
  * 今天能不能再买这件（限购，来自白天事件）。
  *
  * ★ 它是**全程**上限：要减去今天已经买走的量。不减的话，

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 囤货主界面（§9.2：地图点位列表 / 现金 / 负重 / 车载容量 / 剩余天数）。
  *
  * 分层纪律：只读 `buildCartView()` 的结果，写操作全部调用 systems/shop 的命令函数。
@@ -20,7 +20,7 @@ import { dayLabel, daysUntilDisaster } from '../model/calendar';
 import type { DayEffectApplied } from '../model/types';
 import type { GameStore } from '../state/store';
 import {
-  basePriceOf,
+  priceStressOf,
   buildCartView,
   buyCart,
   describeDayEffect,
@@ -35,6 +35,72 @@ import {
 import { startNumbersOf } from '../systems/identity';
 import { windowBandHtml } from './windowBand';
 import type { Screen } from './Router';
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  「今天贵了多少」怎么画（铁则 §10.1A：只改数字的机制必须有非数字表达）
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * ## 它补的是哪一笔账
+ *
+ * `priceSurcharge` 是 116 场灾难里 **90 场**都写了的那一维，从 M4 W-01 起真的生效了 ——
+ * 而玩家看不到它：扫货页只报一个绝对价，**没有参照物**，"这一场物价贵 40%"
+ * 在屏幕上等于不存在。用户的原话是"任何东西都要让我有感知"。
+ *
+ * ## 为什么是一个"斜纹条"而不是一个数字
+ *
+ * 数字（`贵 40%`）只有**读过才知道**，而这一屏玩家要在一堆商品之间**扫**。
+ * 所以给三件东西：
+ *
+ *  · 一个**长度随涨幅变化的朱红斜纹条**（10% 一档，封顶 5 档）—— 扫一眼就知道哪件最贵；
+ *  · 一个**箭头方向**（↑ 贵 / ↓ 便宜）—— 不用读数字就知道往哪边偏；
+ *  · 数字本身（`贵 40%`）—— 想精确算账的人有得算。
+ *
+ * ★ 参照物写的是"**平常价**"（= 去掉灾难加成与事件加成之后的价），
+ * 而不是"昨天"，因为 `dayPriceFactor` 是这一场逐日曲线的一部分、
+ * 人人如此天天如此 —— 拿它当"贵了"的参照会让每一天都报"贵了"。
+ */
+/**
+ * 涨幅 → 计量条的宽度（px）。
+ *
+ * ★★ 阶梯是**递增**的，不是等差的 —— 这一点改过一次：
+ * 第一版写 `Math.ceil(percent / 10)` 封顶 5，于是"贵 200%"与"贵 300%"
+ * **都是 `--stress:5`**，屏幕上一模一样。等差的读法只有在涨幅总是
+ * 10~50% 时才成立，而实测这一场灾难的自然涨幅就有 233%（`flood_urban`）——
+ * 也就是说**大多数时候玩家看到的都是封顶的那一档**，那个条等于没在报数。
+ *
+ * 换成递增阶梯之后：涨幅越大，条越长，而且长得多。封顶仍在（5 档 = 34px），
+ * 因为"贵一倍"和"贵两倍"在**决策上**是同一件事（都不买），
+ * 但在**观感上**必须不一样 —— 那正是这套东西存在的理由。
+ */
+const STRESS_PX = [4, 8, 14, 22, 34] as const;
+
+function stressWidthOf(percent: number): number {
+  const level = Math.min(STRESS_PX.length, Math.max(1, Math.ceil(Math.abs(percent) / 20)));
+  return STRESS_PX[level - 1] as number;
+}
+
+function priceHtml(price: { base: number; percent: number }): string {
+  if (price.percent === 0) return `${price.base} 元`;
+  const up = price.percent > 0;
+  return (
+    `${price.base} 元` +
+    `<span class="price-stress${up ? ' is-up' : ' is-down'}" style="--stress:${stressWidthOf(price.percent)}px"` +
+    ` aria-label="比平常价${up ? '贵' : '便宜'} ${Math.abs(price.percent)}%">` +
+    `<i class="price-meter" aria-hidden="true"></i>` +
+    `<b>${up ? '↑' : '↓'}${up ? '贵' : '便宜'} ${Math.abs(price.percent)}%</b>` +
+    `</span>`
+  );
+}
+
+/** 店门口那个标记（参数是这家店**最贵那一件**的涨幅；≤0 则不画） */
+function priceStressFlagHtml(peak: number): string {
+  if (peak <= 0) return '';
+  return (
+    `<span class="shop-pricey" style="--stress:${stressWidthOf(peak)}px"` +
+    ` aria-label="今天比平常贵 ${peak}%">今天贵 ${peak}%</span>`
+  );
+}
 
 export interface ShopScreenProps {
   /** 回家整理（把 phase 推到 organize，由 systems/phases 的命令完成） */
@@ -225,11 +291,22 @@ export class ShopScreen implements Screen {
       const stock = findShopStock(run, shop.id);
       const left = stock ? stock.lines.filter((l) => l.stock > 0).length : 0;
       const total = stock ? stock.lines.length : shop.offers.length;
+      /*
+       * ★★ 进店**之前**就要看得见"今天这家贵"（铁则：只改数字的机制必须有非数字表达）。
+       *
+       * 用户口径是"任何东西都要让我有感知"，而"哪家贵"这件事如果只在店里才看得见，
+       * 玩家就已经把行动点花掉了 —— 那时知道也晚了。所以卡片上给一个**朱红斜纹标记**。
+       */
+      const peak = stock
+        ? Math.max(0, ...stock.lines.map((l) => priceStressOf(run, l).percent))
+        : 0;
+      const flag = priceStressFlagHtml(peak);
       return `
-        <button class="shop-card${visited ? ' is-visited' : ''}" data-shop="${shop.id}"
-          aria-label="去${shop.name}，${left} 种有货">
+        <button class="shop-card${visited ? ' is-visited' : ''}${peak > 0 ? ' is-pricey' : ''}" data-shop="${shop.id}"
+          aria-label="去${shop.name}，${left} 种有货${peak > 0 ? `，今天比平常贵 ${peak}%` : ''}">
           <span class="shop-card-head">
             <span class="shop-name">${escapeHtml(shop.name)}</span>
+            ${flag}
             ${visited ? '<span class="shop-flag">今天去过</span>' : ''}
           </span>
           <span class="shop-blurb">${escapeHtml(shop.blurb)}</span>
@@ -262,12 +339,13 @@ export class ShopScreen implements Screen {
         const available = Number.isFinite(limit) ? Math.min(line.stock, limit) : line.stock;
         const soldOut = available <= 0;
         const capped = Number.isFinite(limit) && limit < line.stock;
+        const price = priceStressOf(run, line);
         return `
           <li class="good${soldOut ? ' is-out' : ''}">
             <span class="good-icon">${itemIconSvg(item.icon)}</span>
             <span class="good-text">
               <b>${escapeHtml(item.name)}</b>
-              <em>${basePriceOf(run, line)} 元 · ${item.unitWeight}kg · ${
+              <em>${priceHtml(price)} · ${item.unitWeight}kg · ${
                 soldOut
                   ? capped
                     ? '限购买满了'

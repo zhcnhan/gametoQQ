@@ -630,13 +630,49 @@ function parseHtml(html: string, doc: FakeDocument, parent: FakeElement, depth =
     if (closeAt < 0) continue; // 模板被截断：容忍，把这个标签当空元素
     const inner = src.slice(i, closeAt);
     if (/<[a-zA-Z]/.test(inner)) {
+      /*
+       * ★★ 有子标签时也**保留直接文本**（2026-10 修）。
+       *
+       * 原来的写法是"有子标签就什么都不存"，于是
+       * `<em>120 元<span class="price-stress">…</span> · 5kg · 限购</em>`
+       * 里的 `120 元 / 5kg / 限购` **全部读不到** —— 而那正是玩家看得见的字。
+       * 这个洞曾经让我把一条**正确的守卫**误判成"守卫写错了"（见 `leafTexts` 的注释）。
+       *
+       * 现在把直接文本段（不含任何标签的那些片段）拼起来存进 `textContent`，
+       * 与真 DOM 的 `textContent` 语义一致：**子孙的字也算在内**。
+       */
       parseHtml(inner, doc, el);
+      const direct = directTextOf(inner);
+      if (direct) el.textContent = direct;
     } else {
-      // 没有子标签：把内容当文本留着（<span class="slot-count">×3</span> 这类）
+      // 没有子标签：整个内容就是文本（<span class="slot-count">×3</span> 这类）
       el.textContent = inner.trim();
     }
     i = closeAt + `</${tag}>`.length;
   }
+}
+
+/**
+ * 取一段 HTML 里**不属于任何子标签**的直接文本（空白折叠后拼接）。
+ *
+ * `decodeEntities` 与解析属性走同一个函数，免得"属性里的 `&amp;` 解了、
+ * 文本里的没解"这种半吊子状态。
+ */
+function directTextOf(html: string): string {
+  let out = '';
+  let i = 0;
+  for (;;) {
+    const lt = html.indexOf('<', i);
+    if (lt < 0) {
+      out += html.slice(i);
+      break;
+    }
+    out += html.slice(i, lt);
+    const gt = html.indexOf('>', lt);
+    if (gt < 0) break;
+    i = gt + 1;
+  }
+  return out.replace(/\s+/g, ' ').trim();
 }
 
 /** 从 `from` 起找到与 `tag` 配对的闭合标签位置（按同名开合计数） */
@@ -733,11 +769,13 @@ export function pointerEvent(
  *
  * ## 为什么必须有一个（而不是各测试自己写一遍）
  *
- * 假体的解析器不实现文本节点（见 `parseHtml` 的边界说明）：只有**没有子标签**
- * 的元素才有 `textContent`。所以 `<div class="a"><i>外面</i><b>-18°C</b></div>`
- * 这种混排里，容器本身读到空串，而 `<i>` / `<b>` 各自好端端的。
+ * 假体的解析器不实现文本节点（见 `parseHtml` 的边界说明）：文本存在元素的
+ * `textContent` 上而不是独立的文本节点里。所以
+ * `<div class="a"><i>外面</i><b>-18°C</b></div>` 这种混排里，
+ * 容器的 `textContent` 读到的是**它自己的那段字**（2026-10 起也含混排文本），
+ * 子标签的字则各自在自己身上。
  *
- * 于是"读 `.contrast-cell` 的 textContent"会得到**空**，而那条失败看起来
+ * 于是"读 `.contrast-cell` 的 textContent"可能得到**空**，而那条失败看起来
  * 像"这一格没渲染" —— 它会把一个正确的界面报成坏的。反过来更危险：
  * 用 `not.toContain` 断言时，空串会让它**永远通过**。
  *
@@ -747,6 +785,17 @@ export function pointerEvent(
  *
  * ⚠ 它**不**按文档顺序拼接容器与叶子的文本（假体没有文本节点，顺序信息不存在）。
  * 所以断言应该用 `toContain` / `toContain` 的组合，而不是 `toBe` 一整句。
+ *
+ * ## 2026-10 修掉的那个洞（代价：一条正确的守卫被误判成写错了）
+ *
+ * 原来容器在**有子标签时一个字都不存**，于是
+ * `<em>120 元<span class="price-stress">…</span> · 5kg · 限购</em>`
+ * 里的 `120 元 / 5kg / 限购` 全读不到 —— 而那正是玩家看得见的字。
+ * 现在 `parseHtml` 会把混排里的**直接文本段**也存下来，与真 DOM 的
+ * `textContent` 语义对齐（子孙的字也算在内）。
+ *
+ * ★ 教训不是"记住这个边界"，而是"**混合内容**是这种假体的经典盲区：
+ * 一旦某个叶子改成分叉，原来那条断言会静默失去对象"。
  */
 export function leafTexts(el: FakeElement): string[] {
   const out: string[] = [];

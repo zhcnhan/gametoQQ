@@ -1577,6 +1577,89 @@ button:disabled {
   font-variant-numeric: tabular-nums;
 }
 
+/* ———————— 物价压力：一个"扫一眼就知道"的标记（铁则 §10.1A） ————————
+
+   它要回答的问题不是"多少钱"，而是"**今天是不是该换一家**"。
+   所以它不是文字而是一个**长度随涨幅变化的斜纹条** —— 在几个商品之间扫的时候，
+   眼睛读的是长度差，不是百分比。阶梯写死 5 档：5 档足够分辨"有点贵"与"贵得离谱"，
+   再多就变成了在比毫米。
+
+   ⚠ 用斜纹（`repeating-linear-gradient`）而不是实心：实心条在朱红下会被读成
+   "危险/受伤"（生存期那套色已经在用）。斜纹在本项目里一直是"**价钱/账目**"的记号
+   （胶带、价签都是斜纹），所以它读起来是"贵"而不是"被打了"。 */
+.price-stress {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+  vertical-align: middle;
+  font-variant-numeric: tabular-nums;
+}
+
+.price-stress b {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.price-stress.is-up b {
+  color: var(--vermilion);
+}
+
+.price-stress.is-down b {
+  color: var(--ink-70);
+}
+
+.price-meter {
+  display: inline-block;
+  /* 宽度由外层 `.price-stress` 的 `--stress` 给（递增阶梯，见 `ShopScreen.ts` 的 `STRESS_PX`）。
+     ★ 不要写成"档位 × 固定像素"—— 等差的读法会让大多数场景都顶在封顶那一档，
+     屏幕上"贵一倍"与"贵两倍"就长得一模一样了。 */
+  width: var(--stress, 4px);
+  height: 9px;
+  border: 1px solid currentColor;
+  opacity: 0.85;
+}
+
+.price-stress.is-up .price-meter {
+  color: var(--vermilion);
+  background: repeating-linear-gradient(
+    45deg,
+    var(--vermilion) 0 2px,
+    transparent 2px 4px
+  );
+}
+
+.price-stress.is-down .price-meter {
+  color: var(--ink-40);
+  background: repeating-linear-gradient(
+    45deg,
+    var(--ink-40) 0 2px,
+    transparent 2px 4px
+  );
+}
+
+/* 店门口那个标记（进店**之前**就要看见"今天这家贵"） */
+.shop-pricey {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 1px 6px;
+  font-size: 10px;
+  color: var(--vermilion);
+  border: 1.5px solid var(--vermilion);
+  background: repeating-linear-gradient(
+    45deg,
+    color-mix(in srgb, var(--vermilion) 12%, transparent) 0 3px,
+    transparent 3px 6px
+  );
+  font-variant-numeric: tabular-nums;
+}
+
+.shop-card.is-pricey .shop-name {
+  /* 贵的那家，店名也压一点朱红 —— 卡片整体偏红，扫列表时先看到它 */
+  color: var(--vermilion);
+}
+
 /* ———————— 扫货：货架 ———————— */
 
 .goods {
