@@ -105,12 +105,20 @@ export function howToPlayHtml(): string {
  * ★ 为什么是**两行**而不是一行：这一段要教的正是"贴与没贴的**区别**"。
  * 只给一条贴好的，玩家看见的是一个装饰；给出两条并排，
  * 那个色条与格子上的同色描边才读得出"这一行归这张胶带管"。
+ *
+ * ★★ **它是这一整段唯一说得出名字的一段内容**，所以它必须过读屏 ——
+ * 一开始这里只按"点不动的东西不要做成按钮"处理，整块给了 `aria-hidden`，
+ * 于是图里所有格子对读屏都是**不存在**的，而下面那句图注还在讲
+ * "上面那一行贴了、下面那一行没贴" —— 读屏用户听到的是一句指不到东西的话。
+ * 现在整块报成一张**图**（`role="img"` + `aria-label` 一句把画面说完），
+ * 里面那些装饰性的格子仍然是 `aria-hidden`（它们是这张图的像素，不是控件）。
+ * ★ 图注与 `aria-label` 说的是同一件事，两处都要改就别只改一处。
  */
 function demoShelfHtml(): string {
   const filled = DEMO_SLOTS.map(slotHtml).join('');
   const empty = `<span class="slot is-empty" aria-hidden="true"></span>`;
   return `
-    <figure class="howto-figure">
+    <figure class="howto-figure" role="img" aria-label="示意：一块两行的货架。上面那一行贴了胶带，写的是主食，格子上多一圈同色的边；下面那一行没贴。">
       <div class="howto-shelf">
         <div class="shelf-rows">
           <div class="shelf-row is-taped" style="--zone:${DEMO_TAPE_COLOR}">

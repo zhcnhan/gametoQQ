@@ -88,6 +88,25 @@ describe('★ 示例复用的是**真货架**的类名，不是另画一张图',
     }
   });
 
+  it('★★ 整块活例要过读屏（它是这一段唯一说得出名字的内容）', () => {
+    // 一开始这里整块给了 aria-hidden：格子在读屏里不存在，而图注还在说
+    // "上面那一行贴了、下面那一行没贴" —— 听到的是一句指不到东西的话。
+    const fig = HOWTO.querySelectorAll('.howto-figure')[0];
+    expect(fig, '找不到示例那一块').toBeTruthy();
+    expect(fig?.attributes?.['role']).toBe('img');
+    const label = fig?.attributes?.['aria-label'] ?? '';
+    // 一句话要把画面说完：几行、哪一行贴了、没贴的那一行是什么样
+    expect(label).toContain('两行');
+    expect(label).toContain('上面那一行');
+    expect(label).toContain('下面那一行');
+    // 装饰性的格子仍然是 hidden（它们是这张图的像素，不是控件）
+    expect(HOWTO.querySelectorAll('.slot')[0]?.attributes?.['aria-hidden']).toBe('true');
+    // ★ 图注与 aria-label 说的是同一件事：图注里那两句关键的话，标签里也要有
+    const caption = allText(HOWTO);
+    expect(caption).toContain('上面那一行贴了胶带');
+    expect(caption).toContain('下面那一行没贴');
+  });
+
   it('★ 胶带颜色**不是朱红**（§5A：朱红只表示警告与重要）', () => {
     const html = howToPlayHtml();
     expect(html.toLowerCase()).not.toContain('#c8372d');
