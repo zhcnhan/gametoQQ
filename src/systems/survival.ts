@@ -41,7 +41,7 @@
  */
 import { dayLabel, severityAt } from '../model/calendar';
 import { consumeCategory } from '../model/consume';
-import { countOnHandy } from '../model/shelf';
+import { countKeepsakes, countOnHandy, autoPlace, makeStack } from '../model/shelf';
 import { computeOrganizeScore } from '../model/score';
 import { spoilEverything } from '../model/spoil';
 import { messiestRows, rowZoneName, scatterCountFor, scatterRows } from '../model/scatter';
@@ -63,9 +63,11 @@ import {
   WARMTH_TRIGGER,
   sleepRecoverAt,
   dailyDrainOf,
+  emergencyPainOf,
   hardPressTier,
   healOf,
   isHardPress,
+  keepsakeMoodOf,
   moodFromPlacement,
   organizeQuality,
   round1,
@@ -74,8 +76,9 @@ import {
 } from '../data/survival';
 import { identityWorkFactor } from '../data/identities';
 import { haulFactorOfShelves, workHauledOf } from '../model/haul';
-import { nextFloat, type RngCursor } from '../model/rng';
-import { recordEvent } from './setup';
+import { nextFloat, createCursor, type RngCursor } from '../model/rng';
+import { boxDefIdForItemIds } from './shop';
+import { nextBoxSeq, recordEvent, rollExpiry } from './setup';
 import type { CategoryId, EmergencyDef, HardPressLevel, RunState } from '../model/types';
 
 /** 每天最多自动用掉几件补给（医疗 / 保暖各算一份）。它只防"一次吃光库存"，不限制正常情况下按需取用 */
@@ -135,6 +138,14 @@ export interface EmergencyOutcome {
   lost: number;
   /** 化解时顺手位上有几件（用于日志与界面说清"是靠什么化解的"） */
   handyHave: number;
+  /**
+   * ★ 化解之后别人回给你的那点东西（M4 第五组；没这条事件时是 `null`）。
+   *
+   * `where` 不是装饰：它决定了玩家**去哪一屏找它** —— `'shelf'` 是"已经给你摆上了"、
+   * `'box'` 是"塞在一个箱子里，得自己拆"。界面照它说话（见 `ui/SurvivalScreen.ts`），
+   * 因为"给了"和"放在你手边"是两件事。
+   */
+  gift: { itemId: string; count: number; where: 'shelf' | 'box' } | null;
 }
 
 /**
@@ -161,9 +172,57 @@ export function settleEmergency(run: RunState, def: EmergencyDef): EmergencyOutc
       run.shelves = drawn.shelves;
       run.boxesToUnpack = drawn.boxes;
     }
-    return { def, resolved: true, lost: 0, handyHave };
+    return { def, resolved: true, lost: 0, handyHave, gift: deliverThanks(run, def) };
   }
-  return { def, resolved: false, lost: def.lost, handyHave };
+  return { def, resolved: false, lost: def.lost, handyHave, gift: null };
+}
+
+/**
+ * 把 `def.thanks` 那点东西交到玩家手上（就地把货放上货架 / 塞进箱子）。
+ *
+ * ## 为什么先试货架、放不下才装箱
+ *
+ * `autoPlace` 优先并进同类的那一格，所以"别人还你两罐燃料"会直接落在
+ * 你本来放燃料的地方 —— 那是**看得见**的（§10.1A 第 1 条）。装箱是兜底：
+ * 屋里真的没地方时它至少不会凭空少掉一件东西（`packStacks` 那条路的先例：
+ * 泡水捞出来的货也是装箱的）。
+ *
+ * ⚠ 装箱**不记 `carLoad`**（这一箱没上过车，与 `packStacks` 同一条理由）。
+ *
+ * ## 到期日怎么算
+ *
+ * 走 `rollExpiry`，但用一条**从 `run.seed` 派生、用完即弃**的游标
+ * （`src/systems/setup.ts:38` 那条先例）：保质期抖动是"这件东西多新"的
+ * 表现，不该消耗主 RNG 流的一个数 —— 否则"别人送你一件东西"会把手气
+ * 整条往下推一格，`同 seed 同事件序列` 的账就不好对了。
+ */
+function deliverThanks(run: RunState, def: EmergencyDef): EmergencyOutcome['gift'] {
+  const thanks = def.thanks;
+  if (!thanks || thanks.count <= 0) return null;
+  const expiry = rollExpiry(createCursor(run.seed), thanks.itemId, run.day);
+  const stack = makeStack(thanks.itemId, thanks.count, expiry);
+  for (let i = 0; i < run.shelves.length; i++) {
+    const shelf = run.shelves[i];
+    if (!shelf) continue;
+    const placed = autoPlace(shelf, stack);
+    if (!placed) continue;
+    run.shelves = run.shelves.map((s, index) => (index === i ? placed.shelf : s));
+    return { itemId: thanks.itemId, count: thanks.count, where: 'shelf' };
+  }
+  /*
+   * 箱型沿用采购那一套（`boxDefIdForItemIds`）。这里 import 了 `systems/shop.ts`
+   * 是为了**不把"一件食品该装哪种箱"这条规则抄第二遍** —— 抄一遍的表现是
+   * 别人送的一袋米装在医疗箱里，而两个文件各自都"对"。
+   */
+  run.boxesToUnpack = [
+    ...run.boxesToUnpack,
+    {
+      id: `box_${nextBoxSeq(run.boxesToUnpack)}`,
+      defId: boxDefIdForItemIds([thanks.itemId]),
+      items: [stack]
+    }
+  ];
+  return { itemId: thanks.itemId, count: thanks.count, where: 'box' };
 }
 
 export interface DrainLine {
@@ -225,6 +284,24 @@ export interface SurvivalReport {
   emergencyResolved: boolean;
   /** 没化解时受创的件数（按缺货口径） */
   emergencyLost: number;
+  /**
+   * ★ 化解之后别人回给你的那件东西（M4 第五组；没有就是 `null`）。
+   *
+   * 它与 `emergencyLost` 正好是一对：一个说"没接住会丢什么"，
+   * 一个说"接住了会拿到什么"。只有 `data/emergencies.ts` 里显式写了
+   * `thanks` 的那几条会给东西 —— 默认仍然是"没事发生就是最好的结果"。
+   */
+  emergencyGift: { itemId: string; count: number; where: 'shelf' | 'box' } | null;
+  /**
+   * ★ 屋里有几件**摆出来的**纪念品（D-29，M4 第五组），以及它们换了多少心情。
+   *
+   * 两个数都要留：`keepsakes` 是"你有什么"（玩家能去货架上数），
+   * `moodFromKeepsakes` 是"它换来了什么"（日报要说出来的那一句）。
+   * 只留后者的话，玩家看到"+3 心情"却不知道那三点是从哪来的 ——
+   * 而这一类东西的价值恰好就在"你自己知道那是什么"。
+   */
+  keepsakes: number;
+  moodFromKeepsakes: number;
   /**
    * ★ 今天被翻乱了几件（§6.4 的"翻乱相邻货架"，2026-10 清偿 D-11）。
    *
@@ -386,6 +463,16 @@ export function settleSurvivalDay(run: RunState, cursor?: RngCursor): SurvivalRe
    */
   deltas.shelter -= Math.round(severity * SHELTER_WEAR_PER_SEVERITY - mods.shelterDecayPerDay);
   deltas.mood += moodFromPlacement(score.placement);
+  /*
+   * ④.2 **摆出来的纪念品**（D-29，M4 第五组）：奢侈品这一类唯一的用处。
+   *
+   * ★ 它与上面那一行**并列**、不进 `organizeQuality`：上面那条问"东西在不在
+   * 该在的地方"，这条问"屋里有几件你喜欢的东西"。混进同一个分数里的表现是
+   * 玩家发现"把可可粉摆在门口能提高归位率"—— 而那件事没有道理。
+   */
+  const keepsakes = countKeepsakes(run.shelves);
+  const moodFromKeepsakes = keepsakeMoodOf(keepsakes);
+  deltas.mood += moodFromKeepsakes;
 
   // ④ 缺货：没凑齐就是没凑齐，缺口越大越疼（封顶见 SHORTAGE_MAX_STACK）
   if (shortageUnits > 0) {
@@ -451,13 +538,28 @@ export function settleSurvivalDay(run: RunState, cursor?: RngCursor): SurvivalRe
     recordEvent(run, 'emergency', emergency.id);
     emergencyOutcome = settleEmergency(run, emergency);
     if (!emergencyOutcome.resolved) {
-      const pain = Math.min(SHORTAGE_MAX_STACK, emergencyOutcome.lost);
+      const pain = emergencyPainOf(emergencyOutcome.lost);
       deltas.health -= SHORTAGE_HEALTH * pain;
       deltas.mood -= SHORTAGE_MOOD * pain;
       deltas.stamina -= SHORTAGE_STAMINA * pain;
       // 累计"没接住"的次数（v16，成就「门口那一块」读它）。
       // 不能用 last.emergencyResolved 代替：那是今天的快照，只回答"最后一天怎样"
       run.survival.emergencyHurtCount += 1;
+    } else {
+      /*
+       * 累计"这次真的用上了"的次数（M4 第五组）。
+       *
+       * ★ 它与上面那个是**一对**，而且它才是这一组真正缺的那本账：
+       * `emergencyHurtCount` 只记得住"失手过几次"，于是`=== 0` 那条成就
+       * 在**没碰到过突发事件**的局里也成立 —— 一个从没被检查过的人
+       * 和一个每次都接住的人，账本上长得一模一样。
+       * 顺手位的存在感需要后者有一个数。
+       *
+       * ⚠ 跨局那本账（`meta.totalEmergenciesSaved`）**不在这里加** ——
+       * 这一层拿不到 `store`。由 `systems/phases.ts` 的 `settleAndMaybeEnd`
+       * 按同一份报告加，判据与这里同理（`emergencyResolved`）。
+       */
+      run.survival.emergencySavedCount += 1;
     }
   }
 
@@ -577,6 +679,9 @@ export function settleSurvivalDay(run: RunState, cursor?: RngCursor): SurvivalRe
     emergencyId: emergencyOutcome?.def.id ?? null,
     emergencyResolved: emergencyOutcome?.resolved ?? false,
     emergencyLost: emergencyOutcome?.lost ?? 0,
+    emergencyGift: emergencyOutcome?.gift ?? null,
+    keepsakes,
+    moodFromKeepsakes,
     scattered,
     scatteredRows
   };
@@ -673,6 +778,9 @@ export function settleSurvivalDay(run: RunState, cursor?: RngCursor): SurvivalRe
     emergencyId: emergencyOutcome?.def.id ?? null,
     emergencyResolved: emergencyOutcome?.resolved ?? false,
     emergencyLost: emergencyOutcome?.lost ?? 0,
+    emergencyGift: emergencyOutcome?.gift ?? null,
+    keepsakes,
+    moodFromKeepsakes,
     scattered,
     scatteredRows
   };

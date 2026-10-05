@@ -14,7 +14,7 @@ import { IDENTITY_DEFS, hasIdentityDef } from '../data/identities';
 import { findHelpRequestDef } from '../data/helpRequests';
 import { NIGHT_SLEEP, findNightEvent, hasNightEvent } from '../data/nightEvents';
 import { ACTION_POINTS_PER_DAY } from '../data/shops';
-import { EMPTY_SURVIVAL_SNAPSHOT, NEVER_TRADED } from '../data/survival';
+import { EMPTY_SURVIVAL_SNAPSHOT, KEEPSAKE_MOOD_MAX, NEVER_TRADED } from '../data/survival';
 import type {
   AppliedEffect,
   DayEffectApplied,
@@ -102,6 +102,7 @@ export function createMetaProfile(): MetaProfile {
     survivedRuns: 0,
     achievements: [],
     totalShelved: 0,
+    totalEmergenciesSaved: 0,
     everBoughtItemIds: [],
     lastRunScore: null
   };
@@ -410,6 +411,16 @@ function normalizeMeta(meta: MetaProfile): MetaProfile {
       typeof meta.totalShelved === 'number' && Number.isFinite(meta.totalShelved)
         ? Math.max(0, Math.round(meta.totalShelved))
         : 0,
+    /*
+     * M4 第五组新增。与上面 `totalShelved` 同形，**同样刻意不反推** ——
+     * 理由与那一段以及上面的 `achievements` 完全一致：老档没这本账，
+     * 补一个数就是凭空宣告"你已经挡下过 10 次"，而那正是成就要问的事。
+     * 补 0 = "从这一版开始记"，玩家只是晚一点拿到，没有被骗。
+     */
+    totalEmergenciesSaved:
+      typeof meta.totalEmergenciesSaved === 'number' && Number.isFinite(meta.totalEmergenciesSaved)
+        ? Math.max(0, Math.round(meta.totalEmergenciesSaved))
+        : 0,
     everBoughtItemIds: strList(meta.everBoughtItemIds),
     lastRunScore: sanitizeLastRunScore(meta.lastRunScore)
   };
@@ -614,6 +625,7 @@ export function migrateV5ToV6(save: SaveGame): SaveGame {
       cleanDays: 0,
       minStamina: 100,
       emergencyHurtCount: 0,
+      emergencySavedCount: 0,
       lastTradeDay: NEVER_TRADED,
       last: { ...EMPTY_SURVIVAL_SNAPSHOT }
     };
@@ -982,6 +994,13 @@ function normalizeRun(save: SaveGame): SaveGame | null {
     cleanDays: Math.max(0, num(survival.cleanDays)),
     minStamina: Math.min(100, Math.max(0, num(survival.minStamina) || 100)),
     emergencyHurtCount: Math.max(0, Math.round(num(survival.emergencyHurtCount))),
+    /*
+     * M4 第五组新增。旧档 `num()` 给 **0**，而 0 就是真值
+     * （那时候这本账根本不存在，"挡过几次"只能是 0），所以**不需要迁移**。
+     * ⚠ 与 `cleanDays` 那类"默认 0 但语义是没做到"的字段不同：
+     * 这一条读起来像"一次都没挡住"，而那**正是**旧档的事实 —— 不是缺失。
+     */
+    emergencySavedCount: Math.max(0, Math.round(num(survival.emergencySavedCount))),
     // 它可以是负数（没换过时是 -99），所以不夹 ≥ 0
     lastTradeDay: typeof survival.lastTradeDay === 'number' ? Math.round(survival.lastTradeDay) : NEVER_TRADED,
     last: {
@@ -1019,6 +1038,37 @@ function normalizeRun(save: SaveGame): SaveGame | null {
       emergencyId: typeof last.emergencyId === 'string' && findEmergency(last.emergencyId) ? last.emergencyId : null,
       emergencyResolved: last.emergencyResolved === true,
       emergencyLost: Math.max(0, num(last.emergencyLost)),
+      /*
+       * M4 第五组：别人回给你的那件东西。旧档没有这个字段 → `null`
+       * （"今天没有人送你东西"是零值，也是绝大多数日子的真相）。
+       *
+       * ⚠ 认不出来的物资 id 一律丢成 `null`：这条要喂给 `getItemDef` 取名，
+       * 而它对着未知 id **抛异常** —— 一个改过名字的旧档不该让日报炸掉。
+       * `count` 至少 1（0 件的"礼"没有意义），`where` 只认那两个值。
+       */
+      emergencyGift:
+        isObject(last.emergencyGift) &&
+        typeof last.emergencyGift.itemId === 'string' &&
+        hasItemDef(last.emergencyGift.itemId) &&
+        num(last.emergencyGift.count) >= 1
+          ? {
+              itemId: last.emergencyGift.itemId,
+              count: Math.max(1, Math.round(num(last.emergencyGift.count))),
+              where: last.emergencyGift.where === 'box' ? ('box' as const) : ('shelf' as const)
+            }
+          : null,
+      /*
+       * D-29 的两个数（M4 第五组）。旧档没有它们 → 0 / 0 就是真值：
+       * "这本账开始记之前，屋里没有一件被算进去的纪念品"，而不是"数据缺了"。
+       *
+       * ⚠ 这两个数**不反推**。老档的货架上可能正摆着可可粉，但那是
+       * "从这一版开始算"的事 —— 补一个数就是凭空宣告玩家昨天已经拿到过心情，
+       * 而补 0 只是让他晚一天看见，没有被骗。
+       * `keepsakes` 夹在非负整数，`moodFromKeepsakes` 夹在 `keepsakeMoodOf` 的值域内
+       * （手改档里写 99 的话，日报会说出一个规则算不出来的数）。
+       */
+      keepsakes: Math.max(0, Math.round(num(last.keepsakes))),
+      moodFromKeepsakes: Math.max(0, Math.min(KEEPSAKE_MOOD_MAX, Math.round(num(last.moodFromKeepsakes)))),
       /*
        * 翻乱（D-11）。旧档没有这两个字段 —— 默认 0 / 空数组：
        * "昨天没被翻乱"是零值，也是绝大多数日子的真相。

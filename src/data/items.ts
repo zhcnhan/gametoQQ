@@ -213,12 +213,16 @@ export const ITEM_DEFS: readonly ItemDef[] = [
   //  3. **它们的价值只有两条**：点亮图鉴 + 心情（`comfort` 读得到的地方见下）。
   //     心情那一格走的是**整理期的摆放**而不是生存期的消耗 —— 见 `tags` 里的 'keepsake'。
   //
-  //      ★ DEFERRED(D-29): 后半句**没有实现** —— `keepsake` 在全仓**零读取**
-  //      （grep 只出现在 `systems/codex.test.ts` 的一句注释里）。
-  //      `tags` 确实被读（`model/shelf.ts` 的 `zoneListedFor` 按 tag 筛选分区规则），
-  //      但那是**分区规则**在用，不是"摆放回心情"。
-  //      所以奢侈品现在只有"贵 + 占地方 + 点亮图鉴"，它被承诺的那个用处不存在。
-  //      详见 `src/meta/deferred.ts` 的 D-29。
+  //      ★ M4 第五组已接上（D-29 清偿）：`model/shelf.ts` 的 `countKeepsakes`
+  //      数**货架上**带 `keepsake` tag 的件数 → `data/survival.ts` 的
+  //      `keepsakeMoodOf`（每件 +1、封顶 +3）→ `settleSurvivalDay` 里与
+  //      `moodFromPlacement` **并列**加进心情，日报说一句"屋里摆着 N 件
+  //      你自己喜欢的东西，心情 +M"。
+  //      ⚠ 两个口径别再改回去：**只算摆出来的**（收在没拆的纸箱里不算 ——
+  //      那是"你有，但你没摆出来"）、**与摆在哪一块无关**（§5 引擎①
+  //      不评判对错，按"摆得对不对"加分就变成系统在打分）。
+  //      上限 +3 的理由：`moodFromPlacement` 的值域是 -4 ~ +4，而它是 §6.3 的
+  //      主轴 —— 纪念品顶得上，但不能顶过整理本身。
   //
   // 价格写成"贵得离谱"但其实买不到：`basePrice` 只用于图鉴与结算的估值展示，
   // 商店不卖它们，所以这个数不进任何一次结账。

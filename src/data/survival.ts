@@ -59,6 +59,11 @@ export const EMPTY_SURVIVAL_SNAPSHOT: SurvivalSnapshot = {
   emergencyId: null,
   emergencyResolved: false,
   emergencyLost: 0,
+  // M4 第五组：零值 = "今天没有人回给你东西"，也是绝大多数日子的值
+  emergencyGift: null,
+  // D-29：零值 = "屋里一件摆出来的纪念品都没有"，同样是最常见的开局状态
+  keepsakes: 0,
+  moodFromKeepsakes: 0,
   // D-11 的翻乱：零值就是"没乱"，而绝大多数日子的正常值正是 0
   scattered: 0,
   scatteredRows: []
@@ -289,8 +294,49 @@ export const SHORTAGE_STAMINA = 5;
 /** 缺货疼痛的封顶倍率：缺口是 1 件还是 10 件，最多差这么多倍 */
 export const SHORTAGE_MAX_STACK = 3;
 
+/**
+ * 一次"没化解"的突发事件到底有多疼（缺了几件 → 封顶后的件数）。
+ *
+ * ★ 抽出来只有一个理由：**日报要说出"本来会发生什么"**（M4 第五组），
+ * 而那句话里的数与真扣的数必须是同一个。日报自己写一遍 `Math.min(...)`
+ * 的表现是——两者在封顶那一档上分岔（`lost` 写 5 时真扣 3、日报说 5），
+ * 两个数各自都"算得对"，所以**没有任何东西会报错**。
+ *
+ * 口径与 ④ 缺货**共用**：见 `settleEmergency` 的注释（另造一套数字
+ * 会让"突发事件"和"断粮"变成两种疼法，而玩家的账本只有一个）。
+ */
+export function emergencyPainOf(lost: number): number {
+  return Math.min(SHORTAGE_MAX_STACK, Math.max(0, lost));
+}
+
 /** 每天的心情修正上限，防止心情在长局里被单一因子拉爆或砸穿 */
 export const MOOD_DELTA_CAP = 12;
+
+/** 屋里每一件**摆出来的**纪念品给多少心情（一件一点，看得见就够） */
+export const KEEPSAKE_MOOD_PER_ITEM = 1;
+
+/**
+ * 纪念品给的心情上限（+3）。
+ *
+ * ★ 这个数不是随便定的：`moodFromPlacement` 的值域是 **-4 ~ +4**，
+ * 而它是 §6.3 的主轴（"整理质量 → 心情"）。纪念品的加成一旦超过它，
+ * 玩家就会得出"把屋子码整齐不如多囤几罐可可粉"—— 那正好把整理这条轴
+ * 从中心挤到边缘。3 的意思是：**它顶得上，但顶不过**。
+ */
+export const KEEPSAKE_MOOD_MAX = 3;
+
+/**
+ * 摆出来的纪念品带来的心情（D-29）。
+ *
+ * 与 `moodFromPlacement` **并列相加**、不进 `organizeQuality`：
+ * 后者是"东西在不在该在的地方"，这一条是"屋里有几件你喜欢的东西"，
+ * 两件事都不该混进对方的分数里。也因此它**不会漂**三条永久回归探针
+ * （那三条的屋里没有奢侈品，这个函数恒返回 0）。
+ */
+export function keepsakeMoodOf(count: number): number {
+  if (!Number.isFinite(count) || count <= 0) return 0;
+  return Math.min(KEEPSAKE_MOOD_MAX, Math.floor(count) * KEEPSAKE_MOOD_PER_ITEM);
+}
 
 /**
  * 当天的**品类效率**（维度 13，§10B.3.1 的 L3）。

@@ -232,6 +232,13 @@ describe('存档 schema 与迁移', () => {
       cleanDays: 0,
       minStamina: 100,
       emergencyHurtCount: 0,
+      /*
+       * M4 第五组（v21）新增。它与上面那个是**一对**，但默认值的含义不同：
+       * `emergencyHurtCount: 0` 是"没失手过"，而这个 0 是"从这本账开始记之前，
+       * 没有一次被算进去过"。两者都不是"白送"——「它替你挡下了」要 5 次才发，
+       * 老档从 0 开始数不会凭空拿到它。
+       */
+      emergencySavedCount: 0,
       lastTradeDay: -99,
       last: {
         ...EMPTY_SURVIVAL_SNAPSHOT

@@ -282,6 +282,44 @@ describe('逐条判据：达成 / 差一点 / 边界', () => {
     expect(id(metaWith({ totalShelved: 300 }), goodRun(), 'a_storekeeper')).toBe(true);
   });
 
+  /*
+   * ★★ M4 第五组：顺手位的存在感（两条新成就）。
+   *
+   * 这两条用例是成对写的，因为它们**必须互不重叠** ——
+   * 一条问"失手过没有"（`emergencyHurtCount === 0`），一条问"真的用上了几次"
+   * （`emergencySavedCount`）。把它们分开断，才能保证将来改其中一条时
+   * 不会顺手把另一条的语义也改了。
+   */
+  it('★ 它替你挡下了：看的是**真的用上了几次**，不是没失手过', () => {
+    // 一局里一次突发事件都没抽到：`emergencyHurtCount === 0` 也成立，
+    // 但那说明"从没被检查过"，不是"每次都接住了"
+    const neverTested = goodRun();
+    expect(neverTested.survival.emergencySavedCount).toBe(0);
+    expect(id(metaWith(), neverTested, 'a_handy_saved')).toBe(false);
+
+    const four = goodRun();
+    four.survival.emergencySavedCount = 4;
+    expect(id(metaWith(), four, 'a_handy_saved')).toBe(false);
+
+    const five = goodRun();
+    five.survival.emergencySavedCount = 5;
+    expect(id(metaWith(), five, 'a_handy_saved')).toBe(true);
+  });
+
+  it('★ 门口那一块一直没空着：看的是**生涯累计**（单局 14 天凑不满 10 次，所以口径必须是累计）', () => {
+    expect(id(metaWith({ totalEmergenciesSaved: 9 }), goodRun(), 'a_handy_habit')).toBe(false);
+    expect(id(metaWith({ totalEmergenciesSaved: 10 }), goodRun(), 'a_handy_habit')).toBe(true);
+  });
+
+  it('★ 两条顺手位成就互不代劳：没失手过 ≠ 真的挡下过', () => {
+    // 一局"没失手过但也没挡住过"（没抽到突发事件）：拿前者、拿不到后者
+    const quiet = goodRun();
+    quiet.survival.emergencyHurtCount = 0;
+    quiet.survival.emergencySavedCount = 0;
+    expect(id(metaWith(), quiet, 'a_all_handy')).toBe(true);
+    expect(id(metaWith(), quiet, 'a_handy_saved')).toBe(false);
+  });
+
   it('★ 先见之明：买过这一场的刚需品类才算（刚需从灾难定义读，不另抄一份）', () => {
     // 寒潮的刚需是 fuel / warmth
     const fuelIds = ITEM_DEFS.filter((d) => d.category === 'fuel').map((d) => d.id);

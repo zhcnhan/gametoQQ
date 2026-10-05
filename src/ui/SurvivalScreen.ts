@@ -13,8 +13,18 @@
 import { SURVIVAL_DAYS, getDisasterDef, outdoorTemp } from '../data/disaster';
 import { findEmergency } from '../data/emergencies';
 import { getIdentityDef } from '../data/identities';
-import { CATEGORY_LABELS, getItemDef } from '../data/items';
-import { SHELTER_SLEEP_LINE, STAMINA_RECOVER, dailyDrainOf, moodFromPlacement, organizeQuality } from '../data/survival';
+import { CATEGORY_LABELS, getItemDef, hasItemDef } from '../data/items';
+import {
+  SHELTER_SLEEP_LINE,
+  SHORTAGE_HEALTH,
+  SHORTAGE_MOOD,
+  SHORTAGE_STAMINA,
+  STAMINA_RECOVER,
+  dailyDrainOf,
+  emergencyPainOf,
+  moodFromPlacement,
+  organizeQuality
+} from '../data/survival';
 import { playSfx } from '../fx/audio';
 import { iconSvg, itemIconSvg } from '../fx/icons';
 import { hintAt, dayLabel, severityAt } from '../model/calendar';
@@ -305,6 +315,22 @@ export class SurvivalScreen implements Screen {
             : ''
         }
         ${
+          /*
+           * ★ D-29（M4 第五组）：摆出来的纪念品换来的那一截心情要说出来。
+           *
+           * 奢侈品这一类**不参与生存数值**（不解饿、不是任何灾难的刚需），
+           * 它唯一的用处就是这一行 —— 所以这一行要是没有，那一整类东西
+           * 就只剩"贵 + 占地方"。措辞刻意用"你自己喜欢的东西"而不是
+           * "纪念品加成 +3"：§5 引擎① 不评判对错，这句话是陈述不是评分。
+           *
+           * ⚠ 同时说明**摆在货架上才算**（塞在没拆的纸箱里不算）——
+           * 那是玩家唯一能控制的动作，不说的话他会以为买了就生效。
+           */
+          last.moodFromKeepsakes > 0
+            ? `<p class="block-note">屋里摆着 ${last.keepsakes} 件你自己喜欢的东西，心情 <b>+${last.moodFromKeepsakes}</b>。（收在没拆的纸箱里不算。）</p>`
+            : ''
+        }
+        ${
           last.unreachable > 0
             ? `<p class="press-line">有 ${last.unreachable} 件东西明明就在屋里，今天却没力气翻出来。</p>`
             : ''
@@ -347,6 +373,19 @@ export class SurvivalScreen implements Screen {
     // 一切都正常的日子不该被硬塞一句话（§5 引擎①：只陈述，不夸）
     const note =
       streak >= 2 ? `连着 ${streak} 天，该拿到的都拿到了。` : safetyNote(run, score.placement, score.emergency);
+    /*
+     * ★ M4 第五组：顺手位的第三个表达 —— **累计挡下几次**。
+     *
+     * 上面那个百分比回答"现在摆得怎么样"（一个状态），而"顺手位有没有又怎么样呢"
+     * 问的是**它到底起过作用没有**（一段历史）。两者缺一个都不完整：
+     * 一个 100% 的应急率如果整局没抽到过突发事件，玩家一次都没感受到它。
+     *
+     * 只在 `> 0` 时渲染 —— 没有的事不写（§5 引擎①：只陈述，不夸）。
+     * ⚠ 措辞刻意不是"成功化解 N 次"：那是记分牌口径，会让人去刷次数。
+     * 它说的是"门口那块替你挡了几回"，与日报那两句话（突发事件的框）呼应。
+     */
+    const saved = run.survival.emergencySavedCount;
+    const savedNote = saved > 0 ? `<p class="block-note">门口那块替你把 ${saved} 次意外挡在了门外。</p>` : '';
     return `
       <section class="block">
         <h2 class="block-title">今天屋里的样子</h2>
@@ -356,6 +395,7 @@ export class SurvivalScreen implements Screen {
           <div class="stat"><i>顺手位</i><b>${Math.round(handy * 100)}%</b></div>
         </div>
         ${note ? `<p class="block-note">${escapeHtml(note)}</p>` : ''}
+        ${savedNote}
       </section>
     `;
   }
@@ -848,39 +888,101 @@ function qualityNote(quality: number): string {
  * 而它是这一局里**最该被读到**的东西：它决定"你的整理有没有救到你"。
  * 更糟的是它可能整局都不出现（约三成日子），所以它一出现就必须被抓住。
  *
- * ## 三处设计上的讲究
+ * ## 顶上那一行小字是"这是什么"
  *
- *  ① **顶上那一行小字是"这是什么"**：`突发` / `已解决` / `未解决`。
- *     它让"今天有件特别的事"在读者扫一眼时就成立 —— 而在此之前，
- *     玩家要读完那两句才知道那是件事。
- *     ⚠ 措辞改过一版：原来是"接住了 / 没接住"，用户 2026-10 的反馈是
- *     **"这个用词太尴尬了"** —— 改成"已解决 / 未解决"（中性、也准：
- *     它说的就是"这件事解决了没有"，而不是"你手快不快"）；
- *  ② **框的形状分三档**（`is-resolved` / `is-hurt`）：
- *     已解决画**暖黄**（§5A 里"安全 / 窗内"那一档），
- *     未解决画**实心朱红左边**（朱红是警告那一档）。
- *     两档的颜色语义都是既有纪律里的，不是新发明的；
- *  ③ **零评测**（§5 引擎①）：框里只说"发生了什么、靠什么化解的"，
- *     不写"干得漂亮"，也不写"你该早点整理"。
+ * `突发` / `已解决` / `未解决`。它让"今天有件特别的事"在读者扫一眼时就成立 ——
+ * 而在此之前，玩家要读完那两句才知道那是件事。
+ * ⚠ 措辞改过一版：原来是"接住了 / 没接住"，用户 2026-10 的反馈是
+ * **"这个用词太尴尬了"** —— 改成"已解决 / 未解决"（中性、也准：
+ * 它说的就是"这件事解决了没有"，而不是"你手快不快"）。
+ * 框的形状也分两档（`is-resolved` 暖黄 = §5A 里"安全 / 窗内"那一档、
+ * `is-hurt` 实心朱红左边 = 警告那一档）—— 两档的颜色语义都是既有纪律里的。
+ *
+ * ## ★ 「本来会发生什么」（M4 第五组）
+ *
+ * 化解一件突发的全部回报是**避免**扣点 —— 没有任何正收益。所以玩家在屏幕上
+ * 看到的是"今天挺平静"，而不是"我的顺手位救了我"。用户 2026-10 的原话正是
+ * "顺手位有没有又怎么样呢"：**它起作用的时候什么都没发生。**
+ *
+ * 而 §5 引擎①"游戏不评判对错"禁止用"干得漂亮"或加分来补偿
+ * （那会变成系统在打分，玩家也会开始刷）。合口径的形状只有一种：
+ * **陈述事实** —— 把"什么都没发生"翻译成"本来会发生的那件事"。
+ * 这与 §6.6 反差层是同一套手法（"你 / 整条街"）。
+ *
+ * ★ 反事实里那三个数必须与真扣的数是**同一个来源**（`emergencyPainOf` +
+ * `SHORTAGE_*`）。日报自己写一遍 `Math.min(lost, 3)` 的表现是：
+ * `lost` 写 5 时真扣 3、日报说 5 —— 两个数各自都"算得对"，没有东西会报错。
+ *
+ * ## 三条措辞纪律
+ *
+ *  ① **只在已解决时给反事实**。没解决时那件事已经发生了（框里就是实扣的
+ *     `健康 -6`），再补一句"本来会……"是在同一件事上说两遍；
+ *  ② **零评测**：只说"发生了什么、靠什么化解的、否则会怎样"，
+ *     不写"干得漂亮"，也不写"你该早点整理"；
+ *  ③ **"用上了"要分两种说**：`consumes` 的那几条是**真的烧掉了**，
+ *     说成"有，用上了"会让玩家以为库存没动（他会去找那一罐）。
  */
 function emergencyHtml(last: SurvivalSnapshot): string {
   if (!last.emergencyId) return '';
   const def = findEmergency(last.emergencyId);
   if (!def) return '';
   const resolved = last.emergencyResolved;
+  /*
+   * ★ "用上了"要分两种说：`consumes` 的那几条是**真的烧掉了**，
+   * 说成"有，用上了"会让玩家以为库存没动（他会去找那一罐）。
+   */
+  const used = def.consumes ? '顺手位上的东西顶上了，用掉了。' : '顺手位上有，用上了。';
+  const pain = emergencyPainOf(def.lost);
+  /*
+   * ★ 别人回给你的那件东西（M4 第五组）。读的是**快照里的事实**
+   * （`last.emergencyGift`）而不是事件表里的 `thanks` —— 屋里满到放不下时
+   * 它会变成一只箱子，只有当天那条记录知道是哪种（见 `SurvivalSnapshot` 的注释）。
+   */
+  const gift = giftLine(last.emergencyGift);
   const body = resolved
-    ? `${escapeHtml(def.text)}顺手位上有，用上了。`
+    ? `${escapeHtml(def.text)}${used}${gift}`
     : `${escapeHtml(def.text)}${
         def.needOnHandy > 1
           ? `顺手位上不够 ${def.needOnHandy} 件${CATEGORY_LABELS[def.category]}。`
           : `顺手位上没有${CATEGORY_LABELS[def.category]}。`
       }`;
+  /*
+   * 反事实那一行。三个数各自与真扣的口径一致（见函数注释的 ★），
+   * 写法是"那一格要是空的" —— 它把话说在**玩家自己做的那个动作**上
+   * （把东西放到顺手位），而不是说在"运气"或"系统"上。
+   */
+  const counterfactual = resolved
+    ? `<p class="event-would">那一格要是空的：健康 -${SHORTAGE_HEALTH * pain}、心情 -${
+        SHORTAGE_MOOD * pain
+      }、体力 -${SHORTAGE_STAMINA * pain}。</p>`
+    : `<p class="event-would">健康 -${SHORTAGE_HEALTH * pain}、心情 -${SHORTAGE_MOOD * pain}、体力 -${
+        SHORTAGE_STAMINA * pain
+      }。</p>`;
   return `
     <div class="event-frame is-emergency ${resolved ? 'is-resolved' : 'is-hurt'}">
       <span class="event-kind">${resolved ? '突发 · 已解决' : '突发 · 未解决'}</span>
       <p class="event-text">${body}</p>
+      ${counterfactual}
     </div>
   `;
+}
+
+/**
+ * "别人回给你的那件东西"那一句（M4 第五组）。没有就是空串。
+ *
+ * ★ 两种落点必须分开说：`shelf` 是"已经给你摆上了"（玩家不用做任何事，
+ * 但也不该白等一个他没被通知的动作），`box` 是"塞在一只箱子里，得自己拆" ——
+ * 混成一句"给了你一件煤油"会让后一种情况变成"东西哪去了"，而那是**最难查**的一类。
+ *
+ * ⚠ 认不出的物资 id 直接不显示（存档层已经保证不会出现，这里是第二道）。
+ */
+function giftLine(gift: SurvivalSnapshot['emergencyGift']): string {
+  if (!gift) return '';
+  if (!hasItemDef(gift.itemId)) return '';
+  const name = getItemDef(gift.itemId).name;
+  return gift.where === 'box'
+    ? `后来有人放了一只箱子在门口：${escapeHtml(name)}×${gift.count}，还没拆。`
+    : `后来${escapeHtml(name)}×${gift.count}被放在了货架上。`;
 }
 
 /**

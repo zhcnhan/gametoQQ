@@ -3,6 +3,7 @@ import { getDisasterDef } from '../data/disaster';
 import {
   autoPlace,
   canAccept,
+  countKeepsakes,
   createShelf,
   dropStack,
   fefoRate,
@@ -242,6 +243,46 @@ describe('归位率与整理评分', () => {
     const withItems = dropStack(shelfA, { row: 0, col: 0 }, makeStack('canned_beans', 2, 400)) as Shelf;
     const score = computeOrganizeScore([withItems], zones, [], getDisasterDef('cold_snap'));
     expect(score.tidyShelfIds).toEqual(['tidy']);
+  });
+});
+
+describe('★ 摆出来的纪念品（D-29）', () => {
+  it('只数带 keepsake 的那些，别的货一件都不算', () => {
+    let s = shelf(4, 1, 'k');
+    s = dropStack(s, { row: 0, col: 0 }, makeStack('canned_beans', 4, 400)) as Shelf;
+    s = dropStack(s, { row: 0, col: 1 }, makeStack('cocoa_tin', 1, 400)) as Shelf;
+    expect(countKeepsakes([s])).toBe(1);
+  });
+
+  it('数的是**件数**，不是格数（一格两罐算两件）', () => {
+    let s = shelf(4, 1, 'k');
+    s = dropStack(s, { row: 0, col: 0 }, makeStack('cocoa_tin', 2, 400)) as Shelf;
+    s = dropStack(s, { row: 0, col: 1 }, makeStack('cigarettes', 3, null)) as Shelf;
+    // 可可粉 `stackLimit` 是 2、烟是 5 —— 两种不同的纪念品也要各算各的
+    expect(countKeepsakes([s])).toBe(5);
+  });
+
+  it('空屋子是 0（不是"没数"）', () => {
+    expect(countKeepsakes([])).toBe(0);
+    expect(countKeepsakes([shelf()])).toBe(0);
+  });
+
+  it('★★ 摆在哪一块、哪一行都不影响 —— §5 引擎① 不评判对错', () => {
+    /*
+     * 这是这一条最要紧的性质，也是它**不能**读 `zones` / `handyRank` 的理由：
+     * 一旦"摆在门口那块算两件"或者"按清单摆才算"，系统就开始给整理打分，
+     * 而这一条要说的只是"屋里有几件你自己喜欢的东西"。
+     */
+    let loose = shelf(4, 1, 'loose');
+    loose = dropStack(loose, { row: 0, col: 3 }, makeStack('cocoa_tin', 1, 400)) as Shelf;
+
+    let listed = shelf(4, 1, 'listed');
+    listed.zoneIds = listed.zoneIds.map(() => 'z_food');
+    listed.handyRank = 1;
+    listed = dropStack(listed, { row: 0, col: 0 }, makeStack('cocoa_tin', 1, 400)) as Shelf;
+
+    expect(countKeepsakes([loose])).toBe(1);
+    expect(countKeepsakes([listed])).toBe(1);
   });
 });
 

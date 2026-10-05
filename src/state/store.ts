@@ -86,10 +86,15 @@ export class GameStore {
    *
    * ## ★★ 一处必须写明的分层例外（AGENTS.md 说"唯一允许的副作用是 store.commit()"）
    *
-   * `systems/` 现在有两处调用它，都是**为了给跨局账本记账**，而且都发生在
+   * `systems/` 现在有**三处**调用它，都是**为了给跨局账本记账**，而且都发生在
    * 一个已经 `commit` 过的命令里：
    *   · `systems/shop.ts` 的 `buyCart` —— 记 `everBoughtItemIds`（成就「先见之明」）；
-   *   · `systems/organize.ts` 的 `placeHeld` —— 记 `totalShelved`（成就「仓库管理员」）。
+   *   · `systems/organize.ts` 的 `placeHeld` —— 记 `totalShelved`（成就「仓库管理员」）；
+   *   · `systems/survival.ts` 的 `settleSurvivalDay` —— 记 `totalEmergenciesSaved`
+   *     （M4 第五组，成就「它替你挡了多少次」）。★ 它紧挨着
+   *     `run.survival.emergencySavedCount += 1` 那一行写，**刻意不留缝**：
+   *     一个是单局的账、一个是跨局的账，但它们的写入时机完全一样，
+   *     分开放就会出现"日报说挡了 3 次、成就只认 1 次"。
    *
    * 为什么这是对的而不是破例：**它们仍然只经由 store 写状态**（没碰 DOM、
    * 没碰 localStorage、没绕过存档），而那两条规矩（`systems/` 不许碰 DOM、

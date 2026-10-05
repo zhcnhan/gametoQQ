@@ -390,11 +390,37 @@ export function sleep(store: GameStore): PhaseResult {
  *
  * "什么算结束"**只**在这一个地方定义 —— `systems/survival.ts` 只负责把四维算对，
  * 它不知道"输赢"这回事。这样存档层不用猜，界面也不用各处复制同一套阈值。
+ *
+ * ★ 它收的是 `store` 而不是 `run`（M4 第五组改的）：结算里有一笔要记进
+ * **跨局**账本（顺手位挡下过几次），而那一层只有 `store` 拿得到。
+ * `run` 仍然从 `store.run` 现取 —— 两个调用点都在 `store.commit` 的回调里，
+ * 而 `commit` 的契约就是"就地改真实的那个 run"（不是拷贝）。
  */
-function settleAndMaybeEnd(run: RunState, events: PhaseEvent[], cursor: RngCursor): void {
+function settleAndMaybeEnd(store: GameStore, events: PhaseEvent[], cursor: RngCursor): void {
+  const run = store.run;
   // 突发事件（§5 的另一半）在结算里抽签 —— 因此"同 seed 同事件序列"
   // 和每日四维的账是同一条 RNG 流，回放一次结算就能复现整天的经过
-  events.push({ type: 'survivalSettled', report: settleSurvivalDay(run, cursor) });
+  const report = settleSurvivalDay(run, cursor);
+  events.push({ type: 'survivalSettled', report });
+  /*
+   * ★ M4 第五组：把"今天顺手位真的挡下了一次"记进**跨局**账本。
+   *
+   * ## 为什么写在这一层，而不是写进 `settleSurvivalDay`
+   *
+   * 那一条函数只收 `run`（三条永久回归探针直接喂它裸 `run`，所以那条签名
+   * 是一道**故意的**边界），而跨局账本要 `store`。这一层两样都有。
+   *
+   * ★ 判据就是刚拿到的那份报告 —— **同一个事实、同一个时刻**，
+   * 没有第二处可以分岔。写在这里也保证了单局账（`run.survival.emergencySavedCount`）
+   * 与跨局账（`meta.totalEmergenciesSaved`）**每个事件各加一次**：
+   * 一个数回答"这一局挡了几次"（日报要写出来），一个回答"一共挡了几次"
+   * （成就「门口那一块一直没空着」要读）—— 两个问题不一样，所以两个都要有。
+   */
+  if (report.emergencyId !== null && report.emergencyResolved) {
+    store.commitMeta((meta) => {
+      meta.totalEmergenciesSaved += 1;
+    });
+  }
   if (run.stats.health > 0) {
     // §6.5：结算完之后、玩家离开日报之前，门口可能站着人。
     // 放在**结算之后**是刻意的 —— 求援要用的是"今天过完之后"的库存与体力，
@@ -435,7 +461,7 @@ export function startSurvival(store: GameStore): PhaseResult {
     //   以前这里不写，于是 `run.actionPoints` 从 D-Day 起恒为 0，
     //   而行动点变成"只减不增"之后那个代价会永远付不起。
     draft.actionPoints = dailyActionPoints(draft);
-    settleAndMaybeEnd(draft, events, cursor);
+    settleAndMaybeEnd(store, events, cursor);
     draft.seed = cursor.state;
   });
   return ok(events);
@@ -468,7 +494,7 @@ export function advanceSurvivalDay(store: GameStore): PhaseResult {
     }
     draft.day = next;
     draft.actionPoints = dailyActionPoints(draft);
-    settleAndMaybeEnd(draft, events, cursor);
+    settleAndMaybeEnd(store, events, cursor);
     draft.seed = cursor.state;
   });
   return ok(events);

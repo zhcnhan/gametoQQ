@@ -314,6 +314,48 @@ export const ACHIEVEMENT_DEFS: readonly AchievementDef[] = [
      */
     when: ({ run }) => run.outcome === 'survived' && run.survival.emergencyHurtCount === 0
   },
+  {
+    id: 'a_handy_saved',
+    name: '它替你挡下了',
+    kind: 'organize',
+    rank: 'rare',
+    /*
+     * ★ M4 第五组：顺手位的**存在感**第一次有了一条能拿的成就。
+     *
+     * ## 为什么阈值是 5 而不是 1
+     *
+     * 1 次在 14 天里几乎必然发生（`EMERGENCY_CHANCE = 0.3` → 期望约 4 次，
+     * 而只要玩家往顺手位放了东西，化解是大概率）。门槛低到"顺手做了就对"
+     * 的成就不会让人记住它 —— 而这一条存在的全部目的就是**让人记住顺手位起过作用**。
+     * 5 次要求的是"整期几乎每一次都接住了"，也就是 §6.3 应急可达率的意志。
+     *
+     * ⚠ 它**与 `a_all_handy` 不重叠**：那条问"一次都没失手"（`emergencyHurtCount === 0`，
+     * 没抽到突发事件的局也成立），这条问"真的用上了几次"（`emergencySavedCount`）。
+     * 一个从没被检查过的人拿得到前者、拿不到后者 —— 这正是新增那本账的理由。
+     */
+    hint: '一整期里，顺手位上的东西至少有 5 次真的顶上了',
+    when: ({ run }) => run.outcome === 'survived' && run.survival.emergencySavedCount >= 5
+  },
+  {
+    id: 'a_handy_habit',
+    name: '门口那一块一直没空着',
+    kind: 'organize',
+    rank: 'epic',
+    /*
+     * ## 为什么这一条必须是**跨局**的
+     *
+     * 与「仓库管理员」同一个理由（`meta.totalShelved` 那段论证）：
+     * 单局 14 天里突发事件的期望次数只有 4 次左右，**要求 10 次，
+     * 单局根本做不到** —— 那就是 D-16 那一类错误（挂着一个当前内容下
+     * 永远拿不到的成就）。
+     *
+     * ★ 它是 §10.1A 铁则（"任何东西都要让我有感知"）在成就这一侧的落点：
+     * 顺手位起作用的时候屏幕上什么都没发生，所以它的价值只能靠
+     * **跨局累计的一个数**来兑现。描述里必须写"累计"两个字。
+     */
+    hint: '生涯累计让顺手位挡下 10 次意外',
+    when: ({ meta }) => meta.totalEmergenciesSaved >= 10
+  },
 
   // ———————— 极端类 ————————
   {

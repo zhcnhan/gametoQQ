@@ -205,11 +205,12 @@
     },
     {
       "id": "e_barter_ask",
-      "text": "楼下传话，想拿两罐燃料换一样不顶用但讨人喜欢的东西。",
+      "text": "楼下传话，想拿两罐燃料换一样不顶用但讨人喜欢的东西。你翻出一件递下去，过了一会儿人又上来了，把一罐煤油放在门口。",
       "category": "luxury",
       "needOnHandy": 2,
       "lost": 1,
       "consumes": true,
+      "thanks": { "itemId": "lamp_oil", "count": 1 },
       "tier": 1,
       "decision": "奢侈品留没留可以出手的富余"
     }

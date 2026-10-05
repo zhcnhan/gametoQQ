@@ -14,7 +14,7 @@ import { EMERGENCY_CHANCE, EMERGENCY_DEFS, findEmergency } from '../data/emergen
 import { CATEGORY_LABELS, ITEM_DEFS, getItemDef } from '../data/items';
 import { createCursor } from '../model/rng';
 import { countOnHandy, makeStack, setSlotStack } from '../model/shelf';
-import type { RunState } from '../model/types';
+import type { EmergencyDef, RunState } from '../model/types';
 import { createSaveGame } from '../state/save';
 import { GameStore } from '../state/store';
 import { createStartingRun } from './setup';
@@ -212,6 +212,99 @@ describe('突发事件的判定：顺手位上有就化解，没有就按缺货�
     settleEmergency(run, cutHand as NonNullable<typeof cutHand>);
     const after = run.shelves[0]?.slots[0]?.[0]?.stack;
     expect(after).toEqual(before);
+  });
+});
+
+describe('★★ 别人回给你的那点东西（M4 第五组，`thanks`）', () => {
+  const barter = findEmergency('e_barter_ask') as NonNullable<ReturnType<typeof findEmergency>>;
+
+  /** 屋里一共有几件某物资（货架 + 没拆的箱子） */
+  function countEverywhere(run: RunState, itemId: string): number {
+    let n = 0;
+    for (const shelf of run.shelves) {
+      for (const row of shelf.slots) for (const slot of row) if (slot.stack?.itemId === itemId) n += 1;
+    }
+    for (const box of run.boxesToUnpack) for (const stack of box.items) if (stack.itemId === itemId) n += 1;
+    return n;
+  }
+
+  it('★ 这条事件确实写了 `thanks`，而且换来的是燃料', () => {
+    // 守"内容还在"：题目要求至少一条突发事件化解后给出东西，
+    // 而它被删掉的表现是"这一组全绿、功能没了"
+    expect(barter.thanks).toEqual({ itemId: 'lamp_oil', count: 1 });
+    expect(getItemDef('lamp_oil').category).toBe('fuel');
+  });
+
+  it('★ 化解之后那件东西真的进了屋里（不是只写在文案里）', () => {
+    const run = bareRun();
+    put(run, 'shelf_a', 'cocoa_tin', 2);
+    run.shelves = run.shelves.map((s) => (s.id === 'shelf_a' ? { ...s, handyRank: 1 } : s));
+    // 先记住门口那两件的去处：`consumes: true` 会真的收走一件
+    const before = countEverywhere(run, 'lamp_oil');
+
+    const outcome = settleEmergency(run, barter);
+    expect(outcome.resolved).toBe(true);
+    expect(countEverywhere(run, 'lamp_oil')).toBe(before + 1);
+    // 屋里空着 → 直接摆上货架，玩家不用拆箱
+    expect(outcome.gift).toEqual({ itemId: 'lamp_oil', count: 1, where: 'shelf' });
+  });
+
+  it('★ 货架塞满时退化成一只箱子 —— 不能凭空少一件', () => {
+    /*
+     * ★ 怎么才算"塞满"：`autoPlace` 只有两条路 —— **并进同类那一格**
+     * 或**占一个空格**。所以"每一格都是同一种、而且已经到堆叠上限"
+     * 才真的堵死它。第一版我用大米填满每一格，结果照样给了 `shelf`：
+     * 大米那几堆彼此还能合并，`autoPlace` 高高兴兴又塞进去一件。
+     *
+     * ★★ 第二版仍然给 `shelf`，原因更隐蔽：真实那条 `thanks` 事件是
+     * `consumes: true`，化解时**门口那两件被真的收走了** —— 格子里于是
+     * 空出一个位置，回礼顺手摆回了原处。所以这一条**不能**用会消耗库存的
+     * 事件来造。这里就地造一个 `consumes: false` 的版本：只有 `thanks`
+     * 那一段是这条用例要验的东西，箱子那条岔路完全由 `deliverThanks` 决定。
+     */
+    const gifts: EmergencyDef = { ...barter, consumes: false, needOnHandy: 1, category: 'luxury' };
+    const run = bareRun();
+    // 门口放一件奢侈品（够判定 + 不会被动），其余每一格都堵死
+    run.shelves = run.shelves.map((shelf) => {
+      const withHandy = shelf.id === 'shelf_a' ? { ...shelf, handyRank: 1 } : shelf;
+      return setSlotStack(withHandy, { row: 0, col: 0 }, makeStack('cocoa_tin', 1, null));
+    });
+    const limit = getItemDef('lamp_oil').stackLimit;
+    run.shelves = run.shelves.map((shelf) => ({
+      ...shelf,
+      slots: shelf.slots.map((row, r) =>
+        row.map((slot, c) =>
+          shelf.id === 'shelf_a' && r === 0 && c === 0 ? slot : { stack: makeStack('lamp_oil', limit, null) }
+        )
+      )
+    }));
+    const boxes = run.boxesToUnpack.length;
+
+    const outcome = settleEmergency(run, gifts);
+    expect(outcome.resolved).toBe(true);
+    expect(outcome.gift?.where).toBe('box');
+    expect(run.boxesToUnpack.length).toBe(boxes + 1);
+    // 箱子真的装着它（一件都不能少）
+    const added = run.boxesToUnpack[run.boxesToUnpack.length - 1];
+    expect(added?.items.map((s) => s.itemId)).toEqual(['lamp_oil']);
+  });
+
+  it('没写上 `thanks` 的事件一件东西都不给（默认仍然是"没事就是最好的结果"）', () => {
+    const run = bareRun();
+    put(run, 'shelf_a', 'bandage', 2);
+    run.shelves = run.shelves.map((s) => (s.id === 'shelf_a' ? { ...s, handyRank: 1 } : s));
+    const plain = findEmergency('e_cut_hand') as NonNullable<ReturnType<typeof findEmergency>>;
+    const outcome = settleEmergency(run, plain);
+    expect(outcome.resolved).toBe(true);
+    expect(outcome.gift).toBeNull();
+  });
+
+  it('没化解就什么都没有 —— 别让"送东西"变成不整理的补偿', () => {
+    const run = bareRun();
+    const outcome = settleEmergency(run, barter);
+    expect(outcome.resolved).toBe(false);
+    expect(outcome.gift).toBeNull();
+    expect(countEverywhere(run, 'lamp_oil')).toBe(0);
   });
 });
 

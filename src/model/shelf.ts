@@ -742,6 +742,37 @@ export function countOnHandy(shelves: readonly Shelf[], category: CategoryId): n
 }
 
 /**
+ * 屋里有几件**摆出来的**自己喜欢的东西（`tags` 里的 `keepsake`）。
+ *
+ * ★ 这是 D-29 那一笔欠账的落点。`data/items.ts:214` 早就写着奢侈品这一类
+ * 的价值在于"**整理期摆放回心情**"，而在此之前全仓**零读取** ——
+ * 奢侈品于是只剩"贵 + 占地方 + 不解饿"，是纯负担。
+ *
+ * ★★ 两个口径，改的时候都要守住：
+ *
+ *  · **只算货架上的**。签名只收 `shelves`（不收支箱）**就是这条规则的实现**：
+ *    塞在还没拆的纸箱里不算 —— 那是"你有，但你没摆出来"，
+ *    而"摆出来"正是这件事唯一能被玩家看见的动作。
+ *  · **与摆在哪一块、哪一行无关**。行分区 / 顺手位 / 第几层一律不看：
+ *    §5 引擎①「游戏不评判对错」—— 按"摆得对不对"加分就变成系统在打分，
+ *    而"屋里有几件自己喜欢的东西"是陈述，不是评分。
+ *
+ * 它是 `data/survival.ts` 的 `keepsakeMoodOf` 的唯一输入（数量 → 心情）。
+ */
+export function countKeepsakes(shelves: readonly Shelf[]): number {
+  let total = 0;
+  for (const shelf of shelves) {
+    for (const pos of readingOrder(shelf)) {
+      const stack = getStack(shelf, pos);
+      if (!stack) continue;
+      if (!getItemDef(stack.itemId).tags.includes('keepsake')) continue;
+      total += stackCount(stack);
+    }
+  }
+  return total;
+}
+
+/**
  * ★ **这一堆是不是"写明了放哪儿"**（M4 W-08 的判据）。
  *
  * 两种情况算：① 它在**顺手位**那块架子上；② 它所在那一**行**贴着一张

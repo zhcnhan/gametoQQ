@@ -1079,7 +1079,21 @@ export function buyCart(store: GameStore, shopId: string, lines: readonly CartLi
  * §5 引擎②「慷慨的手感」—— 采购的动作已经够多了，装箱是系统该做的家务。
  */
 export function pickBoxDefId(lines: readonly CartLineView[]): string {
-  const cats = new Set(lines.map((l) => getItemDef(l.itemId).category));
+  return boxDefIdForItemIds(lines.map((l) => l.itemId));
+}
+
+/**
+ * 上面那条规则的本体：**只看品类**，不看价钱、件数、来源。
+ *
+ * 抽出来是因为它有两个调用方 —— 采购装车（`pickBoxDefId`）与
+ * 突发事件里别人回给你的那一件（`systems/survival.ts` 的 `deliverThanks`，
+ * 那里手上只有 itemId，没有整车的小计）。抄第二遍的表现是
+ * "别人送的一袋米装在医疗箱里"，而两个文件各自都"对"。
+ *
+ * ⚠ **箱型自己会不会重名不管** —— `nextBoxSeq` 负责 id 唯一，与这里无关。
+ */
+export function boxDefIdForItemIds(itemIds: readonly string[]): string {
+  const cats = new Set(itemIds.map((id) => getItemDef(id).category));
   const allFoodish = [...cats].every((c) => c === 'food' || c === 'water');
   const allMedicine = [...cats].every((c) => c === 'medicine');
   if (allFoodish) return 'box_staple';

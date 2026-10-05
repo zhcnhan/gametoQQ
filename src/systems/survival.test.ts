@@ -10,7 +10,15 @@ import { describe, expect, it } from 'vitest';
 import { SURVIVAL_DAYS, getDisasterDef } from '../data/disaster';
 import { CATEGORY_ORDER, getItemDef } from '../data/items';
 import { NIGHT_SLEEP } from '../data/nightEvents';
-import { moodFromPlacement, dailyDrainOf, hardPressTier, round1, workCostOf } from '../data/survival';
+import {
+  KEEPSAKE_MOOD_MAX,
+  moodFromPlacement,
+  dailyDrainOf,
+  hardPressTier,
+  keepsakeMoodOf,
+  round1,
+  workCostOf
+} from '../data/survival';
 import { consumeCategory, countCategory } from '../model/consume';
 import { haulFactorOfShelves, workHauledOf } from '../model/haul';
 import { scatterRows } from '../model/scatter';
@@ -20,6 +28,7 @@ import type { CategoryId, ItemStack, RunState, Shelf, SlotPos, UnpackBox, Zone }
 import { createSaveGame } from '../state/save';
 import { GameStore } from '../state/store';
 import { declineRequest } from './help';
+import { boxDefIdForItemIds } from './shop';
 import { advanceSurvivalDay, chooseIdentity, chooseNightOption, endDay, goHome, sleep, startSurvival } from './phases';
 import { settleSurvivalDay } from './survival';
 import { createStartingRun } from './setup';
@@ -62,6 +71,44 @@ function put(run: RunState, shelfId: string, pos: SlotPos, itemId: string, count
  * ★ 这条修的是"探针太脆"，不是"断言放宽"：
  * 改完之后同一条曲线不再随内容量变化，`staminaFloor` 那个门才重新是个门。
  */
+/**
+ * 一只装着指定物资的没拆纸箱（测试用）。
+ *
+ * ★ 存在的理由：`countKeepsakes` **只吃 `shelves`** —— "收在纸箱里不算"
+ * 这条规则是靠签名实现的，而签名本身测不出来。所以要先有一只装得下它的箱子，
+ * 才谈得上断言"它在箱子里的时候没被算进去"。
+ */
+function boxOf(itemId: string, count: number): UnpackBox {
+  return {
+    id: `box_test_${itemId}`,
+    defId: boxDefIdForItemIds([itemId]),
+    items: [makeStack(itemId, count, null)]
+  };
+}
+
+/**
+ * 把三类口粮各放一整行、**位置写死**（每一类占一块货架的第 0 行）。
+ *
+ * ★ 与 `stockFor` 的区别就是它存在的理由：`stockFor` 是**游标式**铺货
+ * （塞满一格换下一格），所以"多放一件别的东西"会让后面每一件都往后挪一格 ——
+ * 于是两次运行的盘面**整体不同**，任何"只差一件"的对照实验都失去分辨力。
+ * 这里每类固定占 `row 0`，留下的空格在两次运行里一一对应。
+ */
+function stockEvenly(run: RunState, colPerCategory = 3): void {
+  const lines: [string, number][] = [
+    ['canned_beans', colPerCategory],
+    ['mineral_water', colPerCategory],
+    ['fuel_can', colPerCategory]
+  ];
+  lines.forEach(([itemId, count], index) => {
+    const shelf = run.shelves[index];
+    if (!shelf) throw new Error(`没有第 ${index + 1} 块货架可放 ${itemId}`);
+    for (let col = 0; col < count; col += 1) {
+      put(run, shelf.id, { row: 0, col: 1 + col }, itemId, 1, null);
+    }
+  });
+}
+
 /**
  * 一场**真的搬不动**的灾难，供维度 7（搬运惩罚的位置那一半）的用例使用。
  *
@@ -551,6 +598,77 @@ describe('每日结算：把整理变成数字', () => {
     expect(moodFromPlacement(0.5)).toBe(1);
     expect(moodFromPlacement(0.2)).toBe(-2);
     expect(moodFromPlacement(0)).toBe(-4);
+  });
+
+  it('★ D-29：摆出来的纪念品真的换成心情，而收在纸箱里的不算', () => {
+    /*
+     * ## 这一条为什么非有不可
+     *
+     * `keepsake` 这个 tag 从 M1 起就写在五件奢侈品上，注释也一直说着
+     * "整理期摆放回心情"—— 而在此之前**全仓零读取**：那一整类东西
+     * 只剩"贵 + 占地方 + 不解饿"。所以这一条守的是"承诺兑现了没有"，
+     * 不是"公式算得对不对"。
+     *
+     * ## 两边必须**别的都一样**，只差"摆出来还是收起来"
+     *
+     * ⚠ 第一版只摆了三罐可可粉、屋里什么吃的都没有 —— 于是两边都缺货，
+     * 心情每天被 `MOOD_DELTA_CAP = 12` **砸到下限**，纪念品那两点的差
+     * 被封顶吃掉，断言拿到的是 `0 vs 2`。
+     *
+     * ⚠ 第二版备足了口粮，却把可可粉写在 `{ row: 0, col: 0 }` —— 那正是
+     * `stockFor` 刚放主食的那一格，于是"摆可可粉"实际做的是**把主食换掉**：
+     * 一边缺粮、一边不缺，心情差跑到 `-8`，而它跟纪念品毫无关系。
+     *
+     * ⚠ 第三版改用 `freePos`，**还是不行**：`stockFor` 是**游标式**铺货
+     * （塞满一格换下一格），多一件可可粉会让后面每一件主食都往后挪一格 ——
+     * 于是连"哪一格装的什么"都变了，归位率从 0.4 掉到 0，质量那一项就不再可比。
+     *
+     * ★ 最终用的是 `stockEvenly`：**每一类各占一块货架的第一行**，位置写死。
+     * 于是 `{ row: 0, col: 0 }` 那一格在两边都是空的，只有可可粉进不进得去这一件事不同。
+     */
+    const build = (onShelf: number) => {
+      const run = bareRun();
+      stockEvenly(run, 3);
+      run.day = 3;
+      run.stats = { health: 90, mood: 60, stamina: 60, shelter: 80 };
+      if (onShelf > 0) put(run, 'shelf_a', { row: 0, col: 0 }, 'cocoa_tin', onShelf, 400);
+      // 收起来的那一件：装进一只没拆的纸箱（`countKeepsakes` 只吃 `shelves`）
+      run.boxesToUnpack = [boxOf('cocoa_tin', 1)];
+      return run;
+    };
+
+    const shown = settleSurvivalDay(build(2));
+    const boxed = settleSurvivalDay(build(0));
+
+    // 数得对：两罐摆出来 = 两件（收在箱子里的那罐没有被算进来）
+    expect(shown.keepsakes).toBe(2);
+    expect(boxed.keepsakes).toBe(0);
+    expect(shown.moodFromKeepsakes).toBe(2);
+    expect(boxed.moodFromKeepsakes).toBe(0);
+    // 心情真的多出来那两点（两边都没有缺货，所以这个差只可能来自纪念品）
+    expect(shown.deltas.mood - boxed.deltas.mood).toBeCloseTo(2, 5);
+    /*
+     * ★★ 它**不进整理质量** —— 这一条是留给"顺手把它塞进 `organizeQuality`"的人的。
+     *
+     * 混进去的表现是玩家发现"把可可粉摆在门口能提高归位率"，
+     * 而那件事没有道理：这条轴问的是"东西在不在该在的地方"。
+     * 顺带，混进去还会**漂掉三条永久回归探针**（它们的屋里没有奢侈品）。
+     */
+    expect(shown.quality).toBe(boxed.quality);
+    expect(shown.placement).toBe(boxed.placement);
+  });
+
+  it('★ D-29：纪念品的心情有上限 —— 顶得上，但顶不过整理本身', () => {
+    /*
+     * `moodFromPlacement` 的值域是 **-4 ~ +4**，而它是 §6.3 的主轴。
+     * 纪念品加成一旦超过它，玩家会得出"把屋子码整齐不如多囤几罐可可粉"，
+     * 那正好把整理这条轴从中心挤到边缘。上限 3 的意思是：它顶得上，但顶不过。
+     */
+    expect(keepsakeMoodOf(1)).toBe(1);
+    expect(keepsakeMoodOf(3)).toBe(3);
+    expect(keepsakeMoodOf(4)).toBe(3);
+    expect(keepsakeMoodOf(99)).toBe(KEEPSAKE_MOOD_MAX);
+    expect(KEEPSAKE_MOOD_MAX).toBeLessThan(4); // 不许追平 moodFromPlacement 的最高档
   });
 
   it('整理得好的存档，心情净收益比乱的高（同一天、同样有粮）', () => {

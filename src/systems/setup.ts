@@ -428,6 +428,7 @@ export function createStartingRun(
       cleanDays: 0,
       minStamina: 100,
       emergencyHurtCount: 0,
+      emergencySavedCount: 0,
       lastTradeDay: NEVER_TRADED,
       last: { ...EMPTY_SURVIVAL_SNAPSHOT }
     },

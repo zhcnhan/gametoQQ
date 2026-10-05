@@ -795,7 +795,26 @@ export const DEFERRED_ITEMS: readonly DeferredItem[] = [
       '（数量越大心情越好，与摆在哪无关），或者"摆出来才看得见"（放在纸箱里不算）。',
     plan: 'M4（与 "让每个系统接回整理" 一起做）',
     markedIn: ['data/items.ts'],
-    status: 'open'
+    status: 'done',
+    resolvedIn:
+      'M4 第五组 —— **接上了，而且守住了这条账立下的两个口径**：\n\n' +
+      ' ① **只算摆出来的**：`model/shelf.ts` 新增 `countKeepsakes(shelves)`，\n' +
+      '    签名**只收 `shelves`**（不收支箱）就是这条规则的实现 —— 塞在还没拆的\n' +
+      '    纸箱里不算，"摆出来"是玩家唯一能控制的动作；\n' +
+      ' ② **与摆在哪一块、哪一行无关**：不读 `zones` / `handyRank` / 第几层。\n' +
+      '    这是 §5 引擎①「游戏不评判对错」—— 按"摆得对不对"加分就变成系统在打分，\n' +
+      '    而这一条要说的只是"屋里有几件你自己喜欢的东西"。\n\n' +
+      '数值：`data/survival.ts` 的 `keepsakeMoodOf`（每件 +1、封顶 `KEEPSAKE_MOOD_MAX = 3`），\n' +
+      '在 `settleSurvivalDay` 里与 `moodFromPlacement` **并列**相加、**不进** `organizeQuality`。\n' +
+      '★ 上限 3 不是随手定的：`moodFromPlacement` 的值域是 -4 ~ +4 而它是 §6.3 的主轴，\n' +
+      '纪念品一旦超过它，玩家就会得出"把屋子码整齐不如多囤几罐可可粉"—— 正好把整理\n' +
+      '这条轴从中心挤到边缘。**顶得上，但顶不过。**\n\n' +
+      '日报说出"屋里摆着 N 件你自己喜欢的东西，心情 +M。（收在没拆的纸箱里不算。）"\n' +
+      '（§10.1A 第 1 条：只改数字的机制必须有非数字表达）。\n\n' +
+      '守卫：`model/shelf.test.ts` 四条（只数带 tag 的 / 数件数不是格数 / 空屋子是 0 /\n' +
+      '摆在哪一块哪一行都不影响）、`systems/survival.test.ts` 两条（摆出来比收起来多那两点心情、\n' +
+      '且 `quality` / `placement` **完全不变**；上限小于 +4）、`ui/keepsakeNote.test.ts` 三条\n' +
+      '（说清几件加多少 / 0 件时一个字都不显示 / 快照写 3 就印 3，不按件数自己重算）。'
   },
   {
     id: 'D-30',
