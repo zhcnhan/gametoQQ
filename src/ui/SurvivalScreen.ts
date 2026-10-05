@@ -10,7 +10,7 @@
  *
  * D-Day 是特例：`day === 0` 时灾难刚落地，还没有结算过任何一天，所以那一屏只负责"揭晓 + 盘点"。
  */
-import { SURVIVAL_DAYS, getDisasterDef, outdoorTemp } from '../data/disaster';
+import { SURVIVAL_DAYS, disasterModifiersOf, getDisasterDef, outdoorTemp } from '../data/disaster';
 import { findEmergency } from '../data/emergencies';
 import { getIdentityDef } from '../data/identities';
 import { CATEGORY_LABELS, getItemDef, hasItemDef } from '../data/items';
@@ -423,8 +423,49 @@ export class SurvivalScreen implements Screen {
    *
    * ★ 单独抽成一个方法，因为它**两屏都要用**：D-Day（`ddayHtml`）与日报（`dayHtml`）。
    * 两处各写一遍的话，迟早会出现"日报改了口径、D-Day 还是旧的"。
+   *
+   * ★★ M4 W-12（"让压力可见"）往这一块里加了下面那两行。
+   * 选这一块而不是新开一块，理由是**这一块回答的正是"外面是什么样"**：
+   * 温度是外面的样子，物价与负重也是。116 场里有 90 场写了 `priceSurcharge`、
+   * 83 场写了 `carryFactor` —— 而它们的可见落点原来只在**扫货页**（要出门才看得到）
+   * 与**日报**（已经过完一天了）。这两个数影响的是"今天该不该出门买"，
+   * 那是一个**在屋里**就要做的决定。
+   *
+   * ⚠ 刻意**不**把维度 5 / 6 / 8 / 9（`capacityFactor` / `shelterDecayPerDay` /
+   * `shopSupplyFactor` / `restEfficiency`）也摆上来：它们各自已经有落点
+   * （容量在房间那一段、商店关门在扫货页），而这一块摆四个数字就变成一张表，
+   * 那句话就没人读了。
    */
   private tempHtml(run: RunState): string {
+    /*
+     * ★ 两个数**只报它们真的不一样的时候**（§5 引擎①：只陈述，不夸）。
+     *
+     * 大部分场次这两维都是中性值（`priceSurcharge` 0 / `carryFactor` 1），
+     * 那时**一个字都不写** —— 空白在那一天才是真话（"外面跟平常一样"），
+     * 而写一句"物价正常、负重正常"会让玩家以为每天都要读这两行。
+     *
+     * ⚠ 措辞里**不许出现"外面"**：上面那一条既有断言的判据就是
+     * `expect(all).not.toContain('外面')`（用户 2026-10 点名要求全仓统一成
+     * "室内 / 室外"）。我第一版写的是"今天外面的账" —— 它会**当场**把那条用例判红，
+     * 而那条用例想守的其实是温度那一格。这里用"今天要算的账"绕开这个词，
+     * 顺带把这一行与 `.market-line`（事件造成的物价波动）分开：
+     * **那一行是"有人抬过价"，这一行是"这一场本来就贵"**。
+     *
+     * ⚠ `carryFactor` 的区间是 [0.5, 1]（`factor(..., 1, 0.5, 1)`，只往坏的方向），
+     * 所以这里**不会**出现"多拎两成"那种话；`priceSurcharge` 同理
+     * （[0, 0.8]，没有"这一场东西更便宜"）。
+     */
+    const mods = disasterModifiersOf(run.disasterId);
+    const pricey = Math.round(mods.priceSurcharge * 100);
+    const heavy = Math.round((1 - mods.carryFactor) * 100);
+    const pressure =
+      pricey > 0 || heavy > 0
+        ? `<p class="block-note is-pressure">今天要算的账：${
+            pricey > 0 ? `东西比平常贵 <b>${pricey}%</b>` : ''
+          }${pricey > 0 && heavy > 0 ? '，' : ''}${
+            heavy > 0 ? `一趟<b>少拎 ${heavy}%</b>` : ''
+          }。</p>`
+        : '';
     return `
       <section class="block">
         <h2 class="block-title">室内 / 室外</h2>
@@ -432,6 +473,7 @@ export class SurvivalScreen implements Screen {
           <div class="contrast-cell"><i>室外</i><b>${outdoorTemp(run.day, run.disasterId)}°C</b></div>
           <div class="contrast-cell is-warm"><i>室内</i><b>${indoorTemp(run.stats.shelter)}°C</b></div>
         </div>
+        ${pressure}
       </section>
     `;
   }

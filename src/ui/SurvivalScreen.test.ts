@@ -38,8 +38,10 @@ function stubScheduler() {
 }
 
 /** 一份"正在生存期、有日报"的局面 */
-function survivalStore(over: { priceFactor?: number; limits?: { category: string; max: number }[] } = {}) {
-  const run = createStartingRun(20261007);
+function survivalStore(
+  over: { priceFactor?: number; limits?: { category: string; max: number }[]; disasterId?: string } = {}
+) {
+  const run = createStartingRun(20261007, { disasterId: over.disasterId ?? 'cold_snap' });
   run.identityId = 'group_buyer';
   run.cash = 500;
   run.phase = 'survival_day';
@@ -282,6 +284,109 @@ describe('★★ 反差层：标题对得上数、差值对得上盘面、D-Day 
     expect(allText(root)).toContain('室外');
     // 而"你 / 整条街"那一块**不该**在 D-Day 出现：还没结算过，天数没有意义
     expect(titles, 'D-Day 不该报存货天数').not.toContain('你 / 整条街');
+  });
+});
+
+/**
+ * ★★ 「今天要算的账」：物价加成与负重惩罚的当期取值（M4 W-12）
+ *
+ * ## 它守的是哪一笔账
+ *
+ * 116 场灾难里 **90 场**写了 `priceSurcharge`（维度 10）、**83 场**写了
+ * `carryFactor`（维度 7）。两者从 M4 W-01 起都真的生效了，而可见落点原来只有：
+ *
+ *  · 扫货页那个"今天贵 N%"角标 —— 要**出了门**才看得到；
+ *  · 日报里"比这一场的平常价贵 N%" —— 那是**已经过完一天**的复盘。
+ *
+ * 而这两个数影响的决定是"**今天该不该出门买、还是先把家里的吃干净**"，
+ * 那是一个在屋里就要做的判断。所以它们挂到了「室内 / 室外」那一块底下。
+ *
+ * ## 判据里两个刻意的地方
+ *
+ *  ① **中性值时不渲染**：`cold_snap` 这两维都是默认值，那时这一行必须
+ *     **不存在** —— 写一句"物价正常、负重正常"会让玩家以为每天都要读它，
+ *     而空白在那一天才是真话（§5 引擎①：只陈述，不夸）。
+ *  ② **只说数、不解释**：这一行不是教程。它写"贵 40%"而不是
+ *     "因为这一场物资紧张所以价格上浮"，理由与 `.market-line` 一样 ——
+ *     玩家要的是一个能据以做决定的数，不是一段设定说明。
+ */
+describe('★★ 「今天要算的账」：物价与负重的当期取值（M4 W-12）', () => {
+  function mountStore3(store: GameStore): FakeElement {
+    const doc = new FakeDocument();
+    installFakeWindow(doc);
+    const root = doc.createElement('div');
+    new SurvivalScreen(asElement(root), store, {
+      onStart: () => undefined,
+      onNext: () => undefined,
+      onTrade: () => false,
+      onGoOrganize: () => undefined
+    }).mount();
+    return root;
+  }
+
+  /** 这一行本身（它挂 `.block-note.is-pressure`，见 `style.css` 那段注释） */
+  function pressureLine(root: FakeElement): FakeElement | null {
+    return root.querySelectorAll('.block-note.is-pressure')[0] ?? null;
+  }
+
+  it('★ 两维都是中性 → 这一行**不存在**（没消息的时候一个字都不写）', () => {
+    // `cold_snap` 没有 `priceSurcharge` 行、也没有 `carryFactor` 行
+    const root = mountStore3(survivalStore({ disasterId: 'cold_snap' }));
+    expect(pressureLine(root), '平常的日子里不该有这一行').toBeNull();
+  });
+
+  it('★★ 这一场物价贵、又搬不动 → 两个数都写出来，而且各有参照', () => {
+    /*
+     * `tsunami`（海啸）：`priceSurcharge: 0.8`（这一维的**最高档**，上限就是 0.8）
+     * / `carryFactor: 0.5`（**最低档**，上限就是 0.5）—— 两个数的极端同时出现，
+     * 正好一次把"两句都要出现、而且都要按百分数说"钉住。
+     */
+    const root = mountStore3(survivalStore({ disasterId: 'tsunami' }));
+    const line = pressureLine(root);
+    expect(line, '这一场明明又贵又搬不动，界面上却一个字没有').not.toBeNull();
+    const text = line!.textContent;
+    expect(text, '贵了多少').toContain('80%');
+    expect(text, '少拎多少').toContain('50%');
+    /*
+     * ★ 参照物必须在：`tsunami` 的 `priceSurcharge` 是 **0.8**（不是 80），
+     * 而这一行说的是"比平常贵 80%" —— 去掉"比平常"三个字，
+     * 玩家会把这个数读成"价格是平常的 80%"（方向刚好相反）。
+     */
+    expect(text).toContain('比平常');
+  });
+
+  it('★ 只说"贵"或只说"少拎"：另一句不许留一个空壳（逗号、零、空格）', () => {
+    /*
+     * ★★ 这一条同时是一条**数据不变量**，而它会红。
+     *
+     * 实测（`DISASTER_DEFS` 116 场）：**109 场两个维度都有值**、
+     * 1 场两个都没有（`cold_snap`）、5 场只有负重、**只有 1 场只有物价**
+     * —— 就是 `chem_spill`（化学品泄漏，`priceSurcharge: 0.3`、`carryFactor` 是 1）。
+     *
+     * 所以拿它来钉"只说一句"那一支：同一次实测就把我上一版的错误假设照出来了 ——
+     * 我当时以为 `blackout_winter` 没有 `carryFactor`，实际上它是 `0.8`，
+     * 于是"另一句不该出现"那条断言**报的是它自己找错了地方**，
+     * 而不是功能坏了（实测输出：`'今天要算的账：东西比平常贵 35%，一趟少拎 20%。'`
+     * 不该 contain "少拎"）。
+     *
+     * 判据里凡出现"少拎"就是拼串漏了条件，而那种句子读起来是
+     * "一趟少拎 0%"（把中性值说成了一条坏消息）。
+     */
+    const root = mountStore3(survivalStore({ disasterId: 'chem_spill' }));
+    const text = pressureLine(root)?.textContent ?? '';
+    expect(text, '这一场没写负重那一维').toContain('比平常');
+    expect(text, '中性值不许被印成"少拎 0%"').not.toContain('少拎');
+  });
+
+  it('★ 只有负重、没有物价（5 场里挑一场）→ 反向那一支也要成立', () => {
+    /*
+     * `typhoon_land`（台风登陆）：`carryFactor: 0.7`、没有 `priceSurcharge`。
+     * 两条支路各有一个真实场次看着，改坏任何一支都有用例接住。
+     */
+    const root = mountStore3(survivalStore({ disasterId: 'typhoon_land' }));
+    const text = pressureLine(root)?.textContent ?? '';
+    expect(text).toContain('少拎');
+    expect(text, '中性值不许被印成"贵 0%"').not.toContain('比平常');
   });
 });
 

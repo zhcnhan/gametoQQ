@@ -155,6 +155,30 @@ export function basePriceOf(run: RunState, line: { price: number }): number {
 }
 
 /**
+ * ★★ **这一场的外面本来就贵多少**（M4 W-12：让压力可见）。
+ *
+ * ## 它和 `priceStressOf` 的分工（两个数，两种量法）
+ *
+ *  · `priceStressOf` 量的是**一件货**：拿一个 `line` 反推出它的平常价，
+ *    所以它必须把逐日曲线与事件那两段也一起除掉，而且**逐件**受整数舍入影响；
+ *  · 这里量的是**这一场本身**：`priceSurcharge` 就是那一个数。
+ *
+ * ★ 两个都在，而且口径必须一样 —— 各自"算得对"但彼此矛盾的表现是：
+ * 扫货页逐件报"贵 39%"，而日报那块报"贵 40%"。
+ *
+ * ## 为什么必须让界面能单独读到它
+ *
+ * W-01 把那 15 个"不改该放哪儿"的维度接上线之后，`priceSurcharge`
+ * （116 场里 **90 场**都写了）唯一的可见落点是**扫货页**与日报那一行 ——
+ * 也就是"你要么正在逛店、要么已经结完账"。而这一维影响的是
+ * **"今天该不该出门买、还是先把家里的吃干净"**，那是一个在屋里就要做的决定。
+ * `tempHtml` 那块（室内 / 室外）正是玩家每天都要看两眼的地方。
+ */
+export function priceSurchargeOf(disasterId: string | undefined): number {
+  return disasterModifiersOf(disasterId).priceSurcharge;
+}
+
+/**
  * ★★ **今天这一件比这一场的平常价贵多少**（2026-10 铁则：数字要看得见）。
  *
  * ## 它补的是哪一笔账
@@ -183,8 +207,7 @@ export function priceStressOf(run: RunState, line: { price: number }): {
   /** 今天比平常贵百分之几（四舍五入后的整数；0 = 不贵） */
   percent: number;
 } {
-  const mods = disasterModifiersOf(run.disasterId);
-  const mul = dayPriceFactor(run.day, run.disasterId) * (1 + mods.priceSurcharge) * run.shopPriceFactor;
+  const mul = dayPriceFactor(run.day, run.disasterId) * (1 + priceSurchargeOf(run.disasterId)) * run.shopPriceFactor;
   const actual = basePriceOf(run, line);
   /*
    * ★ 平常价要**四舍五入**，不能 `floor`。
