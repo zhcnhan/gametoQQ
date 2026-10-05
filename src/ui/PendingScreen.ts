@@ -20,6 +20,14 @@ export interface PendingScreenProps {
    * 而"某一屏恰好没有"正是这次 bug 的形状（见 `ui/windowBand.ts` 的注释）。
    */
   disasterId: string;
+  /**
+   * 今天第几天 —— 只为了那条先知栏上的倒计时（D-33 / 决策 E）。
+   *
+   * ★ 它是**可选**的，而且默认不给：这一屏连"这一局是什么"都读不出来，
+   * 那么"还有几天"就更不该编。先知栏收到 undefined 时会少说那一句，
+   * 而强度曲线与"这一场最要紧的两类"照旧（`ui/prophetBar.ts` 的 `prophetViewOf`）。
+   */
+  day?: number;
   onRestart: () => void;
 }
 
@@ -54,7 +62,7 @@ export class PendingScreen implements Screen {
             <h1>${escapeHtml(this.props.title)}</h1>
           </div>
         </header>
-        ${windowBandHtml(this.props.disasterId)}
+        ${windowBandHtml({ disasterId: this.props.disasterId, day: this.props.day })}
         <main class="scroll">
           <section class="block">
             <p class="block-note strong">${escapeHtml(this.props.note)}</p>

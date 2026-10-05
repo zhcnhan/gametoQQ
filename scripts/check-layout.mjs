@@ -149,6 +149,128 @@ if (selfTest.length === 0) {
   process.exit(1);
 }
 
+/*
+ * ────────────────────────────────────────────────────────────────────────────
+ * M5 §5 那一条：**320 / 375 / 390 三档零溢出**
+ *
+ * ## 为什么它是一张"点名表"而不是一个布局引擎
+ *
+ * 上面那段已经写过两次教训：**在没有布局引擎的地方假装有布局引擎**，
+ * 结果是两条都错、而且都报"合格"。所以这里换一种写法 ——
+ * 不去猜每个元素有多宽，而是**逐个点名那一行里的每一段必须遵守的约束**，
+ * 再拿**算得清的那个少数**对一次总账。
+ *
+ * 点名表盯的是 M5 新加的那一条常驻信息栏（`ui/prophetBar.ts` 画在每一屏顶上），
+ * 它是全仓唯一一个"四个元素挤在一行、其中三个不许收缩"的地方：
+ * 灾难全名可以很长（"通信中断"、"连烧"、"返乡潮"），
+ * 而它右边那三段（强度 / 倒计时 / 按钮）都写了"不许收缩" ——
+ * **一行里只要有一个能收缩、且允许收缩到 0，就不会溢出**；一个都没有就会。
+ * 而那正是这一整条最容易犯的错：新加一段时顺手抄一句 `flex: 0 0 auto`。
+ *
+ * ## 320px 那笔账（写在这儿，免得下次有人重新推一遍）
+ *
+ * 320 − `.scroll`/`.run-bar` 的左右内边距 24 = **296px** 可用；
+ * 三段固定宽度按 `rem` 基准 16px 换算：强度 ≈ 2em（32px）、
+ * 倒计时 `min-width: 5.4em`（86px）、按钮（内边距 8×2 + 边框 1.5×2 +
+ * 11.5px 的字「先知日历」+ 三角 12px）≈ 90px，三处 `gap: 8px` 共 24px
+ * → **合计 ≈ 232px**，而灾难全名靠 `min-width: 0` 吃掉剩下的 64px 并省略号收尾。
+ * 结论：零溢出，且**余量约 64px** —— 这张表里任何一条被拿掉，
+ * 那一行就从"名字被截短"变成"按钮被推到屏幕外"（而后者不会有任何报错）。
+ */
+const RUN_BAR_ROW = { class: 'run-bar-row', maxGapPx: 12 };
+const RUN_BAR_ITEMS = [
+  {
+    cls: 'run-bar-name',
+    why: '灾难全名可以很长，它必须是那一行里唯一允许收缩并省略号收尾的一段',
+    check: (body) => /min-width:\s*0/.test(body) && /overflow:\s*hidden/.test(body)
+  },
+  {
+    cls: 'run-bar-sev',
+    why:
+      '强度是数字、宽度短，**它才该是被先挤掉的那一段**（名气比它重要）—— ' +
+      '所以它不许写 "0 0 auto"（那会让名字先被挤没）、更不许会长',
+    check: (body) => {
+      const m = /flex:\s*([0-9.]+)\s+([0-9.]+)\s+auto/.exec(body);
+      return m !== null && Number(m[1]) === 0 && Number(m[2]) > 0;
+    }
+  },
+  {
+    cls: 'run-bar-days',
+    why: '倒计时占了固定宽度（防止每天一变就把按钮推得左右挪），所以它必须写死不许收缩',
+    check: (body) => /flex:\s*0\s+0\s+auto/.test(body) && /min-width:\s*5\.4em/.test(body)
+  },
+  {
+    cls: 'run-bar-toggle',
+    why: '右端那个按钮不许收缩 —— 它是展开日历唯一的入口',
+    check: (body) => /flex:\s*0\s+0\s+auto/.test(body) && /margin-left:\s*auto/.test(body)
+  }
+];
+
+/** 取出 `.cls { … }` 的正文（去注释；不匹配 `@media` 里那一层，这里不需要） */
+function ruleBody(css, cls) {
+  const clean = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const re = new RegExp(`(^|[},])\\s*\\.${cls.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{`, 'm');
+  const m = re.exec(clean);
+  if (!m) return null;
+  const open = m.index + m[0].length - 1;
+  const close = matchingBrace(clean, open);
+  return close < 0 ? null : clean.slice(open + 1, close);
+}
+
+function narrowProblems(css) {
+  const out = [];
+  const row = ruleBody(css, RUN_BAR_ROW.class);
+  if (row === null) {
+    out.push(`找不到 \`.${RUN_BAR_ROW.class}\` —— 常驻信息栏那一行没了？`);
+  } else {
+    const gap = /gap:\s*([0-9.]+)px/.exec(row);
+    if (!gap || Number(gap[1]) > RUN_BAR_ROW.maxGapPx) {
+      out.push(
+        `\`.${RUN_BAR_ROW.class}\` 的 \`gap\` 是 ${gap ? `${gap[1]}px` : '（没写）'}，` +
+          `超过 ${RUN_BAR_ROW.maxGapPx}px —— 320px 那一行只有约 64px 余量，` +
+          `间隙每宽 4px 就要多占一份（三处间隙）`
+      );
+    }
+  }
+  for (const item of RUN_BAR_ITEMS) {
+    const body = ruleBody(css, item.cls);
+    if (body === null) {
+      out.push(`找不到 \`.${item.cls}\` —— ${item.why}`);
+      continue;
+    }
+    if (!item.check(body)) out.push(`\`.${item.cls}\` 的约束不对：${item.why}`);
+  }
+  return out;
+}
+
+/*
+ * ★ 自证（纪律 §2.18：守卫要能故意失败一次）：
+ * 把三条**故意各缺一项**的样本喂给同一个判定函数，样本里的错必须都被抓住 ——
+ * 一个也抓不到就说明这张点名表在验空气。
+ */
+const NARROW_SAMPLES = [
+  '.run-bar-name{flex:0 1 auto;overflow:hidden}', // 缺 min-width: 0 → 名字顶出去
+  '.run-bar-days{flex:1 1 auto;min-width:5.4em}', // 变成可收缩 → 每天按钮左右跳
+  '.run-bar-toggle{flex:0 0 auto}' // 缺 margin-left: auto → 倒计时缺位时按钮不靠右
+];
+const narrowSelfTests = NARROW_SAMPLES.map((sample) => {
+  const stamped = RUN_BAR_ITEMS.map((item, i) => {
+    const body = ruleBody(sample, item.cls);
+    if (body !== null) return item.check(body) ? 'ok' : 'bad';
+    return `missing-${i}`;
+  });
+  return stamped.includes('bad');
+});
+if (!narrowSelfTests[0] || !narrowSelfTests[1] || !narrowSelfTests[2]) {
+  console.error(
+    '[check-layout] ★ 窄屏守卫自检失败：喂给它三条**故意缺项**的样本，' +
+      '其中至少一条被判成合格 —— 说明这张点名表在验空气。'
+  );
+  process.exit(1);
+}
+
+problems.push(...narrowProblems(CSS));
+
 if (problems.length > 0) {
   console.error('[check-layout] 桌面版面的宽度契约破了：\n');
   for (const p of problems) console.error(`  ✗ ${p}`);
@@ -157,12 +279,17 @@ if (problems.length > 0) {
       `每次都是用户截图报出来的。\n` +
       `  修法：桌面那一块（\`@media (min-width: 560px)\`）里，` +
       `内容一律 \`width:100%\` + \`max-width:var(--content-max)\` + \`margin-inline:auto\`；` +
-      `页眉/操作台用通配覆盖它们的所有直接子元素。`
+      `页眉/操作台用通配覆盖它们的所有直接子元素。\n` +
+      `  窄屏那一半（M5 §5 的"320 / 375 / 390 零溢出"）：` +
+      `\`.run-bar-row\` 那一行里**必须恰好留一段能收缩到 0**，` +
+      `其余入表的三段各自守住自己的 \`flex\` —— 一行里全是 \`0 0 auto\` 时溢出，` +
+      `而溢出的东西只会跑到屏幕外，不会报任何错。`
   );
   process.exit(1);
 }
 
 console.log(
   `[check-layout] 桌面宽度契约完好：${CONTRACT.length} 条都成立、` +
-    `\`var(--content-max)\` 出现 ${usesContentMax} 次、自检（故意缺项必判红）通过。`
+    `\`var(--content-max)\` 出现 ${usesContentMax} 次、自检（故意缺项必判红）通过；` +
+    `窄屏（320px）那一行 ${RUN_BAR_ITEMS.length} 段各自守住约束、自检 3 条通过。`
 );

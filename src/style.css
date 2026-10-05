@@ -3952,6 +3952,238 @@ button:disabled {
     transparent 1px 9px
   );
 }
+
+/* ———————— 大先知：常驻的那一条日历（D-33 / 决策 E） ———————— */
+
+/*
+ * 用户的原话："日历的先知作用挪到最上面去，毕竟我们可是有优越感的大先知，
+ * 能预支灾难的！也让他更显眼一点，能介绍更多"。
+ *
+ * 它画在**窗外那条带子底下**（`ui/windowBand.ts` 一个入口里捎带画出来，
+ * 所以九屏都有 —— 那次漏了七屏的教训见 `ui/prophetBar.ts` 的文件头）。
+ *
+ * ## 三层，从上往下读
+ *
+ *   ① **进度轨**（4px）：从"灾前七天"走到 D-Day，满格 = 到了。
+ *      它是一条**贯穿全宽的测量线**，不是装饰 —— 与 `.loadbar`（车载计量）同族，
+ *      台账上的数字要能量出来；
+ *   ② **一行字**：灾难名 · 强度 · 还有几天 · 「先知日历」按钮。
+ *      强度是**数字**不是色块：这一屏上已经有一个"最要紧的两类"要读，
+ *      再加一条彩色带子会让顶栏变成仪表盘（§5A：朱红是唯一点缀）；
+ *   ③ 点开之后才是逐日列表（`.prophet-detail`）——
+ *      ★ 刻意收着：§6.1 说日历是**规划乐趣**的来源。
+ *
+ * ## 为什么底色是 `--paper-2` 而不是 `--card`
+ *
+ * `--card` 是"一张可以被拿起来的东西"（物资卡、货架、印章）。这一条是
+ * **页面的一部分**（它跟着纸走），所以用纸的第二档 —— 也正是 D-33 让三档
+ * 明度拉开（6.5 → 13.8）之后才敢这么用：以前差 1.9 个 L* 时它看起来像没画。
+ */
+.run-bar {
+  flex: 0 0 auto;
+  position: relative;
+  z-index: 2;
+  padding: 7px 12px 8px;
+  border-bottom: 1.5px solid var(--ink-16);
+  background: var(--paper-2);
+}
+
+/*
+ * 那条测量线：`--remain`（0..1，**还剩几成**）由 `ui/prophetBar.ts` 算好内联写上来。
+ *
+ * ★ 它是一条**倒着走**的线：灾前七天满格，一天少一格，D-Day 见底 ——
+ * 与右边那句"还有 N 天"说的是同一件事。（第一版写成了"走了多少"，
+ * 于是带子越满、日子越近，字与图方向相反；被 `ui/prophetBar.test.ts` 抓住。）
+ * ★ 两个数都只算一次：界面与 CSS 都不许"顺手再算一遍"（`prophetBar.ts` 纪律 ③）。
+ * ★ 用 `scaleX` 而不是 `width`：后者每帧要重排，而这一条在**每一屏**的顶上。
+ */
+.run-bar-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--ink-08);
+  overflow: hidden;
+}
+
+.run-bar-track i {
+  display: block;
+  height: 100%;
+  transform-origin: left center;
+  transform: scaleX(var(--remain, 0));
+  background: var(--ink);
+}
+
+.run-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 5px;
+  font-size: 12px;
+  color: var(--ink-70);
+}
+
+.run-bar-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: 'Songti SC', 'STSong', Georgia, serif;
+  font-size: 13.5px;
+  letter-spacing: 0.05em;
+  color: var(--ink);
+}
+
+/*
+ * ★ 强度这几段字是**这一行里唯一可以让步的**：灾难全名比它重要
+ * （名字被截短读起来是"这一场叫什么来着"，强度被挤掉读起来是"这里怎么少了一块"）。
+ * 所以它**不写** `flex: 0 0 auto` —— 那一行里必须恰好留一段能收缩到 0，
+ * 否则窄屏上被挤出去的是右端那个按钮（而它跑出屏幕不会有任何报错）。
+ * ★ 这条约束有一条守卫：`scripts/check-layout.mjs` 的窄屏点名表。
+ */
+.run-bar-sev {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-40);
+}
+
+.run-bar-sev b {
+  color: var(--ink-70);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * ★ 倒计时是这一行里唯一"会跳"的东西，所以它占一个固定宽度、
+ * 用等宽数字 —— 否则每天从"还有 10 天"变到"还有 9 天"时，
+ * 右边那个按钮会左右挪一下（在一屏的顶上，那很显眼）。
+ *
+ * ⚠ 它还有第二个作用：`day` 为 `null` 的那两屏（开局与兜底页 ——
+ * 它们手里没有 `run`，`ui/prophetBar.ts` 因此**整块不输出**倒计时）
+ * 会少掉这一段宽度。所以按钮不靠它撑住右边，靠自己的 `margin-left: auto`
+ * （见下面那条）—— 否则那两屏上"先知日历"会从左三分之一处冒出来。
+ * 而反过来，将来若要改成"永远输出这一段（空着也占位）"，
+ * 就得把那条 `margin-left: auto` 一起去掉，否则两处同时在推。
+ */
+.run-bar-days {
+  flex: 0 0 auto;
+  min-width: 5.4em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--vermilion);
+  letter-spacing: 0.02em;
+}
+
+.run-bar-toggle {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 3px 8px 4px;
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--ink-70);
+  border: 1.5px solid var(--ink-16);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  cursor: pointer;
+}
+
+.run-bar-toggle .ico-arrow {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  margin-left: 5px;
+  border-left: 3.5px solid transparent;
+  border-right: 3.5px solid transparent;
+  border-top: 4.5px solid var(--ink-70);
+  vertical-align: 1px;
+}
+
+.run-bar-toggle.is-open .ico-arrow {
+  transform: rotate(180deg);
+}
+
+/*
+ * 「最要紧的是 饮水 和 保暖」——这一场该囤什么，一行说完。
+ *
+ * ★ 它刻意挤在**常驻那一行里**（而不是只留在展开层）：用户要的"能介绍更多"
+ * 里最该被一眼看到的就是这一句（它决定今天出门买什么），
+ * 而逐日细节才是"要问才给"的那一半（§6.1）。
+ * ⚠ 字号比上一行再小一档、颜色用 `--ink-70`：它是**那一行的注解**，
+ * 不是第二个标题 —— 顶栏里两行一样重就会读成两块并列的信息。
+ */
+.run-bar-need {
+  margin: 3px 0 0;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--ink-70);
+}
+
+.run-bar-need b {
+  color: var(--ink);
+}
+
+/* 展开层（逐日"哪几天最难"）—— 它是**从那一行底下抽出来的一页纸** */
+.prophet-detail {
+  flex: 0 0 auto;
+  position: relative;
+  z-index: 2;
+  max-height: 44vh;
+  overflow-y: auto;
+  padding: 10px 12px 12px;
+  border-bottom: 1.5px solid var(--ink);
+  background: var(--card);
+}
+
+.prophet-days {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+/*
+ * 逐日一行：标签 / 强度 / 那天会发生什么。
+ *
+ * ⚠ 中间那列是**等宽数字**且宽度写死：22 行数字上下对齐才读得出"哪几天最难"
+ * （左对齐的自然宽度会让强度那一列参差不齐）。
+ * ⚠ 强度高的那几天（`is-hard`）**只用字重与颜色**标注，不加底色 ——
+ * 底色在 §5A 里是"这一块是一件事"的语义，而这里 22 行是同一张表的 22 行。
+ */
+.prophet-day {
+  display: grid;
+  grid-template-columns: 4.2em 2.4em minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+  padding: 4px 0;
+  font-size: 12px;
+  color: var(--ink-70);
+}
+
+.prophet-day + .prophet-day {
+  border-top: 1px dashed var(--ink-08);
+}
+
+.prophet-day i {
+  font-style: normal;
+  color: var(--ink-40);
+  font-variant-numeric: tabular-nums;
+}
+
+.prophet-day b {
+  color: var(--ink-40);
+  font-variant-numeric: tabular-nums;
+}
+
+.prophet-day.is-hard b,
+.prophet-day.is-hard span {
+  color: var(--ink);
+}
+
+.prophet-day.is-today i {
+  color: var(--vermilion);
+  font-weight: 700;
+}
+
 /*
  * ★ 灾难名那一枚小标记（顶栏右侧）。它用的是**同一份颜色**（`--tint`）——
  * 于是"那条天光"与"这一场叫什么"在玩家眼里是同一件事。

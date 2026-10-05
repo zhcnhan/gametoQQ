@@ -214,6 +214,27 @@ describe('★★ 每一屏都要有「窗外」—— 九屏逐屏核对（漏�
       // 而且它得带对了这一场的渐变（不能是个空壳）
       expect(bands[0]?.attributes?.['style'] ?? '', `${name} 的带子没有渐变`).toContain('linear-gradient');
     });
+
+    /*
+     * ★★ 先知栏搭的是同一趟车（D-33 / 决策 E）——
+     * 它与带子在**同一个函数**（`windowBandHtml`）里返回，所以"九屏都有带子"
+     * 与"九屏都有先知栏"是同一件事；但**断言还是要分开写**：
+     * 把两样塞进一条 expect 里的话，将来谁把先知栏挪出那个函数，
+     * 失败信息只会说"带子不对"，而真正丢的是日历。
+     */
+    it(`★★ ${name}：也有「先知日历」那一条`, () => {
+      const root = mountIt();
+      const bars = root.querySelectorAll('.run-bar');
+      expect(bars.length, `${name} 没有渲染先知日历那一条`).toBeGreaterThan(0);
+      // 而且它得说得出这一场（不能是个空壳）。⚠ 读的是**属性有没有**，
+      //   不是值非空：开局页与兜底页手里没有 `run`，那两屏的 `data-day` 就是空串。
+      expect(
+        Object.keys(bars[0]?.attributes ?? {}),
+        `${name} 的先知栏没写今天是第几天`
+      ).toContain('data-day');
+      const text = allText(root);
+      expect(text, `${name} 的先知栏没念出灾难名`).toContain(getDisasterDef('cold_snap').name);
+    });
   }
 });
 

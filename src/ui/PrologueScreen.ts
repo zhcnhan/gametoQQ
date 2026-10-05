@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 开局界面（§9.1：身份三选一卡 + 灾难揭示 + 先知日历；M1 身份二选一、灾难固定寒潮）。
  *
  * 分层纪律：本文件只读 data/ 的静态表；写操作一律通过 props.onConfirm 交回给 systems。
@@ -26,7 +26,6 @@ import {
   getDisasterDef
 } from '../data/disaster';
 import { CATEGORY_LABELS } from '../data/items';
-import { calendarBars, dayLabel } from '../model/calendar';
 import type { IdentityDef, MetaProfile } from '../model/types';
 import { identityStartOf, unlockHintOf } from '../systems/identity';
 import { lockedIdentities, unlockCandidates, unlockedIdentities, survivedRuns } from '../systems/unlock';
@@ -92,8 +91,22 @@ export class PrologueScreen implements Screen {
 
   render(): void {
     const disaster = getDisasterDef(this.props.disasterId);
-    const bars = calendarBars(disaster);
     const dday = disaster.calendar.find((f) => f.day === 0);
+    /*
+     * ★ 从这里**删掉**的那一块（D-33 / 决策 E）：原来是 `.calendar-strip`
+     * 那条 66px 高的强度曲线 + `cal-axis` + 首日 hint，占据正文第一段。
+     *
+     * 用户要的是"日历的先知作用挪到最上面去"，所以它现在住在
+     * `ui/prophetBar.ts` 里、由 `ui/windowBand.ts` 画进**每一屏**的顶栏底下
+     * （连这一屏也有：`windowBandHtml(this.props.disasterId)`）。
+     *
+     * ⚠ 这里**不是"搬走了所以什么都不剩"**：开局页仍然要说"这一局会撞上什么"
+     * —— D-Day 那句 `hint` 与"最要紧的是哪两类"是**选身份**时要看的东西
+     * （选保安还是选装卸工，取决于这一场要囤什么），而逐日强度那种
+     * "要规划才看"的细节才归顶栏。两处说同一件事时口径必须同源：
+     * 这里的 `dday.hint` 与 `priorityCategories` 与顶栏读的是同一份数据。
+     */
+    const prepDays = disaster.calendar.filter((f) => f.day < 0).length;
     const canConfirm = this.selected !== null;
 
     this.root.innerHTML = `
@@ -121,28 +134,11 @@ export class PrologueScreen implements Screen {
           </section>
 
           <section class="block">
-            <h2 class="block-title">先知日历 · ${escapeHtml(disaster.name)}</h2>
-            <p class="block-note">
-              ${bars.length > 0 ? escapeHtml(bars[0]?.hint ?? '') : ''}
-            </p>
-            <div class="calendar-strip" role="img" aria-label="先知日历的强度曲线">
-              ${bars
-                .map(
-                  (f) =>
-                    `<i class="cal-bar${f.day === 0 ? ' is-dday' : ''}${f.day < 0 ? ' is-before' : ''}" style="--sev:${f.severity}"></i>`
-                )
-                .join('')}
-            </div>
-            <div class="cal-axis">
-              <span>${dayLabel(bars[0]?.day ?? -7)}</span>
-              <span class="cal-axis-mid">${dayLabel(0)}</span>
-              <span>${dayLabel(bars[bars.length - 1]?.day ?? 7)}</span>
-            </div>
-            <p class="block-note strong">
-              ${escapeHtml(dday?.hint ?? '灾难将至。')}
-            </p>
+            <h2 class="block-title">这一局会撞上什么</h2>
+            <p class="block-note strong">${escapeHtml(dday?.hint ?? '灾难将至。')}</p>
             <p class="block-note">
               最要紧的是 ${disaster.priorityCategories.map((c) => `<b>${CATEGORY_LABELS[c]}</b>`).join(' 和 ')}。
+              你有 ${prepDays} 天准备。
             </p>
             ${this.disasterLadderHtml()}
           </section>

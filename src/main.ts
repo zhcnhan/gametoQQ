@@ -50,6 +50,7 @@ import { NightScreen } from './ui/NightScreen';
 import { OrganizeScreen } from './ui/OrganizeScreen';
 import { PendingScreen } from './ui/PendingScreen';
 import { PrologueScreen } from './ui/PrologueScreen';
+import { toggleProphet } from './ui/prophetBar';
 import { Router, type Screen, type ScreenKey } from './ui/Router';
 import { HelpScreen } from './ui/HelpScreen';
 import { ShopScreen } from './ui/ShopScreen';
@@ -419,6 +420,30 @@ function installClipboardGuard(): void {
 }
 
 installClipboardGuard();
+
+/**
+ * ★★ 「先知日历」那一条的展开 / 收起（D-33 / 决策 E 的 ② 层）。
+ *
+ * ## 为什么挂在 `document` 上（而不是各屏自己的 root 上）
+ *
+ * 那一条住在 `ui/prophetBar.ts` 里，由 `ui/windowBand.ts` 捎带画进**每一屏**
+ * —— 九个屏幕各自 `innerHTML` 重建时它跟着重建，所以监听器**不能**挂在
+ * 某一屏的 root 上（换页时 Router 会把 root 清空，委托一起没）。
+ * 挂在 `document` 上，它与屏的生灭无关，这也正是"每屏都有"这件事的代价：
+ * 一个全局入口换九屏免接线。
+ *
+ * ⚠ 它是**没开 `import.meta.env.DEV` 也生效**的：展开日历是玩法，不是调试钩子。
+ */
+function installProphetToggle(): void {
+  document.addEventListener('click', (e) => {
+    const target = e.target;
+    if (!(target instanceof HTMLElement)) return;
+    if (!target.closest('[data-action="prophet"]')) return;
+    toggleProphet(document);
+  });
+}
+
+installProphetToggle();
 
 /**
  * ★★ 换灾难的**生产构建也能用**的那条路（2026-10 补，用户的走查卡在这里）。

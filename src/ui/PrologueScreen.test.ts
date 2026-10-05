@@ -58,21 +58,17 @@ function blockNotes(root: FakeElement): string[] {
   return root.querySelectorAll('.block-note').map((el) => el.textContent);
 }
 
-/** 日历柱：`--sev` 写在 style 上，读得到（柱子的高度就是这一场的强度曲线） */
-function calendarBars(root: FakeElement): string[] {
-  return root.querySelectorAll('.cal-bar').map((el) => el.attributes?.['style'] ?? '');
-}
-
 afterEach(() => {
   installFakeWindow(new FakeDocument());
 });
 
 describe('★ 开局页显示的是**这一局真的抽到的那一场**', () => {
-  it('寒潮局：标题与日历都是寒潮', () => {
+  it('寒潮局：身份卡下面那一段说的就是寒潮', () => {
     const root = mount('cold_snap');
-    expect(blockTitle(root, 1)).toContain('先知日历');
-    expect(blockTitle(root, 1)).toContain('寒潮');
-    expect(calendarBars(root).length).toBeGreaterThan(0);
+    expect(blockTitle(root, 1)).toContain('这一局会撞上什么');
+    expect(allText(root)).toContain('寒潮');
+    // 身份卡 → 这一局会撞上什么，两段；日历那一整条已经搬去顶栏（D-33 / 决策 E）
+    expect(root.querySelectorAll('.block-title')).toHaveLength(2);
   });
 
   it('★★ 热浪局：那一页**不许**出现"寒潮"两个字', () => {
@@ -87,15 +83,33 @@ describe('★ 开局页显示的是**这一局真的抽到的那一场**', () =>
      * （"最要紧的是 …" 就是这么一处：它在假体里根本不是叶子）。
      */
     const root = mount('heat_wave');
-    expect(blockTitle(root, 1)).toContain('热浪');
+    /*
+     * ★ 灾难名在 D-33 之后只住在**顶栏**（`ui/prophetBar.ts` 的 `.run-bar-name`），
+     * 标题按用户拍板写死成"这一局会撞上什么"（"能介绍更多"那条）。
+     * 所以这里比的是**整页**：念的是抽到的这一场。
+     */
+    expect(allText(root)).toContain('热浪');
     expect(allText(root), '开局页在热浪局里念了寒潮的日历').not.toContain('寒潮');
   });
 
-  it('日历本身按这一场画：两场的强度曲线不同', () => {
-    const cold = calendarBars(mount('cold_snap'));
-    const heat = calendarBars(mount('heat_wave'));
-    expect(cold.length).toBe(heat.length); // 都是 D-7 .. D+14
-    expect(cold, '两场画出了同一条强度曲线 —— 说明日历没跟着这一场走').not.toEqual(heat);
+  it('★★ D-Day 那句与"最要紧的两类"都按这一场来：两场不一样', () => {
+    /*
+     * ★ D-33 之后这一条的判据换了（原来比的是两场画出的 `.cal-bar` 强度曲线）：
+     * 那条曲线**整块搬去了顶栏**（`ui/prophetBar.ts`，由 `windowBandHtml` 画在每一屏），
+     * 开局页不再拥有"这一场的形状"。但开局页仍有它自己那两句话要说
+     * —— D-Day 的 `hint` 与"最要紧的是哪两类"（**选身份时要看的东西**）。
+     *
+     * ⚠ 所以这条用例现在守的是**那两句话也得跟着这一场走**，
+     * 而不是"开局页还画着日历"（画不画不影响玩法，那两句话错了才影响）。
+     * 曲线本身按这一场走，由 `ui/prophetBar.test.ts` 与 `ui/windowBand.test.ts` 守着。
+     */
+    const cold = blockNotes(mount('cold_snap'));
+    const heat = blockNotes(mount('heat_wave'));
+    expect(cold, '两场在开局页说了同一句话 —— 说明那两句话没跟着这一场走').not.toEqual(heat);
+    // 寒潮要燃料与保暖、热浪要饮水与医疗品：这一句错位就会把玩家引去囤错东西
+    // ⚠ 品类名取 `CATEGORY_LABELS`（医疗品那一栏在界面里就叫「医疗」）
+    expect(allText(mount('cold_snap'))).toContain('保暖');
+    expect(allText(mount('heat_wave'))).toContain('医疗');
   });
 
   it('日历起点那句预告来自这一场（不是写死的寒潮那句）', () => {
