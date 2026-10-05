@@ -925,10 +925,13 @@ const WEIGHTED: readonly WeightedDayEvent[] = [
         },
         {
           label: "不去",
-          outcome: "你没去。第二天楼道里没人跟你打招呼。",
+          outcome: "你没去。后半夜水从楼道漫上来，贴地那几排泡了 —— 天没亮你把湿的那点捞进一个箱子，堆在桌上。",
           effect: {
             stamina: 3,
-            mood: 1
+            mood: 1,
+            homeSink: {
+              rows: 1
+            }
           }
         }
       ],

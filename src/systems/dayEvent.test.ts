@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 import { DAY_EVENT_DEFS, dayPriceFactor } from '../data/dayEvents';
 import { countCategory } from '../model/consume';
 import { createCursor } from '../model/rng';
+import { HOME_SINK_MAX_ROWS } from '../model/sink';
 import { createSaveGame } from '../state/save';
 import { GameStore } from '../state/store';
 import { chooseIdentity } from './phases';
@@ -169,6 +170,12 @@ describe('★ 结构约束：不许有"点了什么都不发生"的选项', () =
   });
 
   it('只改商店与物价的选项不许存在（削库存 / 限购 / 涨价单独出现 = 白扣一个行动点）', () => {
+    /*
+     * ⚠ `homeSink` **不在**这张表里，加它之前要读一遍 W-05 的那条注释
+     * （`systems/shop.ts` 的 `PLAYER_FACING_EFFECT_KEYS`）：
+     * 它看起来与 `priceUp` 同族（都是坏的），区别是**它改盘面** ——
+     * 玩家回来能指着那几排说"这里原来有东西"。所以它可以单独成项。
+     */
     const SHOP_ONLY = ['stockCut', 'limit', 'priceUp'];
     const bad: string[] = [];
     for (const def of DAY_EVENT_DEFS) {
@@ -204,6 +211,65 @@ describe('★ 结构约束：不许有"点了什么都不发生"的选项', () =
         if (!CLAIMS_GOODS.test(opt.outcome)) continue;
         const gives = opt.effect.grab !== undefined || opt.effect.boxDefId !== undefined;
         if (!gives) bad.push(`${def.id} 的「${opt.label}」文案说拿到了东西，效果里却没有：${opt.outcome}`);
+      }
+    }
+    expect(bad).toEqual([]);
+  });
+
+  /**
+   * ★★ 屋子进水（W-05）：文案与效果**必须互相说得通**，两个方向都拦。
+   *
+   * 这是 §10.1A 铁则第 1 条（"只改数字的机制必须同时有非数字的表达"）在
+   * **内容侧**的可执行形式。它守的是这一片最容易出的两种错，而且是**相反的**两种：
+   *
+   *  · **说了没做**：outcome 写"水漫上来、贴地那几排泡了"，而 `effect` 里没有
+   *    `homeSink` —— 玩家读完那段话去找，家里什么都没变。这与 M2 那批
+   *    "文案说抢到了、实际没给货"是同一个病（见上面那条守卫的来历）；
+   *  · **做了没说**：`effect.homeSink` 在，而 outcome 一个字没提 —— 玩家回到整理页
+   *    发现货架凭空矮了一排，只会认为存档坏了（这条更贵：**它没有报错的机会**）。
+   *
+   * ⚠ 判据只认"贴地 / 泡了 / 漫上来"这一族词，不要求写死句式。
+   * 新写事件时如果用了别的说法（"淹到第二层板"），把词补进来 ——
+   * 但**别把它放宽成"随便提到水都算"**：那样"堤上守了一夜"也会被算成淹水，
+   * 判据就从"对账"退化成"含有某个字"。
+   */
+  it('★ homeSink：文案说泡了就必须真淹，真淹了就必须在文案里说', () => {
+    const SAYS_FLOOD = /贴地|泡了|漫上来|淹|渗进/;
+    const bad: string[] = [];
+    for (const def of DAY_EVENT_DEFS) {
+      for (const opt of def.options) {
+        const says = SAYS_FLOOD.test(opt.outcome);
+        const does = opt.effect.homeSink !== undefined;
+        if (says && !does) {
+          bad.push(`${def.id} 的「${opt.label}」文案说屋里泡了水，效果里没有 homeSink：${opt.outcome}`);
+        }
+        if (does && !says) {
+          bad.push(
+            `${def.id} 的「${opt.label}」会淹掉玩家的屋子，而文案一个字没提（玩家只会以为存档坏了）`
+          );
+        }
+      }
+    }
+    expect(bad).toEqual([]);
+  });
+
+  /**
+   * `homeSink` 的排数必须是**书上写过的那个区间**。
+   *
+   * `HOME_SINK_MAX_ROWS = 2` 不是随手定的：`model/sink.ts` 里写明了理由
+   * （再多就把整理这件事压没了）。内容作者写 3 会被 `sinkShelves` 默默夹成 2，
+   * 于是"文案说三排、实际少两排"—— 正是本项目最贵的那类静默不一致。
+   * 所以这里在**数据层**就拦住，而不是等运行时夹。
+   */
+  it('★ homeSink 的排数在允许区间内（写超了会被静默夹掉）', () => {
+    const bad: string[] = [];
+    for (const def of DAY_EVENT_DEFS) {
+      for (const opt of def.options) {
+        const rows = opt.effect.homeSink?.rows;
+        if (rows === undefined) continue;
+        if (!Number.isInteger(rows) || rows < 1 || rows > HOME_SINK_MAX_ROWS) {
+          bad.push(`${def.id} 的「${opt.label}」写了 homeSink.rows = ${rows}，允许区间是 1~${HOME_SINK_MAX_ROWS}`);
+        }
       }
     }
     expect(bad).toEqual([]);
@@ -526,5 +592,122 @@ describe('白天事件接进 enterShop：门口先讲那件事', () => {
     const store = startedStore();
     store.run.phase = 'organize';
     expect(resolveDayEvent(store, 0).ok).toBe(false);
+  });
+});
+
+/**
+ * ★★ W-05：一类事件真的动了你家里的盘面（"屋子进水"）。
+ *
+ * ## 这一组在守什么
+ *
+ * 工单的原话是"169 个事件里没有一个改变已有物资的归属" —— 白天事件能加货
+ * （`grab`）、能给箱子（`boxDefId`）、能改价（`priceUp`）、能削商店（`stockCut`），
+ * 但**没有一件能碰你昨晚摆好的那些排**。`homeSink` 补的就是这一格。
+ *
+ * 所以这一组要钉的不是"字段通了"，而是**接线真的走到底了**：
+ * 玩家选了「不去」→ 货架少一排 → 泡了的货进了箱子 → 界面读得到这件事。
+ * 这四步里断任何一步，字段都是"通了但没生效"（`systems/setup.ts:130-135`
+ * 记着这个教训的原话）。
+ *
+ * ⚠ 这一组**故意钉死 `disasterId: 'cold_snap'`**：`sinkShelves` 每块家具至少留
+ * 一排，而 `createStartingShelves` 会按灾难的 `capacityFactor` 预先砍掉低处的排
+ * （43 场写了这一维）。如果随机抽到 `capacityFactor: 0.5` 的那几场，开局每块
+ * 就只剩 2 排，再砍 1 排还能砍动；抽到 0.5 且再砍一次就到了下限，
+ * `rows` 会变成 0 而用例随种子时红时绿。寒潮没有这一维（4 排满高），
+ * 是这批用例唯一稳定的基座。
+ */
+describe('★★ 白天事件：屋子进水（W-05）', () => {
+  /** 反复开新局，直到这一家店门口真的出了指定的那件事（与上面同一套穷举） */
+  function storeAtLevee(seed = 1) {
+    for (let s = seed; s < seed + 400; s++) {
+      const store = new GameStore(
+        createSaveGame(createStartingRun(s, { disasterId: 'cold_snap' })),
+        createSaveSchedulerStub()
+      );
+      chooseIdentity(store, 'group_buyer');
+      enterShop(store, 'supermarket');
+      if (store.run.dayEvent?.defId === 'd_levee_shift') return store;
+    }
+    throw new Error('400 个 seed 里没抽到 d_levee_shift');
+  }
+
+  /** 「不去」是第三支（前两支是去值守 / 出钱请人） */
+  const STAY_HOME = 2;
+
+  it('选「不去」：家具真的矮了一排，而且家里那本水位账记上了', () => {
+    const store = storeAtLevee();
+    const before = store.run.shelves.map((s) => s.h);
+    expect(before.every((h) => h === 4)).toBe(true);
+    expect(store.run.homeSinkRows).toBe(0);
+
+    const res = resolveDayEvent(store, STAY_HOME);
+    expect(res.ok).toBe(true);
+
+    const after = store.run.shelves.map((s) => s.h);
+    expect(after).toEqual(before.map((h) => h - 1));
+    expect(store.run.homeSinkRows).toBe(1);
+    // 三个长度必须一致（只改 h 就是"放得进去、东西却不见了"那类静默 bug）
+    for (const shelf of store.run.shelves) {
+      expect(shelf.slots).toHaveLength(shelf.h);
+      expect(shelf.zoneIds).toHaveLength(shelf.h);
+    }
+  });
+
+  it('★ 泡了的东西不蒸发：它进了待拆的箱子，而且箱数被记下来', () => {
+    const store = storeAtLevee();
+    const boxesBefore = store.run.boxesToUnpack.length;
+    const applied = (() => {
+      resolveDayEvent(store, STAY_HOME);
+      return store.run.dayEvent?.applied;
+    })();
+
+    expect(applied?.homeSink).not.toBeNull();
+    expect(applied?.homeSink?.rows).toBe(1);
+    expect(applied?.homeSink?.shelfIds.length).toBe(store.run.shelves.length);
+    // 捞出来的东西只可能装在**新增**的箱子里（原来那些箱子的内容不该被动）
+    expect(store.run.boxesToUnpack.length).toBe(boxesBefore + (applied?.homeSink?.boxes ?? 0));
+  });
+
+  it('★ 事件的摘要要把它说出来（§10.1A：改了盘面就必须有非数字的表达）', () => {
+    const store = storeAtLevee();
+    const res = resolveDayEvent(store, STAY_HOME);
+    /*
+     * ⚠ 摘要**不在** `run.dayEvent` 上：`describeDayEffect` 是在 `resolveDayEvent`
+     * 里现算的，随 `dayEventResolved` 事件发出去，界面（`ui/ShopScreen.ts:231`）
+     * 拿 applied 自己再算一遍。第一版这里读的是 `store.run.dayEvent?.summary`
+     * —— 那个字段不存在，`?? ''` 把它静静变成空串，于是这条用例报的是
+     * "expected '' to contain …"，看着像功能没做，其实是断言找错了地方。
+     */
+    const line = res.events
+      .filter((e) => e.type === 'dayEventResolved')
+      .flatMap((e) => (e.type === 'dayEventResolved' ? e.summary : []))
+      .join('，');
+    expect(line).toContain('屋里贴地那 1 排没了');
+  });
+
+  it('另外两支不会动盘面（"可后悔的决定"要真的只有那一支有代价）', () => {
+    const store = storeAtLevee();
+    const before = store.run.shelves.map((s) => s.h);
+    // 「去值守」是 0 号（耗体力换心情），它不该动家里
+    expect(resolveDayEvent(store, 0).ok).toBe(true);
+    expect(store.run.shelves.map((s) => s.h)).toEqual(before);
+    expect(store.run.homeSinkRows).toBe(0);
+    expect(store.run.dayEvent?.applied?.homeSink ?? null).toBeNull();
+  });
+
+  it('★ 每块至少留一排：水位不会把某块家具吃到 0 排', () => {
+    const store = storeAtLevee();
+    // 先把每块砍到只剩一排（模拟"水位已经很高"），再淹一次
+    store.run.shelves = store.run.shelves.map((s) => ({
+      ...s,
+      h: 1,
+      slots: s.slots.slice(0, 1),
+      zoneIds: s.zoneIds.slice(0, 1),
+    }));
+    resolveDayEvent(store, STAY_HOME);
+    expect(store.run.shelves.every((s) => s.h === 1)).toBe(true);
+    // 砍不动就**不记账**（否则玩家会看到"屋里贴地 1 排没了"而没有一排真的没了）
+    expect(store.run.homeSinkRows).toBe(0);
+    expect(store.run.dayEvent?.applied?.homeSink ?? null).toBeNull();
   });
 });

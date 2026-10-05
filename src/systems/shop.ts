@@ -27,6 +27,7 @@ import { disasterModifiersOf } from '../data/disaster';
 import { dayLabel } from '../model/calendar';
 import { createCursor, nextFloat, nextInt, type RngCursor } from '../model/rng';
 import { firstBatchExpiry, makeStack, stackCount } from '../model/shelf';
+import { HOME_SINK_MAX_ROWS, sinkShelves } from '../model/sink';
 import type {
   CategoryId,
   DayEffectApplied,
@@ -37,6 +38,7 @@ import type {
   ItemDef,
   ItemStack,
   RunState,
+  Shelf,
   ShopDayStock,
   ShopDef,
   ShopLimit,
@@ -559,8 +561,14 @@ export function dayOptionAt(def: DayEventDef, choice: number): DayOption | null 
  *    或"店里限购了"得到任何东西，所以它们只能当事件的背景，不能单独成项；
  *  · `priceUp` —— 它是**惩罚**。单独成项就等于"进去挨一刀"，那不是选择。
  *    （它可以和其他效果一起出现，见"抢购"那条的紧急补货。）
+ *
+ * ★ 而 `homeSink` **在**名单里，这一条值得单独说一句：它给玩家的东西不是
+ * "拿到什么"，而是**少了什么** —— 看起来与 `priceUp` 同族（都是坏的），
+ * 但它与 `priceUp` 有一条硬区别：**它改盘面**。
+ * §10.1A 要的正是这种"回来一看，家里不一样了"的后果，
+ * 所以它可以单独成项（表里也确实只有"不管"那一支用它，见 `d_levee_shift`）。
  */
-export const PLAYER_FACING_EFFECT_KEYS = ['cash', 'stamina', 'mood', 'boxDefId', 'grab', 'visitLost'] as const;
+export const PLAYER_FACING_EFFECT_KEYS = ['cash', 'stamina', 'mood', 'boxDefId', 'grab', 'visitLost', 'homeSink'] as const;
 
 /** 这个选项有没有"落到玩家身上"的效果。没有 = 玩家点完什么都不会变 */
 export function hasPlayerFacingEffect(effect: DayOptionEffect): boolean {
@@ -589,7 +597,8 @@ export function applyDayEffect(run: RunState, effect: DayOptionEffect, shopId: s
     gotBox: false,
     boxName: '',
     grabbed: [],
-    visitLost: false
+    visitLost: false,
+    homeSink: null
   };
 
   if (effect.cash) {
@@ -668,8 +677,90 @@ export function applyDayEffect(run: RunState, effect: DayOptionEffect, shopId: s
   if (effect.visitLost) {
     applied.visitLost = true;
   }
+  /*
+   * ★★ 屋子进水（W-05）：**从下往上**淹掉几排。
+   *
+   * 它是这一整片里唯一动**盘面**而不是动数字的效果 —— 所以顺序放在最后：
+   * 前面那些字段（现金、四维、商店）都是"这一趟外面发生了什么"，
+   * 而这一条是"你回到家发现家里变了"。玩家读 outcome 的顺序也是这个。
+   *
+   * 三件事必须一起做完，缺一件就是"报了但没发生"或"发生了但没报"：
+   *  ① 砍行（`sinkShelves`）—— 砍完要写回 `run.shelves`，并且把 `homeSinkRows` 累加；
+   *  ② 被淹那几排里的货**装箱**，不许蒸发（`packStacks`）；
+   *  ③ 行没了，贴在那一行上的胶带一起摘掉（`orphanZones`）—— 不摘的话它会留在
+   *     `run.zones` 里，而盘面上再也找不到它，于是"撕胶带"这件事从此做不到。
+   */
+  if (effect.homeSink) {
+    const sunk = sinkShelves(run.shelves, run.zones, effect.homeSink.rows, (shelf, index) =>
+      shelfLabel(shelf, index)
+    );
+    if (sunk.rows > 0) {
+      run.shelves = sunk.shelves;
+      run.homeSinkRows = Math.min(HOME_SINK_MAX_ROWS, run.homeSinkRows + sunk.rows);
+      const orphanIds = new Set(sunk.orphanZones.map((z) => z.id));
+      if (orphanIds.size > 0) run.zones = run.zones.filter((z) => !orphanIds.has(z.id));
+      let boxes = 0;
+      for (const hit of sunk.salvaged) {
+        if (hit.stacks.length === 0) continue;
+        packStacks(run, hit.stacks);
+        boxes += 1;
+      }
+      applied.homeSink = {
+        rows: sunk.rows,
+        shelfIds: sunk.shelfIds,
+        boxes,
+        zones: sunk.orphanZones.map((z) => z.name)
+      };
+    }
+  }
 
   return applied;
+}
+
+/**
+ * 捞出来的那几箱里装的是什么 —— 只给界面报数用不到的场合（日志 / 摘要）留一个名字。
+ *
+ * 口径与 `ui/labels.ts` 的 `shelfLabel` 一致（"货架 A"），但**不复用它**：
+ * systems/ 不 import ui/（那条线是单向的）。重复的只是一个字母表，
+ * 而不是一条规则 —— 真正不能分家的那些（比如箱型的挑选）都走同一段代码。
+ */
+function shelfLabel(shelf: Shelf, index: number): string {
+  const kind: Record<Shelf['kind'], string> = {
+    shelf: '货架',
+    fridge: '冰箱',
+    cabinet: '柜子',
+    floor: '地面'
+  };
+  return `${kind[shelf.kind]} ${String.fromCharCode(65 + index)}`;
+}
+
+/**
+ * 把捞出来的几堆货装成一箱，推进待拆队列。
+ *
+ * 与 `grabFromShop` 共用同一套箱型口径（`pickBoxDefId` + `nextBoxSeq`），
+ * 所以"泡了水捞回来的那箱"与"抢回来的那箱"在界面上一模一样 —— 它们确实是一回事。
+ *
+ * ⚠ 重量**不**记进 `carLoad`：这一箱是**在家里**捞出来的，从来没上过车。
+ * `grab` 那条要记是因为它真的从外面拎回来（见那一段的注释）；
+ * 反过来在这里加一笔，玩家会看到"在家泡了个水，车上负重涨了"。
+ */
+function packStacks(run: RunState, stacks: readonly ItemStack[]): void {
+  const items = stacks.filter((s): s is ItemStack => s !== null && stackCount(s) > 0).map((s) => ({ ...s }));
+  if (items.length === 0) return;
+  const def = getBoxDef(
+    pickBoxDefId(
+      items.map((s) => ({
+        itemId: s.itemId,
+        count: stackCount(s),
+        unitPrice: 0,
+        lineCost: 0,
+        unitWeight: getItemDef(s.itemId).unitWeight,
+        lineWeight: 0,
+        stock: 0
+      }))
+    )
+  );
+  run.boxesToUnpack.push({ id: `box_${nextBoxSeq(run.boxesToUnpack)}`, defId: def.id, items });
 }
 
 /**
@@ -860,6 +951,25 @@ export function describeDayEffect(applied: DayEffectApplied): string[] {
   const cut = applied.stockCut.reduce((n, c) => n + c.count, 0);
   if (cut > 0) parts.push(`店里少了 ${cut} 件`);
   for (const limit of applied.limits) parts.push(`今天限购 ${limit.max} 件`);
+  /*
+   * ③ ★ 最后才报**家里**（W-05）。
+   *
+   * 放在最后是叙事顺序，不是重要性顺序：前面那些都是"这一趟在外面发生了什么"，
+   * 而这一条是"你回到家，发现家里变了" —— 它必须是摘要的**最后一句**，
+   * 否则玩家读完"屋里少了一排"还会接着读到"体力 -4"，注意力就散了。
+   *
+   * 三样都要说出口，缺一样玩家就拼不出发生了什么：
+   *  · **少了一排**（数字 + 盘面上真的看得出来）；
+   *  · **捞出来几箱**（东西没丢，但变成了箱子里的 —— 那是一次真损失）；
+   *  · **哪张胶带跟着没了**（行没了胶带就没地方贴，玩家必须知道，
+   *    否则他会以为自己撕过它）。
+   */
+  if (applied.homeSink) {
+    const sink = applied.homeSink;
+    parts.push(`屋里贴地那 ${sink.rows} 排没了`);
+    if (sink.boxes > 0) parts.push(`捞出来 ${sink.boxes} 箱`);
+    if (sink.zones.length > 0) parts.push(`「${sink.zones.join('、')}」的胶带跟着掉了`);
+  }
   return parts;
 }
 

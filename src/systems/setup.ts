@@ -410,6 +410,9 @@ export function createStartingRun(
     // v15：手里那件物资（§4A 要求它随存档保留；开局当然是空的）
     held: null,
     heldFrom: { kind: 'none' },
+    // M4 W-05：开局水位 0 —— 屋子进水是**局中**才会发生的事，而这一排账
+    // 必须落盘（`slots.length` 砍掉之后就再也看不出"这里原来有一排"了）
+    homeSinkRows: 0,
     night: null,
     helpRequest: null,
     survival: {

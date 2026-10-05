@@ -146,6 +146,8 @@ export class OrganizeScreen {
   private roomEl!: HTMLElement;
   private dockEl!: HTMLElement;
   private scoreEl!: HTMLElement;
+  /** 水位那一行（`run.homeSinkRows` 的唯一读点，见 `renderSinkNote`） */
+  private sinkNoteEl!: HTMLElement;
   private subEl!: HTMLElement;
   private fxLayer!: HTMLElement;
   private sheet!: ZoneSheet;
@@ -216,6 +218,8 @@ export class OrganizeScreen {
             </div>
           </div>
           <div class="score" data-score></div>
+          ${/* ★ W-05：屋子被水吃过几排（`run.homeSinkRows`）。空着的时候整行不写出来 */ ''}
+          <p class="block-note" data-sink-note hidden></p>
           <!--
             「胶带架」：胶带与剪刀都住在这儿，从这里**拖到某一行**上使用。
             见 renderTapeShelf 的注释（用户要的手感：写一张 → 拖到某一行）。
@@ -259,6 +263,7 @@ export class OrganizeScreen {
     this.roomEl = this.query('[data-room]');
     this.dockEl = this.query('.dock');
     this.scoreEl = this.query('[data-score]');
+    this.sinkNoteEl = this.query('[data-sink-note]');
     this.subEl = this.query('[data-sub]');
     this.fxLayer = this.query('[data-fx]');
 
@@ -345,6 +350,7 @@ export class OrganizeScreen {
     this.lastView = view;
     this.renderSub(view);
     this.renderScore(view);
+    this.renderSinkNote();
     this.renderTapeShelf();
     this.renderRoom(view);
     this.renderDock(view);
@@ -734,6 +740,62 @@ export class OrganizeScreen {
         <i>已上架</i><b>${view.score.stacks}</b>
       </button>
     `;
+  }
+
+  /**
+   * ★★ 水位那一行（W-05 的界面那一半）。
+   *
+   * ## 为什么它必须存在
+   *
+   * `homeSink` 让白天事件能真的吃掉玩家屋里的几排 —— 但**盘面本身说不出这件事**：
+   * 一排没了之后，屏幕上只剩一块"本来就只有三排"的货架，玩家无法分辨
+   * "我这块一直是三排"和"我这块昨晚被水泡掉一排"。而 §10.1A 的口径是
+   * **任何东西都要让我有感知** —— 只在后台改数据、指望玩家自己数出来，
+   * 正好是那条铁则要禁的形状（`docs/囤货末世-策划案.md` §10.1A）。
+   *
+   * 所以这里是 `run.homeSinkRows` 的**唯一读点**，说的是那本账（水位到过哪儿），
+   * 而不是"正在发生什么"—— 水早就退了。
+   *
+   * ⚠ 它**不**逐个复述被泡掉的胶带：那件事属于"当时那一刻"的反馈，
+   * 已经由 `describeDayEffect` 在商店那屏说了（"「主食」的胶带跟着掉了"）。
+   * 一个跨天还挂在整理页上的提示去复述当时的细节，只会变成两块屏幕抢着说同一句话。
+   */
+  private renderSinkNote(): void {
+    const rows = this.store.run.homeSinkRows;
+    if (rows <= 0) {
+      /*
+       * 整行藏起来（`hidden` 而不是空字符串）：空 `<p>` 会照旧吃掉那 6px margin。
+       *
+       * ⚠ 这里**不能写 `this.sinkNoteEl.hidden = true`** —— 那句话在真浏览器里对，
+       * 在本项目的假 DOM（`ui/fakeDom.ts`）里却会**静默失效**：假体没有 `hidden`
+       * 属性，赋值只是往对象上挂了一个没人读的字段，于是这条分支的效果
+       * 在屏幕级测试里永远验不到。属性得走 `toggleAttribute`。
+       * （`fakeDom` 的 `BOOLEAN_ATTRS` 只覆盖"解析 HTML 时"的布尔属性，
+       * 那是另一条路，管不着产品代码在 JS 里设的那一个。）
+       */
+      this.sinkNoteEl.toggleAttribute('hidden', true);
+      this.sinkNoteEl.textContent = '';
+      return;
+    }
+    const shelves = this.store.run.shelves.filter((s) => s.id.startsWith('shelf_')).length;
+    /*
+     * 单位是**排**：`homeSinkRows` 累加的是"这一次淹了几排"，
+     * 而每块家具是**各砍一排**（`sinkShelves` 逐块算 `cut`），
+     * 所以"每块各少一排"才是实情 —— "一共少了 N 排"会被读成总排数
+     * （三块各少一排，写成"一共少了一排"或"少了三排"都是假话）。
+     */
+    const body =
+      shelves > 0
+        ? `屋里进过水：靠地那${rows === 1 ? '一排' : `${rows} 排`}，每块家具各少了一排。`
+        : `屋里进过水：贴地那${rows === 1 ? '一排' : `${rows} 排`}没了。`;
+    const tail = shelves > 0 ? `现在全屋最多能放 ${this.shelfRowsTotal()} 排。` : '';
+    this.sinkNoteEl.toggleAttribute('hidden', false);
+    this.sinkNoteEl.textContent = `${body}${tail}`;
+  }
+
+  /** 全屋还剩几排可放（水位那一行用它把"少了"换算成当下的事实） */
+  private shelfRowsTotal(): number {
+    return this.store.run.shelves.reduce((n, s) => n + s.h, 0);
   }
 
   /**

@@ -228,6 +228,36 @@ export class FakeElement {
     this.dataset[camel] = value;
   }
 
+  /**
+   * ★ 摘掉一个属性（2026-10 补，`toggleAttribute` 用它）。
+   *
+   * 补它的原因值得记：`setAttribute` 从假体第一天就有，而 `removeAttribute`
+   * 一直缺着 —— 于是"产品代码想在 JS 里开关一个布尔属性"这件事**没有写法**
+   * （`el.hidden = true` 那种属性赋值在假体上静默无效，见 `BOOLEAN_ATTRS`
+   * 的注释），屏幕级测试也就永远验不到那条分支。
+   * 缺一个成员的成本不是报错，而是被测代码里某条分支静静地验不到。
+   */
+  removeAttribute(name: string): void {
+    delete this.attributes[name];
+    const camel = name.replace(/^data-/, '').replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
+    delete this.dataset[camel];
+  }
+
+  /**
+   * 开关一个属性。
+   *
+   * ★ 口径与真 DOM 对齐：属性**在不在**就是全部信息，所以 `force === true` 时
+   * 写进属性表的空串（不是 `'true'`）。第一版写成 `'true'` 的话，
+   * 断言里就得比 `'true'` —— 而真浏览器把裸属性读回来是 `''`，
+   * 两边对不上，屏幕级测试会开始验一个真机上不存在的东西。
+   */
+  toggleAttribute(name: string, force?: boolean): boolean {
+    const on = force ?? !(name in this.attributes);
+    if (on) this.attributes[name] = '';
+    else delete this.attributes[name];
+    return on;
+  }
+
   /** 手动摆位置（假体没有布局引擎） */
   place(left: number, top: number, width: number, height: number): this {
     this.rect = { left, top, width, height };

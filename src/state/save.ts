@@ -30,6 +30,7 @@ import type {
   LastRunScore
 } from '../model/types';
 import { HANDY_SLOTS } from '../model/shelf';
+import { HOME_SINK_MAX_ROWS } from '../model/sink';
 import { EVENT_HISTORY_KEEP } from '../model/types';
 import { emptyEventHistory } from '../systems/setup';
 import { sanitizeIdentityLevels, clampIdentityLevel } from '../data/identityLevels';
@@ -1257,7 +1258,24 @@ function normalizeDayApplied(raw: unknown): DayEffectApplied | null {
       (g): g is DayEffectApplied['grabbed'][number] =>
         isObject(g) && typeof g.itemId === 'string' && typeof g.count === 'number'
     ),
-    visitLost: raw.visitLost === true
+    visitLost: raw.visitLost === true,
+    /*
+     * 屋子被淹掉的实况（W-05）。
+     *
+     * 与 `visitLost` 那条同一个口径：**只认存档里写着的东西**，坏掉就退化成 `null`
+     * （= "这一趟没淹"）。绝不拿选项声明的 `rows` 去补 —— 那正是
+     * `NightState.applied` 存在的理由（见上面 `normalizeDayApplied` 的注释），
+     * 而"说了要淹两排、其实只淹了一排"（家具只剩一排时砍不动）恰好是最需要
+     * 照实记下来的那一种差别。
+     */
+    homeSink: isObject(raw.homeSink)
+      ? {
+          rows: num(raw.homeSink.rows),
+          shelfIds: asArray<unknown>(raw.homeSink.shelfIds).filter((s): s is string => typeof s === 'string'),
+          boxes: num(raw.homeSink.boxes),
+          zones: asArray<unknown>(raw.homeSink.zones).filter((z): z is string => typeof z === 'string')
+        }
+      : null
   };
 }
 
@@ -1298,6 +1316,18 @@ export function migrateV0ToV1(save: SaveGame): SaveGame {
    */
   if (typeof run.intel !== 'number' || !Number.isFinite(run.intel)) run.intel = 1;
   if (run.intel < 0) run.intel = 0;
+  /*
+   * 水位（M4 W-05，2026-10 加的字段）。
+   *
+   * ★ 旧档没有它 —— 默认给 **0**，不是别的数：那时候还没有会淹水的机制，
+   * "这一局一排都没少"正是它们的真实情况（与 `intel` 那条相反，所以两条不能抄）。
+   * 上限按 `HOME_SINK_MAX_ROWS` 夹一次：这是个"只增不减"的账本，
+   * 而它进界面的方式之一是一句人话（"屋子已经少了 N 排"），
+   * 手改存档塞进一个 99 会让那句话变成胡说。
+   */
+  if (typeof run.homeSinkRows !== 'number' || !Number.isFinite(run.homeSinkRows)) run.homeSinkRows = 0;
+  if (run.homeSinkRows < 0) run.homeSinkRows = 0;
+  if (run.homeSinkRows > HOME_SINK_MAX_ROWS) run.homeSinkRows = HOME_SINK_MAX_ROWS;
     if (!run.phase) run.phase = 'organize';
     if (typeof run.day !== 'number') run.day = 0;
     if (!run.identityId) run.identityId = 'default';
