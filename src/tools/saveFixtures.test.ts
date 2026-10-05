@@ -50,12 +50,31 @@ function fixture(name: string): string {
 
 describe('测试存档', () => {
   it('四个档都在，而且都是当前版本、都能被 migrate 读回来', () => {
-    for (const name of ['100boxes', 'good', 'messy', 'big-house', 'empty-room', 'rows', 'shop-tour']) {
+    for (const name of ['100boxes', 'good', 'messy', 'big-house', 'empty-room', 'rows', 'shop-tour', 'day-event']) {
       const back = deserialize(fixture(name));
       expect(back, name).not.toBeNull();
       expect(back?.run, name).not.toBeNull();
       expect(back?.meta.version, name).toBe(SAVE_VERSION);
     }
+  });
+
+  it('★ day-event：人站在店里、门口那件事还没决定 —— 「购物篮与事件同时在」那一屏的走查位', () => {
+    /*
+     * 这份夹具是给"门口那件事还没决定，人已经站在店里"用的 —— 正是用户报
+     * 「买东西怎么没有那个装回车里的按钮了」时的那个局面。
+     *
+     * ★ 另外八份全是 `dayEvent = null` + `currentShopId = null`，屏幕上**到不了**
+     * 这一屏；而这一屏恰恰是底栏那条 `if (run.dayEvent)` 分支会把「搬回车上」
+     * 整个吃掉的地方。所以这一条不是在验"存档读得回来"（上面已经验过），
+     * 是在验**这份夹具还站在那个局面上** —— 谁把它改回 dayEvent=null、
+     * 或者把店里的货抽空，这条会先红。
+     */
+    const save = deserialize(fixture('day-event'));
+    expect(save?.run?.currentShopId, '人要站在店里').toBe('supermarket');
+    expect(save?.run?.dayEvent?.choice, '那件事要**还没**决定').toBeNull();
+    expect(save?.run?.dayEvent?.defId, '而且得是真的事件 id').toBe('d_queue_aunt');
+    const stock = save?.run?.shopStocks?.find((s) => s.shopId === 'supermarket');
+    expect((stock?.lines ?? []).filter((l) => l.stock > 0).length, '店里得有货可买').toBeGreaterThan(0);
   });
 
   it('★ rows：一块货架上真的贴着**不同的**胶带（行级颜色的验收位）', () => {

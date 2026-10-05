@@ -23,10 +23,12 @@ import { dirname, join } from 'node:path';
 
 import { BOX_DEFS } from '../src/data/boxes';
 import { FIRST_STOCKPILE_DAY } from '../src/data/disaster';
+import { getIdentityDef } from '../src/data/identities';
 import { CATEGORY_ORDER } from '../src/data/items';
 import { createCursor } from '../src/model/rng';
 import { makeStack, setSlotStack } from '../src/model/shelf';
 import { createSaveGame, serialize } from '../src/state/save';
+import { rollShopStocks } from '../src/systems/shop';
 import { createStartingRun, addFurniture, generateBoxStacks, nextBoxSeq } from '../src/systems/setup';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -317,6 +319,40 @@ function freshRun(seed = 20261001) {
   run.boxesToUnpack = makeBoxes(createCursor(run.seed), 6, run.day);
   const kb = write('shop-tour', run);
   console.log(`[make-save] shop-tour 现金 2000 / 行动点 6 / ${kb}KB   位置：囤货期 D-7（逛 9 个点位）`);
+}
+
+// ───────── ⑧ 站在店里 + 门口那件事还没决定（购物篮与事件同时在的那一屏） ─────────
+{
+  /*
+   * ★ 这一份是为了**底栏那一屏**：门口那件事还没决定，而人已经站在店里。
+   *
+   * 用户报过「买东西怎么没有那个装回车里的按钮了」—— 那正是底栏里
+   * `if (run.dayEvent)` 那条分支把购物篮（含「搬回车上」）整个吃掉的地方
+   * （见 `src/ui/ShopScreen.ts` 的 `renderDock`）。另外八份夹具全是
+   * `dayEvent = null` + `currentShopId = null`，屏幕上**到不了**这一屏。
+   *
+   * 库存走真实的 `rollShopStocks`（价格、库存、属于哪一天都是它算的）。
+   * ★ 别手拼 `lines` —— 我第一版少写了 `day` 字段，读档时那份库存被当成
+   * "过期的"重新生成，于是夹具里的价格与屏幕上的价格不是一回事。
+   *
+   * 门口那件事**刻意钉死**成 `d_queue_aunt`（排队）：这一份要的是那一屏的
+   * 布局，不是"随机到了哪个事件"—— `rollDayEvent` 对着这个种子完全可能
+   * 返回 null，那就没有这一屏可看了。
+   */
+  const run = freshRun();
+  run.identityId = 'group_buyer';
+  run.phase = 'stockpile_shop';
+  run.day = FIRST_STOCKPILE_DAY;
+  run.cash = 2000;
+  run.actionPoints = 6;
+  run.boxesToUnpack = makeBoxes(createCursor(run.seed), 6, run.day);
+  run.shopStocks = rollShopStocks(getIdentityDef('group_buyer'), createCursor(run.seed), run.day, run.disasterId);
+  run.currentShopId = 'supermarket';
+  run.dayEvent = { defId: 'd_queue_aunt', shopId: 'supermarket', choice: null, applied: null };
+  const kb = write('day-event', run);
+  console.log(
+    `[make-save] day-event 站在超市 / 门口那件事还没决定 / ${kb}KB   位置：囤货期 D-7（购物篮与事件同时在）`
+  );
 }
 
 console.log(`\n[make-save] 写好了 → ${outDir}`);

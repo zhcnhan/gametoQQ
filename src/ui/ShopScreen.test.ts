@@ -65,7 +65,13 @@ const PRICEY = pickPricey();
  * 而这一份只关心价格那条线。少一处依赖，坏的时候少一个嫌疑人。
  */
 function shopStore(
-  over: { priceFactor?: number; limit?: { category: string; max: number } | null; inShop?: boolean } = {}
+  over: {
+    priceFactor?: number;
+    limit?: { category: string; max: number } | null;
+    inShop?: boolean;
+    /** 摆一个**还没决定**的"门口那件事"（用真的 def id —— `findDayEvent` 得找得到它） */
+    dayEvent?: string;
+  } = {}
 ) {
   const run = createStartingRun(20261007);
   run.identityId = 'group_buyer';
@@ -94,6 +100,9 @@ function shopStore(
     }
   ] as never;
   run.currentShopId = over.inShop === false ? null : 'supermarket';
+  run.dayEvent = over.dayEvent
+    ? { defId: over.dayEvent, shopId: 'supermarket', choice: null, applied: null }
+    : null;
   return new GameStore(createSaveGame(run), stubScheduler());
 }
 
@@ -250,5 +259,72 @@ describe('物价压力 · 该出现什么、不该出现什么', () => {
 
     expect(text).toContain('限购');
     expect(text).toMatch(/贵\s*\d+%/);
+  });
+});
+
+/**
+ * ★★ 门口那件事与购物篮**同时在**的时候（用户 2026-10 报的那个 bug）
+ *
+ * ## 这一份钉住的是哪笔账
+ *
+ * 用户的原话是"现在买东西怎么没有那个装回车里的按钮了" —— 那枚按钮就是
+ * `data-action="load"` 的「搬回车上」。它曾经在**门口那件事还没决定**的时候整个消失。
+ *
+ * 根因不是按钮坏了，是一个**过期的假设**：
+ *
+ *  - 2026-10 那次改动把事件卡片从"独占整屏"改成"与货架同时画"（原话是
+ *    "事件发生也不影响正常采购"），于是玩家可以在事件还没决定的时候照样按 ＋ 装篮子；
+ *  - 而底栏 `renderDock` 里仍然留着 `if (run.dayEvent)` 那一条**接管**分支，
+ *    它成立的前提正是"事件独占整屏 → 购物车一定是空的"（那条注释当时就写在上面）。
+ *
+ * 两件事各自都对，合起来就是"篮子装满了却没有按钮把它搬回去"。
+ *
+ * 所以这里断言的落点是**那句话**：不管门口有没有事，**装了篮子就得能搬回车上**。
+ * 顺带钉住同一条路上的第二个坑：处理那件事时 `this.cart.clear()` 会把篮子**静静清空** ——
+ * 人留在店里的时候篮子必须还在（被退回点位列表时才跟着这一趟结束）。
+ */
+describe('门口那件事 · 与购物篮同时在的时候', () => {
+  /** 从根派发点击、并把 `target` 指到那枚元素（`el.dispatch('click')` 会让 target 变成它自己） */
+  function clickBtn(root: FakeElement, sel: string, nth = 0): void {
+    const el = root.querySelectorAll(sel)[nth];
+    if (!el) throw new Error(`找不到 ${sel}[${nth}] —— 这一条用例的前提没了`);
+    root.dispatch('click', { target: el });
+  }
+
+  it('★★ 事件还没决定：底栏照样有「搬回车上」，购物篮那一条也在', () => {
+    const { root } = mount({ dayEvent: 'd_queue_aunt' });
+
+    expect(
+      root.querySelectorAll('[data-action="load"]').length,
+      '那枚按钮就是玩家问的"装回车里的" —— 门口有事不是它消失的理由'
+    ).toBe(1);
+    expect(allText(root), '篮子的账也得跟着在：按下按钮之前要看得见花了多少').toContain('购物篮');
+    expect(root.querySelectorAll('.event-card').length, '事件卡片不能因此消失').toBe(1);
+  });
+
+  it('★★ 先装篮子、再处理那件事（留在店里）：篮子不许被静静清空', () => {
+    const { root, store } = mount({ dayEvent: 'd_queue_aunt' });
+
+    clickBtn(root, '[data-action="inc"]');
+    expect(allText(root), '前提：篮子里真的装了一件').toContain('购物篮 1 件');
+
+    clickBtn(root, '[data-day-choice="0"]'); // 「排到座」—— 留在店里
+
+    expect(store.run.dayEvent?.choice, '那件事得真的决定了').toBe(0);
+    expect(store.run.currentShopId, '这个选项不把人赶出店').toBe('supermarket');
+    expect(allText(root), '★ 篮子是他自己装的，不许因为处理了一件事就没了').toContain('购物篮 1 件');
+  });
+
+  it('★ 那件事把人退回点位列表（visitLost）：篮子跟着这一趟一起结束', () => {
+    const { root, store } = mount({ dayEvent: 'd_queue_aunt' });
+
+    clickBtn(root, '[data-action="inc"]');
+    clickBtn(root, '[data-day-choice="1"]'); // 「不排了，换一家」→ visitLost
+
+    expect(store.run.currentShopId, 'visitLost 的出口就是退回点位列表').toBe(null);
+    expect(
+      root.querySelectorAll('[data-action="load"]').length,
+      '已经不在店里了，没有可搬的东西 —— 这时候不该再给一枚点不动的按钮'
+    ).toBe(0);
   });
 });

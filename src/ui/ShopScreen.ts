@@ -382,60 +382,56 @@ export class ShopScreen implements Screen {
   private renderDock(): void {
     const run = this.store.run;
     const shopId = run.currentShopId;
-    // 门口有事的时候底栏只剩两条路：「回家整理」与（选完之后）「换一家」。
-    // 购物车这时候是空的，不该出现 —— 一个点不动的按钮比没有按钮更糟
-    if (run.dayEvent) {
-      const decided = run.dayEvent.choice !== null;
+    const view = shopId ? buildCartView(run, shopId, this.cartLines()) : null;
+
+    /*
+     * ★★ 底栏的主语是**篮子**，不是"门口那件事"。
+     *
+     * 2026-10 那次改动之后，事件卡片与货架是**同时画**的（见 `renderMain`：
+     * "门口那件事"与"进店买东西"本来就可以同时成立），于是玩家可以在那件事
+     * 还没决定的时候照样按 ＋ 装篮子。
+     *
+     * 而这里原来有一条 `if (run.dayEvent)` 把底栏整个接管掉 —— 它成立的前提是
+     * "事件独占整屏 → 购物车一定是空的"。那个前提已经不成立了，后果就是玩家的原话：
+     * 「现在买东西怎么没有那个装回车里的按钮了」。
+     *
+     * 现在倒过来：**有篮子就画篮子**；门口那件事只在还没决定时往退路里追加一枚
+     * 「先不进去」（它的选项在主区那张卡片上，不靠底栏）。
+     */
+    if (view) {
+      const decide = Boolean(run.dayEvent && run.dayEvent.choice === null);
+      const problem = view.problems[0];
+      const note = view.notes[0];
       this.dockEl.innerHTML = `
+        <div class="cart-bar">
+          <div class="cart-sum">
+            <b>购物篮 ${view.pieces} 件</b>
+            <em>${view.cost} 元 · ${view.weight}kg / 一趟上限 ${view.carryLimit}kg</em>
+          </div>
+        </div>
+        ${
+          problem
+            ? `<p class="cart-line is-problem">${escapeHtml(problem)}</p>`
+            : note
+              ? `<p class="cart-line">${escapeHtml(note)}</p>`
+              : `<p class="cart-line">还能再装 ${roundLeft(view.capacityLeft, view.weight)}kg 上车</p>`
+        }
         <div class="dock-tools">
-          ${
-            decided
-              ? `<button class="btn btn-primary" data-action="back">换一家</button>`
-              : `<button class="btn" data-action="leave-event">先不进去</button>`
-          }
+          <button class="btn btn-primary" data-action="load" ${view.canLoad ? '' : 'disabled'}>搬回车上</button>
+          ${decide ? '<button class="btn" data-action="leave-event">先不进去</button>' : ''}
           <button class="btn" data-action="home">回家整理</button>
         </div>
       `;
       return;
     }
-    if (!shopId) {
-      this.dockEl.innerHTML = `
-        <div class="dock-tools">
-          <button class="btn btn-primary" data-action="home">回家整理</button>
-        </div>
-      `;
-      return;
-    }
 
-    const view = buildCartView(run, shopId, this.cartLines());
-    if (!view) {
-      this.dockEl.innerHTML = `
-        <div class="dock-tools">
-          <button class="btn btn-primary" data-action="home">回家整理</button>
-        </div>
-      `;
-      return;
-    }
-
-    const problem = view.problems[0];
-    const note = view.notes[0];
+    // 没有篮子可搬（还没进店、这家店今天没开门、或者那件事把人退回了点位列表）：
+    // 这里只剩退路。那件事**选完了**才给一枚「换一家」当主按钮。
+    const decided = Boolean(run.dayEvent && run.dayEvent.choice !== null);
     this.dockEl.innerHTML = `
-      <div class="cart-bar">
-        <div class="cart-sum">
-          <b>购物篮 ${view.pieces} 件</b>
-          <em>${view.cost} 元 · ${view.weight}kg / 一趟上限 ${view.carryLimit}kg</em>
-        </div>
-      </div>
-      ${
-        problem
-          ? `<p class="cart-line is-problem">${escapeHtml(problem)}</p>`
-          : note
-            ? `<p class="cart-line">${escapeHtml(note)}</p>`
-            : `<p class="cart-line">还能再装 ${roundLeft(view.capacityLeft, view.weight)}kg 上车</p>`
-      }
       <div class="dock-tools">
-        <button class="btn btn-primary" data-action="load" ${view.canLoad ? '' : 'disabled'}>搬回车上</button>
-        <button class="btn" data-action="home">回家整理</button>
+        ${decided ? '<button class="btn btn-primary" data-action="back">换一家</button>' : ''}
+        <button class="btn${decided ? '' : ' btn-primary'}" data-action="home">回家整理</button>
       </div>
     `;
   }
@@ -464,8 +460,16 @@ export class ShopScreen implements Screen {
     if (dayChoice) {
       const index = Number(dayChoice.dataset['dayChoice']);
       if (!Number.isInteger(index)) return;
-      this.cart.clear();
-      this.consume(resolveDayEvent(this.store, index));
+      /*
+       * ★ 篮子不许因为"处理了一件事"就消失 —— 事件与购物篮现在是**同时**存在的
+       * （见 `renderDock` 那段）。只有这一趟真的到此为止（`visitLost` 把人退回
+       * 点位列表、`currentShopId` 变了）时才把篮子丢掉：那时它本来就无家可归，
+       * 而且 `enterShop` 下次进店也会清。
+       */
+      const before = this.store.run.currentShopId;
+      const result = resolveDayEvent(this.store, index);
+      if (this.store.run.currentShopId !== before) this.cart.clear();
+      this.consume(result);
       return;
     }
     if (!hit) return;

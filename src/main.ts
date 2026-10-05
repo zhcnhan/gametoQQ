@@ -756,6 +756,7 @@ if (import.meta.env.DEV) {
       | 'empty-room'
       | 'rows'
       | 'shop-tour'
+      | 'day-event'
       | 'perfect'
       | 'perfect-survival'
   ): Promise<void> => {
@@ -819,7 +820,7 @@ if (import.meta.env.DEV) {
   );
   console.info('[囤货末世] 走测用：__tunhuo.jump(day) 可以跳到任意一天（只在 dev 构建里存在）');
   console.info(
-    '[囤货末世] 走查用：__tunhuo.load("perfect" | "perfect-survival" | "good" | "messy" | "100boxes" | "big-house" | "empty-room" | "rows" | "shop-tour") 切到测试存档'
+    '[囤货末世] 走查用：__tunhuo.load("perfect" | "perfect-survival" | "good" | "messy" | "100boxes" | "big-house" | "empty-room" | "rows" | "shop-tour" | "day-event") 切到测试存档'
   );
   console.info(
     '[囤货末世] 走查用：__tunhuo.disaster("洪水") 换一场灾难（重铺屋子）；' +
