@@ -22,6 +22,7 @@
  */
 import { getBoxDef } from '../data/boxes';
 import { getDisasterDef } from '../data/disaster';
+import { identityWorkFactor } from '../data/identities';
 import {
   HELP_REQUEST_CHANCE,
   HELP_REQUEST_DEFS,
@@ -31,7 +32,7 @@ import {
 } from '../data/helpRequests';
 import { CATEGORY_LABELS } from '../data/items';
 import { getNpcDef } from '../data/npcs';
-import { workCostOf } from '../data/survival';
+import { workCostOf, round1 } from '../data/survival';
 import { dayLabel } from '../model/calendar';
 import { consumeCategory, countCategory } from '../model/consume';
 import { createCursor, nextFloat, pickEventAvoidingRecent, type RngCursor } from '../model/rng';
@@ -109,10 +110,16 @@ export function inspectRequest(run: RunState, def: HelpRequestDef): HelpShortfal
  * 所以这是一次额外的弯腰，而不是"多过了一天"。
  *
  * 体力见底的人会在这里被拦住，而那正是"没整理 + 没力气"该有的后果。
+ *
+ * ★ M4 W-06：这里也必须乘身份的省力系数。`workCostOf` 的**全部生产读点只有两处**
+ * —— 本函数与 `systems/survival.ts` 的日报 —— 只乘一处、漏一处的表现是
+ * "日报说少花了、隔天凑订单又没花"：两个数各自都"对"，所以不会有任何报错，
+ * 只有玩家觉得这个身份时灵时不灵。
  */
 export function searchCost(run: RunState, def: HelpRequestDef): number {
   const score = computeOrganizeScore(run.shelves, run.zones, run.boxesToUnpack, getDisasterDef(run.disasterId));
-  return workCostOf(score.placement, score.fefo, inspectRequest(run, def).pieces);
+  const base = workCostOf(score.placement, score.fefo, inspectRequest(run, def).pieces);
+  return round1(base * identityWorkFactor(run.identityId));
 }
 
 export type HelpEvent =

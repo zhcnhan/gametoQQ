@@ -6,6 +6,7 @@
  */
 import { getDisasterDef } from '../data/disaster';
 import { FURNITURE_DEFS, furnitureDefOf, furniturePriceOf } from '../data/furniture';
+import { handySlotLimitOf } from '../data/identities';
 import { CATEGORY_LABELS, getItemDef } from '../data/items';
 import { ZONE_COLORS } from '../data/palette';
 import { initAudio, isMuted, playSfx, setMuted } from '../fx/audio';
@@ -711,6 +712,13 @@ export class OrganizeScreen {
      */
     const emergencyCats = emergencyCategories(getDisasterDef(run.disasterId));
     const emergencyNames = emergencyCats.map((c) => CATEGORY_LABELS[c]).join('和');
+    /*
+     * ★ M4 W-06：顺手位的**上限随身份变**（`handySlotLimitOf`），所以这句空态提示
+     * 不能再说死"全屋只有这一块" —— 小区保安读到那句会以为界面坏了
+     * （他明明能标两块）。同一件事的两种说法就是 §2.19 那个形状，
+     * 只不过这次分家的是"文案"与"命令层的真实上限"。
+     */
+    const handyLimit = handySlotLimitOf(run.identityId);
     // 全中文台账。术语解释放 title（鼠标）＋点一下弹提示（手机没 hover，只能点）
     this.scoreEl.innerHTML = `
       <button class="score-item" data-action="explain" data-explain="归位率：你自己给胶带写的清单，东西有没有照放。只有被某张清单明确写进去的东西才算归位；贴了胶带但没写清单，和没贴一样是 0。" title="你自己给胶带写的清单，东西有没有照放。只有被清单明确写进去的才算归位；没写清单就不算。">
@@ -719,7 +727,7 @@ export class OrganizeScreen {
       <button class="score-item" data-action="explain" data-explain="快到期的先吃：同一块货架有没有按到期日排好，快到期的排在前面，也先被用掉" title="同一块货架有没有按到期日排好">
         <i>快到期的先吃</i><b>${f}%</b>
       </button>
-      <button class="score-item" data-action="explain" data-explain="急用的够不够得着：这一场要用的东西（${emergencyNames}）有多少放在顺手位上${handyCount === 0 ? '。你还没标过顺手位，点货架右上角的「顺手位」，全屋只有这一块' : ''}。体力见底那天，只有顺手位上的东西还够得到。" title="急用的东西有多少放在顺手位上">
+      <button class="score-item" data-action="explain" data-explain="急用的够不够得着：这一场要用的东西（${emergencyNames}）有多少放在顺手位上${handyCount === 0 ? `。你还没标过顺手位，点货架右上角的「顺手位」，${handyLimit > 1 ? `你可以标${handyLimit}块` : '全屋只有这一块'}` : ''}。体力见底那天，只有顺手位上的东西还够得到。" title="急用的东西有多少放在顺手位上">
         <i>急用的够不够得着</i><b>${e}%</b>
       </button>
       <button class="score-item" data-action="explain" data-explain="已上架：占了 ${view.score.stacks} 个格子，全房间一共 ${capacity} 格" title="已占用 ${view.score.stacks} 个格子，全房间共 ${capacity} 格">
@@ -807,6 +815,12 @@ export class OrganizeScreen {
   private shelfHtml(shelf: Shelf, index: number, view: OrganizeView): string {
     const tidy = view.tidyShelfIds.includes(shelf.id);
     /*
+     * ★ M4 W-06：顺手位的上限随身份变，而这一层是**逐架**渲染的
+     * （`shelfHtml` 会被调 N 次），所以每次现读一次 —— 它是纯查表的常数时间操作，
+     * 而把上限塞进 `OrganizeView` 会多出一条"视图构建者必须记得带上它"的约定。
+     */
+    const handyLimit = handySlotLimitOf(this.store.run.identityId);
+    /*
      * ★ 一方胶带只贴**一行**（用户拍板 2026-10）。
      *
      * 所以颜色不再是"整块货架一个色"，而是**一行一个色** ——
@@ -879,8 +893,8 @@ export class OrganizeScreen {
           ${tidy ? '<span class="tidy-badge">整整齐齐</span>' : ''}
           <button class="tape-btn${shelf.handyRank !== null ? ' is-handy' : ''}"
                   data-action="toggle-handy" data-shelf="${shelf.id}"
-                  title="${shelf.handyRank !== null ? '门口就是这块。再点一下撤下，可以换别的架' : '把这块标成门口的顺手位（全屋只有这一块）'}">
-            ${shelf.handyRank !== null ? '门口这块' : '顺手位'}
+                  title="${handyTitle(shelf.handyRank, handyLimit)}">
+            ${handyLabel(shelf.handyRank, handyLimit)}
           </button>
           <button class="tape-btn" data-action="edit-zone" data-shelf="${shelf.id}" aria-label="改这一架的胶带">
             ${iconSvg('tag')}<span>胶带</span>
@@ -1150,6 +1164,12 @@ export class OrganizeScreen {
           onDragMove: (point) => this.moveDrag(point),
           onDragEnd: (point) => this.endDrag(point),
           onCancel: () => this.cancelDrag()
+        }, {
+          /*
+           * ★ 格子自己滚不动（`.slot` 上是 `touch-action: none`，理由见 style.css）。
+           * 所以竖向滑动由手势层接管，交给这一块容器去滚 —— 它就是 `<main data-room>`。
+           */
+          scrollHost: this.roomEl
         })
       );
     });
@@ -1187,6 +1207,13 @@ export class OrganizeScreen {
           onDragMove: (point) => this.moveDrag(point),
           onDragEnd: (point) => this.endDrag(point),
           onCancel: () => this.cancelDrag()
+        }, {
+          /*
+           * 纸箱也在 `.dock-boxes` 里、同样 `touch-action: none`。
+           * 但**滚动的是屋子**（`roomEl`）而不是那一栏：手机上手指落在箱子上往下划，
+           * 想要的是看见下面的货架 —— 那一栏本来就只占一屏的一角。
+           */
+          scrollHost: this.roomEl
         })
       );
     });
@@ -1956,6 +1983,36 @@ export class OrganizeScreen {
 
 function slotSelector(shelfId: string, pos: SlotPos): string {
   return `[data-slot][data-shelf="${shelfId}"][data-row="${pos.row}"][data-col="${pos.col}"]`;
+}
+
+/**
+ * ★ M4 W-06：顺手位按钮上的三个字。
+ *
+ * 上限是 1 时（绝大多数身份）与原来**一模一样**（`门口这块` / `顺手位`）——
+ * 这是刻意的：小区保安那条天赋是"全屋唯一"的**破例**，
+ * 如果为了它把所有人都改成"第 1 块 / 第 2 块"，那条破例就变成了新的常态，
+ * 而 §12.3 v0.7.1 玩家拍板的正是"门口那块本该只有一个答案"。
+ *
+ * 上限是 2 时才需要第二档文案：标了第一块的叫"门口这块"，
+ * 第二块得有个**不叫门口**的说法 —— 保安的第二块是"巡逻路线上的那一块"。
+ * 两块的顺位仍然有意义（`Shelf.handyRank`），所以文案要能看出哪块是第一块。
+ */
+function handyLabel(rank: number | null, limit: number): string {
+  if (rank === null) return '顺手位';
+  if (limit <= 1) return '门口这块';
+  return rank === 1 ? '门口这块' : '第二块';
+}
+
+/** 顺手位按钮的 `title`（鼠标党只有这一条路能问"再点一下会发生什么"） */
+function handyTitle(rank: number | null, limit: number): string {
+  if (rank !== null) {
+    return limit > 1
+      ? '这一块算顺手位。再点一下撤下，可以换别的架'
+      : '门口就是这块。再点一下撤下，可以换别的架';
+  }
+  return limit > 1
+    ? `把这块标成顺手位（你是${limit === 2 ? '小区保安，能标两块' : `能标${limit}块`}）`
+    : '把这块标成门口的顺手位（全屋只有这一块）';
 }
 
 function escapeHtml(text: string): string {

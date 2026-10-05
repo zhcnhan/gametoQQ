@@ -48,6 +48,8 @@ export const EMPTY_SURVIVAL_SNAPSHOT: SurvivalSnapshot = {
   fromBoxes: 0,
   unreachable: 0,
   workCost: 0,
+  // M4 W-06：零值 = "这个身份没有翻找省力的天赋"，也正是绝大多数身份的值
+  workSaved: 0,
   hardPress: false,
   hardPressLevel: 'none',
   usedMedicine: 0,
@@ -370,6 +372,14 @@ function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
 
-function round1(value: number): number {
+/**
+ * 四维与劳作都是**一位小数**的口径（`deltas` / `workCost` 都走它）。
+ *
+ * ★ 导出它是因为"在哪一层乘身份天赋"这件事需要**两处都按同一个口径收尾**
+ * （`systems/survival.ts` 的日报、`systems/help.ts` 的凑订单成本）。
+ * 一处 `round1`、一处裸乘的表现是同一件活在两屏上差 0.1 点 ——
+ * 玩家不会为此报 bug，但账永远对不上。
+ */
+export function round1(value: number): number {
   return Math.round(value * 10) / 10;
 }

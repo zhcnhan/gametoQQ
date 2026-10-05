@@ -373,7 +373,39 @@ export interface DayForecast {
 export type PerkRule =
   | { kind: 'none' }
   /** 指定品类打折：rate = 0.15 表示便宜 15% */
-  | { kind: 'categoryDiscount'; categories: CategoryId[]; rate: number };
+  | { kind: 'categoryDiscount'; categories: CategoryId[]; rate: number }
+  /**
+   * ★ M4 W-06：**翻找这件活本身更省力**。`rate` 是"体力成本还剩几成"，
+   * 0.8 = 装卸工少花两成体力。公式见 `data/survival.ts` 的 `workCostOf`。
+   *
+   * ## 为什么这一条必须存在（W-06 的问题陈述）
+   *
+   * 十个身份的天赋**全是** `categoryDiscount`，唯一执行点在 `systems/shop.ts`。
+   * 而 `data/identities.ts` 自己写着"失衡红线：只要『囤什么都行』成立，
+   * 整理就失去意义"—— 现状却是**所有身份都在改"囤什么划算"，
+   * 没有一个改"整理划不划算"**。也就是说：整理这件核心机制，
+   * 在这一局的十种开局里没有任何一种与它产生关系。
+   *
+   * ## 为什么不是"加一个第三格空间"这类更显眼的东西
+   *
+   * 天赋要改的是**取舍的形状**，不是数值的多少。装卸工少花的两成体力
+   * 恰好落在 `workCostOf` 的 1.5~4.5 区间上，也就是"乱堆 → 净亏 15 点"
+   * 这条最陡的坡上 —— 同一个乱屋子，他亏的是 12 点而不是 15 点。
+   * 它**不会**让乱堆变得划算（那才是改坏），只让"今天先不整理"的代价轻一点。
+   */
+  | { kind: 'workCostFactor'; rate: number }
+  /**
+   * ★ M4 W-06：**多一块"顺手位"**（`Shelf.handyRank` 的顺位 +1）。
+   *
+   * §12.3 v0.7.1 把顺手位定成**全屋唯一**（"能标两块就会有人全标上"），
+   * 所以这一条是**唯一**允许破例的地方 —— 而破例的理由正是"身份"：
+   * 小区保安看了六年门，他知道的第二个入口是别人不知道的。
+   *
+   * ⚠ 它加的是**上限**，不是"多给一块"：两块都还是要玩家自己在整理页点出来
+   * （`toggleHandy`），而且两块是**有顺位的** —— 体力见底那天数的仍然是
+   * `countOnHandy`，两块都算，所以"标哪两块"从没得选变成了一个真问题。
+   */
+  | { kind: 'extraHandySlot' };
 
 export interface IdentityDef {
   // 随机身份
@@ -390,7 +422,19 @@ export interface IdentityDef {
    * vehicleCapacity 决定"这一整天总共能带回家多少"。
    */
   carryLimit: number;
-  perk: string; // '加油站夜班：燃料价格 -20%'
+  /**
+   * 天赋的**展示文案**（'加油站夜班：燃料价格 -20%'）。
+   *
+   * ★ M4 W-06 定下的关系：`perkRule` 是**唯一被执行的那一条**，`perk` 是**给人看的那句话**。
+   * 一个身份只有一个 `perkRule`，但可以有好几条天赋 —— 于是约定是
+   * **"`perk` 必须含有 `perkText(perkRule)`，剩下的部分是附加文案"**，
+   * 由 `data/identities.test.ts` 逐条核对。
+   *
+   * 为什么不是"`perk` 完全由 `perkRule` 生成"：`warehouse_porter` 与 `security_guard`
+   * 的附加那一条（工友价、业主关系）**是真的在数据里的**，只是没有第二格规则可挂；
+   * 删掉它们等于悄悄削弱这两个身份，而扩成 `PerkRule[]` 又要动存档与全部读点。
+   */
+  perk: string;
   perkRule: PerkRule;
   /** 内容分层，见 `ContentTier`。身份的分层就是 §10B.3 的**解锁批次**（开局 2 个 → 随成就解锁） */
   tier: ContentTier;
@@ -780,6 +824,14 @@ export interface SurvivalSnapshot {
   unreachable: number;
   /** 今天的翻找劳作吃掉了多少体力（正数 = 消耗）。整理质量越差这个数越大（§6.4「乱 → 翻找耗时」） */
   workCost: number;
+  /**
+   * ★ M4 W-06：身份替你省下的那一截劳作（没有"翻找省力"那条天赋的身份恒为 0）。
+   *
+   * 它是 §10.1A 那条铁则的落点 —— "只改数字的机制必须同时有非数字表达"：
+   * 装卸工的两成减免如果只体现在 `workCost` 变小上，玩家**永远不知道**
+   * 那是身份给的还是今天东西取得少。日报会说一句"装卸工的力气省下 1.8 点"。
+   */
+  workSaved: number;
   /** 今天是不是在硬撑（体力 / 健康 / 心情跌破线，见 data/survival.ts 的三条阈值） */
   hardPress: boolean;
   /** 今天是硬撑里的哪一档（`'none'` = 没在硬撑）。界面按它决定说"硬撑"还是"快垮了" */

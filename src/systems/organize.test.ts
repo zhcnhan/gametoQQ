@@ -72,6 +72,68 @@ describe('顺手位（§5「门口那一块」，全屋唯一 · §12.3 v0.7.1�
     const { store } = setup();
     expect(toggleHandy(store, 'shelf_nope').ok).toBe(false);
   });
+
+  /*
+   * ★★ M4 W-06：上限**随身份变**。
+   *
+   * 上面那两条断言（radio 语义、让位）现在是"**普通身份**的行为"——
+   * 它们仍然必须成立，因为绝大多数的十个身份都是上限 1。
+   * 这一组补的是小区保安那一档（`{ kind: 'extraHandySlot' }`）。
+   *
+   * 为什么这件事值得两条用例：`toggleHandy` 是**唯一**决定 `handyRank` 取几的地方，
+   * 而存档层的 `normalizeShelves` 按 `HANDY_SLOTS = 2` 钳制、**看不见身份** ——
+   * 也就是说"保安的第二块到底算不算数"完全由这个函数回答。
+   * 它一旦退回"永远让位"，表现只是保安标不上第二块，不会有任何报错。
+   */
+  it('★ 保安（extraHandySlot）能同时标两块，而且顺位分得清 1 和 2', () => {
+    const { store } = setup();
+    store.run.identityId = 'security_guard';
+    const ids = store.run.shelves.slice(0, 3).map((s) => s.id);
+
+    expect(toggleHandy(store, ids[0] as string).ok).toBe(true);
+    expect(store.run.shelves.find((s) => s.id === ids[0])?.handyRank).toBe(1);
+
+    expect(toggleHandy(store, ids[1] as string).ok).toBe(true);
+    // ★ 关键：第二块**不赶走**第一块 —— 上限没满就占下一个空位
+    expect(store.run.shelves.find((s) => s.id === ids[1])?.handyRank).toBe(2);
+    expect(store.run.shelves.find((s) => s.id === ids[0])?.handyRank).toBe(1);
+    expect(store.run.shelves.filter((s) => s.handyRank !== null)).toHaveLength(2);
+
+    // 满了之后才回到 radio 语义：标第三块时前两块一起让位
+    expect(toggleHandy(store, ids[2] as string).ok).toBe(true);
+    expect(store.run.shelves.find((s) => s.id === ids[2])?.handyRank).toBe(1);
+    expect(store.run.shelves.filter((s) => s.handyRank !== null)).toHaveLength(1);
+  });
+
+  it('★ 保安撤下第一块之后，再标的那一块**补回 1 号位**（不会出现两个 rank 1，也不会两块都是 2）', () => {
+    const { store } = setup();
+    store.run.identityId = 'security_guard';
+    const ids = store.run.shelves.slice(0, 3).map((s) => s.id);
+
+    toggleHandy(store, ids[0] as string); // rank 1
+    toggleHandy(store, ids[1] as string); // rank 2
+    toggleHandy(store, ids[0] as string); // 撤下第一块 → 只剩 rank 2 那一块
+    toggleHandy(store, ids[2] as string); // 空出来的 1 号位应该被补上
+
+    /*
+     * ⚠ 这条用例抓到过一个真实现缺陷：第一版按"已占用数 + 1"给顺位，
+     * 撤掉 1 号位之后已占用数是 1 → 新那块也拿 **2**，于是两块都是 rank 2、1 号位空着。
+     * 后果不是报错，是 `model/score.ts` 的 `emergencyRate` 少算了"最顺手的那一块"。
+     */
+    const ranks = store.run.shelves
+      .filter((s) => s.handyRank !== null)
+      .map((s) => s.handyRank)
+      .sort((a, b) => (a ?? 0) - (b ?? 0));
+    expect(ranks).toEqual([1, 2]);
+  });
+
+  it('★ 普通身份仍是上限 1：保安那条天赋不是偷偷放宽给所有人的', () => {
+    const { store } = setup();
+    const ids = store.run.shelves.slice(0, 2).map((s) => s.id);
+    toggleHandy(store, ids[0] as string);
+    toggleHandy(store, ids[1] as string);
+    expect(store.run.shelves.filter((s) => s.handyRank !== null)).toHaveLength(1);
+  });
 });
 
 function firstBoxId(store: GameStore, index = 0): string {

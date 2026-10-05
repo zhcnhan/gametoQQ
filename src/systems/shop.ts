@@ -19,7 +19,7 @@
  */
 import { BOX_DEFS, getBoxDef, type BoxDef } from '../data/boxes';
 import { DAY_EVENT_DEFS, dayEventWeight, dayPriceFactor, findDayEvent, noneWeightFor } from '../data/dayEvents';
-import { getIdentityDef } from '../data/identities';
+import { getIdentityDef, identityCategoryRate } from '../data/identities';
 import { LEVEL_BONUS_PER_STEP } from './identity';
 import { getItemDef } from '../data/items';
 import { SHOP_DEFS, actionCostOf, getShopDef } from '../data/shops';
@@ -83,13 +83,14 @@ export function roundKg(value: number): number {
  * 当天单价 = 基准价 × 点位系数 × 身份折扣。
  * 折扣只按"品类"打折（§7 的 perk 例子就是"燃料价格 -20%"），不做逐件特例 ——
  * 规则越少，玩家越容易在脑子里算清这笔账，这才是"规划乐趣"。
+ *
+ * ★ M4 W-06：折扣判定搬到了 `data/identities.ts` 的 `identityCategoryRate`。
+ * 原来这里与 `systems/trade.ts` 各写了一遍同一个 `if`，
+ * 而"加了身份"最容易漏的正是这种地方 —— 它不会报错，只会让某一条路悄悄不打折。
  */
 export function priceOf(item: ItemDef, shop: ShopDef, identity: IdentityDef): number {
   let price = item.basePrice * shop.priceFactor;
-  const rule = identity.perkRule;
-  if (rule.kind === 'categoryDiscount' && rule.categories.includes(item.category)) {
-    price *= 1 - rule.rate;
-  }
+  price *= 1 - identityCategoryRate(identity.id, item.category);
   return Math.max(1, Math.round(price));
 }
 

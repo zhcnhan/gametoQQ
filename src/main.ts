@@ -359,6 +359,60 @@ document.addEventListener('visibilitychange', () => {
 });
 
 /**
+ * ★★ 剪贴板守卫（玩家 2026-10 报的）：
+ *
+ * > "记得屏蔽复制粘贴，不然我从箱子里拖出东西的时候会复制粘贴箱子的名字"
+ *
+ * ## 为什么"拖一下就会复制到名字"
+ *
+ * 拖拽起手时手指/鼠标按在纸箱上并移动，浏览器把这一串当成**一次文本选择**。
+ * 松手之后剪贴板里就躺着"纸箱 · 未拆"这几个字，或者右键菜单里赫然只有"复制"。
+ * 玩家甚至不需要按 Ctrl+C —— 桌面端选中即复制（X11 风格）在某些环境里正是这个表现。
+ *
+ * `.screen` 上早就有 `user-select: none`，但那是**继承**来的：任何一层想选就能打开
+ * （`.field input` 正是这么做的，而它是对的）。所以这里补一道**不依赖样式**的防线 ——
+ * 样式管"看起来能不能选"，这一道管"选中了也拿不走"。
+ *
+ * ## 为什么五个事件都要拦
+ *
+ * | 事件 | 它单独漏掉的后果 |
+ * | --- | --- |
+ * | `copy` / `cut` | Ctrl+C、右键"复制" |
+ * | `paste` | input 里被粘进一整行无关文字 |
+ * | `dragstart` | ★ 桌面端按住物品拖动会触发**原生 HTML 拖拽**，它会发 `pointercancel`，把我们的手势打断 —— 玩家报的"正常拖动又不正常"的另一半 |
+ * | `contextmenu` | 右键菜单里那两条（复制 / 在网上搜索）就是这个游戏最不需要的东西 |
+ *
+ * ## 唯一的例外
+ *
+ * `isEditable(target)` —— 输入框、文本域、`contenteditable`。
+ * 这一条不能省：改名输入框里 Ctrl+V 是必须能用的，
+ * 而"整站禁掉粘贴"会把它一起杀掉，且**没有任何测试会发现**（那个框在弹层里）。
+ */
+function isEditable(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  const tag = target.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+}
+
+function installClipboardGuard(): void {
+  /** 拦掉默认行为，并把"是谁干的"留在控制台上（截图里没有剪贴板，只能靠这一行） */
+  const block = (type: string) => (e: Event) => {
+    if (isEditable(e.target)) return;
+    e.preventDefault();
+    // eslint-disable-next-line no-console
+    if ((window as unknown as Record<string, unknown>)['__tunhuoTrace']) {
+      console.log(`[剪贴板守卫] 拦下 ${type}`);
+    }
+  };
+  for (const type of ['copy', 'cut', 'paste', 'dragstart', 'contextmenu']) {
+    document.addEventListener(type, block(type));
+  }
+}
+
+installClipboardGuard();
+
+/**
  * ★★ 换灾难的**生产构建也能用**的那条路（2026-10 补，用户的走查卡在这里）。
  *
  * ## 为什么必须有它

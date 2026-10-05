@@ -12,6 +12,7 @@
  */
 import { SURVIVAL_DAYS, getDisasterDef, outdoorTemp } from '../data/disaster';
 import { findEmergency } from '../data/emergencies';
+import { getIdentityDef } from '../data/identities';
 import { CATEGORY_LABELS, getItemDef } from '../data/items';
 import { SHELTER_SLEEP_LINE, STAMINA_RECOVER, dailyDrainOf, moodFromPlacement, organizeQuality } from '../data/survival';
 import { playSfx } from '../fx/audio';
@@ -271,6 +272,22 @@ export class SurvivalScreen implements Screen {
           翻找耗掉 ${last.workCost} 点体力，睡一觉回来 ${STAMINA_RECOVER} 点。
           ${last.workCost > STAMINA_RECOVER ? '<b>今天是净亏的。</b>' : ''}
         </p>
+        ${
+          /*
+           * ★ M4 W-06（§10.1A 铁则的落点）：身份替你省下的那一截**必须说出来**。
+           *
+           * 装卸工的"翻找省力 20%"如果只体现在上面那个数字比昨天小，
+           * 玩家**永远分不清**那是身份给的还是今天东西取得少 ——
+           * 而"分不清"就等于这一条天赋不存在。所以这里指名道姓地补一句，
+           * 并把它绑在**身份名**上（不是绑在天赋文案上）：玩家读到的是
+           * "我选的那个人在起作用"，那才是这一条要传达的东西。
+           */
+          last.workSaved > 0
+            ? `<p class="block-note">${
+                escapeHtml(getIdentityDef(run.identityId).name)
+              }的力气比一般人省，这一趟少花 ${last.workSaved} 点。</p>`
+            : ''
+        }
         ${
           last.unreachable > 0
             ? `<p class="press-line">有 ${last.unreachable} 件东西明明就在屋里，今天却没力气翻出来。</p>`

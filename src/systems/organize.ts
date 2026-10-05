@@ -7,6 +7,7 @@
  */
 import { getBoxDef, STRAY_BOX_ID } from '../data/boxes';
 import { getDisasterDef } from '../data/disaster';
+import { handySlotLimitOf } from '../data/identities';
 import { FURNITURE_STANDARD_PRICE, furniturePriceOf } from '../data/furniture';
 import { CATEGORY_ORDER, getItemDef } from '../data/items';
 import { DEFAULT_ZONE_COLOR } from '../data/palette';
@@ -963,11 +964,29 @@ export function toggleHandy(store: GameStore, shelfId: string): CommandResult {
   if (!shelf) return reject('货架不存在');
 
   const current = shelf.handyRank;
+  const limit = handySlotLimitOf(run.identityId);
   store.commit((draft) => {
     const target = draft.shelves[idx];
     if (!target) return;
     if (current !== null) {
       target.handyRank = null;
+    } else if (draft.shelves.filter((s) => s.handyRank !== null).length < limit) {
+      /*
+       * ★ 还有空位：占**最小的那个空位号**，不赶走已经标好的那块。
+       *
+       * ⚠ 这里必须是"找最小的空位"而不是"已占用数 + 1"（第一版就是后者，被自己的
+       * 用例抓住）：撤掉 1 号位之后两个数都是 1、但含义不同 ——
+       * 用计数会得到 `[2, 2]`，于是**两块都是 rank 2**，而 rank 1 空着。
+       *
+       * 后果不是报错，是 `model/score.ts` 的 `emergencyRate` 排错序：
+       * §6.3 那一维按 `handyRank` 从先到后数，两块同号时顺序就不确定了 ——
+       * 玩家看到的是"应急率忽然掉了几个点"，原因在别的屏上。
+       * 顺位是**排序键**，不是编号，所以"1 号位空着"这件事本身没有意义。
+       */
+      const used = new Set(draft.shelves.map((s) => s.handyRank).filter((r): r is number => r !== null));
+      let rank = 1;
+      while (rank < limit && used.has(rank)) rank += 1;
+      target.handyRank = rank;
     } else {
       for (const s of draft.shelves) s.handyRank = null;
       target.handyRank = 1;

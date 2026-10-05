@@ -137,6 +137,12 @@ export function chooseIdentity(store: GameStore, identityId: string): PhaseResul
     draft.dayEvent = null;
     draft.shopStocks = rollShopStocks(identity, cursor, FIRST_STOCKPILE_DAY, draft.disasterId);
     draft.seed = cursor.state;
+    /*
+     * 开局日志写**完整的那句**（`identity.perk`），不是只写 `perkText(perkRule)` ——
+     * 装卸工、小区保安各有第二条天赋（工友价、业主关系）只活在文案里，
+     * 只写规则生成的那半句会让日志看起来比身份卡少一条。
+     * "文案里必须含有规则那半句"由 `data/identities.test.ts` 逐条兜住。
+     */
     draft.log.push(
       `${dayLabel(FIRST_STOCKPILE_DAY)} · ${identity.name}${
         start.level > 1 ? ` Lv${start.level}` : ''

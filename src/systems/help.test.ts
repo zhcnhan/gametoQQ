@@ -7,7 +7,7 @@
  * 这个系统就退化成"扣三件东西换个 toast"。
  */
 import { describe, expect, it } from 'vitest';
-import { EMPTY_SURVIVAL_SNAPSHOT } from '../data/survival';
+import { EMPTY_SURVIVAL_SNAPSHOT, round1 } from '../data/survival';
 import { countCategory } from '../model/consume';
 import { makeStack, setSlotStack } from '../model/shelf';
 import type { RunState } from '../model/types';
@@ -154,6 +154,30 @@ describe('求援订单：交付与婉拒', () => {
 
     expect(searchCost(open.run, def)).toBe(searchCost(bare.run, def));
     expect(searchCost(open.run, def)).toBe(9.9);
+  });
+
+  it('★ W-06：装卸工「翻找省力 20%」也管凑单 —— 同一个数是两处乘的', () => {
+    /*
+     * `workCostOf` 的生产读点只有两处：`systems/survival.ts` 的日报与这里的
+     * `searchCost`。**一处乘、一处不乘的表现是"日报说少花了、隔天凑订单又没花"** ——
+     * 两个数各自都"对"，所以不会有任何报错，只有玩家觉得这个身份时灵时不灵。
+     *
+     * 所以这条用例守的不是某个数字，是**两个读点必须同口径**：这里钉住凑单那半，
+     * `survival.test.ts` 钉住日报那半。
+     */
+    const def = getHelpRequestDef('q_wang_medicine');
+    const plain = storeAtDoor(); // 默认 group_buyer
+    give(plain.run, 'bandage', 3);
+
+    const porter = storeAtDoor();
+    porter.run.identityId = 'warehouse_porter';
+    give(porter.run, 'bandage', 3);
+
+    expect(searchCost(plain.run, def)).toBe(9.9);
+    // ⚠ 乘数**先乘再 `round1`**（与日报同口径）：`9.9 × 0.8 = 7.92` 记成 `7.9`。
+    // 先 round 再乘会得到 7.92 → 也是 7.9，看着一样，但那是巧合 —— 不写死这条，
+    // 将来 base 变成 3 位小数时两处会差 0.1，而两个数各自都"对"。
+    expect(searchCost(porter.run, def)).toBe(round1(9.9 * 0.8));
   });
 });
 

@@ -7,7 +7,8 @@
  *
  * 相对 §7 的两处字段扩展（carryLimit / perkRule）理由写在 model/types.ts 的对应注释里。
  */
-import type { IdentityDef } from '../model/types';
+import { CATEGORY_LABELS } from './items';
+import type { CategoryId, IdentityDef, PerkRule } from '../model/types';
 
 export const IDENTITY_DEFS: readonly IdentityDef[] = [
   {
@@ -45,7 +46,7 @@ export const IDENTITY_DEFS: readonly IdentityDef[] = [
     startCash: 820,
     vehicleCapacity: 46,
     carryLimit: 18,
-    perk: "职业习惯：医疗品便宜 25%",
+    perk: "职业习惯：医疗便宜 25%",
     perkRule: {
       kind: "categoryDiscount",
       categories: ["medicine"],
@@ -77,7 +78,7 @@ export const IDENTITY_DEFS: readonly IdentityDef[] = [
     startCash: 1150,
     vehicleCapacity: 42,
     carryLimit: 12,
-    perk: "旧物人缘：奢侈品便宜 30%",
+    perk: "旧物人缘：享受便宜 30%",
     perkRule: {
       kind: "categoryDiscount",
       categories: ["luxury"],
@@ -93,12 +94,19 @@ export const IDENTITY_DEFS: readonly IdentityDef[] = [
     startCash: 680,
     vehicleCapacity: 72,
     carryLimit: 30,
-    perk: "工友价：保暖与燃料便宜 10%",
-    perkRule: {
-      kind: "categoryDiscount",
-      categories: ["warmth", "fuel"],
-      rate: 0.1
-    },
+    /*
+     * ★ W-06：这个身份的天赋**不再是折扣**，而是"每趟翻找少花两成体力"。
+     *
+     * 为什么必须是它：十个身份原来的天赋全是 `categoryDiscount`，全部只在
+     * `systems/shop.ts` 生效 —— 也就是**所有身份都在改"囤什么划算"，
+     * 没有一个改"整理划不划算"**。而这份文件开头自己写着失衡红线：
+     * 只要"囤什么都行"成立，整理就失去意义。这条天赋是那条红线上的第一个例外。
+     *
+     * ⚠ 一个身份只能有一个 `perkRule`。所以"保暖与燃料便宜 10%"（原来那条）
+     * 降级成**附加文案**留在 `perk` 里，不再被执行 —— 别把它当成还在生效的规则。
+     */
+    perk: "力气是本钱：翻找省力 20% · 工友价：保暖与燃料便宜 10%",
+    perkRule: { kind: "workCostFactor", rate: 0.8 },
     tier: 3,
     decision: "钱最少但力气最大，一天能搬别人两天的量，问题是搬什么回来"
   },
@@ -109,12 +117,19 @@ export const IDENTITY_DEFS: readonly IdentityDef[] = [
     startCash: 760,
     vehicleCapacity: 50,
     carryLimit: 20,
-    perk: "业主关系：饮水与保暖便宜 15%",
-    perkRule: {
-      kind: "categoryDiscount",
-      categories: ["water", "warmth"],
-      rate: 0.15
-    },
+    /*
+     * ★ W-06：唯一一个把顺手位上限抬到 2 的身份。
+     *
+     * §12.3 v0.7.1 把顺手位定成"全屋唯一"（玩家实测后拍板：能标两块就会有人全标上），
+     * 所以这是一处**刻意的破例**，破例的理由必须具体到这个人的经历上：
+     * 看了六年门的人知道别人不知道的入口。
+     *
+     * ⚠ 它只抬**上限**，不替玩家标 —— 两块仍然要玩家自己在整理页点出来，
+     * 而且**有顺位**（1 号位排在前面，`model/score.ts` 的应急率按它从先到后数）。
+     * 同上一处：饮水与保暖的 15% 降级成附加文案。
+     */
+    perk: "看了六年门：顺手位可以标两块 · 业主关系：饮水与保暖便宜 15%",
+    perkRule: { kind: "extraHandySlot" },
     tier: 2,
     decision: "什么都会一点但没有长项，这局要靠不犯错赢"
   },
@@ -125,7 +140,7 @@ export const IDENTITY_DEFS: readonly IdentityDef[] = [
     startCash: 790,
     vehicleCapacity: 45,
     carryLimit: 15,
-    perk: "布料渠道：保暖品便宜 25%",
+    perk: "布料渠道：保暖便宜 25%",
     perkRule: {
       kind: "categoryDiscount",
       categories: ["warmth"],
@@ -159,7 +174,7 @@ export const IDENTITY_DEFS: readonly IdentityDef[] = [
     startCash: 660,
     vehicleCapacity: 38,
     carryLimit: 10,
-    perk: "认得每一盒：医疗品便宜 35%",
+    perk: "认得每一盒：医疗便宜 35%",
     perkRule: {
       kind: "categoryDiscount",
       categories: ["medicine"],
@@ -181,4 +196,112 @@ export function getIdentityDef(identityId: string): IdentityDef {
 
 export function hasIdentityDef(identityId: string): boolean {
   return IDENTITY_BY_ID.has(identityId);
+}
+
+// ———————— 天赋读点：给 systems / ui 问的那几个问题 ————————
+
+/**
+ * ★★ 这一组读点**收 `identityId: string` 并且认不出时给默认值，绝不抛**。
+ *
+ * 原设计收 `IdentityDef`（调用方先 `getIdentityDef(id)`），看着更类型安全 ——
+ * 一接上就红了 **37 条**：`getIdentityDef('')` 会
+ * `throw new Error('未知身份 id: ')`，而单测里满屏都是
+ * `{ ...run, identityId: '' }` 这种骨架状态。
+ *
+ * 教训值得单独记：**一个"设了默认值但会抛"的查询比没有默认值更糟** ——
+ * 它看起来安全，实际不是。所以这里四件事一起做：
+ * 收 id（不逼调用方先查表）、认不出给中性值（0 折扣 / 1 倍成本 / 1 个位置）、
+ * 经同一个 `perkRuleOf` 出口、并且都有 `data/identities.test.ts` 逐条钉住。
+ */
+function perkRuleOf(identityId: string): PerkRule | null {
+  return IDENTITY_BY_ID.get(identityId)?.perkRule ?? null;
+}
+
+/** 这个身份的某品类折扣。`0` = 不打折（认不出身份也是 0） */
+export function identityCategoryRate(identityId: string, category: CategoryId): number {
+  const rule = perkRuleOf(identityId);
+  if (rule?.kind !== 'categoryDiscount') return 0;
+  return rule.categories.includes(category) ? rule.rate : 0;
+}
+
+/**
+ * 这个身份翻找劳作的**成本乘数**：`0.8` = 少花两成。
+ *
+ * ⚠ 它只能在读点上乘（`systems/survival.ts` 的日报、`systems/help.ts` 的凑单），
+ * **不能塞进 `data/survival.ts` 的 `workCostOf`** —— 那是 §6.4 的基准账
+ * （1.0→9.0 / 0.5→18.0 / 0.0→27.0），三条永久回归探针照着它算。
+ * 一处乘一处不乘的表现是"日报说少花了、隔天凑订单又没花"，
+ * 两个数各自都"对"，所以不会有任何报错。
+ */
+export function identityWorkFactor(identityId: string): number {
+  const rule = perkRuleOf(identityId);
+  return rule?.kind === 'workCostFactor' ? rule.rate : 1;
+}
+
+/**
+ * 顺手位**玩法上限**（§12.3 v0.7.1 定的"全屋唯一"，`extraHandySlot` 是唯一破例）。
+ *
+ * ⚠ 与 `model/shelf.ts` 的 `HANDY_SLOTS` 分工不同：那个是**容量**，存档层按它钳制、
+ * 看不见身份（否则 `save → data/identities` 就成了一条反向依赖）；
+ * 这个只在命令层与界面被问 —— 也就是"这一局允许标几块"。
+ */
+export function handySlotLimitOf(identityId: string): number {
+  const rule = perkRuleOf(identityId);
+  return rule?.kind === 'extraHandySlot' ? 2 : 1;
+}
+
+// ———————— 天赋文案：从规则文字化 ————————
+
+/**
+ * 品类的中文名。
+ *
+ * ★ **刻意从 `data/items.ts` 的 `CATEGORY_LABELS` 取，不在这里另写一份。**
+ *
+ * 这里原来有一份自己的小表，而它与 `CATEGORY_LABELS` 有**两处不一致**：
+ * 它写"医疗品 / 奢侈品"，而全界面（胶带胶囊、图鉴、日报、商店）用的是
+ * "医疗 / 享受"。于是同一个品类在身份卡上叫一个名字、在胶带上叫另一个 ——
+ * 玩家会以为它们是两种东西，而这两处**永远不会同时出现在一屏上**，
+ * 所以谁也不会报这个 bug。
+ *
+ * 这正是"品类中文名的唯一口径"该有的形状：一份数据，人人来取。
+ */
+const CATEGORY_NAMES: Record<string, string> = CATEGORY_LABELS;
+
+/** 把一个小数说成百分数（`0.15` → `'15%'`）。天赋文案与 `perkText` 共用同一个口径 */
+export function percentOf(rate: number): string {
+  return `${Math.round(rate * 100)}%`;
+}
+
+/**
+ * ★ 把 `PerkRule` 说成人话。**这是天赋"真正生效的那一条"的唯一文字来源。**
+ *
+ * ## 为什么不让 `perk` 字段自己写
+ *
+ * W-06 往 `PerkRule` 里加了两个成员之后，`identity.perk` 那十个字符串
+ * 全部只描述了 `categoryDiscount` 那一半 —— 如果新天赋不写进去，
+ * 玩家会看到"装卸工：工友价 便宜 10%"，而真正让这个身份好玩的那一条
+ * **一个字都不在界面上**。而那正是 §10.1A 那条铁则（"任何东西都要让我有感知"）
+ * 要拦的事，只不过它拦的是**反向**的：不是"写了没生效"，是"生效了但没写"。
+ *
+ * 所以每条规则都必须能文字化，并由 `data/identities.test.ts` 逐条核对
+ * `def.perk` 里真的含有这段文字 —— 让"忘了写"变成一条会红的断言，而不是
+ * 一个要靠人看出来的空缺。
+ *
+ * ⚠ 文案里的**空格是判据的一部分**：十个身份的中文习惯都是
+ * "医疗便宜 25%"（数字前留一个空格），所以这里也留 —— 写的时候同时参考
+ * `CATEGORY_NAMES`（= `CATEGORY_LABELS`）里那个品类到底叫什么。
+ * 不留空格、或用另一个中文名，`perk.includes(perkText(rule))` 就会对着
+ * 十条**正确**的文案报红，而一条会误报的守卫迟早会被人注释掉。
+ */
+export function perkText(rule: PerkRule): string {
+  switch (rule.kind) {
+    case 'none':
+      return '没有特别的门路';
+    case 'categoryDiscount':
+      return `${rule.categories.map((c) => CATEGORY_NAMES[c] ?? c).join('与')}便宜 ${percentOf(rule.rate)}`;
+    case 'workCostFactor':
+      return `翻找省力 ${percentOf(1 - rule.rate)}`;
+    case 'extraHandySlot':
+      return '顺手位可以标两块';
+  }
 }

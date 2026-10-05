@@ -22,13 +22,13 @@
 import { getBoxDef, type BoxDef } from '../data/boxes';
 import { dayPriceFactor } from '../data/dayEvents';
 import { disasterModifiersOf } from '../data/disaster';
-import { getIdentityDef } from '../data/identities';
+import { identityCategoryRate } from '../data/identities';
 import { getItemDef, hasItemDef } from '../data/items';
 import { NEVER_TRADED } from '../data/survival';
 import { dayLabel } from '../model/calendar';
 import { consumeItem, countByItem } from '../model/consume';
 import { createCursor } from '../model/rng';
-import type { RunState } from '../model/types';
+import type { CategoryId, RunState } from '../model/types';
 import type { GameStore } from '../state/store';
 import { isShutOut } from './help';
 import { generateBoxStacks, nextBoxSeq } from './setup';
@@ -92,13 +92,12 @@ export function cashPriceOf(run: RunState, itemId: string): number {
   return cashPriceOfItem(run, item);
 }
 
-function cashPriceOfItem(run: RunState, item: { basePrice: number; category: string }): number {
+function cashPriceOfItem(run: RunState, item: { basePrice: number; category: CategoryId }): number {
   let price = item.basePrice;
-  const identity = getIdentityDef(run.identityId);
-  const rule = identity.perkRule;
-  if (rule.kind === 'categoryDiscount' && rule.categories.includes(item.category as never)) {
-    price *= 1 - rule.rate;
-  }
+  // ★ M4 W-06：折扣判定统一走 data 层的 `identityCategoryRate`
+  //   （原来这里与 `systems/shop.ts` 的 `priceOf` 各写了一遍同一个 `if` ——
+  //    两份漂开的表现是"商店里打折、顶现金时没打折"，不会有任何报错）
+  price *= 1 - identityCategoryRate(run.identityId, item.category);
   price *= dayPriceFactor(run.day, run.disasterId);
   price *= 1 + disasterModifiersOf(run.disasterId).priceSurcharge;
   return Math.max(1, Math.round(price));

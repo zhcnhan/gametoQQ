@@ -33,6 +33,14 @@ const css = readFileSync(cssPath, 'utf8');
 /** 末尾补一个换行：这个文件在 git 里是 CRLF，末尾有可能缺换行，会让"读末尾"的检查漏掉一条规则 */
 const cssText = css.endsWith('\n') ? css : `${css}\n`;
 
+/*
+ * 两处 TypeScript 源码的原文。第 ⑤ 条守卫要看它们 ——
+ * "手势归我们"这条约定**跨三个文件**（这个 CSS 决定让不让，drag.ts 决定接不接得住，
+ * OrganizeScreen.ts 决定把哪一块容器交给它滚），只查 CSS 只能看见三分之一。
+ */
+const dragSrc = readFileSync(join(here, '..', 'src', 'ui', 'drag.ts'), 'utf8');
+const organizeSrc = readFileSync(join(here, '..', 'src', 'ui', 'OrganizeScreen.ts'), 'utf8');
+
 const failures = [];
 const note = (message) => failures.push(message);
 
@@ -252,11 +260,11 @@ if (strayWhite.length > 0) {
   note(`还有 ${strayWhite.length} 处硬编码 background:#fff —— 纯白在纸底上不是纸，用 var(--card)。`);
 }
 
-// ———————— ⑤ 可拖拽元素必须"管住浏览器的默认手势" ————————
+// ———————— ⑤ 可拖拽元素必须"管住浏览器的默认手势"，而且不许被选走 ————————
 /*
- * `.slot` / `.box` 上必须有 `touch-action`，而且**不许是 `none`**。
+ * `.slot` / `.box` 上必须有 `touch-action: none`，而且整条"自己滚"的链路要在。
  *
- * ## 这一条修过两次，两次的原因正好相反（值得读完再改）
+ * ## 这一条修过**三次**，三次的原因各不相同（值得读完再改）
  *
  * **第一次（写这条守卫的原因）**：格子原来没设 `touch-action`，浏览器按默认策略
  * 认为"这块区域可以滚动页面"，于是手指按住并移动几像素后会**接管**手势去滚动，
@@ -269,17 +277,23 @@ if (strayWhite.length > 0) {
  * 它是"**这块区域永远不参与滚动**"。而整理页上格子几乎铺满整块可滚区 ——
  * 于是能滚的地方只剩货架卡之间的缝，手指落在格子上就一动不动。
  * 玩家原话："我很难划到下面的格子和其他的架子（除非手指刚好放在货架边缘）"。
+ * 当时的修法是改成 `manipulation`，并把这条守卫**反过来**写成"不许是 none"。
  *
- * ## 所以真正要守的是什么
+ * **第三次（2026-10 玩家报的"正常的拖动又不正常了"）**：`manipulation` 让浏览器
+ * 接管纵向手势去滚，可它照样会发 `pointercancel` —— 而我们的长按计时器还活着，
+ * 300ms 一到 `beginDrag` 照常开拖。玩家看到的是一个不跟手的幽灵。
  *
- * 不是某个具体取值，而是**两件事同时成立**：
- *  ① 显式写了 `touch-action`（没写 = 回到第一次那个 bug）；
- *  ② 取值**允许滚动**（`none` = 第二次那个 bug）。
- * `manipulation` 是标准答案：允许滚动与捏合之外的默认手势，只禁掉双击缩放。
- * 拖拽那一边由手势层自己保证 —— 手指竖直移动超过 `scrollTolerance` 就放弃手势。
+ * ## 所以真正要守的是什么（三条，最后一条是这一轮补的）
  *
- * 把判据写成"必须等于 manipulation"会**误报**：`.tape-chip` 那一类将来
- * 用 `pan-x` 也是对的。所以这里只拦"没写"与"写了 none"。
+ *  ① `.slot` / `.box` 显式写着 `touch-action: none` —— 手势归我们，浏览器别插手；
+ *  ② 既然归了我们，**滚动就得自己接**：`drag.ts` 里有 `takeOverScroll`，
+ *     而 `OrganizeScreen.ts` 真的把 `scrollHost: this.roomEl` 传给了两处手势
+ *     （格子与纸箱）。少任何一半，第二次那个"划不动"就原地复现 ——
+ *     而它**不会报错、不会红**，只有玩家能看出来。
+ *  ③ `.slot` / `.box` 上写着 `user-select: none`：拖拽起手就是一次按住并移动，
+ *     不写它的后果是"从箱子里拖出东西的时候会复制粘贴箱子的名字"（玩家 2026-10 原话）。
+ *
+ * 把判据写成"必须等于某个取值"会**误报**：`.tape-chip` 那一类用 `pan-x` 也是对的。
  */
 const TOUCH_ACTION_REQUIRED = ['slot', 'box'];
 for (const cls of TOUCH_ACTION_REQUIRED) {
@@ -290,13 +304,52 @@ for (const cls of TOUCH_ACTION_REQUIRED) {
       `.${cls} 没有写 touch-action —— 触摸设备上从这个元素起手的拖拽会被浏览器抢去滚动，\n` +
         `    表现为"完全不跟手、拖一点点就断"，而且不会有任何报错。`
     );
-  } else if (hit[1] === 'none') {
+  } else if (hit[1] !== 'none') {
     note(
-      `.${cls} 的 touch-action 是 none —— 那等于"这块区域永远不参与滚动"，\n` +
-        `    手指落在这类元素上就划不动页面（2026-10 玩家报的"很难划到下面的货架"）。\n` +
-        `    用 manipulation：允许滚动，只禁双击缩放。`
+      `.${cls} 的 touch-action 是 ${hit[1]}，不是 none —— 浏览器会接管纵向手势去滚动，\n` +
+        `    并且**照样发 pointercancel**；而我们的长按计时器不会因此停下，\n` +
+        `    于是 300ms 一到照样开拖（2026-10 玩家报的"正常的拖动又不正常了"）。\n` +
+        `    要滚动请走 drag.ts 的 scrollHost 那条路，别把手势让回给浏览器。`
     );
   }
+  if (!new RegExp(`\\.${cls}\\s*\\{[^}]*user-select\\s*:\\s*none`, 's').test(code)) {
+    note(
+      `.${cls} 上没有 user-select: none —— 从它起手拖动 = 一次文本选择，\n` +
+        `    松手后剪贴板里就躺着那一格/那个箱子的名字（玩家 2026-10 报的"复制粘贴箱子的名字"）。\n` +
+        `    （main.ts 的剪贴板守卫是第二道防线，但"选不中"必须在这里就成立。）`
+    );
+  }
+}
+
+/*
+ * ★ ②的"另一半"：手势归了我们之后，滚动必须真的被接过去。
+ *
+ * 这一条**跨两个文件**，所以只能锚具体符号 —— 而它锚的正是"改了 A 忘了改 B"
+ * 那种漏法。三条一起看才成立：
+ *   · `drag.ts` 里有 `takeOverScroll`（真的调 `scrollTop` 的那个函数）；
+ *   · `drag.ts` 里 `touchmove` 带 `{ passive: false }`（否则 preventDefault 被忽略，
+ *     表现是"页面滚一遍、我们再滚一遍"两倍速）；
+ *   · `OrganizeScreen.ts` 里两处手势都传了 `scrollHost`。
+ */
+if (!/function takeOverScroll\(/.test(dragSrc)) {
+  note(
+    `ui/drag.ts 里没有 takeOverScroll —— 而 .slot/.box 的 touch-action 是 none，\n` +
+      `    浏览器已经不滚这块区域了。少了它，格子上的滑动**彻底不滚**（第二次那个 bug）。`
+  );
+}
+if (!/addEventListener\('touchmove',\s*handleTouchMove,\s*\{\s*passive:\s*false\s*\}/.test(dragSrc)) {
+  note(
+    `ui/drag.ts 的 touchmove 监听没带 { passive: false } —— window 上的 touchmove 默认是\n` +
+      `    passive 的，preventDefault() 会被**忽略且不报错**，表现是同一次滑动滚两倍速。`
+  );
+}
+const SCROLL_HOST_USES = (organizeSrc.match(/scrollHost:\s*this\.roomEl/g) ?? []).length;
+if (SCROLL_HOST_USES < 2) {
+  note(
+    `ui/OrganizeScreen.ts 里只找到 ${SCROLL_HOST_USES} 处 scrollHost: this.roomEl（应该是 2：格子 + 纸箱）。\n` +
+      `    .slot/.box 上的 touch-action: none 让浏览器不再滚这块区域，\n` +
+      `    没传 scrollHost 的那一处就是"手指落上去划不动"（2026-10 玩家报过两次）。`
+  );
 }
 
 // ———————— ⑥ 覆盖层必须"不吃指针事件" ————————

@@ -60,21 +60,59 @@ export interface GestureOptions {
    * （玩家报的"手机上拖不动"）。
    */
   scrollTolerance?: number;
+  /**
+   * ★★ 这块区域**由我们自己滚**（玩家 2026-10 第二次报的"正常拖动又不正常了"）。
+   *
+   * ## 为什么必须自己滚，而不是交回给浏览器
+   *
+   * 这条是 `.slot` 上 `touch-action` 那两难的另一半，两次都踩过：
+   *
+   *  · `touch-action: none` → 浏览器**永远不滚动这块区域**（格子铺满整块可滚区，
+   *    于是"能滚的地方只剩货架卡之间的缝"，玩家第一次报的就是这个）；
+   *  · `touch-action: manipulation` → 浏览器**接管**纵向手势去滚动，
+   *    并在接管时发 `pointercancel` —— 而我们的长按计时器还在，300ms 一到
+   *    `beginDrag` 照常开拖，**玩家看到的是一个不跟手的幽灵**（第二次报的"正常拖动又不正常"）。
+   *
+   * 两者不能兼得的原因在于"谁来决定这次手势是什么"只能有一个答案。
+   * 既然拖拽必须我们说了算，那就把滚动也一起接过来：`touch-action: none` 保住手势，
+   * 竖向移动越过 `scrollTolerance` 时**由我们调用 `scrollTop`**。
+   *
+   * ⚠ 代价写在这里：这条路**没有惯性滚动**（手指抬起就停），
+   * 而且一次手势里是"滚动"就不能再变回"拖拽"（反之亦然）——
+   * 两个方向的取舍都指向同一个原则：**手势的含义只能被判定一次**。
+   */
+  scrollHost?: HTMLElement | null;
 }
 
-const DEFAULTS: Required<GestureOptions> = {
+/**
+ * 补全默认值之后的选项。
+ *
+ * ⚠ `scrollHost` **不在 `Required<>` 里**：它不是"有个默认值"的参数，而是一个
+ * "这个调用方有没有自己接管滚动"的开关 —— 没传就是 `undefined`（见 `takeOverScroll`）。
+ * 把它塞进 `Required<>` 会逼着 `DEFAULTS` 写一个假的默认元素出来，那个元素一旦被真的
+ * `scrollTop +=` 就是往一个游离节点上写，**不报错、也没有任何视觉效果**。
+ */
+type ResolvedOptions = Required<Omit<GestureOptions, 'scrollHost'>> & Pick<GestureOptions, 'scrollHost'>;
+
+const DEFAULTS: Required<Omit<GestureOptions, 'scrollHost'>> = {
   /*
    * ★ 300ms，不是 220ms（2026-10 玩家反馈后的调整）。
    *
    * 用户报的原话是"下滑上滑的效果不好，容易无效，尤其是在物品整理页面"。
-   * 根子是 `.slot` 上的 `touch-action: none`（已改成 `manipulation`，见
-   * `style.css` 那一段长注释），但**这个阈值把同一种难受放大了**：
+   * 那个问题的根子是"谁来决定这次手势"只能有一个答案，两次都踩过：
+   *
+   *  · `.slot` 上 `touch-action: none` → 浏览器**永远不滚这块区域**
+   *    （格子铺满整块可滚区，于是"能滚的地方只剩货架卡之间的缝"）；
+   *  · 改成 `manipulation` → 浏览器接管纵向手势去滚，并顺手发 `pointercancel`，
+   *    而我们这边**长按计时器还活着，300ms 一到照样开拖** ——
+   *    玩家看到的是一个不跟手的幽灵（第二次报的"正常拖动又不正常了"）。
+   *
+   * 现在的口径：`touch-action: none` 拿回手势，滚动由手势层自己接管
+   * （`GestureOptions.scrollHost`），而**这个阈值就是"滚动 / 拖拽"的分界线**。
    *
    *  · 一次"想滚一下屏幕"的滑动，从按下到手指真的移动，经常要 200ms 出头
    *    （拿起手机、找准位置、再推）。220ms 的窗口太窄 —— 手一迟疑就跨过去了，
-   *    浏览器刚准备滚，我们这边已经把这次手势**变成拖拽**；
-   *  · 一旦变成拖拽，从格子上起手的那次滑动就彻底不滚了（那条本来正是
-   *    `touch-action: none` 时期的老毛病）。玩家看到的仍然是"划不动"。
+   *    于是那次滑动直接被判成拖拽。玩家看到的仍然是"划不动"。
    *
    * 300ms 是把这条边界往"先当作滚动"那一侧推：想拖的人按住不动不会在意
    * 多等 80ms（他本来就要停一下瞄准落点），想滚的人几乎不会再被截胡。
@@ -108,7 +146,7 @@ function distance(a: Point, b: Point): number {
 interface ActiveGesture {
   el: HTMLElement;
   handlers: GestureHandlers;
-  opts: Required<GestureOptions>;
+  opts: ResolvedOptions;
   dragging: boolean;
   start: Point;
   last: Point;
@@ -120,6 +158,13 @@ interface ActiveGesture {
   lastButtons: number;
   pointerId: number;
   onWindowSettled: (() => void) | null;
+  /**
+   * ★ 这一次手势已经被判定成"滚动"（见 `GestureOptions.scrollHost`）。
+   *
+   * 判定只发生一次：一旦是滚动，剩下的路程全部用来 `scrollTop`，
+   * 而且**长按计时器不会再生效**（否则一个想滚的人会在滚到一半时被拖拽截胡）。
+   */
+  scrolling: boolean;
 }
 
 let active: ActiveGesture | null = null;
@@ -170,11 +215,29 @@ function installWindowListeners(): void {
   window.addEventListener('pointermove', handleMove);
   window.addEventListener('pointerup', handleUp);
   window.addEventListener('pointercancel', handleCancel);
+  /*
+   * ★ 接管了滚动的那一次手势，必须把 `touchmove` 的默认行为也吃掉。
+   *
+   * `.slot` 上的 `touch-action: none` 本来就已经让浏览器不管这块区域了，
+   * 这一条是**第二道**防线：`touch-action` 只作用在它写着的那个元素上，
+   * 而手势可能在别处（纸箱、胶带条）起手，那些地方的 `touch-action` 是另一个值。
+   * 不吃掉的话，同一次滑动会**页面上滚一遍 + 我们滚一遍**（两倍速）。
+   *
+   * ⚠ `{ passive: false }` 是必须的：Chrome 从 56 起把 window 上的 `touchmove`
+   * 默认设成 passive，那时 `preventDefault()` 会**被忽略且只在控制台抱怨**——
+   * 也就是"写了但不生效"，正是本仓库最防的那一类。
+   */
+  window.addEventListener('touchmove', handleTouchMove, { passive: false });
   // 页面被切走/隐藏时（切窗口、系统弹层）把手势收掉，别留个幽灵在屏幕上
   window.addEventListener('blur', () => {
     traceDrag('cancel 来源=window blur');
     cancelActive();
   });
+}
+
+function handleTouchMove(e: TouchEvent): void {
+  if (!active?.scrolling) return;
+  if (e.cancelable) e.preventDefault();
 }
 
 function clearLongPressTimer(g: ActiveGesture): void {
@@ -237,10 +300,28 @@ function startWatchdog(): void {
 
 function beginDrag(g: ActiveGesture, point: Point): void {
   if (g.dragging) return;
+  if (g.scrolling) return; // 这次手势已经是"滚动"了，不能再变成拖拽
   g.dragging = true;
   g.el.classList.add('is-dragging');
   traceDrag(`beginDrag at ${Math.round(point.x)},${Math.round(point.y)}`);
   g.handlers.onDragStart?.(point);
+}
+
+/**
+ * ★★ 把这次手势判定成"滚动"，并自己滚（见 `GestureOptions.scrollHost`）。
+ *
+ * 返回是否真的滚了。返回 false 时调用方**不要**收手势 ——
+ * `scrollHost` 是可选参数，没传的调用方（胶带条那几处）仍然走"放弃手势"的老路。
+ *
+ * 它同时给 `touchmove` 的那个 `preventDefault` 当判据：只有"我们已经接管了滚动"
+ * 的手势才该吃掉浏览器的默认滚动，否则页面会滚两倍。
+ */
+function takeOverScroll(g: ActiveGesture, deltaY: number): boolean {
+  const host = g.opts.scrollHost;
+  if (!host) return false;
+  g.scrolling = true;
+  host.scrollTop += deltaY;
+  return true;
 }
 
 function handleMove(e: PointerEvent): void {
@@ -249,7 +330,13 @@ function handleMove(e: PointerEvent): void {
   g.lastSeenAt = now();
   g.lastButtons = e.buttons;
   const point = { x: e.clientX, y: e.clientY };
+  const prev = g.last;
   g.last = point;
+  if (g.scrolling) {
+    // 已经接管了滚动：这一趟剩下的路程全部用来滚，不再判任何别的东西
+    takeOverScroll(g, point.y - prev.y);
+    return;
+  }
   if (!g.dragging) {
     if (e.pointerType === 'mouse') {
       if (distance(point, g.start) > 6) beginDrag(g, point);
@@ -264,6 +351,10 @@ function handleMove(e: PointerEvent): void {
     const dx = Math.abs(point.x - g.start.x);
     traceDrag(`move 未定格 dy=${Math.round(dy)} dx=${Math.round(dx)} 阈值=${g.opts.scrollTolerance}`);
     if (dy > g.opts.scrollTolerance && dy > dx) {
+      if (takeOverScroll(g, point.y - prev.y)) {
+        traceDrag(`滚动接管 dy=${Math.round(dy)} dx=${Math.round(dx)}`);
+        return;
+      }
       traceDrag(`cancel 来源=滚动判定 dy=${Math.round(dy)} dx=${Math.round(dx)}`);
       settle(g);
       g.handlers.onCancel?.();
@@ -333,7 +424,7 @@ export function attachPointerGesture(
   options: GestureOptions = {}
 ): () => void {
   installWindowListeners();
-  const opts = { ...DEFAULTS, ...options };
+  const opts: ResolvedOptions = { ...DEFAULTS, ...options };
 
   const onDown = (e: PointerEvent): void => {
     /*
@@ -359,7 +450,8 @@ export function attachPointerGesture(
       lastSeenAt: now(),
       lastButtons: e.buttons,
       pointerId: e.pointerId,
-      onWindowSettled: null
+      onWindowSettled: null,
+      scrolling: false
     };
     active = g;
     startWatchdog();

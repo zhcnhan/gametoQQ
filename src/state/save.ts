@@ -994,6 +994,11 @@ function normalizeRun(save: SaveGame): SaveGame | null {
       fromBoxes: Math.max(0, num(last.fromBoxes)),
       unreachable: Math.max(0, num(last.unreachable)),
       workCost: Math.max(0, num(last.workCost)),
+      /*
+       * M4 W-06：旧档没有这个字段 → `num()` 给 0，正好是它的真值
+       * （"这个身份没有翻找省力的天赋"），不需要迁移。
+       */
+      workSaved: Math.max(0, num(last.workSaved)),
       hardPress: last.hardPress === true,
       hardPressLevel:
         last.hardPressLevel === 'straining' ||

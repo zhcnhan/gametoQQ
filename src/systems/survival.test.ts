@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 import { SURVIVAL_DAYS, getDisasterDef } from '../data/disaster';
 import { CATEGORY_ORDER, getItemDef } from '../data/items';
 import { NIGHT_SLEEP } from '../data/nightEvents';
-import { moodFromPlacement, dailyDrainOf, hardPressTier, workCostOf } from '../data/survival';
+import { moodFromPlacement, dailyDrainOf, hardPressTier, round1, workCostOf } from '../data/survival';
 import { consumeCategory, countCategory } from '../model/consume';
 import { scatterRows } from '../model/scatter';
 import { createShelf, fefoSorted, getStack, makeStack, readingOrder, setSlotStack, stackCount } from '../model/shelf';
@@ -386,6 +386,45 @@ describe('每日结算：把整理变成数字', () => {
     run.day = 4;
     settleSurvivalDay(run);
     expect(run.day).toBe(4);
+  });
+
+  it('★ W-06：装卸工「翻找省力 20%」—— 日报要说出少花了多少（§10.1A）', () => {
+    /*
+     * 这个身份的天赋**只改一个数字**，所以它必须同时有非数字表达 —— 否则玩家
+     * 只能感觉"这个身份好像没什么用"。`workSaved` 就是那句话的数据源
+     * （`ui/SurvivalScreen.ts` 的日报拿它写"这一趟少花 N 点"）。
+     *
+     * ⚠ 两个数字都要断言：`workCost` 是玩家真正失去的体力，`workSaved` 是
+     * 屏幕上那句话。只测一个的话，"乘数乘了、减数忘了"这种错法照样绿 ——
+     * 而它的表现是界面上写着"少花 0 点"。
+     */
+    const stock = (run: ReturnType<typeof bareRun>) => {
+      put(run, 'shelf_a', { row: 0, col: 0 }, 'canned_beans', 4, 60);
+      put(run, 'shelf_a', { row: 0, col: 1 }, 'mineral_water', 4, 60);
+      put(run, 'shelf_a', { row: 0, col: 2 }, 'fuel_can', 4, null);
+      run.day = 3;
+      run.stats = { health: 90, mood: 60, stamina: 50, shelter: 80 };
+    };
+
+    const plain = bareRun(); // 默认身份：没有省力天赋
+    plain.identityId = 'group_buyer';
+    stock(plain);
+    const plainReport = settleSurvivalDay(plain);
+
+    const porter = bareRun();
+    porter.identityId = 'warehouse_porter';
+    stock(porter);
+    const porterReport = settleSurvivalDay(porter);
+
+    // 同样的屋子、同样的六件活：基准账一模一样（§6.4 的 1.0→9.0 / 0.0→27.0 不受身份影响）
+    expect(plainReport.workSaved).toBe(0); // 没有天赋的人不许"省下"任何东西
+    expect(porterReport.workCost).toBeCloseTo(round1(plainReport.workCost * 0.8), 5);
+    // ★ 两个数字各自 `round1`（乘数乘完就舍入，见 `systems/survival.ts`），所以
+    //   和**不是**精确等于基准 —— 差在 0.1 以内，这就是"同口径"的全部含义。
+    expect(porterReport.workCost + porterReport.workSaved).toBeCloseTo(plainReport.workCost, 1);
+    expect(porterReport.workSaved).toBeGreaterThan(plainReport.workCost * 0.15);
+    expect(porterReport.workSaved).toBeLessThan(plainReport.workCost * 0.25);
+    expect(porterReport.workCost).toBeLessThan(plainReport.workCost);
   });
 
   it('归位率越高心情越好，越低越是负担（但永远只是心情，不是判罚）', () => {

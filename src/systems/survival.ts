@@ -68,9 +68,11 @@ import {
   isHardPress,
   moodFromPlacement,
   organizeQuality,
+  round1,
   shelterOf,
   workCostOf
 } from '../data/survival';
+import { identityWorkFactor } from '../data/identities';
 import { nextFloat, type RngCursor } from '../model/rng';
 import { recordEvent } from './setup';
 import type { CategoryId, EmergencyDef, HardPressLevel, RunState } from '../model/types';
@@ -191,6 +193,14 @@ export interface SurvivalReport {
   quality: number;
   /** 今天的翻找劳作（体力，正数）。它同时也是 `deltas.stamina` 里被扣掉的那部分 */
   workCost: number;
+  /**
+   * ★ W-06：身份省下来的那一部分劳作（体力，正数，`0` = 没这个天赋）。
+   *
+   * 它是 §10.1A 那条铁则的落点：身份天赋**只改一个数字**，所以必须同时有
+   * 非数字表达 —— 日报拿它写"装卸工的力气比一般人省，这一趟少花 N 点"。
+   * 没有这条路，玩家只会觉得"这个身份好像没什么用"，而不会来报 bug。
+   */
+  workSaved: number;
   fromShelves: number;
   fromBoxes: number;
   /** 有货但没力气翻到的件数（体力见底的那天才 > 0） */
@@ -315,7 +325,20 @@ export function settleSurvivalDay(run: RunState, cursor?: RngCursor): SurvivalRe
 
   // ③ 劳作：整理质量的直接代价（§6.4「乱 → 翻找耗时」）
   const quality = organizeQuality(score.placement, score.fefo);
-  const workCost = workCostOf(score.placement, score.fefo, takenPieces);
+  /*
+   * ★ W-06：身份的省力系数**必须在这里乘，不能塞进 `workCostOf`**。
+   *
+   * `data/survival.ts` 的 `workCostOf` 是 §6.4 的**基准账**（1.0→9.0 / 0.5→18.0 /
+   * 0.0→27.0），三条永久回归探针照着它算 —— 把身份乘进去，那几个探针的前提
+   * （"同一份货 = 同一个结果"）就没了。
+   *
+   * `workBase` 与 `workCost` 两个值都要留着：日报要说出"少花了多少"（§10.1A
+   * 要求只改数字的机制同时有非数字表达），而那句话的数据源就是这两个的差。
+   */
+  const workFactor = identityWorkFactor(run.identityId);
+  const workBase = workCostOf(score.placement, score.fefo, takenPieces);
+  const workCost = round1(workBase * workFactor);
+  const workSaved = round1(workBase - workCost);
 
   const deltas = { health: 0, mood: 0, stamina: 0, shelter: 0 };
   /*
@@ -519,6 +542,7 @@ export function settleSurvivalDay(run: RunState, cursor?: RngCursor): SurvivalRe
     fromBoxes,
     unreachable: unreachableUnits,
     workCost,
+    workSaved,
     hardPress,
     hardPressLevel: todayTier?.level ?? 'none',
     usedMedicine: supply.usedMedicine,
@@ -610,6 +634,7 @@ export function settleSurvivalDay(run: RunState, cursor?: RngCursor): SurvivalRe
     fefo: reportFefo,
     quality,
     workCost,
+    workSaved,
     fromShelves,
     fromBoxes,
     unreachable: unreachableUnits,
