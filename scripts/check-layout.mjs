@@ -241,6 +241,7 @@ function narrowProblems(css) {
     if (!item.check(body)) out.push(`\`.${item.cls}\` 的约束不对：${item.why}`);
   }
   out.push(...tierProblems(css));
+  out.push(...tapProblems(css));
   return out;
 }
 
@@ -332,6 +333,311 @@ if (tierSelfTests.some((ok) => !ok)) {
   process.exit(1);
 }
 
+/*
+ * ────────────────────────────────────────────────────────────────────────────
+ * ★★ 点击热区守卫（M5：真机细节）
+ *
+ * ## 它守的是一个"在桌面上永远看着没问题"的量
+ *
+ * 一个按钮够不够大，鼠标指针只有 1px，所以桌面上**任何尺寸都够**。
+ * 手机上拇指的接触面大约 8~10mm，苹果给的下限是 44pt、谷歌是 48dp ——
+ * 于是"这个控件够不够大"这件事**只能靠量**，看不出来。
+ *
+ * ## 判据分两半，缺一半就等于没守
+ *
+ *   ① **表里的控件必须够大**：`min-height` 要写 `var(--tap-min)`（或 ≥ 44px 的字面量）。
+ *   ② **表外的可点类必须不存在**：从 CSS 里把**所有带 `cursor: pointer` 的类**挑出来，
+ *      每一个都必须在 `TAP_FLOOR` 或 `TAP_EXEMPT` 里。
+ *      ★ 这一半才是真正的守卫 —— 少了它，新加一个 32px 的按钮不会有任何反应，
+ *      而"新加一个控件"正是这件事唯一会再次发生的途径。
+ *
+ * ## ⚠ 为什么查的是**基样式**，不是"某个媒体查询里够大"
+ *
+ * 这一轮抓到的第一个真缺口就是它：胶带架那两枚工具钮（＋ / ✂）在
+ * `@media (max-width: 400px)` 里被抬到 44px，而**基样式仍是 34px** ——
+ * 也就是说"手机上够大"这件事当时交给了运气（它确实只在窄屏生效，
+ * 但没有任何东西记着"这两枚钮的全部意义就是手机上够大"）。
+ * 所以查基样式是**故意更严**：窄屏才够大不算够大。
+ */
+const TAP_MIN_PX = 44;
+
+/*
+ * ★★ 表的两边**不是同一种东西**（这里第一次写错过，别改回去）：
+ *    - **key = 光秃秃的类名**（`btn`），给 `rulesMentioning` / `pointerClasses` 用 ——
+ *      它们自己会拼 `.`，key 里再带一个点就成了 `..btn`，一个都匹配不到
+ *      （症状是**每一行控件**都报"没写下限"，看起来像样式表错了）。
+ *    - **value = 选择器**（`.save-fold > summary`），给人看、给报错用。
+ */
+const TAP_CONTROLS = {
+  btn: '.btn',
+  mini: '.mini',
+  slot: '.slot',
+  'codex-tab': '.codex-tab',
+  swatch: '.swatch',
+  step: '.step',
+  'cat-chip': '.cat-chip',
+  'tape-btn': '.tape-btn',
+  'tape-tool': '.tape-tool',
+  'tape-chip': '.tape-chip',
+  'night-option': '.night-option',
+  'trade-item': '.trade-item',
+  'score-item': '.score-item',
+  'boxes-fold': '.boxes-fold',
+  'run-bar-toggle': '.run-bar-toggle',
+  'save-fold': '.save-fold > summary'
+};
+
+/*
+ * ★★ 例外表：**可点的那个元素身上没有类名**的那一个。
+ *
+ * `.save-fold > summary` 是"把这一局带走"的门把手，而 `<summary>` 身上没有任何类 ——
+ * 它唯一的抓手是父元素 `.save-fold`。所以按类名取样取不到它，得按这条选择器取。
+ * ⚠ 只有在这里写明白的才算数：**不要**让 `rulesMentioning` 去猜选择器语言，
+ *   它一猜就会把 `.save-fold`（一个 `<details>`，本身点不动）也算成可点控件。
+ */
+const TAP_SELECTOR_RULES = {
+  'save-fold': /\.save-fold\s*>\s*summary\s*\{/g
+};
+
+/** 取一个控件对应的**全部规则正文**：默认按类名，写进 `TAP_SELECTOR_RULES` 的按选择器 */
+function tapBodies(css, cls) {
+  const selector = TAP_SELECTOR_RULES[cls];
+  if (selector === undefined) return rulesMentioning(css, cls);
+  const out = [];
+  const re = new RegExp(selector.source, selector.flags);
+  for (const hit of css.matchAll(re)) {
+    const open = css.indexOf('{', hit.index);
+    if (open < 0) continue;
+    const close = matchingBrace(css, open);
+    if (close < 0) continue;
+    out.push(css.slice(open + 1, close));
+  }
+  return out;
+}
+
+const TAP_EXEMPT = {
+  'identity-card': '本身就是一张 112px 的大卡片，不需要下限',
+  'shop-card': '本身就是一张 84px 的大卡片，不需要下限',
+  box: '本身就是 74px 的纸箱，不需要下限',
+  'save-file': '借 `.btn` 的 46px（它本身是 `.btn.save-file`）'
+};
+
+/** 取某个选择器**基样式**规则正文里那一条 `min-height`（没有则 null） */
+function minHeightOf(css, cls) {
+  const body = ruleBody(css, cls);
+  if (body === null) return null;
+  const m = /min-height:\s*([^;]+);/.exec(body);
+  return m ? m[1].trim() : null;
+}
+
+/**
+ * ★★ 一个"名字后面不许再接字母数字"的规则体查找 —— `ruleBody` 不够用。
+ *
+ * `ruleBody('… .save-fold …')` 会**误命中 `.save-fold > summary`**：
+ * 它生成的边界是 `(^|[},])\s*\.save-fold\s*\{`，而"后面必须紧跟 `{`"这一条
+ * 挡不住中间还有别的选择器文本的情况 —— 于是查 `.save-fold` 拿到的是
+ * `<summary>` 那一条的正文（`min-height` 有没有全看运气）。
+ *
+ * 所以按"**包含这个类名的每一条规则**"来查，并且要求名字后面不是 `-` / 字母 / 数字。
+ * 返回数组：一个类名在样式表里出现几次就有几条（重复定义时两条都在）。
+ */
+function rulesMentioning(css, cls) {
+  const clean = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const out = [];
+  /*
+   * ⚠⚠ 反斜杠的层数（这里踩过一次，代价是"每一行控件都报没写下限"）：
+   *     这段在**模板字符串**里。要构造出来的正则正文是 `\.btn(?![\w-])`，
+   *     所以模板里必须写 `\\w`（两层）—— 写成 `[\\w-]` 时 `\w` 会被
+   *     `new RegExp` 当成"空白类里转义过的 w"（等价于字面的 `w`），
+   *     正则变成 `(?![\w-])` 的**错误版本**：`.btn` 后面若跟着 `-` 就匹配不上。
+   *     `.tape-btn` 之所以还活着，是因为 `\.btn` 正好从它的 `-btn` 处开始匹配。
+   */
+  const re = new RegExp(`\\.${cls.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w-])`, 'g');
+  for (const hit of clean.matchAll(re)) {
+    // 往左找到这条规则的 `{`，往右找配对的 `}`
+    const open = clean.indexOf('{', hit.index);
+    if (open < 0) continue;
+    // 只有当 "选择器部分" 里没有 `}` 或 `{` 时才算同一个选择器（避免跨规则）
+    const between = clean.slice(hit.index, open);
+    if (between.includes('}') || between.includes('{')) continue;
+    const close = matchingBrace(clean, open);
+    if (close < 0) continue;
+    out.push(clean.slice(open + 1, close));
+  }
+  return out;
+}
+
+/** 这个类名下**有没有哪一条**规则写着 `cursor: pointer` */
+function isPointerControl(css, cls) {
+  return rulesMentioning(css, cls).some((b) => /cursor:\s*pointer/.test(b));
+}
+
+/** 一条 `min-height` 取值算不算够大（`var(--tap-min)`，或 ≥ 44px 的字面量） */
+function tapFloorOk(value) {
+  if (value === null) return false;
+  if (/var\(\s*--tap-min\s*\)/.test(value)) return true;
+  const px = /^([0-9.]+)px$/.exec(value);
+  return px !== null && Number(px[1]) >= TAP_MIN_PX;
+}
+
+/** CSS 里所有写着 `cursor: pointer` 的类名（= 有意图做成可点的东西） */
+function pointerClasses(css) {
+  const clean = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const out = new Set();
+  for (const m of clean.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    if (!/cursor:\s*pointer/.test(m[2])) continue;
+    for (const c of m[1].matchAll(/\.([a-zA-Z][\w-]*)/g)) out.add(c[1]);
+  }
+  return [...out].sort();
+}
+
+function tapProblems(css) {
+  return [...tapFloorProblems(css), ...tapTableProblems(css)];
+}
+
+/*
+ * 判据 ① 与 ②（只看 `css` 本身，所以**合成的小样本也跑得动** —— 自证要用它）
+ */
+function tapFloorProblems(css) {
+  const out = [];
+
+  /*
+   * ① 那条线本身：`--tap-min` 必须写在 `:root` 里，而且不许低于 44px。
+   *    它一旦被调小，下面所有"够大"的断言会在**同一次改动里**一起变成假的。
+   */
+  const rootM = /:root\s*\{/.exec(css);
+  const rootBody = rootM === null ? '' : css.slice(rootM.index, matchingBrace(css, rootM.index + rootM[0].length - 1) + 1);
+  const tapMin = /--tap-min:\s*([0-9.]+)px/.exec(rootBody);
+  if (tapMin === null) {
+    out.push('`:root` 里找不到 `--tap-min` —— 点击热区那条线没了，下面的断言全在验空气。');
+  } else if (Number(tapMin[1]) < TAP_MIN_PX) {
+    out.push(
+      `\`--tap-min\` 是 ${tapMin[1]}px，低于 ${TAP_MIN_PX}px（苹果 44pt / 谷歌 48dp 里小的那个）。` +
+        `\n    → 它是"手指够不够得着"的下限，不是排版余量：调小它等于把这一整道守卫的判据改掉。`
+    );
+  }
+
+  /*
+   * ② 表里的控件必须够大（★ 只查**这个 css 里真的写了**的那些，合成小样本才跑得动）
+   *
+   * ⚠⚠ 判据是"**这些规则里至少有一条**写着够大的 `min-height`"，不是"每一条都写"。
+   *     一个控件往往有好几条规则（`.tape-btn` 3 条、`.slot` 14 条、`.swatch` 3 条），
+   *     其中大多数是状态变体或后代搭配 —— 要求它们全都写 `min-height` 是做不到的。
+   *     第一版写成"每一条都要够大"，结果是**每一行控件都报没写下限**（也是假报告）。
+   */
+  for (const [cls, label] of Object.entries(TAP_CONTROLS)) {
+    const bodies = tapBodies(css, cls);
+    if (bodies.length === 0) continue;
+    const values = bodies.map((body) => {
+      const m = /min-height:\s*([^;]+)/.exec(body);
+      return m ? m[1].trim() : null;
+    });
+    if (values.some((v) => tapFloorOk(v))) continue;
+    const shown = values.filter((v) => v !== null);
+    out.push(
+      `\`${label}\` 的 ${bodies.length} 条规则里没有一条写着够大的 \`min-height\`。\n` +
+        `    量到的取值：${shown.length === 0 ? '（一条都没写）' : shown.map((v) => `\`${v}\``).join('、')}\n` +
+        `    → 在它的**基样式**那条规则里写 \`min-height: var(--tap-min)\`。` +
+        `若它确实**不该**有下限（比如一行文字里的链接），把它挪进 \`TAP_EXEMPT\` 并写明理由。`
+    );
+  }
+  return out;
+}
+
+/*
+ * 判据 ③：表里的控件**一条都不能少**、表外的可点类**一个都不能有**。
+ * ⚠ 只能在完整样式表上跑 —— 喂它一个只有一条规则的小样本，它会报出十几条
+ *   "找不到 `.btn` 的基样式规则"，而那些话在样本里毫无意义（自证第一版就是这么失败的）。
+ */
+function tapTableProblems(css) {
+  const out = [];
+  for (const [cls, label] of Object.entries(TAP_CONTROLS)) {
+    if (tapBodies(css, cls).length === 0) {
+      out.push(`找不到 \`${label}\` 的基样式规则 —— 它要么改名了，要么被挪进了媒体查询。`);
+    }
+  }
+  for (const cls of pointerClasses(css)) {
+    if (cls in TAP_CONTROLS || cls in TAP_EXEMPT) continue;
+    /*
+     * ★ 只有当它**自己那条规则**写着 `cursor: pointer` 才算"一个可点控件"。
+     *   否则 `.save-fold > summary` 会顺带把 `.save-fold` 也报出来 ——
+     *   `pointerClasses` 只在选择器文本里出现的类名都收，
+     *   而真正的可点目标是 `<summary>`，不是那个 `<details>`。
+     */
+    if (!isPointerControl(css, cls)) continue;
+    out.push(
+      `可点类 \`.${cls}\` 不在点击热区的两张表里。\n` +
+        `    → 它是"有意图做成可点的东西"（写着 \`cursor: pointer\`），所以必须二选一：\n` +
+        `      写 \`min-height: var(--tap-min)\` 并加进 \`TAP_CONTROLS\`，` +
+        `或者加进 \`TAP_EXEMPT\` 并写明"为什么它可以例外"。`
+    );
+  }
+  return out;
+}
+
+/*
+ * ★ 自证（纪律 §2.18）：喂四个**故意错**的样本，每一个都必须被判红 ——
+ * 一个也抓不到就说明这道守卫在验空气。
+ *
+ * ⚠ 自证跑的是 `tapFloorProblems`（判据 ①②），**不是** `tapProblems`：
+ *    判据 ③ 会在只有一条规则的小样本上报出十几条"找不到 `.btn` 的基样式规则"，
+ *    于是**每一个**样本都被判红 —— 包括最后那个"必须合格"的样本，
+ *    自检永远失败，而失败的原因与被测的东西一点关系都没有。
+ *    （第一版就是这样：四个样本全红，报的是"守卫在验空气"，其实守卫是对的。
+ *      判据 ③ 是"表与样式表是否对得上"，它只对完整样式表有意义。）
+ *
+ * ⚠ 每个样本前面还要补一句 `:root{--tap-min:44px}`：判据 ①（那条线本身存在吗）
+ *    同样会把每一个"没有 :root"的样本判红。
+ */
+const TAP_SAMPLE_ROOT = ':root{--tap-min:44px}';
+
+const TAP_SAMPLES = [
+  // ① 控件没写下限
+  { css: '.tape-btn{cursor:pointer}', bad: true },
+  // ② 控件写了下限但不够大
+  { css: '.tape-btn{min-height:36px;cursor:pointer}', bad: true },
+  // ③ 下限写成了一条比 44px 小的字面量（`36px` 与 `40px` 都真实出现过）
+  { css: '.tape-btn{min-height:40px;cursor:pointer}', bad: true },
+  // ④ 现状那种写法必须合格
+  { css: '.tape-btn{min-height:var(--tap-min);cursor:pointer}.mini{min-height:var(--tap-min);cursor:pointer}', bad: false },
+  // ⑤ 那条线本身被调小了 —— 它一变小，上面所有"够大"的断言会一起变成假的
+  { css: '.tape-btn{min-height:var(--tap-min);cursor:pointer}', bad: true, root: ':root{--tap-min:36px}' }
+];
+const tapSelfTests = TAP_SAMPLES.map((s) => tapFloorProblems((s.root ?? TAP_SAMPLE_ROOT) + s.css).length > 0 === s.bad);
+if (tapSelfTests.some((ok) => !ok)) {
+  for (const [i, s] of TAP_SAMPLES.entries()) {
+    console.error(`  样本 ${i + 1}（期望 bad=${s.bad}）实得 ${tapSelfTests[i] ? 'OK' : '反了'}`);
+    for (const p of tapFloorProblems((s.root ?? TAP_SAMPLE_ROOT) + s.css)) console.error(`      ${p.split('\n')[0]}`);
+  }
+  console.error(
+    `[check-layout] ★ 点击热区守卫自检失败：喂给它 ${TAP_SAMPLES.length} 个样本（没写下限 / 下限不够 / 40px 字面量 / 现状那种写法 / 那条线被调小），` +
+      '其中至少一个判反了 —— 说明这道守卫在验空气。'
+  );
+  process.exit(1);
+}
+
+/*
+ * ★★ 自证之二：**取样器本身**必须能在真样式表上取到东西。
+ *
+ * 这一条是补上来的 —— 第一版 `rulesMentioning` 的正则多转义了一层反斜杠
+ * （`[\\w-]` 在模板字符串里应该是 `[\\w-]` 写成 `[\\\\w-]` 那种层数错误），
+ * 于是它**一个类名都取不到**。而取样失败的表现是"这个控件没写下限"，
+ * 看上去像是样式表的错 —— 我照着这份假报告差点把十几条正确的 CSS 改坏。
+ * 喂样本的自证**抓不到这个**（样本里那些规则连 `-` 都没有，正好能匹配上）。
+ *
+ * 判据：表里每个控件都必须在真样式表里**至少匹配到一条规则**。
+ * 取不到就是取样器坏了，与样式表对不对无关。
+ */
+const samplerMisses = Object.keys(TAP_CONTROLS).filter((cls) => tapBodies(CSS, cls).length === 0);
+if (samplerMisses.length > 0) {
+  console.error(
+    `[check-layout] ★ 点击热区的**取样器**取不到东西：${samplerMisses.map((c) => `\`.${c}\``).join('、')} 在 \`src/style.css\` 里一条规则都没匹配到。\n` +
+      '  这不是"没写下限"，是 `rulesMentioning` 自己坏了（多一层转义 / 转义漏了）。\n' +
+      '  照着它报的"没写下限"去改 CSS 会把本来正确的规则改坏 —— 先修取样器。'
+  );
+  process.exit(1);
+}
+
 problems.push(...narrowProblems(CSS));
 
 if (problems.length > 0) {
@@ -356,5 +662,7 @@ console.log(
     `\`var(--content-max)\` 出现 ${usesContentMax} 次、自检（故意缺项必判红）通过；` +
     `窄屏（320px）那一行 ${RUN_BAR_ITEMS.length} 段各自守住约束、自检 3 条通过；` +
     `手机档位只有 [${[...PHONE_BUCKETS].sort((a, b) => a - b).join(', ')}] —— ` +
-    `320 是最小那一档，所以"320 不溢出"能推出 375 / 390 也不溢出、自检 3 条通过。`
+    `320 是最小那一档，所以"320 不溢出"能推出 375 / 390 也不溢出、自检 3 条通过；` +
+    `点击热区 ${Object.keys(TAP_CONTROLS).length} 个控件各自 ≥ ${TAP_MIN_PX}px、` +
+    `另有 ${Object.keys(TAP_EXEMPT).length} 个写在豁免表里，自检 ${TAP_SAMPLES.length} 条通过、取样器在真样式表上取得到全部 ${Object.keys(TAP_CONTROLS).length} 个控件。`
 );

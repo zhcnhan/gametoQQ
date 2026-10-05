@@ -33,6 +33,24 @@
   --radius: 12px;
   --radius-sm: 8px;
 
+  /*
+   * ★★ 手指最小可点尺寸（44px）—— ★ 这一条是**数据**，不是感觉：
+   * 苹果（44pt）与谷歌（48dp）都把这条当下限，而 44 是两者里小的那个。
+   *
+   * 为什么值得立成变量：它是**手机上手感**唯一一个能提前在代码侧量出来的量。
+   * 我先前量过一次（`scripts/check-layout.mjs` 的点击热区那一节拿到 19 个可点类），
+   * 当时**只把胶带架那两个钮抬到 44px，而且抬在 `@media (max-width: 400px)` 里** ——
+   * 也就是说**只在窄屏**够大，桌面上它们仍是 34px。这一轮把那一批全部抬到这条线上：
+   * `.mini` 与 `.topbar-tools .mini`（36/34 → 44）、`.swatch`（36 → 44）、
+   * `.tape-btn`（40 → 44）、`.codex-tab` / `.score-item` / `.boxes-fold`（原先没有下限）、
+   * `.event-card .night-option`（40 → 44）、`.tape-tool` / `.tape-chip`（只抬在窄屏 → 抬进基样式）。
+   *
+   * ⚠ 用它的是**控件**，不是所有能点的东西：一行 15px 文字里嵌的一个链接
+   * 抬到 44px 会把行高撑成两倍（见 `scripts/check-layout.mjs` 的 `TAP_EXEMPT`，
+   * 那一张表里每一条都写着"为什么它可以例外"）。
+   */
+  --tap-min: 44px;
+
   --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
   --fast: 130ms;
 
@@ -147,6 +165,9 @@ body::before {
   display: flex;
   flex-direction: column;
   gap: 1px;
+  /* ★ 原先没有下限：靠 padding + 两行小字撑出来约 41px。
+     它是"这一格数字怎么算的"入口，手机上点不中就永远看不到解释 */
+  min-height: var(--tap-min);
   padding: 5px 8px 6px;
   border: 1.5px solid var(--ink);
   border-radius: var(--radius-sm);
@@ -640,7 +661,8 @@ body::before {
   align-items: center;
   gap: 6px;
   width: 100%;
-  min-height: 34px;
+  /* ★ 34 → `--tap-min`：它是"纸箱那一叠"唯一的门把手（见 `:root` 那段） */
+  min-height: var(--tap-min);
   padding: 4px 10px;
   border: 1.5px dashed var(--ink-40);
   border-radius: var(--radius-sm);
@@ -789,7 +811,13 @@ body::before {
 
 .mini {
   flex: 0 0 auto;
-  min-height: 36px;
+  /*
+   * ★★ 36 → 44px（M5：点击热区）。
+   * 36 是"看着够大"的尺寸 —— 在桌面上它确实够，因为鼠标指针只有 1px。
+   * 而它出现在顶栏那一排（"怎么玩"/"图鉴"这类入口）：手机上是拇指在点，
+   * 44px 是苹果（44pt）与谷歌（48dp）给的下限里小的那个。
+   */
+  min-height: var(--tap-min);
   padding: 0 10px;
   border: 1.5px solid var(--ink);
   border-radius: 999px;
@@ -1229,8 +1257,15 @@ body::before {
 /* 36px + 6px 间距：8 个色块在 375px 上刚好一行放下，不许换行成 7+1 */
 .swatch {
   position: relative;
-  width: 36px;
-  height: 36px;
+  /*
+   * ★★ 36 → 44px（M5：点击热区）。色板是"从 8 个里挑一个"的动作，
+   * 而它原来比旁边那圈胶带条还小 —— 拇指在这里点错一次就是选错颜色。
+   */
+  width: var(--tap-min);
+  height: var(--tap-min);
+  /* ★ 与 `.step` 同一条纪律：宽高也写成变量了，但仍把下限**写下来** ——
+     点击热区的守卫只认 `min-height`，它不会去推断"宽 44 就是够大" */
+  min-height: var(--tap-min);
   border: 2px solid var(--ink);
   border-radius: 10px;
   background: var(--swatch);
@@ -1257,15 +1292,21 @@ body::before {
 }
 
 
-.tape-chip {
-  padding: 2px 8px 2px 0;
-  border-left: 8px solid var(--zone);
-  border-radius: 2px;
-  font-family: 'Songti SC', 'STSong', Georgia, serif;
-  font-size: 13px;
-  transform: rotate(-1.5deg);
+.tape-chips {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
+/*
+ * ★ 这里原来还有一条 `.tape-chip`（`padding: 2px 8px 2px 0` + 8px 左边框 +
+ *   `transform: rotate(-1.5deg)` 的旧版胶带块），后面 `:34xx` 那条是**后来重写的**、
+ *   也是唯一在生效的那一条。两条同名规则里前面那条是死代码，而它会造成两种误读：
+ *   ① 读的人以为胶带的样式是这一条；② 按"第一条 `.tape-chip`"取样的脚本
+ *   （`scripts/check-layout.mjs` 的点击热区守卫第一版就是）会拿到一个**没有
+ *   `min-height` 也没有 `cursor`** 的规则体，于是报出一条假的问题。
+ *   所以删掉，只留后面那一条。改胶带块请改它。
+ */
 .tape-current-meta {
   flex: 1 1 auto;
   font-size: 12px;
@@ -1284,7 +1325,7 @@ body::before {
   display: flex;
   align-items: center;
   gap: 4px;
-  min-height: 40px;
+  min-height: var(--tap-min);
   padding: 0 10px;
   border: 1.5px solid var(--ink);
   border-radius: 999px;
@@ -1684,8 +1725,16 @@ button:disabled {
   font-size: 15px;
   color: var(--ink);
   cursor: pointer;
-  /* ★ 折起来那一行也要够大：手机上这是唯一的"门把手"，11px 的字点不中 */
+  /*
+   * ★ 折起来那一行也要够大：手机上这是"把这一局带走"唯一的门把手。
+   *   原来的注释写的是"11px 的字点不中"，而它实际是 15px —— 那句注释是错的。
+   *   真正不够的是**整行的高度**：`padding: 4px 0` + 15px 的字量出来约 **30px**，
+   *   离 44px 差一截（点了没反应最常见的原因就是这个）。
+   */
+  min-height: var(--tap-min);
   padding: 4px 0;
+  display: flex;
+  align-items: center;
   list-style-position: inside;
 }
 
@@ -1832,7 +1881,7 @@ button:disabled {
 }
 
 .topbar-tools .mini {
-  min-height: 34px;
+  min-height: var(--tap-min);
   padding: 0 10px;
 }
 
@@ -2248,6 +2297,10 @@ button:disabled {
 .step {
   width: 56px;
   height: 56px;
+  /* ★ 56px 已经比下限宽，这一条只是**把它写下来**：点击热区的守卫查的是
+     `min-height`，而"宽高写着 56px"在守卫眼里等于没声明（它没法知道 56 ≥ 44） */
+  min-width: var(--tap-min);
+  min-height: var(--tap-min);
   display: grid;
   place-items: center;
   padding: 0;
@@ -3380,8 +3433,14 @@ button:disabled {
  * 顶栏已经有标题 + 四个指标卡 + 这一条，320~400px 上确实挤。
  * 所以窄屏做三件事：
  *  ① 「胶带」那个标签**收起来**（横条自己有上下文，标签是重复的）；
- *  ② 触控目标放大到 **44px**（苹果/谷歌都把这个当下限，而原来是 34px）——
- *     它是"拖"的起点，太小就变成"总是拖不动"；
+ *  ② 触控目标**够大**（苹果/谷歌都拿 44px 当下限，而它原来是 34px）——
+ *     它是"拖"的起点，太小就变成"总是拖不动"。
+ *     ★ 现在这一条住在**基样式**里（`width/height: var(--tap-min)`），
+ *     这里只留窄屏才需要的那一下：字号。
+ *     先前它写成这里的 `width: 44px; height: 44px`，于是**只有窄屏够大**，
+ *     桌面上仍是 34px —— 而"手机上够大"正是这两枚钮唯一要满足的事，
+ *     写在这个媒体查询里等于把它交给了运气（守点击热区的那道守卫
+ *     只看基样式，而它当时也还没写）。
  *  ③ 胶带块之间**留出空隙**，免得拖到一半抓错相邻的那一张。
  */
 @media (max-width: 400px) {
@@ -3396,17 +3455,13 @@ button:disabled {
   }
 
   .tape-tool {
-    width: 44px;
-    height: 44px;
     font-size: 18px;
   }
 
   .tape-chip {
-    min-height: 44px;
     font-size: 13px;
   }
 }
-
 .tape-shelf-label {
   flex: 0 0 auto;
   font-size: 11px;
@@ -3443,7 +3498,8 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 4px;
-  min-height: 34px;
+  /* ★★ 34 → `--tap-min`：它是"拖"的起点，34px 上拇指拖不动（见 `:root` 那段） */
+  min-height: var(--tap-min);
   padding: 0 10px 0 7px;
   border: 1.5px solid var(--ink-16);
   border-left: 7px solid var(--zone, var(--ink-16));
@@ -3505,8 +3561,10 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: var(--tap-min);
+  height: var(--tap-min);
+  /* ★ 同 `.step` / `.swatch`：宽高之外把下限写下来，守卫只认这一条 */
+  min-height: var(--tap-min);
   border: 1.5px solid var(--ink);
   border-radius: 999px;
   background: var(--card);
@@ -3867,6 +3925,8 @@ button:disabled {
   flex-direction: column;
   align-items: center;
   gap: 2px;
+  /* ★ 原先没有下限：靠 padding + 字号撑出来约 42px，正好卡在下限下面 */
+  min-height: var(--tap-min);
   padding: 7px 4px;
   font: inherit;
   font-size: 13px;
@@ -4429,6 +4489,15 @@ button:disabled {
 .run-bar-toggle {
   flex: 0 0 auto;
   margin-left: auto;
+  /*
+   * ★ 原来没有下限：`padding: 3px 8px 4px` 配 11.5px 的字，量出来约 **23px** ——
+   * 它是"展开先知日历"唯一的门把手（`data-action="prophet"`），
+   * 而它比这一行里任何一个东西都小。
+   * ⚠ 这一行在 320px 上是有账的（见 `scripts/check-layout.mjs` 那段注释：
+   *   可用 296px、固定段约 232px），但那一笔算的是**宽**；
+   *   把高度抬到 44px 只让这一行变高、不会让它变宽。
+   */
+  min-height: var(--tap-min);
   padding: 3px 8px 4px;
   font: inherit;
   font-size: 11.5px;
@@ -4820,9 +4889,13 @@ button:disabled {
   color: var(--ink-40);
 }
 
-/* 卡片里的选项按钮比夜间那套矮一档：它是"顺手决定"，不是"今晚怎么办" */
+/*
+ * 卡片里的选项按钮比夜间那套矮一档：它是"顺手决定"，不是"今晚怎么办"。
+ * ★ 矮一档原来是 40px —— 而"顺手"正是最不能要求玩家瞄准的时候，
+ *   所以它退到 `--tap-min`（44px）就停：比 64px 那套矮，但不低于手指的下限。
+ */
 .event-card .night-option {
-  min-height: 40px;
+  min-height: var(--tap-min);
 }
 
 /*
