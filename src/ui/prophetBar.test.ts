@@ -21,7 +21,7 @@
  *    （两个属性分家的表现是"看起来开着、读屏说关着"，而屏幕上没有异常）。
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import { getDisasterDef, STOCKPILE_DAYS } from '../data/disaster';
+import { getDisasterDef } from '../data/disaster';
 import { CATEGORY_LABELS } from '../data/items';
 import { severityAt } from '../model/calendar';
 import { FakeDocument, allText, asElement, installFakeWindow, type FakeElement } from './fakeDom';
@@ -64,24 +64,32 @@ describe('★★ 先知栏：那一行说得出"这一场 + 今天"', () => {
     expect(barAt('cold_snap', 4).querySelectorAll('.run-bar-days')[0]?.textContent).toBe('已经在里面了');
   });
 
-  it('★ 强度写的是**那一天**的值（不是 D-Day 的峰值），而那条测量线是**还剩多少**', () => {
+  it('★ 强度写的是**那一天**的值（不是 D-Day 的峰值）', () => {
     const disaster = getDisasterDef('cold_snap');
     const late = barAt('cold_snap', -2).querySelectorAll('.run-bar')[0];
     const expected = Math.round(severityAt(disaster, -2) * 100);
     expect(allText(late)).toContain(`强度 ${expected}`);
+  });
 
-    // 还剩 2 天 → 2/7 ≈ 0.286（★ 这条线是**倒着走**的：满格 = 刚开局、见底 = D-Day）
-    expect(late?.attributes?.['style']).toContain('--remain:0.286');
-    expect(barAt('cold_snap', -7).querySelectorAll('.run-bar')[0]?.attributes?.['style']).toContain(
-      '--remain:1.000'
-    );
-    // D-Day 见底；生存期也是 0（"离那天还有多远"这件事已经问完了）
-    expect(barAt('cold_snap', 0).querySelectorAll('.run-bar')[0]?.attributes?.['style']).toContain(
-      '--remain:0.000'
-    );
-    expect(barAt('cold_snap', 3).querySelectorAll('.run-bar')[0]?.attributes?.['style']).toContain(
-      '--remain:0.000'
-    );
+  it('★★ 那条测量线**已经删掉**，不许再长回来', () => {
+    /*
+     * 用户 2026-10（配一张横贯全宽的黑色裁图）：
+     * 「我的意思是不管那个是什么你直接给我删了」。
+     *
+     * 它原本是先知栏上方一条 4px 的进度轨（`--remain` = 还剩几成），开局那天
+     * 正好满格 —— 一整条实心黑，没有刻度也没有起点，谁看都像莫名其妙的分隔线。
+     * 我先把它切成一格一天（数得出格子、与"还有 N 天"对得上），用户还是要它走：
+     * **一个要解释才看得懂的东西，本身就是噪声。**
+     * ⚠ 所以这里钉的不是样式，是**不要再把它加回来**（含 `--remain` / `--ticks`）。
+     */
+    for (const day of [-7, -2, 0, 3]) {
+      const html = prophetBarHtml('cold_snap', day);
+      expect(html, '那条测量线又回来了').not.toContain('run-bar-track');
+      expect(html, '`--remain` 又回来了').not.toContain('--remain');
+      expect(html, '`--ticks` 又回来了').not.toContain('--ticks');
+    }
+    // 而"还剩几天"这件事**没有跟着一起丢**：它在那句倒计时里
+    expect(allText(barAt('cold_snap', -2))).toContain('还有 2 天');
   });
 
   it('★★ 换一天 / 换一场，那一行**真的不一样**（这就是"让我有感知"的判据）', () => {
@@ -184,37 +192,14 @@ describe('★★ 展开 / 收起：`hidden` 与 `aria-expanded` 必须一起翻'
 });
 
 describe('★ 口径：算一次就够（两处各算一遍的那种错）', () => {
-  it('★★ `prophetViewOf` 报的剩余量与倒计时，与写进 HTML 的是同一份', () => {
+  it('★★ `prophetViewOf` 报的天数与倒计时，与写进 HTML 的是同一份', () => {
     for (const day of [-7, -4, -1, 0, 3, 9]) {
       const view = prophetViewOf('cold_snap', day);
       const root = barAt('cold_snap', day);
-      const style = root.querySelectorAll('.run-bar')[0]?.attributes?.['style'] ?? '';
-      expect(style, `第 ${day} 天的剩余量与视图对不上`).toContain(`--remain:${view.remain.toFixed(3)}`);
+      const bar = root.querySelectorAll('.run-bar')[0];
+      expect(bar?.attributes?.['data-day'], `第 ${day} 天的天数与视图对不上`).toBe(String(day));
       const days = root.querySelectorAll('.run-bar-days')[0];
       if (view.countdown) expect(days?.textContent).toBe(view.countdown.label);
-    }
-  });
-
-  it('★ 剩余量永远落在 0..1（手改过的档也不许给出越界的 `--remain`）', () => {
-    expect(prophetViewOf('cold_snap', -30).remain).toBe(1);
-    expect(prophetViewOf('cold_snap', 99).remain).toBe(0);
-    expect(prophetViewOf('cold_snap', null).remain).toBe(0);
-  });
-
-  it('★★ 那条测量线**一格一天**：亮着的格子数就是"还有 N 天"里那个 N', () => {
-    /*
-     * 用户 2026-10 报的："先知日历上方位置有一个莫名其妙的黑条"——
-     * 那一版是连续填充，而开局那天 `--remain` 正好是 1.000，一整条实心黑，
-     * 看不出它在量什么。切成 `STOCKPILE_DAYS` 格之后，数与图必须**互相对得上**，
-     * 否则就是又一次"字说 3 天、图亮 5 格"。
-     */
-    for (const day of [-7, -6, -3, -1, 0, 4]) {
-      const view = prophetViewOf('cold_snap', day);
-      const style = barAt('cold_snap', day).querySelectorAll('.run-bar')[0]?.attributes?.['style'] ?? '';
-      expect(style, `第 ${day} 天的格数没有跟数据走`).toContain(`--ticks:${STOCKPILE_DAYS}`);
-      const lit = Math.round(view.remain * STOCKPILE_DAYS);
-      const want = day < 0 ? -day : 0; // 囤货期还剩 -day 天；D-Day 与生存期见底
-      expect(lit, `第 ${day} 天亮着的格子数与天数对不上`).toBe(Math.min(want, STOCKPILE_DAYS));
     }
   });
 

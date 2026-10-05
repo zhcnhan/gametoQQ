@@ -288,7 +288,6 @@ const MEASURE = `(async () => {
     tapeShelf: h('.tape-shelf'),
     runBar: h('.run-bar'),
     runBarRow: h('.run-bar-row'),
-    runTrack: h('.run-bar-track'),
     body,
     bodyBox: h(body),
     titleRow: h('.title'),

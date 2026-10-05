@@ -25,15 +25,12 @@
  *
  * ## 三条纪律
  *
- *  ① **零依赖、零图片**：一个 CSS 变量（`--remain`）画剩下的天数、
- *     一个 `data-days` 画倒计时、一行 `<b>` 画强度 —— 全部是纯 CSS + 数字；
+ *  ① **零依赖、零图片**：一个 `data-day` 画倒计时、一行 `<b>` 画强度 ——
+ *     全部是纯 CSS + 数字；
  *  ② **不碰纸墨朱红的语义**：颜色一律走 `var(--ink)` / `var(--vermilion)`；
- *  ③ ★ **比例只算一次**：`--remain` 与 `data-days` 都由 `prophetBarHtml`
+ *  ③ ★ **天数只算一次**：`data-day` 与那句"还有 N 天"都由 `prophetBarHtml`
  *     算好写上去；CSS / 界面 / 测试都不许再"顺手重算一遍"——
  *     两处各算一遍的表现是"条走到一半、字说还有一天"，而两个数各自都算得出来。
- *     ⚠ `--remain` 是**还剩几成**（灾前七天满格 → D-Day 见底），
- *     方向必须与右边那句"还有 N 天"一致 —— 第一版写成了"走了多少"，见下面
- *     `prophetViewOf` 里那段注释。
  *
  * ## ★ 它为什么与「窗外」一起返回（`ui/windowBand.ts` 调用它）
  *
@@ -49,7 +46,7 @@
  * 但强度曲线与"最要紧的两类"照旧（**没有天数就少说一句，不编一个数**）。
  */
 import { CATEGORY_LABELS } from '../data/items';
-import { getDisasterDef, STOCKPILE_DAYS } from '../data/disaster';
+import { getDisasterDef } from '../data/disaster';
 import { calendarBars, dayLabel, daysUntilDisaster, severityAt } from '../model/calendar';
 import type { DisasterProfile } from '../model/types';
 
@@ -72,21 +69,11 @@ export interface ProphetView {
   peak: number;
   /** 今天（或 D-Day）的强度 0..1 —— 顶栏那个数字 */
   today: number;
-  /** 离灾难**还剩几成**的囤货期 0..1（灾前七天满格，D-Day 见底；生存期恒 0） */
-  remain: number;
   /** 「这一场最要紧的两类」（`DisasterProfile.priorityCategories`） */
   priorities: string[];
   /** 逐日天象，按天数升序（详情层要的那一列） */
   bars: { day: number; severity: number; hint: string; label: string }[];
 }
-
-/**
- * 日历上总共有多少天要摊开 —— 就是囤货期的天数。
- *
- * ★ 从 `data/disaster.ts` 取，不在这儿另写一个 `7`：
- * 这一页的整条线（还剩几成）与"灾前七天"这句话必须同源，
- * 两处各写一个 7 时改动一处就会静默错位（而它只在"天数只剩一两天"时看得出来）。
- */
 
 /**
  * 把这一场 + 今天算成一份可读的视图。纯函数，不碰 DOM。
@@ -105,22 +92,12 @@ export function prophetViewOf(disasterId: string, day: number | null): ProphetVi
   const peak = bars.find((b) => b.day === 0)?.severity ?? 1;
   const today = day === null ? peak : severityAt(disaster, day);
 
-  /*
-   * ★ 那一条说的是**还剩多少**，不是"走了多少"（第一版写反过，被用例抓住）。
-   *
-   * 它是**倒计时**的形状：灾前七天满格，一天少一格，D-Day 见底；
-   * 生存期恒 0（"离那天还有多远"这件事已经问完了），没有 `day` 时也是 0。
-   * 夹在 0..1 之间：`day` 若是被手改过的档带上来的怪数，这里也不许越界。
-   */
-  const remain = day === null ? 0 : Math.min(1, Math.max(0, daysUntilDisaster(day) / STOCKPILE_DAYS));
-
   return {
     name: disaster.name,
     day,
     countdown: day === null ? null : { label: countdownLabel(day), days: day },
     peak,
     today,
-    remain,
     priorities: disaster.priorityCategories.map((c) => CATEGORY_LABELS[c]),
     bars
   };
@@ -147,10 +124,9 @@ function severityText(severity: number): string {
 /**
  * ★★ **抬头就看得见的那一行**（D-33 的第 ① 层）。
  *
- * 三层，从上往下读：**还剩多少**那条测量线 → 灾难名 + 强度 + 倒计时 + 展开按钮
- * → "这一场最要紧的两类"。
+ * 两层，从上往下读：灾难名 + 强度 + 倒计时 + 展开按钮 → "这一场最要紧的两类"。
  *
- * ★ 第三层（"最要紧的是 …"）放在这里而不是只留在展开层里，理由是用户那句
+ * ★ 第二层（"最要紧的是 …"）放在这里而不是只留在展开层里，理由是用户那句
  * "能介绍更多"：它是最该被一眼看到的一句话（决定今天出门买什么），
  * 而逐日细节才是"要问才给"的那一半。
  */
@@ -162,21 +138,16 @@ export function prophetBarHtml(disasterId: string, day: number | null): string {
       )}</span>`
     : '';
   /*
-   * ★ 还剩多少用**内联 `--remain`**，不用 `data-*` + CSS 逐档规则：
-   * 前者是一个连续量，后者要写 8 条规则、且每加一档都得记得加一条。
-   *
-   * ★★ `--ticks` 是**一格一天**（用户 2026-10 报的："先知日历上方位置有一个莫名其妙
-   * 的黑条"）。前一版只有一条连续的黑填充，而开局那天 `--remain` 正好是 **1.000**
-   * —— 满格的黑条看不出刻度，读起来就是一条分隔线／装饰，谁也不知道它在说什么。
-   * 现在按 `STOCKPILE_DAYS` 等分切格（CSS 只画缝，见 `.run-bar-track::after`），
-   * 于是"还有 N 天"与"亮着 N 格"**是同一件事的两种说法**，数得出来。
-   * ⚠ 分母必须与 `remain` 用的是同一个常数，否则字与图又会各说各话。
+   * ★★ 那条测量线**整条删掉**了（用户 2026-10 的原话："我的意思是不管那个是什么
+   * 你直接给我删了"）。它原本是一条倒着走的进度轨（`--remain` = 还剩几成），
+   * 而开局那天正好是 1.000 —— 一整条 4px 的实心黑横在先知栏上方，没有刻度、
+   * 没有起点，谁看都像一条莫名其妙的分隔线。
+   * 我先把它切成一格一天（数得出格子、与"还有 N 天"对得上），用户还是要它走 ——
+   * **一个要解释才看得懂的东西，本身就是噪声。**
+   * ⚠ 别再加回来：`data-day` 与右边那句"还有 N 天"已经把这件事说完了。
    */
   return `
-    <section class="run-bar" data-day="${view.day === null ? '' : view.day}" style="--remain:${view.remain.toFixed(
-      3
-    )};--ticks:${STOCKPILE_DAYS}">
-      <div class="run-bar-track"><i></i></div>
+    <section class="run-bar" data-day="${view.day === null ? '' : view.day}">
       <div class="run-bar-row">
         <span class="run-bar-name">${escapeHtml(view.name)}</span>
         <span class="run-bar-sev">强度 <b>${severityText(view.today)}</b></span>
