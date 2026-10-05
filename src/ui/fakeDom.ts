@@ -447,6 +447,25 @@ export class FakeElement {
     return false;
   }
 
+  /**
+   * 真浏览器会把元素滚进视野（`Element.scrollIntoView`）。
+   *
+   * ★★ 补它是因为一条"**点货架标题打开抽屉**"的用例（2026-10，删掉那枚多余的
+   * 「胶带」按钮时加的守卫）：`OrganizeScreen.openZoneDrawer` 在打开抽屉前会把
+   * 那一块货架卡滚进视野（`card.scrollIntoView({ block: 'start' })`），
+   * 而假体**没有这个成员** → `TypeError: card.scrollIntoView is not a function`。
+   *
+   * 表现很误导：栈顶指在**打开抽屉**那一行，看起来像"点标题打不开抽屉"，
+   * 而门其实是通的 —— 只是走到"滚动"这一步才崩。
+   *
+   * ⚠ 假体**不做布局**，所以这里无事可做，但这个方法必须**存在**：
+   * 缺一个成员的代价从来不是"报错"，而是被测代码里某条分支静静地不跑
+   * （见上面 `isConnected` 那段）。这一次它选择了报错，那是运气好。
+   */
+  scrollIntoView(_arg?: boolean | ScrollIntoViewOptions): void {
+    // 无布局可滚：真的什么都不用做
+  }
+
   closest(selector: string): FakeElement | null {
     let cur: FakeElement | null = this;
     while (cur) {

@@ -206,6 +206,55 @@ describe('★ 胶带架渲染出来了', () => {
   });
 });
 
+describe('★★ 「改这张胶带」的门只有两扇', () => {
+  /*
+   * ★★ 这是玩家指出来的一枚多余按钮。他的原话：
+   *
+   * > "而且胶带架那个入口没有任何意义啊，胶带不是完全在最上面那一栏就完事了吗"
+   *
+   * 我没听懂，追问之后他发来一张**那枚按钮的裁图**（货架抬头右侧、带胶带图标
+   * 与「胶带」两个字的药丸）："我说的是这个"。
+   *
+   * 他说得对，而且是**两条**独立的理由：
+   *  ① 同一行上的**货架标题本身就是同一个动作的门** —— 标题上挂着
+   *     `data-action="edit-zone"`，点它走的是与那枚按钮**同一个**
+   *     `openZoneDrawer(shelfId)`；
+   *  ② 贴 / 撕 / 改名已经全部由顶栏那条胶带架管（`＋` 拖到某一行新建、
+   *     剪刀拖上去撕、轻点一张改名改色）。
+   * 一枚按钮点下去发生的事，与它左边那行字一模一样，那就是多出来的门。
+   *
+   * ⚠ 删它时最容易犯的错是**把门一起删掉**（只剩长按，而手机上没人猜得到要长按）。
+   * 所以这里钉两件事：**那枚按钮没了**，而且**标题那条路还在、还打得开**。
+   */
+  it('★★ 每块抬头只剩一枚按钮（「顺手位」），改胶带那个门在标题上', () => {
+    const { root } = mount('rows', shared);
+    const shelves = count(root, '[data-shelf-card]');
+    expect(shelves, '这一档该有几块架子').toBeGreaterThan(0);
+    expect(count(root, '.tape-btn'), '每块抬头上只该剩一枚按钮').toBe(shelves);
+    expect(count(root, '[data-action="toggle-handy"]'), '那一枚是「顺手位」').toBe(shelves);
+    /*
+     * ★ 判据是"**带这个动作的元素个数 == 架子数**"、并且它们都是 `H2`，
+     * 而不是"某个类名不存在" —— 后者改一次类名就绕过去了，
+     * 而这条要守的是"每块架子上**仍然有一个**改胶带的门，且它就是标题"。
+     */
+    const doors = root.querySelectorAll('[data-action="edit-zone"]');
+    expect(doors.length, '每块架子上仍要有一个改胶带的门').toBe(shelves);
+    for (const el of doors) {
+      expect(el.tagName, '那个门必须是标题本身，不是又一枚按钮').toBe('H2');
+    }
+  });
+
+  it('★★ 点标题就打得开抽屉 —— 门没有跟着那枚按钮一起消失', () => {
+    const { root } = mount('rows', shared);
+    const title = root.querySelectorAll('[data-shelf-title]')[0]!;
+    expect(title, '货架标题该在').toBeTruthy();
+    // 走原生 click（与上面「只发一个原生 click 也能打开抽屉」同一条路）
+    title.dispatch('click', {});
+    const input = body.querySelectorAll('input[data-zone-name]')[0];
+    expect(input, '点标题该把抽屉打开（否则玩家再也改不了胶带）').toBeTruthy();
+  });
+});
+
 describe('★★ 家具「凭什么占地方」要看得见', () => {
   /*
    * ★★ 这条是玩家问出来的。用户的原话：

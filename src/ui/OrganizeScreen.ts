@@ -1002,9 +1002,6 @@ export class OrganizeScreen {
                   title="${handyTitle(shelf.handyRank, handyLimit)}">
             ${handyLabel(shelf.handyRank, handyLimit)}
           </button>
-          <button class="tape-btn" data-action="edit-zone" data-shelf="${shelf.id}" aria-label="改这一架的胶带">
-            ${iconSvg('tag')}<span>胶带</span>
-          </button>
         </div>
         ${special}
         ${farNote}
