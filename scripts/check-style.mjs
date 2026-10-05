@@ -499,6 +499,56 @@ if (undefinedVars.size > 0) {
   );
 }
 
+// ———————— ⑨ ★「飘着的东西」的类名必须与数据对得上（M4） ————————
+
+/**
+ * ## 它拦的是哪一类错
+ *
+ * `windowThemes.ts` 给每一场灾难定了一个 `fall`（snow / ash / rain / dust / none），
+ * 而 `ui/windowBand.ts` 把 `windowScene` 作为类名挂在带子上，
+ * 由 CSS 按 `.window-band.is-<scene> .window-band-fall` 决定画什么形状。
+ *
+ * **这中间有一层手写的名单**（CSS 不读 TS），所以它天然会漂：
+ *  · 加一场雨类灾难，忘了往 CSS 名单里加 → **那一场的窗外没有雨**（静默）；
+ *  · 改一场的 `fall`，CSS 名单没跟着改 → 画出来的是**另一种东西**（静默）。
+ *
+ * 两种都不会报错，只会让"看起来不一样"这件事悄悄少一点 ——
+ * 所以在这里对账：**数据里说有雪的每一场，CSS 里都必须有线**。
+ *
+ * ⚠ vitest 读不到 `.css` 原文（§3.1），所以这条只能在这里跑。
+ */
+import { DISASTER_DEFS } from '../src/data/disaster.ts';
+import { windowThemeOf } from '../src/data/windowThemes.ts';
+
+const fallClasses = (kind) => {
+  const names = DISASTER_DEFS.filter((d) => windowThemeOf(d).fall === kind).map((d) => `.window-band.is-${d.windowScene}`);
+  return names;
+};
+const missingFall = [];
+for (const kind of ['snow', 'ash', 'rain', 'dust']) {
+  for (const cls of fallClasses(kind)) {
+    /*
+     * 判据：该场那一组**选择器列表**里必须有它的类名。
+     *
+     * ⚠ 第一版写的是"类名之后 400 字内出现 `window-band-fall {`"，而它**误报**：
+     * 第一组只有 9 个选择器，第二组从 400 字之外才开始 —— 于是名单明明是对的，
+     * 守卫却说它们没有线（`_regen-fall-css.ts` 刚生成完就被它判红）。
+     * 现在改成"类名后面不许出现 `}`（= 还在同一个选择器列表里）"，
+     * 长度不再参与判断。
+     */
+    const escaped = cls.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`${escaped}(?=[,\\s])[^}]*\\{`);
+    if (!re.test(cssText)) missingFall.push(`${cls}（fall=${kind}）`);
+  }
+}
+if (missingFall.length > 0) {
+  note(
+    `这些场次的「飘着的东西」在 CSS 里没有对应的类：\n      ${missingFall.join('\n      ')}\n` +
+      `    → 它们的窗外会少一层形状（雪 / 灰 / 雨 / 尘），而**不会报错**。\n` +
+      `    → 名单在 style.css 的 .window-band-fall 那几组选择器里，按 fall 类型分组。`
+  );
+}
+
 // ———————— 报账 ————————
 if (failures.length > 0) {
   console.error('[check-style] 样式层次出问题了：\n');

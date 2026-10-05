@@ -275,3 +275,71 @@ describe('★★ 反差层：标题对得上数、差值对得上盘面、D-Day 
     expect(titles, 'D-Day 不该报存货天数').not.toContain('你 / 整条街');
   });
 });
+
+/**
+ * ★★ 突发事件的**框**（2026-10 用户："把那些事件任务也弄得显眼一点，
+ * 哪怕是不同的给个框也行啊，注意设计美学"）
+ *
+ * ## 它守的是"这一件有没有被抓住眼睛"
+ *
+ * 在加框之前，一件突发事件与"消耗 主食 2"那类流水长得一模一样 ——
+ * 都只是正文里一段普通的话。而它是这一局里**最该被读到**的东西：
+ * 它决定"你的整理有没有救到你"，而且它可能整局都不出现（约三成日子）。
+ *
+ * 判据三件：**有框**（不是光秃秃一段话）、**顶上写着这是什么**、
+ * **接住与没接住长得不一样**（颜色语义一个都不是新发明的：
+ * 暖黄 = 安全 / 窗内，朱红 = 警告 —— §5A 那两条原样适用）。
+ */
+describe('★★ 突发事件的框：它必须自己站出来', () => {
+  /** 一份带突发事件的日子（`resolved` 决定接住没有） */
+  function withEmergency(resolved: boolean): GameStore {
+    const store = survivalStore();
+    store.commit((draft) => {
+      draft.survival.last = {
+        ...draft.survival.last,
+        emergencyId: 'e_pipe_freeze',
+        emergencyResolved: resolved,
+        emergencyHurt: resolved ? 0 : 2
+      } as never;
+    });
+    return store;
+  }
+
+  function mountStore2(store: GameStore): FakeElement {
+    const doc = new FakeDocument();
+    installFakeWindow(doc);
+    const root = doc.createElement('div');
+    new SurvivalScreen(asElement(root), store, {
+      onStart: () => undefined,
+      onNext: () => undefined,
+      onTrade: () => false
+    }).mount();
+    return root;
+  }
+
+  it('★★ 突发事件有自己的框，而且顶上写着"这是什么"', () => {
+    const root = mountStore2(withEmergency(true));
+    const frames = root.querySelectorAll('.event-frame');
+    expect(frames.length, '突发事件没有套框 —— 它混在流水里了').toBeGreaterThan(0);
+    const kinds = root.querySelectorAll('.event-kind').map((el) => el.textContent);
+    expect(kinds.join('｜'), '框上没有一行说"这是什么"').toContain('突发');
+  });
+
+  it('★★ 接住了与没接住**长得不一样**（暖黄 vs 朱红那两条既有语义）', () => {
+    const okRoot = mountStore2(withEmergency(true));
+    const badRoot = mountStore2(withEmergency(false));
+    const ok = okRoot.querySelectorAll('.event-frame')[0];
+    const bad = badRoot.querySelectorAll('.event-frame')[0];
+    expect(ok?.classList.contains('is-resolved'), '接住了没画成"安全"那一档').toBe(true);
+    expect(bad?.classList.contains('is-hurt'), '没接住没画成"警告"那一档').toBe(true);
+    // 两档的类名必须互斥（同一个框不该同时是两种语义）
+    expect(ok?.classList.contains('is-hurt')).toBe(false);
+    /*
+     * ⚠ 顶上那行字要读**叶子**（`.event-kind`）：`.event-frame` 里还有 `<p>`，
+     * 而假 DOM 的混排容器 `textContent` 是空串 —— 读容器会得到 ''，
+     * 那条失败看起来像"框没渲染"（假体的老边界，见 `fakeDom.ts`）。
+     */
+    expect(okRoot.querySelectorAll('.event-kind')[0]?.textContent).toContain('接住了');
+    expect(badRoot.querySelectorAll('.event-kind')[0]?.textContent).toContain('没接住');
+  });
+});

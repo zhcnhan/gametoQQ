@@ -668,29 +668,46 @@ function qualityNote(quality: number): string {
 }
 
 /**
- * 突发事件的当天叙述（§5 的另一半，M2）。
+ * ★★ 突发事件的**框**（2026-10 用户："把那些事件任务也弄得显眼一点，
+ * 哪怕是不同的给个框也行啊，注意设计美学"）。
  *
- * 两句话都要说清楚：**是什么事** + **靠什么化解的（或缺了什么）**。
- * 只写"今天出了件事"等于把一条可见的因果链藏起来 ——
- * 而 §5 那句话的力量恰恰在于"你之前在整理期做的那个决定救了今天的你"。
+ * ## 它补的是哪一笔账
  *
- * 化解成功时用暖黄：它属于 M2 新增的正反馈（安全感 / 交付成功 / 图鉴点亮）那一类，
- * 是暖黄**第二次上岗**（§5A 限定暖黄只用于"安全 / 窗内"语义）。
- * 没化解时用中性的 press-line，不用朱红 —— 朱红专指警告，
- * 而"你没把药放在门口"不是一个需要报警的事，它是一个结果。
+ * 在加框之前，一件突发事件与"消耗 主食 2"那类流水**长得一模一样** ——
+ * 都只是 `run.log` 里的一行、或者正文里一段普通的话。
+ * 而它是这一局里**最该被读到**的东西：它决定"你的整理有没有救到你"。
+ * 更糟的是它可能整局都不出现（约三成日子），所以它一出现就必须被抓住。
+ *
+ * ## 三处设计上的讲究
+ *
+ *  ① **顶上那一行小字是"这是什么"**：`突发` / `化解` / `没接住`。
+ *     它让"今天有件特别的事"在读者扫一眼时就成立 —— 而在此之前，
+ *     玩家要读完那两句才知道那是件事；
+ *  ② **框的形状分三档**（`is-resolved` / `is-hurt`）：
+ *     化解了画**双重线**（暖黄，§5A 里"安全 / 窗内"那一档），
+ *     没接住画**实心朱红左边**（朱红是警告那一档）。
+ *     两档的颜色语义都是既有纪律里的，不是新发明的；
+ *  ③ **零评测**（§5 引擎①）：框里只说"发生了什么、靠什么化解的"，
+ *     不写"干得漂亮"，也不写"你该早点整理"。
  */
 function emergencyHtml(last: SurvivalSnapshot): string {
   if (!last.emergencyId) return '';
   const def = findEmergency(last.emergencyId);
   if (!def) return '';
-  if (last.emergencyResolved) {
-    return `<p class="block-note warm">${escapeHtml(def.text)}顺手位上有，用上了。</p>`;
-  }
-  return `<p class="press-line">${escapeHtml(def.text)}${
-    def.needOnHandy > 1
-      ? `顺手位上不够 ${def.needOnHandy} 件${CATEGORY_LABELS[def.category]}。`
-      : `顺手位上没有${CATEGORY_LABELS[def.category]}。`
-  }</p>`;
+  const resolved = last.emergencyResolved;
+  const body = resolved
+    ? `${escapeHtml(def.text)}顺手位上有，用上了。`
+    : `${escapeHtml(def.text)}${
+        def.needOnHandy > 1
+          ? `顺手位上不够 ${def.needOnHandy} 件${CATEGORY_LABELS[def.category]}。`
+          : `顺手位上没有${CATEGORY_LABELS[def.category]}。`
+      }`;
+  return `
+    <div class="event-frame is-emergency ${resolved ? 'is-resolved' : 'is-hurt'}">
+      <span class="event-kind">${resolved ? '突发 · 接住了' : '突发 · 没接住'}</span>
+      <p class="event-text">${body}</p>
+    </div>
+  `;
 }
 
 /**

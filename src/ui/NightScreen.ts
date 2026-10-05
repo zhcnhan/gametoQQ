@@ -84,7 +84,21 @@ export class NightScreen implements Screen {
 
     this.query('[data-main]').innerHTML = `
       <section class="block">
-        <p class="night-text">${escapeHtml(def.text)}</p>
+        ${
+          /*
+           * ★ 套上「事件的框」（2026-10 用户："把那些事件任务也弄得显眼一点，
+           * 哪怕是不同的给个框也行啊"）。
+           *
+           * 夜里的那一件与"突发事件"、"门口那件事"用**同一套形状**（`.event-frame`），
+           * 只靠框的样式分档：这里用**虚线墨框**（夜里的事更轻、更私密），
+           * 而白天那件是实线、突发事件是朱红左边那一条。
+           * 三种事件的顶上都有一行"这是什么"，所以扫一眼就知道碰上了哪一类。
+           */
+          `<div class="event-frame is-night">
+             <span class="event-kind">夜里 · ${decided ? '已经决定了' : '还没决定'}</span>
+             <p class="event-text">${escapeHtml(def.text)}</p>
+           </div>`
+        }
         ${
           decided
             ? `<p class="night-outcome">${escapeHtml(
