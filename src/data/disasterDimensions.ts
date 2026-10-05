@@ -30,6 +30,11 @@
  * §10B.3.1 把前 4 维（消耗 / 腐坏 / 刚需 / 温度）定为 **L1**：
  * 只靠它们，一百场会写成"同一件事的不同数字"。所以"只在前 4 维不同"
  * 就是"还停在 L1"的同义语 —— 那正是要判不合格的那一类。
+ *
+ * ★ **而那 4 维里只有 3 维算数**（决策 C，2026-10 用户拍板）：第 4 维（外界温度）
+ * 的唯一读点是反差层那一栏，**不改变任何玩法数值**，所以它标成 `display` ——
+ * 签名里留着，但不进"用到几维"、也不参与"只在 L1 上不同"这条判据。
+ * 在此之前 116 场**每一场都白送一维**，把这条判据的灵敏度整体稀释掉了。
  */
 import type { DisasterProfile } from '../model/types';
 
@@ -41,6 +46,22 @@ export interface DisasterDimension {
   label: string;
   /** 这一维属于哪一层（L1 是"只改数字"的那四维） */
   tier: 'L1' | 'L2' | 'L3' | 'L4';
+  /**
+   * ★ **这一维只是表现，不改任何玩法数值**（决策 C，2026-10 用户拍板）。
+   *
+   * 它不进 `usedDimensions` —— 也就是**不算"这一场用到了几维"**。
+   * 为什么必须有这个标记，而不是干脆把这一维从清单里删掉：
+   *
+   *  · 它仍然是**玩家看得见的一维**（`ui/SurvivalScreen` 的"外面 / 里面"那一栏），
+   *    所以"两场只在温度上不同"仍然该算相似，`disasterSignature` 必须留着它；
+   *  · 但它的值是**类型必填**的，于是 116 场**每一场都白送一维** ——
+   *    把"用到几维"整体抬高 1。那会稀释 §10B.3.1 那条换皮判据的灵敏度：
+   *    一场只写了 3 个真维度的灾难，报出来是 4 维，看起来"够 L1 了"。
+   *
+   * 有标记之后，"用到几维"是**算出来的**而不是数出来的（与本文件开头那条同一个道理）：
+   * `Math.max` 不用手写，`check-registry` 的门槛也不必再迁就它。
+   */
+  display?: boolean;
   /**
    * 读值。**必须归一化**：不写与写中性值（1 / 0 / 空数组）要得到同一个结果 ——
    * 否则"这一场没写 `carryFactor`"与"写了 `carryFactor: 1`"会被当成两场不同的灾难，
@@ -73,7 +94,12 @@ export const DISASTER_DIMENSIONS: readonly DisasterDimension[] = [
   { no: 1, label: '每日消耗', tier: 'L1', read: (d) => map(d.dailyDrain) },
   { no: 2, label: '腐坏速度', tier: 'L1', read: (d) => d.spoilRate },
   { no: 3, label: '刚需排序', tier: 'L1', read: (d) => [...(d.priorityCategories ?? [])].sort().join(',') },
-  { no: 4, label: '外界温度', tier: 'L1', read: (d) => map(d.temperatures) },
+  /*
+   * ★ 第 4 维（外界温度）**只是表现**（决策 C）：它的唯一读点是反差层那一栏，
+   * 没有任何玩法数值挂在上面。所以它算 `display` —— 签名里留着（"两场只在温度上
+   * 不同"仍然不该算换皮），但不进"用到几维"。理由写在上面的 `display` 字段注释里。
+   */
+  { no: 4, label: '外界温度', tier: 'L1', display: true, read: (d) => map(d.temperatures) },
 
   { no: 5, label: '庇护所衰减', tier: 'L2', read: (d) => delta(d.shelterDecayPerDay) },
   { no: 6, label: '休息效率', tier: 'L2', read: (d) => factor(d.restEfficiency) },
@@ -108,6 +134,23 @@ export const DISASTER_DIMENSIONS: readonly DisasterDimension[] = [
 export const L1_DIMENSION_NOS: readonly number[] = DISASTER_DIMENSIONS.filter((d) => d.tier === 'L1').map((d) => d.no);
 
 /**
+ * 只算表现、不算"用到"的那几维（决策 C 之前是空的）。
+ *
+ * ★ 它单独导出来，是因为**有两个读者**：`usedDimensions`（判"用了几维"）
+ * 与 `sameButL1`（判"只在 L1 上不同"）。两处都用同一个集合，
+ * 才会出现"把某一维标成表现之后，换皮判据跟着一起变准"这件事 ——
+ * 一处改、一处忘，判据就会分成两把尺子（§2.19 的形状）。
+ */
+export const DISPLAY_ONLY_NOS: readonly number[] = DISASTER_DIMENSIONS.filter((d) => d.display === true).map(
+  (d) => d.no
+);
+
+/** 这一维是不是只算表现（不进"用到几维"） */
+export function isDisplayOnly(no: number): boolean {
+  return DISPLAY_ONLY_NOS.includes(no);
+}
+
+/**
  * 这一场灾难**用到了**哪些维度。
  *
  * 判据是"读出来的值不等于该维的中性值"。中性值由 `read` 的归一化保证：
@@ -120,7 +163,7 @@ const NEUTRAL: Readonly<Record<number, unknown>> = {
   1: '', // 无额外消耗
   2: 1, // 真实腐坏速度（注意：1 是中性，0.5 与 2.4 都算"用了这一维"）
   3: '', // 无刚需标注
-  4: '', // 没有温度表（实际是必填，所以这一维永远算"用到"）
+  4: '', // 没有温度表 —— ⚠ 实际上它**是必填**的，所以这一格永远读不到（见 `display`）
   5: 0,
   6: 1,
   7: 1,
@@ -136,9 +179,16 @@ const NEUTRAL: Readonly<Record<number, unknown>> = {
   17: ''
 };
 
-/** 这一场用到了哪些维度（返回编号，升序） */
+/**
+ * 这一场**真的用到了**哪些维度（返回编号，升序）。
+ *
+ * ★ 不含 `display` 的那几维 —— 它们只是表现，不改变任何玩法数值。
+ * 116 场每一场都白送一维的那笔账（决策 C）就是在这里还掉的：
+ * 以前这个数**整体虚高 1**，于是"这场只写了两三个真维度"会被报成"用了四维"。
+ */
 export function usedDimensions(d: DisasterProfile): number[] {
   return DISASTER_DIMENSIONS.filter((dim) => {
+    if (dim.display === true) return false;
     const value = dim.read(d);
     return value !== NEUTRAL[dim.no];
   }).map((dim) => dim.no);
@@ -155,21 +205,27 @@ export function disasterSignature(d: DisasterProfile): string {
 }
 
 /**
- * 只在前 4 维上不同 → 判不合格（§10B.3.1 的机械验收办法）。
+ * 只在前 4 维（而且**只在那 3 个真维度**）上不同 → 判不合格（§10B.3.1 的机械验收办法）。
  *
  * 返回一个说明字符串（合格则返回 null），调用方直接把它变成报错信息。
+ *
+ * ★ 判据里剔掉了 `display` 的那几维（决策 C）：在此之前，**任何**两场灾难
+ * 只要温度曲线不一样，就会被算成"差了一个 L1 之外的维度"从而逃过这条判据 ——
+ * 而温度是纯表现，它救不了"这两场其实是同一件事"。剔掉之后判据才真的在守内容。
  */
 export function sameButL1(a: DisasterProfile, b: DisasterProfile): string | null {
   if (disasterSignature(a) === disasterSignature(b)) {
     return `「${a.name}」与「${b.name}」在全部 17 维上完全相同（换皮）`;
   }
-  const differs = DISASTER_DIMENSIONS.filter((dim) => dim.read(a) !== dim.read(b)).map((dim) => dim.no);
+  const differs = DISASTER_DIMENSIONS.filter(
+    (dim) => dim.display !== true && dim.read(a) !== dim.read(b)
+  ).map((dim) => dim.no);
   if (differs.length === 0) return null;
   const beyondL1 = differs.filter((no) => !L1_DIMENSION_NOS.includes(no));
   if (beyondL1.length === 0) {
     return (
       `「${a.name}」与「${b.name}」只在第 ${differs.join('/')} 维上不同，` +
-      `全部落在 L1（消耗 / 腐坏 / 刚需 / 温度）—— §10B.3.1 判这一对必须合并或重写`
+      `全部落在 L1（消耗 / 腐坏 / 刚需）—— §10B.3.1 判这一对必须合并或重写`
     );
   }
   return null;

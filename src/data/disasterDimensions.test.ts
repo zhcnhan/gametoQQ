@@ -20,11 +20,16 @@
  *  3. ★ **两场只差 L1 的假灾难必须被判不合格** —— 这是反证，
  *     没有它，整条校验可能只是"看起来在守"；
  *  4. 现有那几场真的过得了（否则判据太严，会逼着内容去凑维度数）。
+ *
+ * ★ 决策 C（2026-10）之后多了一条边界要守：**第 4 维（外界温度）只是表现** ——
+ * 它不算"用到"，也不该救得了换皮。所以下面既验"它不进那个数"，
+ * 也验"只差温度的两场仍然判不合格"（在那之前，温度曲线不同就等于自动逃过判据）。
  */
 import { describe, expect, it } from 'vitest';
 import { DISASTER_DEFS } from './disaster';
 import {
   DISASTER_DIMENSIONS,
+  DISPLAY_ONLY_NOS,
   L1_DIMENSION_NOS,
   disasterSignature,
   sameButL1,
@@ -63,7 +68,9 @@ describe('维度清单本身', () => {
       expect(labels).toContain(want);
     }
     expect(DISASTER_DIMENSIONS.filter((d) => d.tier === 'L1')).toHaveLength(4);
+    // ★ L1 仍然登记着**四**维（策划案那张表是四条），而其中只有 3 维算"用到"
     expect(L1_DIMENSION_NOS).toEqual([1, 2, 3, 4]);
+    expect(DISPLAY_ONLY_NOS).toEqual([4]);
   });
 
   it('★ 归一化：不写与写中性值必须读到同一个值（否则"用了几维"会凭空虚高）', () => {
@@ -97,6 +104,47 @@ describe('维度清单本身', () => {
     expect(usedDimensions(a)).toEqual([9]);
     expect(usedDimensions(b)).toEqual([9]);
     // 但它们的取值不同 → 签名不同（不是换皮）
+    expect(disasterSignature(a)).not.toBe(disasterSignature(b));
+  });
+
+  it('★ 决策 C：第 4 维（外界温度）不进"用到几维"，但仍在签名里', () => {
+    const withTemp = fakeDisaster({ id: 'a', name: 'A', dailyDrain: { fuel: 2 }, temperatures: { 0: -18 } });
+    const otherTemp = fakeDisaster({ id: 'b', name: 'B', dailyDrain: { fuel: 2 }, temperatures: { 0: 41 } });
+    // "用到几维"读不到它
+    expect(usedDimensions(withTemp)).toEqual([1]);
+    // 而签名读得到 —— 两场只在温度上不同，仍然不是同一场（不该被当成真·换皮）
+    expect(disasterSignature(withTemp)).not.toBe(disasterSignature(otherTemp));
+  });
+
+  it('★ 决策 C 的判据面：只差温度的两场**要被判不合格**（温度救不了换皮）', () => {
+    const base = fakeDisaster({
+      id: 'a',
+      name: '寒潮甲',
+      dailyDrain: { fuel: 2 },
+      // ★ 腐坏方向相反 —— 这是"能不能救得了换皮"的分水岭：
+      //   温度是表现，读不出差异；而腐坏是真的第 2 维，所以判据必须抓到它
+      spoilRate: 0.5,
+      temperatures: { 0: -18 }
+    });
+    const clone = fakeDisaster({
+      id: 'b',
+      name: '寒潮乙',
+      dailyDrain: { fuel: 2 },
+      spoilRate: 2.4,
+      temperatures: { 0: -25 }
+    });
+    // 两场机制上只差腐坏（第 2 维），温度那点差别救不了它们 —— 必须判不合格
+    const verdict = sameButL1(base, clone);
+    expect(verdict).not.toBeNull();
+    expect(verdict).toContain('只在第 2 维上不同');
+  });
+
+  it('★ 决策 C 的边界：两场**只**差温度（真维度一个都不差）→ 不误报换皮', () => {
+    const a = fakeDisaster({ id: 'a', name: '甲', dailyDrain: { fuel: 2 }, temperatures: { 0: -18 } });
+    const b = fakeDisaster({ id: 'b', name: '乙', dailyDrain: { fuel: 2 }, temperatures: { 0: 41 } });
+    // 它们只是"外面多少度"不同，一条机制都没差 —— 那不该被说成"只差 L1 必须合并"，
+    // 而应该在**内容评审**那一层被判"机制上完全是同一场"（签名里看得见）
+    expect(sameButL1(a, b)).toBeNull();
     expect(disasterSignature(a)).not.toBe(disasterSignature(b));
   });
 });
@@ -156,7 +204,9 @@ describe('现有的 4 场：真的过得了这条判据', () => {
   });
 
   it('每一场声明的 level 与它真正用到的维度数对得上', () => {
-    const MIN = { L1: 4, L2: 6, L3: 10, L4: 15 } as const;
+    // ★ 门槛与 `scripts/check-registry.mjs` 是同一份口径（决策 C 之后各降 1：
+    //   第 4 维不算"用到"）。两处一起改，否则"守卫在守什么"会分成两把尺子
+    const MIN = { L1: 3, L2: 6, L3: 10, L4: 14 } as const;
     const bad: string[] = [];
     for (const def of DISASTER_DEFS) {
       const used = usedDimensions(def);
@@ -167,11 +217,12 @@ describe('现有的 4 场：真的过得了这条判据', () => {
     expect(bad).toEqual([]);
   });
 
-  it('★ 每场都用到了 L1 的全部四维（基础四维是底，不是可选项）', () => {
-    // 温度（第 4 维）是必填字段，所以它必然算"用到"；其余三维每场都该给出取值
+  it('★ 每场都用到 L1 的那三个真维度（温度是必填的表现维，不进这个数）', () => {
+    const REAL_L1 = L1_DIMENSION_NOS.filter((no) => !DISPLAY_ONLY_NOS.includes(no));
+    expect(REAL_L1).toEqual([1, 2, 3]);
     for (const def of DISASTER_DEFS) {
       const used = usedDimensions(def);
-      for (const no of L1_DIMENSION_NOS) {
+      for (const no of REAL_L1) {
         expect(used, `${def.name} 缺第 ${no} 维`).toContain(no);
       }
     }
