@@ -36,6 +36,9 @@ const cssText = css.endsWith('\n') ? css : `${css}\n`;
 const failures = [];
 const note = (message) => failures.push(message);
 
+/** 字符偏移 → 行号（报错信息里要说清"哪一行"，不然等于没报） */
+const lineOf = (text, index) => text.slice(0, index).split('\n').length;
+
 /** 去掉注释，免得注释里引用的示例规则被当成真规则数进来 */
 const code = cssText.replace(/\/\*[\s\S]*?\*\//g, '');
 
@@ -547,6 +550,80 @@ if (missingFall.length > 0) {
       `    → 它们的窗外会少一层形状（雪 / 灰 / 雨 / 尘），而**不会报错**。\n` +
       `    → 名单在 style.css 的 .window-band-fall 那几组选择器里，按 fall 类型分组。`
   );
+}
+
+// ———————— ⑩ ★★ CSS 注释必须配平（M4，2026-10：一个 `/*` 吞掉了 300 行） ————————
+
+/**
+ * ## 它拦的是哪一类错（这次真的踩了，而且**静默**得可怕）
+ *
+ * 用户在开局页怎么也看不到那条「窗外」的带子。查下去发现：
+ * **注释开启符被吃掉了一个** —— 于是从那一行往下的**整块 CSS 都成了注释**，
+ * 而 Chrome 对"多余的注释关闭符"的做法是**把它自己当语法错误的起点、
+ * 把后面当作声明继续读**，结果就是那一大段规则
+ * （含 `.window-band` 与 116 条 `.window-band.is-*`）**一条都没生效**。
+ *
+ * 页面上没有任何报错、构建也照样通过、`getComputedStyle` 只报
+ * `height: 0px`（看起来像"没写样式"而不是"注释坏了"）。
+ * 这正是纪律里 §2.9 那条记过的坑 —— 而**当时没有守卫**。
+ *
+ * 判据：全局扫一遍，注释开启符与关闭符必须严格交替且**配平**；
+ * 另外禁止开启符出现在另一个注释内部（嵌套注释是 CSS 里最常见的自伤方式）。
+ *
+ * ⚠ 扫描时必须**跳过字符串**（`content: '/*'` 那种）——
+ * 这份样式表里目前没有，但守卫要经得起将来加一条。
+ */
+{
+  const problems = [];
+  let depth = 0;
+  let openAt = -1;
+  let inString = null;
+  for (let i = 0; i < cssText.length; i++) {
+    const ch = cssText[i];
+    const next = cssText[i + 1];
+    if (inString) {
+      if (ch === '\\') i++;
+      else if (ch === inString) inString = null;
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      inString = ch;
+      continue;
+    }
+    if (ch === '/' && next === '*') {
+      if (depth > 0) {
+        problems.push(`第 ${lineOf(cssText, i)} 行的 \`/*\` 出现在另一个注释内部（CSS 注释不能嵌套）`);
+      }
+      depth += 1;
+      openAt = i;
+      i++;
+      continue;
+    }
+    if (ch === '*' && next === '/') {
+      depth -= 1;
+      if (depth < 0) {
+        problems.push(
+          `第 ${lineOf(cssText, i)} 行有一个**多余的** \`*/\`（没有与之配对的 \`/*\`）——\n` +
+            `      浏览器会把它当语法错误、并把后面一大段规则当作声明继续读，` +
+            `于是那些规则**一条都不生效**，而且不报任何错。`
+        );
+        depth = 0;
+      }
+      i++;
+    }
+  }
+  if (depth > 0) {
+    problems.push(
+      `第 ${lineOf(cssText, openAt)} 行的 \`/*\` **没有闭合** —— 从那里往下的整块 CSS 都被吃掉了。`
+    );
+  }
+  if (problems.length > 0) {
+    note(
+      `样式表的注释不配平（共 ${problems.length} 处）：\n      ${problems.join('\n      ')}\n` +
+        `    → 后果特别隐蔽：页面不报错、构建通过，只是那一整段规则**静默失效**。\n` +
+        `    → 移动大段 CSS 之后扫一遍配平（纪律 §2.9）。`
+    );
+  }
 }
 
 // ———————— 报账 ————————
