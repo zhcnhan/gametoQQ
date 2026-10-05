@@ -80,7 +80,22 @@ export class ZoneSheet {
     this.root.addEventListener('click', (e) => this.onClick(e));
     this.root.addEventListener('input', (e) => {
       const target = e.target;
-      if (target instanceof HTMLInputElement) this.name = target.value;
+      /*
+       * ★ 按**标签名**判，不写 `instanceof HTMLInputElement`（2026-10）。
+       *
+       * 这个假体世界里只装了 `HTMLElement` 一个构造器，所以 `instanceof
+       * HTMLInputElement` 会直接抛 `ReferenceError: HTMLInputElement is not
+       * defined` —— 它一直没炸，只是因为**假体原来不冒泡**：输入框上的
+       * `input` 事件到不了挂在抽屉根上的这个监听器。
+       *
+       * 同一个坑 `ui/saveExchange.ts` 已经踩过一次并留了完整的教训注释
+       * （那边是 `HTMLTextAreaElement`，表现是"功能走出去了但什么都没做"）。
+       * 判据只有一条：**这个符号在测试环境里存不存在**。
+       */
+      const tag = (target as { tagName?: unknown } | null)?.tagName;
+      if (typeof tag === 'string' && tag.toUpperCase() === 'INPUT') {
+        this.name = (target as unknown as { value: string }).value;
+      }
     });
   }
 

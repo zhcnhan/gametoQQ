@@ -107,6 +107,29 @@ function dayOf(run: BandInput): number | null {
  * @param run 这一局（或只给 `disasterId` —— 见 `BandInput` 的注释）
  */
 export function windowBandHtml(run: BandInput): string {
+  return `
+    ${windowBandStripHtml(run)}
+    ${prophetBarHtml(disasterIdOf(run), dayOf(run))}
+    ${prophetDetailHtml(disasterIdOf(run), dayOf(run))}
+  `;
+}
+
+/**
+ * ★ **只有那条带子**（没有先知栏、没有展开层）。
+ *
+ * ## 为什么拆出这一个（2026-10，用户："光条和先知日历缩小点而且放在最顶上"）
+ *
+ * 整理页要把**光条 + 先知栏 + 胶带工具**搬到**标题之上**，而这三件事在
+ * `mount()` 的模板里各占一行、位置不在一起。合成一个入口返回整块是做不到的
+ * （模板不能把一个字符串拆开插到两处），所以拆成三块，由模板决定顺序 —— 见
+ * `ui/OrganizeScreen.ts` 的 `mount()`。
+ *
+ * ⚠ 判定"这一屏有没有带子"的守卫（`ui/windowBand.test.ts` 逐屏遍历）
+ * 找的是 `.window-band`，两种入口都产出它，所以那条守卫一个字都不用改。
+ * 也别为了省事在别处直接写 `<div class="window-band ...">` ——
+ * 渐变与代表色必须从 `windowGradientOf` / `disasterTintOf` 来（那是"两处同源"）。
+ */
+export function windowBandStripHtml(run: BandInput): string {
   const disaster = getDisasterDef(disasterIdOf(run));
   const gradient = windowGradientOf(disaster);
   const tint = disasterTintOf(disaster);
@@ -115,9 +138,17 @@ export function windowBandHtml(run: BandInput): string {
       <i class="window-band-glass"></i>
       <i class="window-band-fall"></i>
     </div>
-    ${prophetBarHtml(disasterIdOf(run), dayOf(run))}
-    ${prophetDetailHtml(disasterIdOf(run), dayOf(run))}
   `;
+}
+
+/**
+ * ★ **只有先知栏那一行**（不带展开层）—— 与 `windowBandStripHtml` 同一个理由。
+ *
+ * 展开层（`prophetDetailHtml`）刻意**不**跟着它：那一块是"点开才给"的逐日细节，
+ * 而整理页把它放在标题之下（点开时向下长，不挤头顶那三样）。
+ */
+export function prophetStripHtml(run: BandInput): string {
+  return prophetBarHtml(disasterIdOf(run), dayOf(run));
 }
 
 /**

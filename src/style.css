@@ -227,7 +227,41 @@ body::before {
    *  · 滚动归手势层（`.slot` / `.box` 写 `touch-action: none`，见那两段）；
    *  · 这块容器不许提升成合成层（就是这里少掉的那一行）。
    * **只有一层逻辑**，它既能滚也能拖。
+   *
+   * ## ★★ 第三遍：`touch-action` 也必须是 `none`，而且是**在这一层**（2026-10）
+   *
+   * 上面那两条做完之后玩家还是报"滑动还是反的"。真无头 Chrome 里量出来的
+   * 原因是：`touch-action` **只对它被声明的那块像素生效，不继承**。
+   *
+   *  · 手指落在**格子上**（`.slot` 有 `none`）→ 归手势层滚，跟手（398→438→478…）；
+   *  · 手指落在**格子之间的缝 / 卡片内边距 / 卡片与卡片之间**（那些像素仍是
+   *    初始值 `auto`）→ 浏览器在那儿做**原生**滚动，方向和我们的
+   *    `scrollTop = before + deltaY` **正好相反**（398→333→293…，日志里
+   *    跟着一句 `[手势] cancel 来源=pointercancel`）。
+   *
+   * 也就是说屏幕上真的**同时有两个写着相反方向的写者**，玩家撞上哪一层
+   * 就看见哪个方向 —— 这才是它为什么能活过前两轮修复。
+   *
+   * 所以这一层自己也要写 `none`：这块区域里**一个原生滚动者都不剩**，
+   * 谁来滚只可能有一个答案。滚动本身不受影响（手势层的 `takeOverScroll`
+   * 直接写 `scrollTop`，`overflow-y: auto` 照旧负责把它画出来）。
+   *
+   * ⚠ 它和 `.slot` / `.box` 上那几行是**一对**：撤销这一行，那些缝里的像素
+   * 立刻又变成 `auto`，玩家又会遇上"有时跟手有时反着走"。
    */
+  touch-action: none;
+  /*
+   * ★ 与 `.slot` / `.box` 同一条纪律（守卫 `check-style.mjs` 第 ①/③ 条）。
+   *
+   * 手势层改成委托之后，**整块房间都是拖拽的起手面** —— 长按空地上的一件东西、
+   * 或长按格子上的一件东西，都是先 pointerdown 再等 300ms。而这 300ms 里
+   * iOS 自己的"长按选中文字"也在倒计时，赢了就是那一次"复制粘贴箱子的名字"
+   * （玩家 2026-10 报的），并且选中高亮会**把拖拽的幽灵盖住**。
+   * `main.ts` 的剪贴板守卫是第二道防线，但"选不中"必须在这里就成立。
+   */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
   /* 左右不留内边距：6 列 × 56px 触点在 375px 竖屏上只有这一种排法装得下 */
   overscroll-behavior: contain;
   padding: 10px 0 14px;
@@ -616,9 +650,16 @@ body::before {
   min-width: 0;
 }
 
+/*
+ * ★ 26 → 21px（2026-10 用户第三次数落"图标改小点"）。
+ *
+ * 这只手是整屏**除整理位之外**最大的一枚图标，而它旁边那行字（"空手"）
+ * 才是信息本身。整理位（`.slot` 里的 `.ico`，22px）**不许动** ——
+ * 玩家的原话是"除了整理位以外其他地方的 ui 和图标大小"都可以缩。
+ */
 .hand-icon .ico {
-  width: 26px;
-  height: 26px;
+  width: 21px;
+  height: 21px;
 }
 
 .hand-icon.is-empty {
@@ -740,8 +781,8 @@ body::before {
 }
 
 .boxes-fold .ico {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
 }
 
 .boxes-fold em {
@@ -800,9 +841,13 @@ body::before {
   transform: rotate(0) scale(0.97);
 }
 
+/*
+ * ★ 20 → 17px。横排之后省下的这 3px **全部归名字**（名字那一格实测
+ * "粮油箱"要 36px、拿到 36px，一格不多）—— 缩图标是这一栏唯一的余量来源。
+ */
 .box .ico {
-  width: 20px;
-  height: 20px;
+  width: 17px;
+  height: 17px;
   flex: 0 0 auto;
 }
 
@@ -890,8 +935,8 @@ body::before {
 }
 
 .btn .ico {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
 }
 
 .btn:active {
@@ -1976,14 +2021,22 @@ button:disabled {
 }
 
 /* 顶栏右侧的小工具与小标签 */
-.topbar-row {
+.topbar-row,
+/*
+ * ★ 整理页那一行叫 `.topbar-head`（2026-10）：它不再是顶栏的**第一行**，
+ * 而是排在「窗外 → 先知栏 → 胶带架」之后的"标题 + 静音/重开"。
+ * 版式与 `.topbar-row` 一模一样，所以两条写在同一个规则里 ——
+ * 分两份写迟早会让两处悄悄长歪（这是这条注释存在的唯一理由）。
+ */
+.topbar-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
 }
 
-.topbar-row .title {
+.topbar-row .title,
+.topbar-head .title {
   flex: 1 1 auto;
   min-width: 0;
 }
@@ -3517,9 +3570,17 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1.5px solid var(--ink-16);
+  /*
+   * ★ 2026-10：这一条从"标题下面那条带分隔线的横带"变成"先知栏下面的一行工具"
+   * （用户："胶带的加号和剪刀放在他们下面一点"）。
+   * 它现在夹在**两条已经有墨线的块**之间（先知栏自己带 `border-bottom`，
+   * 标题那一块没有上边线），所以原来那条 `border-top` 是多余的第三条线 ——
+   * 去掉它、只留一点竖直空白，这一条就从"又一块"变成"先知栏自己的工具行"。
+   * ⚠ 那条 `border-top` 与它上面 8px 的 `padding-top` 是**一起**去掉的：
+   * 留着一个没有线的 padding 会变成一块 8px 的空白，看着像排版错了。
+   */
+  margin-top: 2px;
+  padding-top: 0;
   overflow-x: auto;
   scrollbar-width: thin;
   /*
@@ -4528,10 +4589,33 @@ button:disabled {
 .window-band {
   position: relative;
   flex: 0 0 auto;
-  height: 52px;
+  /*
+   * ★★ 52 → **34px**（2026-10，用户："光条和先知日历缩小点"）。
+   *
+   * 历史：它在"天光带没看到"那两轮里从 34 涨到 44、再到 52 —— 那是因为当时
+   * 它**孤零零地**横在顶栏底下，太窄就"不像任何东西"。现在它的处境变了：
+   * 它跟在**标题与四个指标**之下（标题块在最顶上，见 `ui/OrganizeScreen.ts`
+   * 的 `mount`），而玩家这一轮要的是**把货架的空间让出来**（"让整个货架整理区的空间和
+   * 重要的功能更多暴露出来"）。
+   *
+   * 34 仍然是"看得懂"的下限：地平线那一段（`::after` 的 18px）在，
+   * 天与地的比例还在，窗棂与飘着的东西都还画得下。
+   * ⚠ 别再往下收到 30 以下 —— 那会把地平线那块挤成一条线，"窗外"又变回色块。
+   */
+  height: 34px;
   background: var(--sky);
   border-bottom: 1.5px solid var(--ink-16);
   overflow: hidden;
+  /*
+   * ★ 负边距那一版**已撤**（2026-10 用户："还是把囤货台账和三个数字放在最顶上啊"）。
+   *
+   * 我当时把它提成了顶栏的第一个孩子，为了让它贴着纸的最上沿而写了
+   * `margin: calc(-1 * (10px + safe-area-inset-top)) -12px 0`。
+   * 现在它上面有标题与四个指标，那两处负边距就变成了错的东西 ——
+   * 它会**怼进标题那一行**，而且在左右两侧多伸出去 12px。
+   * 留成普通的一条带子：跟着 `.topbar` 的内边距走。
+   */
+  margin: 0;
 }
 
 /*

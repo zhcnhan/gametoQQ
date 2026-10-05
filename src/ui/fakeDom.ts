@@ -258,7 +258,25 @@ export class FakeElement {
   dispatch(type: string, event: Record<string, unknown> = {}): void {
     this.log.push(type);
     const e = { type, target: this, preventDefault: () => undefined, ...event };
-    for (const fn of [...(this.listeners.get(type) ?? [])]) fn(e);
+    /*
+     * ★★ 沿父链**冒泡**（2026-10 补，`ui/drag.ts` 改用事件委托之后必须有它）。
+     *
+     * ## 为什么这不是"顺手加个功能"，而是假体在骗人
+     *
+     * 原来这里只跑自己的监听器。于是"手势挂在整块区域上、靠 `e.target.closest()`
+     * 找到格子"这种写法（`.room-scroll` 上挂一次、`selector: '[data-slot]'`）
+     * 在假体里**永远收不到事件** —— 格子上按下去，容器上的监听器一声不响。
+     * 而它在真浏览器里是对的：**没有冒泡的 DOM 不是 DOM 的近似，是另一个东西**。
+     *
+     * ⚠ 两个必须保持的语义：① `target` 始终是**最初派发的那个元素**（不是
+     * 冒泡途中的祖先）—— `closest` 全靠它；② 父链到顶就停（假体没有 document 级
+     * 派发，`window` 上的监听器由 `FakeWindow.dispatch` 单独负责）。
+     */
+    let node: FakeElement | null = this;
+    while (node) {
+      for (const fn of [...(node.listeners.get(type) ?? [])]) fn(e);
+      node = node.parent;
+    }
   }
 
   /** 手势层用到的那两个方法；记录调用以便断言"捕获确实拿了/放了" */
@@ -404,6 +422,26 @@ export class FakeElement {
     let cur: FakeElement | null = this;
     while (cur !== null) {
       if (cur === this.ownerDocument?.documentElement) return true;
+      cur = cur.parent;
+    }
+    return false;
+  }
+
+  /**
+   * `other` 是不是自己或自己的后代（真实 DOM 的 `Node.contains`）。
+   *
+   * ★★ 补它是因为一次**真机与单测给出不同答案**的缺陷（2026-10，委托手势那一批）：
+   * `drag.ts` 的 `gestureActiveOn(el)` 要判"这个元素是不是正被拖着的那一个"，
+   * 写成 `g.delegate === el || g.delegate.contains(el) || el.contains(g.delegate)`。
+   * 真实浏览器里三支都成立；而假体**没有 `contains`** → `g.delegate.contains` 是
+   * `undefined` → 调用即 `TypeError`，表现是"长按守卫那条用例崩在一个和它无关的栈上"。
+   *
+   * ⚠ 别把它和 `classList.contains(name)` 弄混 —— 那个在 `classList` 上，收一个类名。
+   */
+  contains(other: FakeElement | null): boolean {
+    let cur: FakeElement | null = other;
+    while (cur !== null) {
+      if (cur === this) return true;
       cur = cur.parent;
     }
     return false;

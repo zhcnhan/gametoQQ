@@ -47,7 +47,8 @@ import {
 } from '../systems/organize';
 import { attachLongPress, attachPointerGesture } from './drag';
 import { expiryText, isExpiringSoon, shelfLabel, stackLabel } from './labels';
-import { windowBandHtml } from './windowBand';
+import { prophetDetailHtml } from './prophetBar';
+import { prophetStripHtml, windowBandStripHtml } from './windowBand';
 import { ZoneSheet } from './zoneSheet';
 
 export interface OrganizeScreenProps {
@@ -208,7 +209,10 @@ export class OrganizeScreen {
     this.root.innerHTML = `
       <div class="screen">
         <header class="topbar">
-          <div class="topbar-row">
+          ${/* ① ★★ **标题在最顶上**（2026-10 用户："还是把囤货台账和三个数字放在最顶上啊，
+                那是标题啊"）。我第一次把带子与先知栏提到标题之上是读错了上一句话 ——
+                "放在最顶上"说的是**标题**，不是窗外那条带子。 */ ''}
+          <div class="topbar-head">
             <div class="title">
               <h1>囤货台账</h1>
               <p class="sub" data-sub></p>
@@ -218,19 +222,27 @@ export class OrganizeScreen {
               <button class="mini" data-action="restart">重开</button>
             </div>
           </div>
+          ${/* ② 四个指标（归位率 / 快到期的先吃 / 急用的够不够 / 已上架）。
+                它与标题是**一块**：玩家说的"囤货台账和三个数字"就是这两行。 */ ''}
           <div class="score" data-score></div>
-          ${/* ★ W-05：屋子被水吃过几排（`run.homeSinkRows`）。空着的时候整行不写出来 */ ''}
-          <p class="block-note" data-sink-note hidden></p>
+          ${/* ③ 窗外那条带子（见 ui/windowBand.ts 的 windowBandStripHtml）。
+                2026-10 用户："光条和先知日历缩小点"—— 缩小是这一条的全部要求，
+                位置紧跟标题块之下。 */ ''}
+          ${windowBandStripHtml(this.store.run)}
+          ${/* ④ 先知栏：进度条 + 灾难名 + 强度 + 还有几天 + 「先知日历」那一枚 */ ''}
+          ${prophetStripHtml(this.store.run)}
           <!--
-            「胶带架」：胶带与剪刀都住在这儿，从这里**拖到某一行**上使用。
+            ⑤ 「胶带架」：胶带与剪刀都住在这儿，从这里**拖到某一行**上使用。
             见 renderTapeShelf 的注释（用户要的手感：写一张 → 拖到某一行）。
+            ★ 用户原话"胶带的加号和剪刀放在他们下面一点"——"他们"就是上面那两样。
           -->
           <div class="tape-shelf" data-tape-shelf></div>
+          ${/* ★ W-05：屋子被水吃过几排（`run.homeSinkRows`）。空着的时候整行不写出来 */ ''}
+          <p class="block-note" data-sink-note hidden></p>
+          ${/* ⑥ 先知点开之后的逐日细节落在这儿（ui/prophetBar.ts 的 prophetDetailHtml）。
+                它是"点开才给"的逐日细节，向下长，不挤头顶那几样。 */ ''}
+          ${prophetDetailHtml(this.store.run.disasterId, this.store.run.day)}
         </header>
-        ${/* ★ 顶栏底下那一条"窗外"（2026-10 用户："任何东西都要让我有感知"）。
-             整理页也要它：囤货那 7 天里，玩家绝大部分时间都在这一屏，
-             而"这一局抽到的是哪一场"此前在这一屏一个字都看不到。 */ ''}
-        ${windowBandHtml(this.store.run)}
         ${/* ★★ `data-scroll-host`：告诉手势层"落在这里的手势是用来滚这一块的"。
               2026-10 用户第二次报拖拽出问题（"出一个极小的范围就会消失"）之后，
               滚动重新归手势层接管（`.slot` 是 `touch-action: none`，
@@ -1230,50 +1242,82 @@ export class OrganizeScreen {
 
   private bindRoomGestures(): void {
     this.clearLongPressBindings();
-    this.roomEl.querySelectorAll<HTMLElement>('[data-slot]').forEach((el) => {
-      const shelfId = el.dataset['shelf'];
-      const row = Number(el.dataset['row']);
-      const col = Number(el.dataset['col']);
-      if (!shelfId) return;
-      const pos: SlotPos = { row, col };
-      this.gestureDetachers.push(
-        attachPointerGesture(el, {
-          onTap: () => this.consume(tapSlot(this.store, this.session, shelfId, pos)),
-        onDragStart: (point) => {
-          /*
-           * ★ 来源必须**当场定**，不能从 `session.heldFrom` 读（M2 走测抓出来的 bug）。
-           *
-           * 原来的写法是：手里空则拾取这一格，然后 `beginDrag` 从 `session.heldFrom`
-           * 取来源。可"先点一下 A 把 A 拿到手上、再拖 B"时：
-           *   · 手里已经有 A → **不拾取 B**（手里还是 A）；
-           *   · 但 `heldFrom` 指的是 **A 那一格**，而 A 那格此时是**空的**；
-           *   · 松手时 `swapSlots(from = A 那格, to = B 那格)` → A 那格没东西 → 拒绝。
-           * 玩家看到的是"我明明拖了两件东西互换，它跟我说必须得有东西才谈得上互换"。
-           *
-           * 现在：**手里的东西就是这一趟拖的货，来源就是它来的那一格**；
-           * 手里空才当场拾取这一格，来源就是这一格。
-           */
-          if (this.session.held && this.session.heldFrom.kind === 'shelf') {
-            this.beginDrag(
-              'shelf',
-              {
-                shelfId: this.session.heldFrom.shelfId,
-                pos: this.session.heldFrom.pos
-              },
-              point
-            );
-            return;
-          }
-          if (!this.session.held) this.consume(pickupFromShelf(this.store, this.session, shelfId, pos));
-          this.beginDrag('shelf', { shelfId, pos }, point);
-        },
+    /*
+     * ★★ 手势从"每个格子各挂一份"改成"整块区域挂一份 + 委托"（2026-10）。
+     *
+     * ## 为什么必须上提一层（玩家第三次报"滑动方向是反的"的根因）
+     *
+     * `touch-action` **只对它被声明的那块像素生效，不继承**。原来 `none` 写在
+     * `.slot` 上，于是：手指落在格子上归我们接管（方向对），落在**格子之间**
+     * —— `gap`、货架卡的内边距、两张卡之间的空白 —— 那些像素还是 `auto`，
+     * 浏览器在那里做**原生滚动**，方向与我们相反。
+     *
+     * 真浏览器实测（`scripts/_probe-scroll-two-writers.ts`，375×667）：
+     *   格子上        398 → 438 → 478 → 518 → 558（跟手）
+     *   格子之间的空白 398 → 333 → 293 → 253（**与手指相反**，日志 `cancel 来源=pointercancel`）
+     *
+     * 所以不是"方向写错了"，是**同一块屏幕上真有两个写着相反方向的写者** ——
+     * 这也解释了它为什么能活过前两轮修复。修法必须成对：`touch-action: none`
+     * 上提到 `.room-scroll`（见 `style.css`），手势也上提到同一个元素。
+     *
+     * ⚠ **不要**在这里再给每个格子各挂一份：一次 pointerdown 会建立两个
+     * `ActiveGesture`，第二个把第一个顶掉，表现是"拖到一半手势换了主人"。
+     */
+    this.gestureDetachers.push(
+      attachPointerGesture(
+        this.roomEl,
+        {
+          onTap: (_point, element) => {
+            const slot = slotFromElement(element);
+            if (!slot) return;
+            this.consume(tapSlot(this.store, this.session, slot.shelfId, slot.pos));
+          },
+          onDragStart: (point, element) => {
+            /*
+             * ★ 来源必须**当场定**，不能从 `session.heldFrom` 读（M2 走测抓出来的 bug）。
+             *
+             * 原来的写法是：手里空则拾取这一格，然后 `beginDrag` 从 `session.heldFrom`
+             * 取来源。可"先点一下 A 把 A 拿到手上、再拖 B"时：
+             *   · 手里已经有 A → **不拾取 B**（手里还是 A）；
+             *   · 但 `heldFrom` 指的是 **A 那一格**，而 A 那格此时是**空的**；
+             *   · 松手时 `swapSlots(from = A 那格, to = B 那格)` → A 那格没东西 → 拒绝。
+             * 玩家看到的是"我明明拖了两件东西互换，它跟我说必须得有东西才谈得上互换"。
+             *
+             * 现在：**手里的东西就是这一趟拖的货，来源就是它来的那一格**；
+             * 手里空才当场拾取这一格，来源就是这一格。
+             */
+            const slot = slotFromElement(element);
+            /* 手指落在格子之间的空白上：这一趟只滚屏，不开拖 */
+            if (!slot) return;
+            if (this.session.held && this.session.heldFrom.kind === 'shelf') {
+              this.beginDrag(
+                'shelf',
+                {
+                  shelfId: this.session.heldFrom.shelfId,
+                  pos: this.session.heldFrom.pos
+                },
+                point
+              );
+              return;
+            }
+            if (!this.session.held) {
+              this.consume(pickupFromShelf(this.store, this.session, slot.shelfId, slot.pos));
+            }
+            this.beginDrag('shelf', { shelfId: slot.shelfId, pos: slot.pos }, point);
+          },
           onDragMove: (point) => this.moveDrag(point),
           onDragEnd: (point) => this.endDrag(point),
           onCancel: () => this.cancelDrag()
-        })
-      );
-    });
-
+        },
+        /*
+         * ⚠ 两个都要给：`selector` 让"格子"仍然是唯一算数的东西（`element` 就来自它），
+         * `scrollHost` 让**空白处**的滑动也跟手 —— 它就是这块区域自己。
+         *
+         * ★ `moveTolerance: 6` 保持原值：鼠标按住挪 6px 就进拖拽（触摸不看它）。
+         */
+        { moveTolerance: 6, selector: '[data-slot]', scrollHost: this.roomEl }
+      )
+    );
     this.roomEl.querySelectorAll<HTMLElement>('[data-shelf-title]').forEach((el) => {
       const shelfId = el.dataset['shelf'];
       if (!shelfId) return;
@@ -1767,8 +1811,7 @@ export class OrganizeScreen {
    * （我们自己设的 `left/top`），而"谁在指针最上层"是浏览器的说法，可能受
    * `pointer-events`、层叠上下文、设备模拟等一堆因素影响。
    */
-  private slotUnderPoint(point: { x: number; y: number }): HTMLElement | null {
-    const held = this.session.held;
+  private slotUnderPoint(point: { x: number; y: number }): HTMLElement | null {    const held = this.session.held;
     let best: HTMLElement | null = null;
     let bestArea = Number.POSITIVE_INFINITY;
     this.roomEl.querySelectorAll<HTMLElement>('[data-slot]').forEach((slot) => {
@@ -2076,6 +2119,26 @@ export class OrganizeScreen {
 
 function slotSelector(shelfId: string, pos: SlotPos): string {
   return `[data-slot][data-shelf="${shelfId}"][data-row="${pos.row}"][data-col="${pos.col}"]`;
+}
+
+/**
+ * ★★ 从**手指底下那个元素**读出"这是哪一块货架的哪一格"（2026-10 委托手势用）。
+ *
+ * ## 为什么需要它（而不是让调用方读 `e.target`）
+ *
+ * 手势挂在整块 `.room-scroll` 上（见 `bindRoomGestures` 那段注释），于是
+ * `onTap` / `onDragStart` 收到的 `element` 是 `e.target.closest('[data-slot]')`
+ * 的结果：命中的时候**它自己就带着 `data-shelf` / `data-row` / `data-col`**。
+ * 而 `closest` 的答案与"格子在不在文档里"无关 —— 捏着它读属性是最稳的，
+ * 不用再去 `elementFromPoint` 猜一次。
+ *
+ * ⚠ 返回 `null` 的两种情况都必须**安静地**处理：手指落在格子之间的空白上
+ * （这一趟只滚屏），以及元素上缺 `data-shelf`（重绘中途的残缺节点）。
+ */
+function slotFromElement(element: HTMLElement | null): { shelfId: string; pos: SlotPos } | null {
+  const shelfId = element?.dataset?.['shelf'];
+  if (!element || !shelfId) return null;
+  return { shelfId, pos: { row: Number(element.dataset['row']), col: Number(element.dataset['col']) } };
 }
 
 /**

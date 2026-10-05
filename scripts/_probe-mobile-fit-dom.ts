@@ -273,8 +273,17 @@ const MEASURE = `(async () => {
     h1: text('h1'),
     sub: text('.sub') || text('.title'),
     topbar: h('.topbar'),
-    // 顶栏里每一块各占多高 —— "挤"的账就是在这几个数之间分
+    /*
+     * ⚠ 2026-10：整理页的顶栏重排之后，.topbar-row 在**这一屏**已经不存在了
+     * （它换成了 .topbar-head，见 ui/OrganizeScreen.ts 的 mount）；
+     * 别的屏（夜间 / 开局 / 商店 / 生存）仍然是 .topbar-row，所以两条都留着。
+     * 量某个具体元素时**先看下面那张按 DOM 走的结构表** —— 它才是判据。
+     * ⚠⚠ 这段注释写在 MEASURE 那个模板字面量里：**反引号一个都不许出现**
+     *   （第四次踩，症状是 esbuild 报 Expected ";" but found "xxx"，行号还指在几十行之前）。
+     */
     topbarRow: h('.topbar-row'),
+    topbarHead: h('.topbar-head'),
+    topbarTools: h('.topbar-tools'),
     score: h('.score'),
     tapeShelf: h('.tape-shelf'),
     runBar: h('.run-bar'),
@@ -282,15 +291,7 @@ const MEASURE = `(async () => {
     runTrack: h('.run-bar-track'),
     body,
     bodyBox: h(body),
-    /*
-     * ★★ 顶栏里每一块各占多高（M5 补，用户在真机上第二次说"还是太紧凑"）。
-     *
-     * 上一轮量到的是"顶栏一共 184px"这种**合计**，而"该砍哪一块"完全看不出来。
-     * 判据必须是拆开的那几个数：标题行 / 四格台账 / 胶带架。
-     */
     titleRow: h('.title'),
-    topbarHead: h('.topbar-head'),
-    topbarTools: h('.topbar-tools'),
     dock: h('.dock'),
     dockHand: h('.dock-hand'),
     dockBoxes: h('.dock-boxes'),
@@ -509,6 +510,14 @@ const MEASURE = `(async () => {
     topbarParts: topbar
       ? [...topbar.children].map((el) => ({ cls: [...el.classList].join('.'), h: Math.round(el.getBoundingClientRect().height) }))
       : null,
+    /* ★ 操作台那几块同理（量具按 DOM 结构与顺序读，不按手写名单 —— 见下面那一段注释） */
+    dockParts: (function () {
+      var el = document.querySelector('.dock');
+      if (!el) return null;
+      return [...el.children].map(function (c) {
+        return { cls: [...c.classList].join('.'), h: Math.round(c.getBoundingClientRect().height) };
+      });
+    })(),
     buttons,
   };
 })()`;
@@ -606,36 +615,50 @@ async function main(): Promise<void> {
     }
     console.log(`  · 命中的上限 = ${String(m['dockBoxesCap'])}，实得高度 = ${String(hOf('dockBoxes'))}`);
     /*
-     * ★★ "太紧凑"是一道减法题：710px 减去哪几块。
+     * ★★ "太紧凑"是一道减法题：视口高度减去哪几块。
      *
-     * 判据是**每一块都点名，并且加起来等于 710**（误差只允许来自取整）。
-     * 只报"内容区还剩多少"永远得不出"该砍谁"——上一轮我砍的是纸箱，
-     * 而用户第二次说"还是太紧凑"，说明砍错了地方或砍得不够。
+     * ## 判据按**结构**读，不再按一张手写的名单（2026-10 改）
+     *
+     * 原来这里是一张写死的十块清单（标题行 / 四格台账 / 胶带架 / …）。
+     * 整理页把顶栏重排成「窗外 → 先知栏 → 胶带架 → 标题 + 台账」之后，
+     * 那张表当场读错两处：`标题行` 量的是**已经不存在的** `.topbar-row`
+     * （打印成 `—px`），而 `.tape-shelf` 与先知栏换了位置之后，
+     * "谁在上面"从表里完全看不出来。
+     *
+     * 所以改成**照着 DOM 走**：顶栏与操作台的**每一个直接子元素**各一行，
+     * 顺序就是屏幕上的顺序。改版式之后这张表自动跟着变 ——
+     * 手写名单那种做法每改一次版式就要人回来改一次（而我刚漏了一次）。
      */
-    const parts: [string, number][] = [
-      ['标题行', hOf('topbarRow') as number],
-      ['四格台账', hOf('score') as number],
-      ['胶带架', hOf('tapeShelf') as number],
-      ['窗外那条带子', hOf('windowBand') as number],
-      ['先知日历行', hOf('runBarRow') as number],
-      ['房间（可滚）', hOf('bodyBox') as number],
-      ['手里那块牌子', hOf('handCard') as number],
-      ['纸箱栏抬头', hOf('boxesHead') as number],
-      ['纸箱栏', hOf('dockBoxes') as number],
-      ['四个按钮', hOf('dockTools') as number],
-    ];
-    for (const [name, h] of parts) {
-      const w = typeof h === 'number' ? String(h).padStart(4) : '   —';
-      console.log(`  · ${name}  ${w}px`);
+    const partsMap = m['topbarParts'] as { cls: string; h: number }[] | null;
+    const dockParts = m['dockParts'] as { cls: string; h: number }[] | null;
+    const byClass = (list: { cls: string; h: number }[] | null, cls: string): number =>
+      (list ?? []).filter((p) => p.cls.split('.').indexOf(cls) >= 0).reduce((n, p) => n + p.h, 0);
+    let treeSum = 0;
+    if (partsMap) {
+      for (const p of partsMap) {
+        treeSum += p.h;
+        console.log(`  · 顶栏 ${p.cls || '(无类名)'}  ${String(p.h).padStart(4)}px`);
+      }
+    } else {
+      console.log('  ⚠ 量具这次没取到顶栏子元素清单（topbarParts），下面只能看合计');
     }
-    const sum = parts.reduce((n, [, h]) => n + (typeof h === 'number' ? h : 0), 0);
+    const roomH = byClass([{ cls: 'room-scroll', h: Number(hOf('bodyBox')) || 0 }], 'room-scroll');
+    console.log(`  · 房间（可滚）  ${String(hOf('bodyBox')).padStart(4)}px`);
+    treeSum += Number(hOf('bodyBox')) || 0;
+    if (dockParts) {
+      for (const p of dockParts) {
+        treeSum += p.h;
+        console.log(`  · 操作台 ${p.cls || '(无类名)'}  ${String(p.h).padStart(4)}px`);
+      }
+    }
     const tp = m['topbarPad'] as { top: number; bottom: number; gap: number; children: number } | null;
     const dp = m['dockPad'] as { top: number; bottom: number; gap: number; children: number } | null;
     const pad = (p: typeof tp): number => (p ? p.top + p.bottom + p.gap * Math.max(0, p.children - 1) : 0);
     const padSum = pad(tp) + pad(dp);
     console.log(
-      `  · 十块合计 ${sum}px ＋ 顶栏内边距/间隙 ${pad(tp)}px ＋ 操作台内边距/间隙 ${pad(dp)}px` +
-        ` = ${sum + padSum}px ／ 视口 ${vp.h}px ／ 差 ${vp.h - sum - padSum}px`,
+      `  · 结构合计 ${treeSum}px ＋ 顶栏内边距/间隙 ${pad(tp)}px ＋ 操作台内边距/间隙 ${pad(dp)}px` +
+        ` = ${treeSum + padSum}px ／ 视口 ${vp.h}px ／ 差 ${vp.h - treeSum - padSum}px` +
+        `（房间 ${roomH}px 顶栏 ${byClass(partsMap, 'topbar')}px）`,
     );
     if (m.body !== '.room-scroll') {
       console.log('  ⚠ 没走到整理页 —— 上面这些数字量的是别的屏，别拿它下结论');

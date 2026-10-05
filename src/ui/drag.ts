@@ -56,10 +56,22 @@ export interface Point {
 }
 
 export interface GestureHandlers {
-  /** 点选-点放：轻点 */
-  onTap?: (point: Point) => void;
-  /** 进入拖拽态（此时 ui 应该建一个跟随手指的 ghost） */
-  onDragStart?: (point: Point) => void;
+  /**
+   * 点选-点放：轻点。
+   *
+   * ★ `element` 是**手指底下那一个**（委托手势的 `delegate`，没命中就是 `null`）。
+   * 调用方按坐标再判一次落点是可以的，但"我点的是哪一格"最可靠的答案就是它 ——
+   * 那个元素自己带着 `data-shelf` / `data-row` / `data-col`。
+   */
+  onTap?: (point: Point, element: HTMLElement | null) => void;
+  /**
+   * 进入拖拽态（此时 ui 应该建一个跟随手指的 ghost）。
+   *
+   * ⚠ 与 `onTap` 不同，`element` 在这里是**必看**的：委托时 `point` 说的是
+   * "手指现在在哪"，而"拖起来的是哪一件"只有它知道。`null` 表示手指落在
+   * 格子之间的空白上 —— 这一趟只滚屏，不该开拖。
+   */
+  onDragStart?: (point: Point, element: HTMLElement | null) => void;
   onDragMove?: (point: Point) => void;
   /** 松手（point 是松手位置，落点判定交给 ui 用 elementFromPoint 做） */
   onDragEnd?: (point: Point) => void;
@@ -89,17 +101,41 @@ export interface GestureOptions {
    * `scrollTop +=` 会写到游离节点上，**不报错、也没有任何视觉效果**。
    */
   scrollHost?: HTMLElement | null;
+  /**
+   * ★★ 把整块区域交给我们管（**只对指定选择器**底下的元素做 tap / 拖拽）。
+   *
+   * ## 为什么要有这一条（2026-10 玩家第三次报"滑动方向是反的"的根因）
+   *
+   * `touch-action` **只对它被声明的那块像素生效，不继承**。原来我们把它
+   * 声明在 `.slot`（格子）上，而格子**之间**有 `gap`、货架卡有内边距、
+   * 两张卡之间有空白 —— 那些地方的 `touch-action` 还是 `auto`：
+   *
+   *   · 手指落在**格子上** → 我们接管滚动 → 方向对（`scrollTop += deltaY`）；
+   *   · 手指落在**格子之间** → 浏览器接管原生滚动 → 方向**与我们相反**
+   *     （真浏览器实测：手指往下划 160px，`scrollTop` 从 398 掉到 253，
+   *     日志里是 `cancel 来源=pointercancel`）。
+   *
+   * 于是同一块屏幕上**真的有两层逻辑**，玩家撞上哪一层决定他看到哪个方向 ——
+   * 这就是"方向是反的"这句报障能活过两轮修复的原因：**它不是方向写错了，
+   * 是屏幕上有两个写着相反方向的写者。**
+   *
+   * 修法：把 `touch-action: none` 提到**整个可滚区域**（`.room-scroll`），
+   * 手势也从每一个格子**上提一层**挂到容器上（委托）—— 于是这块区域里
+   * 一个原生的滚动者都不剩，方向只剩一个来源。
+   */
+  selector?: string;
 }
 
 /**
  * 补全默认值之后的选项。
  *
- * ⚠ `scrollHost` 不在 `Required<>` 里：它不是"有个默认值"的参数，
- * 而是"这个调用方有没有自己接管滚动"的开关。
+ * ⚠ `scrollHost` 与 `selector` 都**不在** `Required<>` 里：它们不是"有个默认值"
+ * 的参数，而是"这个调用方要不要接管滚动 / 要不要走委托"的开关。
  */
-type ResolvedOptions = Required<Omit<GestureOptions, 'scrollHost'>> & Pick<GestureOptions, 'scrollHost'>;
+type ResolvedOptions = Required<Omit<GestureOptions, 'scrollHost' | 'selector'>> &
+  Pick<GestureOptions, 'scrollHost' | 'selector'>;
 
-const DEFAULTS: Required<Omit<GestureOptions, 'scrollHost'>> = {
+const DEFAULTS: Required<Omit<GestureOptions, 'scrollHost' | 'selector'>> = {
   /*
    * ★ 300ms，不是 220ms（2026-10 玩家反馈后的调整）。
    *
@@ -373,6 +409,19 @@ interface ActiveGesture {
   scrolling: boolean;
   /** 接管滚动时写 `scrollTop` 的那个元素（`pointerdown` 那一刻就算好，见 `resolveScrollHost`） */
   scrollHost: HTMLElement | null;
+  /**
+   * ★★ 手指底下那个**元素**（不是容器）。
+   *
+   * 委托手势（`opts.selector`）挂在整块区域上，于是 `el` 永远是容器，而
+   * "拖起来的是哪一件东西"只能看按下那一刻命中的那一个 —— 把它算好记下来，
+   * 拖拽视觉（`is-dragging` 加在谁身上）与放手落点都读它。
+   *
+   * 没有 `selector` 的调用方就是 `el` 自己（那时两者相同）。
+   *
+   * ⚠ 可以是 `null`：写了 `selector` 而手指落在空白处（格子之间、卡的边缘）。
+   * 那种手势只用来**滚动**，抬手不判 tap、移动不开拖。
+   */
+  delegate: HTMLElement | null;
   start: Point;
   last: Point;
   /**
@@ -395,6 +444,22 @@ interface ActiveGesture {
 }
 
 let active: ActiveGesture | null = null;
+
+/**
+ * 指针底下那个元素上，**此刻是不是正在被拖**（`ui` 侧的长按守卫用）。
+ *
+ * ★ 只认"已经进拖拽态"（`g.dragging`）：一次还没判定完的手势（手指刚按下）
+ * 不算 —— 那种情况该由各自的计时器去竞争，提前拦掉会让长按在某些设备上
+ * 变成"十次有一次不灵"。
+ *
+ * ⚠ 判据是 `contains`，因为 `g.delegate` 可能是格子**里面**的那个图标元素
+ * （`closest('[data-slot]')` 命中的是格子，但传进来的可能是标题自己）。
+ */
+export function gestureActiveOn(el: HTMLElement): boolean {
+  const g = active;
+  if (!g || !g.dragging || !g.delegate) return false;
+  return g.delegate === el || g.delegate.contains(el) || el.contains(g.delegate);
+}
 
 /**
  * 惯性滚动的动画帧 id（同一时刻最多一个）。
@@ -514,6 +579,13 @@ function settle(g: ActiveGesture): void {
   clearLongPressTimer(g);
   g.el.classList.remove('is-dragging');
   /*
+   * ★ 委托时标记加在**手指底下那一个**上（见 `beginDrag`），所以两处都要摘：
+   * 容器上那一次是防御性的（没有 `selector` 的调用方 delegate === el，
+   * 摘两次同一个元素是无害的），漏掉 delegate 那一处则会留下一个
+   * 永远戴着 `is-dragging` 的格子 —— 表现是"有一格看起来一直在被拖"。
+   */
+  g.delegate?.classList.remove('is-dragging');
+  /*
    * ★ 惯性必须在这里停。
    *
    * 惯性动画是**独立于手势**在跑的（它靠 rAF，不靠指针），所以"手势结束了"
@@ -534,36 +606,68 @@ function settle(g: ActiveGesture): void {
   } catch {
     // 元素已经被重绘换掉时释放会失败，忽略即可
   }
-  if (active === g) active = null;
+  if (active === g) {
+    active = null;
+    /*
+     * ★ 看门狗是**属于这一次手势**的定时器（见 `startWatchdog`），
+     * 所以它跟着手势一起走。少了这一句，一个已经没人需要的手势会继续
+     * 每 600ms 醒一次 —— 而在假体那种"每个用例一个时钟"的世界里，
+     * 它下一次醒来就可能**打在新用例的手势上**（真机上的对应现象是
+     * "手指还按着，手势却被上一轮收掉了"）。
+     */
+    stopWatchdog();
+  }
   g.onWindowSettled?.();
 }
 
-function startWatchdog(): void {
-  if (watchdog !== null) return;
-  /*
-   * 手势自杀检测：每 600ms 看一眼当前手势是不是僵住了。
-   *
-   * ## 它修的是一个真实的死锁
-   *
-   * 原来只靠 `pointerup` / `pointercancel` 结束手势，而这两件事**不保证会到**
-   * （切窗口、系统弹窗、浏览器把手势当成滚动或返回）。一旦没到，
-   * 手势就永远结束不了，之后所有 pointerdown 都会被拒 —— 玩家得刷新页面。
-   *
-   * 判据用**指针按键状态**而不是"超时没动"：长按之后手指停住不动是合法操作
-   * （玩家在想放哪儿），只有"按键已经松开、我们却还认为自己按着"才是真的僵住。
-   */
+function stopWatchdog(): void {
+  if (watchdog !== null) {
+    window.clearInterval(watchdog);
+    watchdog = null;
+  }
+}
+
+/**
+ * 手势自杀检测：每 600ms 看一眼**这一次**手势是不是僵住了。
+ *
+ * ## 它修的是一个真实的死锁
+ *
+ * 原来只靠 `pointerup` / `pointercancel` 结束手势，而这两件事**不保证会到**
+ * （切窗口、系统弹窗、浏览器把手势当成滚动或返回）。一旦没到，
+ * 手势就永远结束不了，之后所有 pointerdown 都会被拒 —— 玩家得刷新页面。
+ *
+ * 判据用**指针按键状态**而不是"超时没动"：长按之后手指停住不动是合法操作
+ * （玩家在想放哪儿），只有"按键已经松开、我们却还认为自己按着"才是真的僵住。
+ *
+ * ★★ 它**只收自己那一次手势**（2026-10 委托手势带出来的一处串扰）。
+ * 原来的写法是每 600ms 醒来看**当前**的 `active`，于是：上一个手势留下的
+ * 看门狗醒来时，`active` 可能已经是**另一个新手势**了 —— 它会把新手势当场
+ * 收掉（真机上表现是"手指还按着，拖拽突然断了"，单测里表现是
+ * "某条用例的收尾回调里凭空多出一个 `cancel`"）。定时器必须知道自己是**谁的**。
+ */
+function startWatchdog(g: ActiveGesture): void {
+  stopWatchdog();
   watchdog = window.setInterval(() => {
-    const g = active;
-    if (!g) {
-      if (watchdog !== null) {
-        window.clearInterval(watchdog);
-        watchdog = null;
-      }
+    /* 已经换人了：这一次的看门狗作废（新手势有自己的那一个） */
+    if (active !== g) {
+      stopWatchdog();
       return;
     }
-    const alive = now() - g.lastSeenAt < 1200;
-    if (g.lastButtons === 0 || !alive) {
-      traceDrag(`cancel 来源=看门狗 buttons=${g.lastButtons} alive=${alive}`);
+    /*
+     * ★★ 判据只能是"按键已经松开、我们却还认为自己按着"（2026-10 收窄）。
+     *
+     * 原来还带一条 `now() - g.lastSeenAt >= 1200`（"很久没收到事件"），
+     * 而 `lastSeenAt` **只在指针事件到达时**才更新 —— 玩家长按之后
+     * 停住不动想放哪儿（几秒钟很正常）就会被它当成僵死，**手上的东西被收走**。
+     * 那正是这条看门狗最不该碰的动作，而单测里已经用
+     * 「看门狗不许误伤'长按后停住不动'」把它钉住了。
+     *
+     * 手指还按着（`buttons !== 0`）就是活着：真的"事件再也不来了"
+     * 那一种，由"下一次 pointerdown 先清掉上一轮"兜住（真机上按一下就能恢复），
+     * 不需要一个会误伤的定时器去猜。
+     */
+    if (g.lastButtons === 0) {
+      traceDrag('cancel 来源=看门狗 buttons=0');
       const wasDragging = g.dragging;
       settle(g);
       if (wasDragging) g.handlers.onCancel?.();
@@ -582,10 +686,19 @@ function beginDrag(g: ActiveGesture, point: Point): void {
    * 手势的含义**只能判定一次**：判成滚动之后，这一趟就归滚动。
    */
   if (g.scrolling) return;
+  /*
+   * ★ 委托手势里 "这一次没有东西"（手指落在格子之间的空白上）→ 不开拖。
+   * 长按计时器照常到期，所以这一句不是"多余"而是唯一的拦截点。
+   */
+  if (!g.delegate) return;
   g.dragging = true;
-  g.el.classList.add('is-dragging');
+  /*
+   * ★ 拖拽视觉加在**手指底下那一个**上（委托时 `g.el` 是整块容器，
+   * 往容器上加 `is-dragging` 会让整片区域一起抖）。
+   */
+  g.delegate.classList.add('is-dragging');
   traceDrag(`beginDrag at ${Math.round(point.x)},${Math.round(point.y)}`);
-  g.handlers.onDragStart?.(point);
+  g.handlers.onDragStart?.(point, g.delegate);
 }
 
 function handleMove(e: PointerEvent): void {
@@ -699,7 +812,9 @@ function handleUp(e: PointerEvent): void {
   traceDrag(
     `up 判定 tap：moved=${Math.round(moved)} 容差=${g.opts.moveTolerance} elapsed=${Math.round(elapsed)} 上限=${g.opts.tapMaxMs}`
   );
-  if (moved <= g.opts.moveTolerance && elapsed <= g.opts.tapMaxMs) g.handlers.onTap?.(point);
+  if (moved <= g.opts.moveTolerance && elapsed <= g.opts.tapMaxMs) {
+    g.handlers.onTap?.(point, g.delegate);
+  }
 }
 
 function handleCancel(): void {
@@ -737,10 +852,22 @@ export function __resetGesturesForTest(): void {
    * 表现是"某条断言偶尔差几十像素"。
    */
   stopInertia();
-  if (watchdog !== null) {
-    clearInterval(watchdog);
-    watchdog = null;
-  }
+  /*
+   * ★ 看门狗也要停（2026-10 补）。
+   *
+   * 它是个每 600ms 醒一次的 `setInterval`，而它一旦醒来就会去看 `active` ——
+   * 上一条用例留下的那一个会**把下一条用例刚建立的手势当场收掉**
+   * （表现："这条用例的收尾回调里凭空多出一个 `cancel`"）。
+   *
+   * ⚠ 这一层只在"同一批用例连续跑"时才有意义：手势状态活在模块作用域里，
+   * 它不认识 `beforeEach`。所以每一条用例开始时都要调用这个函数。
+   */
+  stopWatchdog();
+  /*
+   * ⚠ 这里**不要**去重置假时钟（我写进去过，`installFakeClock` 是本模块
+   * 不该知道的东西 —— 它是测试基建，`drag.ts` import 它等于把测试塞进包里）。
+   * 定时器属于哪一次手势，由 `startWatchdog` 自己认（`active !== g` 就退场）。
+   */
   installedOn = null;
 }
 export function attachPointerGesture(
@@ -763,12 +890,24 @@ export function attachPointerGesture(
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     traceDrag(`pointerdown type=${e.pointerType} buttons=${e.buttons}`);
 
+    /*
+     * ★★ 委托：整块区域交给我们管，但只有 `selector` 底下的元素才是"东西"。
+     *
+     * ★ 命不中时**不是"忽略这一下"**，而是"这一次没有东西"：
+     *   滚动照样要接管（手指落在格子之间的空白上也得跟手，见 `selector` 那段注释），
+     *   而抬手不该判 tap、移动不该开拖。所以记的是 `null`，不是提前 return。
+     */
+    const hit = opts.selector
+      ? ((e.target as HTMLElement | null) ?? el).closest<HTMLElement>(opts.selector)
+      : el;
+
     const g: ActiveGesture = {
       el,
       handlers,
       opts,
       dragging: false,
       scrolling: false,
+      delegate: hit,
       /*
        * ★★ 滚谁在**按下那一刻**就算好，而且整趟手势不再变。
        *
@@ -788,7 +927,7 @@ export function attachPointerGesture(
       onWindowSettled: null
     };
     active = g;
-    startWatchdog();
+    startWatchdog(g);
     /*
      * 玩家重新按下 → 上一趟的惯性立刻停。不停的话，新手势写的 `scrollTop`
      * 与惯性动画写的 `scrollTop` 会**互相打架**（同一个属性两个写者），
@@ -863,6 +1002,18 @@ export function attachLongPress(el: HTMLElement, onLongPress: (point: Point) => 
     fired = false;
     clear();
     timer = window.setTimeout(() => {
+      /*
+       * ★★ 同一块像素上已经有拖拽手势 → 这一次长按**不算**（2026-10 委托手势带出来的）。
+       *
+       * 两个计时器是不共戴天的：`attachPointerGesture` 的 300ms 已经把那一件东西
+       * 拎起来了（`is-dragging`），而这个 400ms 的计时器随后到期 → 分区编辑的
+       * 抽屉**盖在玩家正在拖的东西上**，看起来像"东西被吞了"。
+       *
+       * 判据用 `gestureActiveOn(el)`（被拖的元素是不是**这一块标题所属的格子/卡片**），
+       * 不是"有没有任何手势" —— 别处的手势跟这次长按无关，一律拦掉会让
+       * "另一只手指正在滚屏时标题按不动"。
+       */
+      if (gestureActiveOn(el)) return;
       fired = true;
       onLongPress(start);
     }, holdMs);

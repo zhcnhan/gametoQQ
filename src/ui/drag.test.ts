@@ -13,7 +13,7 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import { type FakeElement, type FakeWindow, FakeDocument, asElement, installFakeWindow, pointerEvent } from './fakeDom';
-import { __resetGesturesForTest, LONG_PRESS_MS, attachPointerGesture } from './drag';
+import { __resetGesturesForTest, LONG_PRESS_MS, attachLongPress, attachPointerGesture } from './drag';
 
 interface Harness {
   doc: FakeDocument;
@@ -67,6 +67,19 @@ function mountDetached(h: Harness, options?: Parameters<typeof attachPointerGest
 describe('手势状态机（ui/drag.ts 的真实行为）', () => {
   let h: Harness;
   beforeEach(() => {
+    /*
+     * ★★ 每一条用例开始时，手势状态必须**是空的**（2026-10 补，代价是找了一下午）。
+     *
+     * 手势层的状态活在**模块作用域**里（`active` / 看门狗 / 惯性），它不认识
+     * `beforeEach`。只要有一条用例没把 `pointerup` 送到（例如它只关心"长按成立"），
+     * 那一次手势就跨过用例边界活到下一个假 window 里 —— 而 watch 的 window
+     * 监听器是按 `pointerId` 过滤的，`pointerEvent()` 默认 `pointerId: 1`，
+     * 于是**上一个用例的手势会响应这个用例的事件**：它的收尾回调把 `cancel`
+     * 推进这个用例的 `h.log`，看起来像"这条用例自己多了一个 cancel"。
+     *
+     * 这个函数一直 import 着却没人在意 —— 它就是为这件事准备的。
+     */
+    __resetGesturesForTest();
     h = setup();
   });
 
@@ -259,6 +272,171 @@ describe('手势状态机（ui/drag.ts 的真实行为）', () => {
     h.el.dispatch('pointerdown', pointerEvent(30, 30));
     h.win.dispatch('pointermove', pointerEvent(32, 90));
     expect(h.log).toEqual(['cancel']);
+  });
+
+  /*
+   * ══ 委托（`selector`）══════════════════════════════════════════════════
+   *
+   * 为什么这一组必须有（玩家第三次报"滑动方向是反的"）：`touch-action` 只在
+   * 它被声明的那块像素上生效，于是原来"格子归我们、格子之间的空白归浏览器"
+   * 让同一块屏幕上出现了两个写着相反方向的写者。修法是把 `touch-action: none`
+   * 与手势**一起**上提到整块区域（`.room-scroll`）—— 而手势一上提，
+   * "手指底下是哪一格"就只剩 `e.target.closest(selector)` 这一条路了。
+   *
+   * ⚠ 这一组同时钉住假体的**冒泡**：`FakeElement.dispatch` 以前只跑自己的监听器，
+   * 于是委托手势在单测里一声不响（真浏览器里却是对的）。
+   */
+  it('★★ 委托：容器上挂一次，命中的是格子 → 拿到的是格子，不是容器', () => {
+    const container = h.doc.createElement('div');
+    container.className = 'room-scroll';
+    container.setAttribute('data-scroll-host', '');
+    container.place(0, 0, 300, 400);
+    container.scrollHeight = 2000;
+    container.clientHeight = 400;
+    h.doc.body.appendChild(container);
+
+    const slot = h.doc.createElement('div');
+    slot.className = 'slot';
+    slot.setAttribute('data-slot', '');
+    slot.setAttribute('data-shelf', 'A');
+    slot.setAttribute('data-row', '2');
+    slot.setAttribute('data-col', '3');
+    slot.place(0, 0, 60, 60);
+    container.appendChild(slot);
+
+    const seen: (string | null)[] = [];
+    attachPointerGesture(
+      asElement(container),
+      {
+        onTap: (_point, element) => seen.push(element?.dataset['row'] ?? null),
+        onDragStart: (_point, element) => h.log.push(`dragStart:${element?.dataset['row'] ?? 'null'}`),
+        onDragEnd: () => h.log.push('dragEnd'),
+        onCancel: () => h.log.push('cancel')
+      },
+      { selector: '[data-slot]', scrollHost: asElement(container) }
+    );
+
+    /*
+     * ① 轻点格子：`element` 必须是**格子**（`data-row=2`）。
+     * 若 delegate 解析错了（拿成容器），这里会读到 `null` —— 而那个错法在
+     * 真机上表现为"点在哪一格都算点在第一格"，不会报任何错。
+     */
+    slot.dispatch('pointerdown', pointerEvent(30, 30, { pointerType: 'mouse' }));
+    h.win.dispatch('pointerup', pointerEvent(30, 30, { pointerType: 'mouse', buttons: 0 }));
+    expect(seen).toEqual(['2']);
+
+    /*
+     * ② 长按成立 → 进拖拽：`onDragStart` 也要拿到那一格。
+     * ⚠ 这一段必须用**触摸**：鼠标那条路（`mouse && !dragging`）要在
+     * `pointermove` 越过 6px 时才开拖，光按住不动永远不开（见 `handleMove`）。
+     */
+    slot.dispatch('pointerdown', pointerEvent(30, 30, { pointerType: 'touch' }));
+    h.win.tick(LONG_PRESS_MS + 60);
+    expect(h.log).toEqual(['dragStart:2']);
+    h.win.dispatch('pointerup', pointerEvent(30, 30, { pointerType: 'touch', buttons: 0 }));
+    expect(h.log).toEqual(['dragStart:2', 'dragEnd']);
+  });
+
+  it('★★ 委托：手指落在格子之间的空白上 → 只滚屏，不开拖也不判 tap', () => {
+    const container = h.doc.createElement('div');
+    container.className = 'room-scroll';
+    container.place(0, 0, 300, 400);
+    container.scrollHeight = 2000;
+    container.clientHeight = 400;
+    h.doc.body.appendChild(container);
+    const slot = h.doc.createElement('div');
+    slot.className = 'slot';
+    slot.setAttribute('data-slot', '');
+    slot.place(0, 200, 60, 60); // 上半部分是"格子之间的空白"
+    container.appendChild(slot);
+
+    const taps: (string | null)[] = [];
+    attachPointerGesture(
+      asElement(container),
+      {
+        onTap: (_point, element) => taps.push(element ? 'hit' : 'miss'),
+        onDragStart: () => h.log.push('dragStart'),
+        onCancel: () => h.log.push('cancel')
+      },
+      { selector: '[data-slot]', scrollHost: asElement(container) }
+    );
+
+    container.dispatch('pointerdown', pointerEvent(30, 30));
+    // 往下划 90px：`touch-action: none` 的世界里这一趟只可能归我们
+    h.win.dispatch('pointermove', pointerEvent(30, 120));
+    expect(container.scrollTop, '空白处也要跟手滚').toBe(90);
+    h.win.tick(LONG_PRESS_MS + 60); // 长按照常到期，但这一次没有"东西"
+    expect(h.log, '空白处长按不该开拖').toEqual([]);
+    h.win.dispatch('pointerup', pointerEvent(30, 120, { buttons: 0 }));
+    expect(taps, '滚完抬手不是 tap').toEqual([]);
+  });
+
+  it('★ 正在拖东西时，同一块标题的长按不该再开抽屉', () => {
+    /*
+     * 两个计时器不共戴天：手势层 300ms 已经把东西拎起来，而纯长按是 400ms。
+     * 没有这道守卫，分区编辑的抽屉会**盖在玩家正在拖的东西上** ——
+     * 看起来像"东西被吞了"（而代码里两处都"没错"）。
+     */
+    const container = h.doc.createElement('div');
+    container.className = 'room-scroll';
+    container.place(0, 0, 300, 400);
+    h.doc.body.appendChild(container);
+    const slot = h.doc.createElement('div');
+    slot.className = 'slot';
+    slot.setAttribute('data-slot', '');
+    slot.place(0, 0, 60, 60);
+    container.appendChild(slot);
+
+    const title = h.doc.createElement('div');
+    title.setAttribute('data-shelf-title', '');
+    title.place(0, 0, 120, 24);
+    slot.appendChild(title);
+
+    let opened = 0;
+    const detach = attachLongPress(asElement(title), () => {
+      opened += 1;
+    });
+    /*
+     * ⚠ 手势必须挂在**容器**上（委托），不能图省事用 `mount(h, …)` ——
+     * 那个把手势挂在 `h.el` 上，而 `h.el` 与这里的 `container` 是 **body 下的兄弟**，
+     * 于是标题上的 `pointerdown` 冒泡到 container 就停了，手势一声不响。
+     * 这一条用例的**全部意义**就是"容器上的委托与同一块像素上的长按会不会打架"，
+     * 挂错了地方它验的就是空气。
+     */
+    attachPointerGesture(
+      asElement(container),
+      {
+        onDragStart: () => h.log.push('dragStart'),
+        onDragEnd: () => h.log.push('dragEnd'),
+        onCancel: () => h.log.push('cancel')
+      },
+      { selector: '[data-slot]', scrollHost: asElement(container) }
+    );
+
+    // 长按标题 → 拖拽先成立（300ms），400ms 那次长按必须让路
+    title.dispatch('pointerdown', pointerEvent(30, 12, { pointerType: 'touch' }));
+    h.win.tick(LONG_PRESS_MS + 200);
+    expect(h.log, '这一趟确实进了拖拽').toEqual(['dragStart']);
+    expect(opened, '拖拽中不该开分区编辑').toBe(0);
+    h.win.dispatch('pointerup', pointerEvent(30, 12, { pointerType: 'touch', buttons: 0 }));
+    detach();
+
+    /*
+     * 反向：**只是按住**（不进拖拽）时，长按照常开 —— 否则这一条会变成
+     * "长按永远不灵"的假绿（守卫把两条路一起掐掉也算通过）。
+     * 这一趟用一个不在 `selector` 底下的元素：它没有任何手势。
+     */
+    const plain = h.doc.createElement('div');
+    plain.setAttribute('data-shelf-title', '');
+    plain.place(0, 100, 120, 24);
+    container.appendChild(plain);
+    const detachPlain = attachLongPress(asElement(plain), () => {
+      opened += 1;
+    });
+    plain.dispatch('pointerdown', pointerEvent(30, 112, { pointerType: 'touch' }));
+    h.win.tick(LONG_PRESS_MS + 200);
+    expect(opened, '没有手势的地方，长按照常开').toBe(1);
+    detachPlain();
   });
 
   it('★ 浏览器接管滚动时会发 pointercancel —— 那一刻必须把手势收掉，不留幽灵', () => {
