@@ -497,6 +497,18 @@ const MEASURE = `(async () => {
       }
       return out;
     })(),
+    /*
+     * ★ 屏上诊断的「点名」（ui/layoutHud.ts）：探针在这里替人点两下，
+     *   验证它报出来的**源码位置**真的对得上 —— DEV 里用 import.meta.glob
+     *   把 src/ui/*.ts 与 style.css 的原文读进浏览器再现扫一遍，
+     *   假 DOM 测不到这件事（它连 Vite 都没有）。
+     * ⚠ 这一段注释在 MEASURE 那个模板字面量里：反引号一个都不许出现。
+     */
+    hudPick: (function () {
+      var hud = window.__tunhuoHud;
+      if (!hud || typeof hud.pick !== 'function') return '(点名没装上)';
+      return hud.pick('.run-bar') + ' ||| ' + hud.pick('.score-item');
+    })(),
     shelfCard: h('.shelf-card'),
     shelfHead: h('.shelf-head'),
     shelfRows: h('.shelf-rows'),
@@ -613,6 +625,18 @@ async function main(): Promise<void> {
       }
     }
     console.log(`  · 命中的上限 = ${String(m['dockBoxesCap'])}，实得高度 = ${String(hOf('dockBoxes'))}`);
+    /*
+     * ★ 屏上诊断的「点名」在这里替人点两下：验证它报出来的**源码位置**真的对得上。
+     *   DEV 里用 import.meta.glob 把 src/ui/*.ts 与 style.css 的原文读进浏览器
+     *   再现扫一遍 —— 假 DOM 测不到这件事（它连 Vite 都没有）。
+     */
+    const pick = m['hudPick'];
+    if (typeof pick === 'string' && pick !== '') {
+      for (const block of pick.split(' ||| ')) {
+        console.log(`  ── 点名 ──`);
+        for (const line of block.split('\n')) console.log(`  ${line}`);
+      }
+    }
     /*
      * ★★ "太紧凑"是一道减法题：视口高度减去哪几块。
      *

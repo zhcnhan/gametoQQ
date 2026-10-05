@@ -399,6 +399,14 @@ document.addEventListener('visibilitychange', () => {
  * `isEditable(target)` —— 输入框、文本域、`contenteditable`。
  * 这一条不能省：改名输入框里 Ctrl+V 是必须能用的，
  * 而"整站禁掉粘贴"会把它一起杀掉，且**没有任何测试会发现**（那个框在弹层里）。
+ *
+ * ## ★★ DEV 下不拦右键（用户 2026-10 报的："我现在在浏览器上右键无法查看审查元素"）
+ *
+ * 那一句 `preventDefault()` 会把 Chrome **自带**的那个菜单一起关掉 ——
+ * 于是"检查"（以及 F12 之外最顺手的那条路）也一起没了。玩家不需要这个菜单，
+ * 但**做这个游戏的人需要**：能对着一个元素右键、直接落到它的 DOM 上，
+ * 是查版式问题时最快的一条路。所以只在 DEV 下放它过去（`import.meta.env.DEV`
+ * 在生产构建里会被替换成 `false`，这一支整个消失）。
  */
 function isEditable(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -417,7 +425,10 @@ function installClipboardGuard(): void {
       console.log(`[剪贴板守卫] 拦下 ${type}`);
     }
   };
-  for (const type of ['copy', 'cut', 'paste', 'dragstart', 'contextmenu']) {
+  const types = ['copy', 'cut', 'paste', 'dragstart', 'contextmenu'].filter(
+    (type) => !(import.meta.env.DEV && type === 'contextmenu')
+  );
+  for (const type of types) {
     document.addEventListener(type, block(type));
   }
 }
