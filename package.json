@@ -19,6 +19,7 @@
     "make-perfect": "vite-node scripts/make-perfect-save.ts",
     "plan-perfect": "vite-node scripts/plan-perfect-save.ts",
     "check:docs": "node scripts/check-docs.mjs",
+    "preview:disasters": "vite-node scripts/preview-window-themes.ts",
     "strip-trace": "node scripts/strip-trace.mjs"
   },
   "devDependencies": {
