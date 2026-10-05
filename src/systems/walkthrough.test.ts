@@ -12,345 +12,31 @@
  *
  * 每次换页/换天都过一遍 `serialize` → `deserialize`，等于模拟"玩家每次操作后都刷新页面"。
  * §4A 承诺的是"任何时刻杀进程，损失 = 0"，而这条走测就是那句话的回归测试。
+ *
+ * ## ★ 夹具搬去了 `walkthroughRun.ts`（M4 W-01）
+ *
+ * 理由有两条，都是实际撞到的：
+ *
+ *  1. **116 场灾难现在真的会被抽到了**，于是"跑一整局"不再只跑寒潮 ——
+ *     另外 115 场从来没有被玩过一遍。补那个缺口要把同一套策略放到别的灾难上跑，
+ *     而 `scripts/_probe-*.ts` **import 不了这个文件**：它带了 `vitest`，
+ *     `vite-node` 会当场抛 `Vitest failed to access its internal state`；
+ *  2. ★ 更重要的：**那件事得留在仓库里**。以后每加一场灾难，
+ *     "它能不能玩"都该被跑一遍（"数据写了 ≠ 这一局能玩"，D-32 的教训）——
+ *     而那不该是一次性探针的活。
  */
 import { describe, expect, it } from 'vitest';
-import { CATEGORY_ORDER, getItemDef } from '../data/items';
-import { NIGHT_SLEEP } from '../data/nightEvents';
-import { SURVIVAL_DAYS, getDisasterDef } from '../data/disaster';
+import { getDisasterDef, SURVIVAL_DAYS } from '../data/disaster';
 import { dailyDrainOf } from '../data/survival';
-import type { CategoryId, RunState } from '../model/types';
-import { makeStack, setSlotStack } from '../model/shelf';
+import { NIGHT_SLEEP } from '../data/nightEvents';
+import type { RunState } from '../model/types';
 import { GameStore } from '../state/store';
 import { SAVE_VERSION, createSaveGame, deserialize, serialize } from '../state/save';
 import { settleRunMeta } from './codex';
 import { declineRequest, fulfillRequest } from './help';
-import {
-  advanceSurvivalDay,
-  chooseIdentity,
-  chooseNightOption,
-  endDay,
-  goHome,
-  sleep,
-  startSurvival
-} from './phases';
-import {
-  applyZone,
-  assignZone,
-  createOrganizeSession,
-  householdTotals,
-  pickupFromShelf,
-  placeHeld,
-  restoreOrganizeSession,
-  sortAllByFEFO,
-  takeFromBox
-} from './organize';
-import { buildCartView, buyCart, enterShop, findShopStock, resolveDayEvent } from './shop';
+import { chooseIdentity, chooseNightOption, goHome, sleep } from './phases';
 import { createStartingRun } from './setup';
-
-/**
- * 囤货期的一趟采购。
- *
- * ## 策略（它是被实测**调出来**的，不是拍脑袋写的）
- *
- * 第一版"每天三家店、按需买满"实测买到了 74 件主食、**1 罐燃料**，D+13 倒下。
- * 原因不是钱：**车装不下**（车载 58kg/天，燃料一件就 4kg）。
- * 主食便宜、轻、件数多，一趟超市就能把车塞满，等走到五金店时车里只剩 1.34kg。
- *
- * 所以这里的口径是：
- *   · **按钱包比例分账**：燃料 0.40 / 主食 0.25 / 饮水 0.12 / 医疗保暖 0.1，
- *     而且**每家店都按当前钱包重算** —— 超市花掉一部分，五金店拿到的份额自然变小；
- *   · **主食的"重货"（大米、面粉）只在第一天之后才买** —— 它们一件 5kg / 2.5kg，
- *     在 D-7 那天买等于把车留给燃料的位置占了。真实玩家也会先抢燃料；
- *   · 每次结账装到**单趟负重**为止，剩下的分下一趟（分趟不扣行动点）。
- */
-function stockUp(store: GameStore, shopId: string): number {
-  const drain = dailyDrainOf(getDisasterDef(store.run.disasterId));
-  const daysLeft = SURVIVAL_DAYS + 1;
-  const stock = findShopStock(store.run, shopId);
-  if (!stock) return 0;
-
-  /** 这个品类还能花多少钱。按**当前钱包**的比例算，每家店重算一次 */
-  const purse = (category: CategoryId): number => {
-    const cash = store.run.cash;
-    if (category === 'fuel') return cash * 0.4;
-    if (category === 'food') return cash * 0.25;
-    if (category === 'water') return cash * 0.12;
-    return cash * 0.1;
-  };
-
-  /** 重货：一件 2.5kg 以上的主食。晚期再买，免得占掉燃料的位置 */
-  const HEAVY = new Set(['rice_bag', 'flour']);
-
-  const PRIORITY: CategoryId[] = ['fuel', 'food', 'water', 'medicine', 'warmth'];
-  const wants = new Map<string, number>();
-  for (const category of PRIORITY) {
-    if (category === 'medicine' || category === 'warmth') {
-      const target = category === 'medicine' ? 6 : 2;
-      for (const line of stock.lines) {
-        if (getItemDef(line.itemId).category !== category || line.stock <= 0) continue;
-        wants.set(line.itemId, (wants.get(line.itemId) ?? 0) + target);
-      }
-      continue;
-    }
-    const need = drain.find((d) => d.category === category)?.need ?? 0;
-    if (need <= 0) continue;
-    for (const line of stock.lines) {
-      if (getItemDef(line.itemId).category !== category || line.stock <= 0) continue;
-      if (HEAVY.has(line.itemId) && store.run.day < -4) continue;
-      wants.set(line.itemId, (wants.get(line.itemId) ?? 0) + need * daysLeft);
-    }
-  }
-  // eslint-disable-next-line no-console
-  if (WALK_DEBUG) {
-    console.log(
-      'STOCKUP',
-      shopId,
-      'day=' + store.run.day,
-      'cash=' + store.run.cash,
-      'purse(fuel)=' + Math.round(purse('fuel')),
-      'wants=' + JSON.stringify(Object.fromEntries(wants))
-    );
-  }
-
-  // 反复结账，直到这一趟装不下任何东西（分趟不扣行动点，所以可以多跑几趟）
-  let boughtPieces = 0;
-  for (let trip = 0; trip < 12; trip++) {
-    const lines = [...wants.entries()]
-      .filter(([, count]) => count > 0)
-      .map(([itemId, count]) => ({ itemId, count: Math.min(count, 99) }));
-    if (lines.length === 0) return boughtPieces;
-    const view = buildCartView(store.run, shopId, lines);
-    if (!view || view.lines.length === 0) return boughtPieces;
-    // 只把"这一趟真的能装下、而且这个品类还买得起"的那部分放进车
-    let picked = view.lines.map((l) => ({ itemId: l.itemId, count: l.count }));
-    let guard = 0;
-    while (guard < 80) {
-      guard += 1;
-      const check = buildCartView(store.run, shopId, picked);
-      if (!check) return boughtPieces;
-      const affordable = check.lines.every((l) => {
-        const sameCat = check.lines.filter(
-          (x) => getItemDef(x.itemId).category === getItemDef(l.itemId).category
-        );
-        const catCost = sameCat.reduce((n, x) => n + x.unitPrice * x.count, 0);
-        return catCost <= purse(getItemDef(l.itemId).category) && l.unitPrice > 0;
-      });
-      if (check.canLoad && affordable) break;
-      // 退一件：优先退最贵的（它最可能是超出品类预算的那一个）
-      const priciest = [...check.lines].sort((a, b) => b.unitPrice - a.unitPrice)[0];
-      if (!priciest) break;
-      picked = picked
-        .map((p) => (p.itemId === priciest.itemId ? { ...p, count: p.count - 1 } : p))
-        .filter((p) => p.count > 0);
-      if (picked.length === 0) return boughtPieces;
-    }
-    const finalCheck = buildCartView(store.run, shopId, picked);
-    if (!finalCheck || !finalCheck.canLoad) return boughtPieces;
-    if (!buyCart(store, shopId, picked).ok) return boughtPieces;
-    for (const p of picked) {
-      BOUGHT.set(getItemDef(p.itemId).category, (BOUGHT.get(getItemDef(p.itemId).category) ?? 0) + p.count);
-      boughtPieces += p.count;
-    }
-    for (const p of picked) {
-      const left = (wants.get(p.itemId) ?? 0) - p.count;
-      if (left > 0) wants.set(p.itemId, left);
-      else wants.delete(p.itemId);
-    }
-    if (wants.size === 0) break;
-  }
-  return boughtPieces;
-}
-
-/**
- * 调试开关。排查"为什么这一趟没买到东西"时把它改成 true，
- * 会逐店打印当时的钱包、各品类预算与想买的清单。
- * 平时必须是 false —— 一个会说话的测试跑起来很吵。
- */
-const WALK_DEBUG = false;
-
-/** 调试用：沿途按品类累计买了多少件（只在走测报告里读它） */
-const BOUGHT = new Map<string, number>();
-
-function createSaveSchedulerStub() {
-  return { schedule: () => undefined, flush: () => undefined, dispose: () => undefined, pending: false };
-}
-
-/** 门口有人：一律交付（走测要覆盖"交付真的生效"那条路；交不出就婉拒，免得卡住） */
-function handleDoor(store: GameStore): void {
-  if (!fulfillRequest(store).ok) declineRequest(store);
-}
-
-/**
- * 包一层"每次操作都刷新页面"的存档：所有命令跑在**反序列化回来的** store 上，
- * 命令跑完再把整份存档序列化回去。这不是为了好看 —— 它是 §4A 那条承诺的模拟。
- */
-function refreshRoundTrip(store: GameStore): string {
-  const text = serialize(store.save);
-  return text;
-}
-
-function reload(text: string): GameStore {
-  const back = deserialize(text);
-  if (!back) throw new Error('存档读不回来');
-  return new GameStore(back, createSaveSchedulerStub());
-}
-
-/**
- * ★★ "拿着东西的时候刷新页面" —— 玩家报过的一个真丢件 bug。
- *
- * 原来的 `held` 只活在内存里，而"拿起来"会把物资**从格子/箱子里移走**，
- * 于是刷新后格子里没有、会话也没了 = **凭空消失**。
- * 这条守的是：无论刷新多少次，一件都不许少。
- */
-describe('★★ 拿着东西刷新页面：一件都不许丢', () => {
-  it('从货架拿起 → 连刷三次 → 手里那件还在，总数不变', () => {
-    const session = createOrganizeSession();
-    let store = new GameStore(createSaveGame(createStartingRun(20261001)), createSaveSchedulerStub());
-
-    // 铺一件到货架上，然后拿在手里
-    const idx = store.run.shelves.findIndex((s) => s.id === 'shelf_a');
-    store.commit((draft) => {
-      const s = draft.shelves[idx];
-      if (!s) return;
-      draft.shelves[idx] = setSlotStack(s, { row: 0, col: 0 }, makeStack('canned_beans', 3, null));
-    });
-    const before = householdTotals(store.run).pieces;
-    const picked = pickupFromShelf(store, session, 'shelf_a', { row: 0, col: 0 });
-    expect(picked.ok).toBe(true);
-    expect(session.held?.itemId).toBe('canned_beans');
-
-    // 连刷三次，每次都用**新建的会话**（模拟真实刷新：会话是内存，重启即空）
-    for (let i = 0; i < 3; i++) {
-      store = reload(refreshRoundTrip(store));
-      const fresh = createOrganizeSession();
-      restoreOrganizeSession(store, fresh);
-      expect(fresh.held?.itemId, `第 ${i + 1} 次刷新后手里那件不该丢`).toBe('canned_beans');
-      expect(fresh.held?.batches[0]?.count).toBe(3);
-      expect(householdTotals(store.run).pieces, `第 ${i + 1} 次刷新后总数不该变`).toBe(before);
-    }
-  });
-});
-
-/** 把货架上的东西按品类铺好、贴一张写全清单的胶带、标顺手位、FEFO 排一遍 */
-function tidyUp(store: GameStore, session: ReturnType<typeof createOrganizeSession>): void {
-  // 拆箱并上架：依次摸出来、放到第一块有空位的货架上
-  let guard = 0;
-  while (store.run.boxesToUnpack.length > 0 && guard < 400) {
-    guard += 1;
-    const box = store.run.boxesToUnpack[0];
-    if (!box) break;
-    takeFromBox(store, session, box.id);
-    if (!session.held) break;
-    const shelf = store.run.shelves.find((s) => s.slots.some((row) => row.some((slot) => slot.stack === null)));
-    if (!shelf) break;
-    let placed = false;
-    for (let r = 0; r < shelf.h && !placed; r++) {
-      for (let c = 0; c < shelf.w && !placed; c++) {
-        if (shelf.slots[r]?.[c]?.stack === null) {
-          placeHeld(store, session, shelf.id, { row: r, col: c });
-          placed = true;
-        }
-      }
-    }
-    if (!placed) break;
-  }
-  // 贴一张写全清单的胶带（§12 v0.8：空清单不给归位率的分）
-  for (const shelf of store.run.shelves) {
-    applyZone(store, shelf.id, {
-      name: '全收',
-      color: '#000000',
-      categories: [...CATEGORY_ORDER]
-    });
-  }
-  const zoneId = store.run.zones[0]?.id ?? null;
-  if (zoneId) for (const shelf of store.run.shelves) assignZone(store, shelf.id, zoneId);
-  // 顺手位：全屋唯一
-  store.commit((draft) => {
-    draft.shelves.forEach((s, i) => {
-      s.handyRank = i === 0 ? 1 : null;
-    });
-  });
-  sortAllByFEFO(store, session);
-}
-
-/**
- * 跑完一整局。`tidy` 决定囤货期到底整理成什么样 —— 这一条就是"好档 vs 乱档"。
- * @returns 走完之后的存档 + 沿途记录（夜间事件、白天事件、突发事件、结局）
- */
-function playFullRun(seed: number, tidy: boolean) {
-  let store = new GameStore(createSaveGame(createStartingRun(seed)), createSaveSchedulerStub());
-  const session = createOrganizeSession();
-  const nightEvents: string[] = [];
-  const dayEvents: string[] = [];
-  const emergencies: string[] = [];
-
-  expect(chooseIdentity(store, 'group_buyer').ok).toBe(true);
-  store = reload(refreshRoundTrip(store));
-
-  // ———————— 囤货期 7 天：每天进三家店、回家整理、过一天 ————————
-  for (let d = 0; d < 7; d++) {
-    // ★ 行动点要真的用掉：进五金店买燃料、进超市买主食、进药店买药，
-    // 而且**同一家店可以反复进**（这是真实可用的策略，也是唯一的解）。
-    // 走测的第一版每天只进三家店各一次，实测燃料永远不够 ——
-    // 因为车载 58kg/天 是硬闸门，而燃料一件就 4kg。
-    // 第二版把"再进一次"补上之后才买到 28 罐。
-    for (const shopId of ['hardware', 'supermarket', 'pharmacy'] as const) {
-      let laps = 0;
-      while (store.run.actionPoints > 0 && laps < 4) {
-        laps += 1;
-        // 走真实命令：进店会掷白天事件，掷中就当场处理掉（一律选第一条 = "参与"）
-        if (!enterShop(store, shopId).ok) break;
-        if (store.run.dayEvent) {
-          dayEvents.push(store.run.dayEvent.defId);
-          resolveDayEvent(store, 0);
-        }
-        if (!tidy) break;
-        const bought = stockUp(store, shopId);
-        // 这家店已经没有"能买且买得起"的东西了 → 换下一家，别浪费行动点
-        if (bought === 0) break;
-      }
-    }
-    goHome(store);
-    if (tidy) tidyUp(store, session);
-    store = reload(refreshRoundTrip(store));
-
-    endDay(store);
-    if (store.run.phase === 'night') {
-      nightEvents.push(store.run.night?.eventId ?? '');
-      chooseNightOption(store, NIGHT_SLEEP);
-      sleep(store);
-    }
-    store = reload(refreshRoundTrip(store));
-  }
-
-  // ———————— D-Day ————————
-  expect(store.run.phase).toBe('survival_day');
-  expect(store.run.day).toBe(0);
-  if (tidy) {
-    tidyUp(store, session);
-    store = reload(refreshRoundTrip(store));
-  }
-
-  startSurvival(store);
-  let guard = 0;
-  while (store.run.phase !== 'ending' && guard < 60) {
-    guard += 1;
-    if (store.run.phase === 'help_request') {
-      handleDoor(store);
-    } else {
-      if (store.run.survival.last.emergencyId) emergencies.push(store.run.survival.last.emergencyId);
-      advanceSurvivalDay(store);
-    }
-    // 每三天过一次存档往返 —— 模拟"随时杀进程"
-    if (guard % 3 === 0) store = reload(refreshRoundTrip(store));
-  }
-
-  // ———————— 结算 ————————
-  const finalText = refreshRoundTrip(store);
-  const verdict = settleRunMeta(store);
-  const finalStore = reload(serialize(store.save));
-  return { store: finalStore, verdict, nightEvents, dayEvents, emergencies, finalText };
-}
+import { createSaveSchedulerStub, expectedShelves, playFullRun, trialDisaster } from './walkthroughRun';
 
 describe('全流程走测：真实命令 × 存档往返 × 三档', () => {
   it('★ 好档：真实命令走完 16 天（囤货 7 + 生存 14），图鉴与纪录都落账', () => {
@@ -473,5 +159,105 @@ describe('全流程走测：真实命令 × 存档往返 × 三档', () => {
     expect(door.run.phase).toBe('survival_day');
     expect(door.run.helpRequest).toBeNull();
     expect(door.run.trust['npc_wang'] ?? 0).toBeLessThan(0);
+  });
+});
+
+/**
+ * ★★ 跨灾难的走测（M4 W-01 的验收，2026-10）
+ *
+ * ## 这一组在守什么
+ *
+ * W-01 之前实机每一局都是寒潮 —— 也就是说**另外 115 场从来没有被玩过一遍**。
+ * 而"数据写了"与"这一局能玩"是两件事：整个 W-01 的起因就是
+ * 43 场写了空间维度、生效 0 场（D-32）。
+ * 所以灾难一旦能被抽到，"它能不能走到结算"就必须有人跑。
+ *
+ * ## 判据的形状：**只判"坏了没有"，不判"难不难"**
+ *
+ * 每一场都跑一遍完整走测（真实命令 × 存档往返 × 同一条已验证的采购策略），
+ * 然后只问三件事：走到 `ending` 了吗、四维越界了吗、`disasterId` 中途被换了吗。
+ *
+ * ⚠ **"有没有活满 14 天"刻意不当判据**：灾难分 L1~L4，难度本来就该有差，
+ * 而"哪一场该多难"是设计问题，不是这条测试能回答的。活满多少场只作观察值。
+ *
+ * ⚠ **样本不是全量**：全量 116 场 × 一整局要跑几十秒，而这里是"每次 `npm test` 都跑"
+ * 的位置。样本按 **每个家族 + 每个 level + 几类最容易出问题的形状**（空间代价最狠的、
+ * 关店的、高日耗的、腐坏两端的、断电的）挑，全量的那一遍走
+ * `scripts/_probe-walk-all-disasters.ts`（同样是这套夹具）。
+ */
+describe('★★ 跨灾难走测：每一场都走得到结算，而且不静默换灾难', () => {
+  /** 每个家族 / 每个 level / 每类极端形状各挑代表 */
+  const SAMPLE = [
+    'flood_urban', // 水 · capacityFactor 0.8（空间维度最常见的那一档）
+    'tsunami', // 水 · capacityFactor 0.55 **且**摘掉 shelf_a（最狠的空间代价）
+    'heat_wave', // 温度 · 日耗 水 5 + 腐坏 2.4（需求侧最重的一类）
+    'blackout_winter', // 组合 · 断电（冰箱停摆 → 腐坏反向）
+    'mold_rain', // 生物 · 腐坏 3.0（全案最快）
+    'riot_curfew', // 社会 · 关店（供给侧最紧）
+    'sandstorm_air', // 空气
+    'quake_cold', // 组合 · capacity 0.65
+    'hub_paralysis', // 结构 · 断货运
+    'ice_age' // L4 · 连续低温 + capacity 0.8
+  ];
+
+  it('★ 十场代表（覆盖 7 个家族 / L2~L4）：每一场都走到结算，四维不越界', () => {
+    const results = SAMPLE.map((id) => trialDisaster(id));
+    const broken = results.filter((r) => r.problems.length > 0);
+    expect(
+      broken.map((r) => `${r.name}(${r.id})：${r.problems.join('；')}`),
+      '这些灾难走不完一整局'
+    ).toEqual([]);
+    // 而"走完了"这件事本身也要有独立的证据（`problems` 为空时 `finished` 必须为真）
+    expect(results.every((r) => r.finished), '有问题却报没问题 —— 判据自己坏了').toBe(true);
+  });
+
+  it('★★ 每一场开局的**盘面形状**都对（块数 / 排数 / 格数）', () => {
+    /*
+     * ★ 这一条是补上来的，因为上面那条**抓不到 W-01 那一类 bug**：
+     * 我故意把 `createStartingShelves` 的 `capacityFactor` 写死成 0.55 之后，
+     * 十场样本**全部照旧通过** —— 每一场都还能走完，只是寒潮局的货架被砍错了。
+     *
+     * 所以"走得通"之外还要问"**它铺出来的盘面对不对**"，而那个期望值
+     * 由 `expectedShelves` **独立算**（读数据，不读实现）—— 两处都读同一个函数
+     * 只是在自证，抓不到接线错。
+     */
+    for (const id of SAMPLE) {
+      const want = expectedShelves(id);
+      const run = createStartingRun(20261001, { disasterId: id });
+      const got = {
+        blocks: run.shelves.length,
+        rows: run.shelves[0]?.h ?? 0,
+        slots: run.shelves.reduce((n, s) => n + s.w * s.h, 0)
+      };
+      expect(got, `${getDisasterDef(id).name} 开局的盘面形状不对`).toEqual(want);
+    }
+  });
+
+  it('★ 空间维度在这些真实局里确实生效（最狠那一场只剩 1 块货架）', () => {
+    /*
+     * 这一条是 W-01 的**正面证据**，而且是从"走完一整局"这条路上取的 ——
+     * 不是调一次 `createStartingShelves` 就算数（那样验的是函数，不是接线）。
+     */
+    const tsunami = getDisasterDef('tsunami');
+    expect(tsunami.capacityFactor).toBe(0.55);
+    expect(tsunami.unusableShelfIds?.length ?? 0).toBeGreaterThan(0);
+    const run = createStartingRun(20261001, { disasterId: 'tsunami' });
+    // 三块摘掉一块 → 两块；而每块再按 0.55 砍排（4 → 2）
+    expect(run.shelves.length).toBe(2);
+    expect(run.shelves.every((s) => s.h === 2)).toBe(true);
+    // 对照：寒潮局是满的
+    expect(createStartingRun(20261001).shelves.length).toBe(3);
+  });
+
+  it('★ 灾难的日耗跟着这一场走（热浪要 5 份水，寒潮要 2 份燃料）', () => {
+    /*
+     * "抽到哪一场"这件事一旦接上，**需求侧**也会跟着变 ——
+     * 而界面上的"你囤到的"、结算里的消耗、缺货判定全部读它。
+     */
+    const heat = dailyDrainOf(getDisasterDef('heat_wave'));
+    const cold = dailyDrainOf(getDisasterDef('cold_snap'));
+    expect(heat.find((d) => d.category === 'water')?.need).toBe(5);
+    expect(cold.find((d) => d.category === 'fuel')?.need).toBe(2);
+    expect(heat).not.toEqual(cold);
   });
 });
