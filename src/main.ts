@@ -339,6 +339,45 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') flush();
 });
 
+/**
+ * ★★ 换灾难的**生产构建也能用**的那条路（2026-10 补，用户的走查卡在这里）。
+ *
+ * ## 为什么必须有它
+ *
+ * `__tunhuo` 那一整套钩子住在下面的 `if (import.meta.env.DEV)` 里 ——
+ * 于是 **`npm run build` 出来的那一份里 `__tunhuo` 根本不存在**，
+ * 而用户走查时打开的正是 `dist/index.html`（或一个预览服务）。
+ * 他报的"`__tunhuo.disaster('洪水')` 这个命令好像根本没用"就是这么来的：
+ * **不是命令坏了，是那一份构建里没有它**（连 `__tunhuo` 都没有，
+ * 控制台会报 `Cannot read properties of undefined`，而那读起来像"命令没实现"）。
+ *
+ * 所以这里补一条**不依赖构建模式**的路：URL 参数。
+ *   · `index.html?disaster=洪水`（中文名）
+ *   · `index.html?disaster=flood_urban`（id）
+ *
+ * ⚠ 它**重铺货架**（`createStartingShelves`），所以会清空已经摆好的东西 ——
+ * 这是刻意的：空间维度（少一块 / 矮一排）只有在**开局那一刻**才铺得出来。
+ * 这条与 dev 那个 `__tunhuo.disaster()` 是同一件事的两种入口。
+ */
+function applyDisasterFromUrl(): void {
+  const param = new URLSearchParams(window.location.search).get('disaster');
+  if (!param) return;
+  const def = DISASTER_DEFS.find((d) => d.id === param || d.name === param);
+  if (!def) {
+    console.warn(`[囤货末世] ?disaster=${param} 认不出这一场（可以用 id 或中文名）。`);
+    return;
+  }
+  store.commit((draft) => {
+    draft.disasterId = def.id;
+    draft.shelves = createStartingShelves(ROOM_ID, def.id);
+    draft.shopStocks = [];
+  });
+  ensureDayStocks(store);
+  router.render();
+  console.info(`[囤货末世] ?disaster 换成了「${def.name}」（${def.id}）`);
+}
+applyDisasterFromUrl();
+
 // 调试用：控制台可以直接看当前存档、整理会话、路由，以及欠账清单
 if (import.meta.env.DEV) {
   const debts = openDeferred();
@@ -417,11 +456,11 @@ if (import.meta.env.DEV) {
    *
    * 所以它把这件事变成一条命令：按名字（或 id）指定一场，**重铺整间屋子**。
    *
-   * ⚠ 它**重铺货架**（`createStartingShelves`），所以会清空已经摆好的东西 ——
-   * 这是刻意的：空间维度（少一块 / 矮一排）只有在**开局那一刻**才铺得出来。
-   * 想知道"换一场会不会少一块货架"，就得看开局那一下。
+   * ⚠ 它**只在 dev 构建里存在**。用 `npm run build` 出来的那一份时请用
+   * URL 参数：`index.html?disaster=洪水`（见 `applyDisasterFromUrl` 的注释 ——
+   * 那条路就是为用户"在预览服务上走查"补的）。
    *
-   * 用法（浏览器控制台）：
+   * 用法（浏览器控制台，dev）：
    *   __tunhuo.disaster('洪水')      按名字
    *   __tunhuo.disaster('flood_urban')  按 id
    *   __tunhuo.disaster()            列出现在能抽到的池子（含"还差什么"）
@@ -505,6 +544,44 @@ if (import.meta.env.DEV) {
     window.location.reload();
   };
 
+  /**
+   * ★★ 换灾难的**生产构建也能用**的那条路（2026-10 补）。
+   *
+   * ## 为什么必须有它
+   *
+   * 上面那个 `disaster()` 住在 `if (import.meta.env.DEV)` 里 —— 于是
+   * **`npm run build` 出来的那一份里 `__tunhuo` 根本不存在**，
+   * 而用户走查时打开的正是 `dist/index.html`（或者一个预览服务）。
+   * 他报的"`__tunhuo.disaster('洪水')` 这个命令好像根本没用"就是这么来的：
+   * 不是命令坏了，是**那一份构建里没有它**（连 `__tunhuo` 都没有）。
+   *
+   * 所以给一条**不依赖构建模式**的路：URL 参数。
+   * 它是走查用的开关，不是玩法 —— 所以它只在"换一场灾难"这个粒度上成立，
+   * 而且会**把这一局重置**（空间维度只在开局那一刻铺得出来，见 `disaster()` 的注释）。
+   *
+   * 用法：`index.html?disaster=洪水` 或 `?disaster=flood_urban`
+   */
+  const applyDisasterFromUrl = (): void => {
+    const param = new URLSearchParams(window.location.search).get('disaster');
+    if (!param) return;
+    const def = DISASTER_DEFS.find((d) => d.id === param || d.name === param);
+    if (!def) {
+      // eslint-disable-next-line no-console
+      console.warn(`[囤货末世] ?disaster=${param} 认不出这一场（可以用 id 或中文名）。`);
+      return;
+    }
+    store.commit((draft) => {
+      draft.disasterId = def.id;
+      draft.shelves = createStartingShelves(ROOM_ID, def.id);
+      draft.shopStocks = [];
+    });
+    ensureDayStocks(store);
+    // eslint-disable-next-line no-console
+    console.info(`[囤货末世] ?disaster 换成了「${def.name}」（${def.id}）`);
+  };
+
+  applyDisasterFromUrl();
+
   (window as unknown as Record<string, unknown>)['__tunhuo'] = {
     store,
     session,
@@ -522,5 +599,9 @@ if (import.meta.env.DEV) {
   console.info('[囤货末世] 走测用：__tunhuo.jump(day) 可以跳到任意一天（只在 dev 构建里存在）');
   console.info(
     '[囤货末世] 走查用：__tunhuo.load("perfect" | "perfect-survival" | "good" | "messy" | "100boxes" | "big-house" | "empty-room" | "rows" | "shop-tour") 切到测试存档'
+  );
+  console.info(
+    '[囤货末世] 走查用：__tunhuo.disaster("洪水") 换一场灾难（重铺屋子）；' +
+      '生产构建里没有 __tunhuo，请改用 URL 参数 —— index.html?disaster=洪水'
   );
 }

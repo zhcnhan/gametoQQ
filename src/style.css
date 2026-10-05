@@ -3137,15 +3137,15 @@ button:disabled {
  * | 场合 | 类 | 框 |
  * | --- | --- | --- |
  * | 突发事件 | `.is-emergency` | 实心朱红左边 + 淡朱红底 |
- * | ├ 接住了 | `.is-resolved` | 换成暖黄（§5A 的"安全 / 窗内"） |
- * | └ 没接住 | `.is-hurt` | 朱红那一条**加粗**（警告那一档） |
+ * | ├ 已解决 | `.is-resolved` | 换成暖黄（§5A 的"安全 / 窗内"） |
+ * | └ 未解决 | `.is-hurt` | 朱红那一条**加粗**（警告那一档） |
  * | 白天事件 | `.is-day` | 墨色细框 + 纸色底 |
  * | 夜间事件 | `.is-night` | 墨色**虚线**框（夜里的事更轻、更私密） |
  *
  * ★ 颜色语义一个都不是新发明的：朱红 = 警告 / 重要交互，暖黄 = 安全 / 窗内，
  * 其余两档只用墨色的粗细与虚实 —— §5A 那套纪律原样适用。
  *
- * ★ 顶上那一行 `.event-kind` 是"这是什么"（`突发 · 接住了`）。
+ * ★ 顶上那一行 `.event-kind` 是"这是什么"（`突发 · 已解决`）。
  * 它让"今天有件特别的事"在**扫一眼**时就成立，而不必读完正文 ——
  * 这一条直接来自用户那句话（"任何东西都不要让用户有那种容易忽略过去的感觉"）。
  */
@@ -3195,7 +3195,7 @@ button:disabled {
   letter-spacing: 0.1em;
 }
 
-/* 接住了：暖黄（§5A 里"安全 / 窗内"那一档，与"屋里暖和"同一个语义） */
+/* 已解决：暖黄（§5A 里"安全 / 窗内"那一档，与"屋里暖和"同一个语义） */
 .event-frame.is-emergency.is-resolved {
   border-color: var(--warm);
   background: rgba(242, 201, 76, 0.12);
@@ -3205,7 +3205,7 @@ button:disabled {
   color: #8a6d16;
 }
 
-/* 没接住：那一条再粗一档 —— 它是这一局里唯一"真的疼了一下"的反馈 */
+/* 未解决：那一条再粗一档 —— 它是这一局里唯一"真的疼了一下"的反馈 */
 .event-frame.is-emergency.is-hurt {
   border-left-width: 7px;
 }
@@ -3230,10 +3230,31 @@ button:disabled {
 .window-band {
   position: relative;
   flex: 0 0 auto;
-  height: 34px;
+  height: 44px;
   background: var(--sky);
   border-bottom: 1.5px solid var(--ink-16);
   overflow: hidden;
+}
+
+/*
+ * ★ 高度与底边都调过一次（用户 2026-10 报"天光带没看到"）。
+ *
+ * 实测（`scripts/_diag-band.ts`）：DOM 里那条带子一直都在、类名与渐变都对，
+ * 而它当时只有 **34px**、天空与远景的明度差只有约 **14** ——
+ * 在"洪水"这类低对比的场次上，它读起来像页眉的一条浅色分隔线，
+ * 而不是"窗外"。所以：
+ *
+ *  · 高度 34 → **44px**（眼睛能认出"这是一幅画"的最小尺寸）；
+ *  · 底边再压一道渐隐的墨线 —— 它把带子与下面的正文**分开**，
+ *    于是它不再像"标题的底色"。
+ */
+.window-band::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 2px;
+  background: linear-gradient(180deg, rgba(44, 44, 42, 0.18), transparent);
+  pointer-events: none;
 }
 
 /* 窗棂：正十字。压得很淡，只在浅色天空上看得见一丝 */
@@ -3271,7 +3292,7 @@ button:disabled {
 .window-band.is-ice-load-collapse .window-band-fall,
 .window-band.is-cold-quarantine .window-band-fall,
 .window-band.is-quake-cold .window-band-fall {
-  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.85) 1.4px, transparent 1.6px);
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.95) 1.6px, transparent 1.6px);
   background-size: 26px 17px;
 }
 
@@ -3288,7 +3309,7 @@ button:disabled {
 .window-band.is-gas-main-blast .window-band-fall {
   background-image: repeating-linear-gradient(
     115deg,
-    rgba(255, 255, 255, 0.5) 0 5px,
+    rgba(255, 255, 255, 0.62) 0 5px,
     transparent 5px 13px
   );
 }
@@ -3315,7 +3336,7 @@ button:disabled {
   background-image: repeating-linear-gradient(
     96deg,
     transparent 0 4px,
-    rgba(255, 255, 255, 0.42) 4px 5px,
+    rgba(255, 255, 255, 0.55) 4px 5px,
     transparent 5px 11px
   );
 }
@@ -3338,7 +3359,7 @@ button:disabled {
 .window-band.is-span-roof-collapse .window-band-fall {
   background-image: repeating-linear-gradient(
     0deg,
-    rgba(255, 255, 255, 0.45) 0 1px,
+    rgba(255, 255, 255, 0.58) 0 1px,
     transparent 1px 9px
   );
 }

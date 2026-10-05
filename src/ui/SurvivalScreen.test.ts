@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 生存期日报里「市场」那一行的守护测试（D-17 的第二版）。
  *
  * ## 它守的是用户报的那个横幅
@@ -287,7 +287,7 @@ describe('★★ 反差层：标题对得上数、差值对得上盘面、D-Day 
  * 它决定"你的整理有没有救到你"，而且它可能整局都不出现（约三成日子）。
  *
  * 判据三件：**有框**（不是光秃秃一段话）、**顶上写着这是什么**、
- * **接住与没接住长得不一样**（颜色语义一个都不是新发明的：
+ * **已解决与未解决长得不一样**（颜色语义一个都不是新发明的：
  * 暖黄 = 安全 / 窗内，朱红 = 警告 —— §5A 那两条原样适用）。
  */
 describe('★★ 突发事件的框：它必须自己站出来', () => {
@@ -325,13 +325,13 @@ describe('★★ 突发事件的框：它必须自己站出来', () => {
     expect(kinds.join('｜'), '框上没有一行说"这是什么"').toContain('突发');
   });
 
-  it('★★ 接住了与没接住**长得不一样**（暖黄 vs 朱红那两条既有语义）', () => {
+  it('★★ 已解决与未解决**长得不一样**（暖黄 vs 朱红那两条既有语义）', () => {
     const okRoot = mountStore2(withEmergency(true));
     const badRoot = mountStore2(withEmergency(false));
     const ok = okRoot.querySelectorAll('.event-frame')[0];
     const bad = badRoot.querySelectorAll('.event-frame')[0];
-    expect(ok?.classList.contains('is-resolved'), '接住了没画成"安全"那一档').toBe(true);
-    expect(bad?.classList.contains('is-hurt'), '没接住没画成"警告"那一档').toBe(true);
+    expect(ok?.classList.contains('is-resolved'), '已解决没画成"安全"那一档').toBe(true);
+    expect(bad?.classList.contains('is-hurt'), '未解决没画成"警告"那一档').toBe(true);
     // 两档的类名必须互斥（同一个框不该同时是两种语义）
     expect(ok?.classList.contains('is-hurt')).toBe(false);
     /*
@@ -339,7 +339,7 @@ describe('★★ 突发事件的框：它必须自己站出来', () => {
      * 而假 DOM 的混排容器 `textContent` 是空串 —— 读容器会得到 ''，
      * 那条失败看起来像"框没渲染"（假体的老边界，见 `fakeDom.ts`）。
      */
-    expect(okRoot.querySelectorAll('.event-kind')[0]?.textContent).toContain('接住了');
-    expect(badRoot.querySelectorAll('.event-kind')[0]?.textContent).toContain('没接住');
+    expect(okRoot.querySelectorAll('.event-kind')[0]?.textContent).toContain('已解决');
+    expect(badRoot.querySelectorAll('.event-kind')[0]?.textContent).toContain('未解决');
   });
 });
