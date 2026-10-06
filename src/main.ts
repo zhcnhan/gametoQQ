@@ -735,6 +735,7 @@ if (import.meta.env.DEV) {
    *   · `big-house`  整理期 D-7，**活过 3 次**（身份与房间全解锁）+ 两间房 7 块家具
    *   · `empty-room` 整理期 D-7，**活过 1 次**（储藏间刚解锁但**还空着**）
    *   · `rows`       整理期 D-7，**三张胶带按行贴**（看行级颜色：一块架上三种状态）
+   *   · `many-tapes` 整理期 D-7，**14 张胶带**（胶带架两行封顶、第三行要竖着划）
    *
    * ★ `big-house` / `empty-room` 是后加的，理由很具体：多房间与"加家具"都要先
    * 把客厅加满（6 块 = 600 元），而普通档在 D-7 只有几百块、还要留钱囤货 ——
@@ -757,6 +758,7 @@ if (import.meta.env.DEV) {
       | 'rows'
       | 'shop-tour'
       | 'day-event'
+      | 'many-tapes'
       | 'perfect'
       | 'perfect-survival'
   ): Promise<void> => {
@@ -820,7 +822,7 @@ if (import.meta.env.DEV) {
   );
   console.info('[囤货末世] 走测用：__tunhuo.jump(day) 可以跳到任意一天（只在 dev 构建里存在）');
   console.info(
-    '[囤货末世] 走查用：__tunhuo.load("perfect" | "perfect-survival" | "good" | "messy" | "100boxes" | "big-house" | "empty-room" | "rows" | "shop-tour" | "day-event") 切到测试存档'
+    '[囤货末世] 走查用：__tunhuo.load("perfect" | "perfect-survival" | "good" | "messy" | "100boxes" | "big-house" | "empty-room" | "rows" | "shop-tour" | "day-event" | "many-tapes") 切到测试存档'
   );
   console.info(
     '[囤货末世] 走查用：__tunhuo.disaster("洪水") 换一场灾难（重铺屋子）；' +

@@ -49,8 +49,8 @@ function fixture(name: string): string {
 }
 
 describe('测试存档', () => {
-  it('四个档都在，而且都是当前版本、都能被 migrate 读回来', () => {
-    for (const name of ['100boxes', 'good', 'messy', 'big-house', 'empty-room', 'rows', 'shop-tour', 'day-event']) {
+  it('每个档都在，而且都是当前版本、都能被 migrate 读回来', () => {
+    for (const name of ['100boxes', 'good', 'messy', 'big-house', 'empty-room', 'rows', 'shop-tour', 'day-event', 'many-tapes']) {
       const back = deserialize(fixture(name));
       expect(back, name).not.toBeNull();
       expect(back?.run, name).not.toBeNull();
@@ -97,6 +97,30 @@ describe('测试存档', () => {
     for (const z of save?.run?.zones ?? []) {
       expect(used.has(z.id), `胶带「${z.name}」没有任何一行在用`).toBe(true);
     }
+  });
+
+  it('★ many-tapes：14 张胶带、6 张贴在行上 —— 「胶带架塞满」那一屏的走查位', () => {
+    /*
+     * 用户 m18160（乔子一号）的原话：「那个胶带，超过5个，就不好改名字了，
+     * 会超出屏幕外」。这份夹具就是那条线之后的样子。
+     *
+     * ★ 它必须**真的够多**：9 张时列表正好铺满两行（实测 `scrollH 95 /
+     * clientH 94`），"第三行竖着划"那一步根本没被走到 —— 14 张才撑到第三行。
+     * 谁把它改少了这条会先红：这里验的不是"读不读得回来"（上面已经验过），
+     * 是"它还是不是那一屏"。
+     */
+    const save = deserialize(fixture('many-tapes'));
+    const shelves = save?.run?.shelves ?? [];
+    const rowsOf = (s: (typeof shelves)[number]) =>
+      Array.from({ length: s.h }, (_, r) => s.zoneIds[r] ?? null);
+    expect(save?.run?.phase, '得站在整理期那一屏').toBe('organize');
+    expect(save?.run?.zones?.length, '够多才撑得到第三行').toBe(14);
+    const placed = new Set(shelves.flatMap(rowsOf).filter((id): id is string => id !== null));
+    expect(placed.size, '贴在行上的那几张').toBe(6);
+    // 剩下 8 张**没贴在任何行上**（`is-idle`：撕下来之后留在架上那一种状态）
+    expect((save?.run?.zones?.length ?? 0) - placed.size).toBe(8);
+    // 至少一块架子是全空的（"拖到某一行上"那条路的落点）
+    expect(shelves.some((s) => rowsOf(s).every((id) => id === null)), '要留一块空架子').toBe(true);
   });
 
   it('★ big-house：两间房都有家具，而且是靠跨局进度解锁的', () => {

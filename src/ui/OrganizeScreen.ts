@@ -462,7 +462,7 @@ export class OrganizeScreen {
       <button class="tape-tool" data-tape-new title="拖到某一行上，新建一张胶带">＋</button>
       <button class="tape-tool tape-tool-cut${liftedCut}" data-tape-scissors
               title="拖到某一行上撕下那一行；拖到一整块架子上就清掉那一架">✂</button>
-      <div class="tape-shelf-list">
+      <div class="tape-shelf-list" data-scroll-host>
         ${chips || '<span class="tape-shelf-empty">还没有胶带。把左边那个「＋」拖到某一行上，就有了。</span>'}
       </div>
     `;
@@ -509,14 +509,22 @@ export class OrganizeScreen {
     const fresh = host.querySelector<HTMLElement>('[data-tape-new]');
     if (fresh) {
       attachPointerGesture(fresh, {
-        onTap: () => showToast(this.fxLayer, '把这个「＋」拖到某一行上，就新建一张胶带', 'ink'),
+        /*
+         * ★★ 轻点与"兜底的 click"走**同一条路**（2026-10 乔子零号反馈之后改的）。
+         *
+         * 改之前这里是一句 toast（"把这个「＋」拖到某一行上，就新建一张胶带"），
+         * 而下面那条原生 click 打开的是编辑器 —— 同一只手指、同一个瞬间、
+         * 两个互相矛盾的结果，玩家看到的就是"打开了编辑界面，却存不了"
+         * （为什么存不了见 `zoneSheet.open` 的 `freshDefaults` 注释）。
+         */
+        onTap: () => this.openNewTapeDrawer(),
         onDragStart: (point) => this.beginTapeDrag({ kind: 'tape', zoneId: null }, point),
         onDragMove: (point) => this.moveTapeDrag(point),
         onDragEnd: (point) => this.endTapeDrag(point),
         onCancel: () => this.cancelTapeDrag()
       });
-      // 原生 click 兜底：新建一张（与拖到空处同一个结果）
-      fresh.addEventListener('click', () => this.openZoneDrawer());
+      // 原生 click 兜底：手机上手势层的 tap 判定很紧，浏览器自己的判定宽容得多
+      fresh.addEventListener('click', () => this.openNewTapeDrawer());
     }
     const cut = host.querySelector<HTMLElement>('[data-tape-scissors]');
     if (cut) {
@@ -2029,6 +2037,26 @@ export class OrganizeScreen {
       card.classList.add('is-editing');
     }
   }
+  /**
+   * 轻点「＋」→ 打开抽屉，并且**先把默认的名字与颜色填好**（2026-10 乔子零号反馈）。
+   *
+   * 他的原话：
+   *
+   * > "那个加号如果不拖动，点击一下就会打开编辑界面，但是却不能保存，有点反直觉"
+   *
+   * 两件事一起构成那个"反直觉"：
+   *  ① 名字是空的 → 保存按钮是灰的（`zoneSheet.syncSaveButton`），看起来"打不开"；
+   *  ② 旧代码里抽屉正开着时还会被 `openZoneDrawer` 的幂等早退**吃掉**，
+   *     于是同一个「＋」有时候有反应、有时候没有。
+   *
+   * ★ 这里**故意不复用** `openZoneDrawer`：那一支的早退判据是"还是同一次编辑吗"，
+   * 而「＋」每一次点击都是**一次新的新建**，与上一次编辑的是谁无关。
+   */
+  private openNewTapeDrawer(): void {
+    this.clearEditHighlight();
+    this.sheet.open(null, undefined, undefined, this.newTapeInput());
+  }
+
   private clearEditHighlight(): void {
     this.roomEl.querySelectorAll('.shelf-card.is-editing').forEach((el) => el.classList.remove('is-editing'));
   }

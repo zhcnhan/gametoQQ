@@ -570,3 +570,57 @@ describe('★★ 从胶带架上改一张胶带（没有"从哪块架子进"这�
     expect(stillHolding, '改名字不该动"它贴在哪几行"').toBe(holders);
   });
 });
+
+describe('★★ 轻点「＋」= 新建一张（2026-10 乔子零号反馈）', () => {
+  /*
+   * ★★ 玩家的原话：
+   *
+   * > "那个加号如果不拖动，点击一下就会打开编辑界面，但是却不能保存，有点反直觉"
+   *
+   * 两件事叠出来的：
+   *  ① 从「＋」进来时 `editingZone === null` → 名字是空串 →
+   *     `syncSaveButton()` 判定 `blank` → 保存按钮 `disabled`（**存不了**）；
+   *  ② 抽屉正开着时，`openZoneDrawer` 的幂等早退会把这一下**整个吃掉**
+   *     （**点了没反应**）。
+   *
+   * 下面两条分别钉住这两件事。判据都是"玩家看得见的东西"：
+   * 输入框里有没有字、保存按钮能不能按 —— 而不是"调用了哪个方法"。
+   */
+  it('★★ 名字**先填好**，所以保存按钮是按得下去的', () => {
+    const { root } = mount('rows', shared);
+    const fresh = root.querySelectorAll('[data-tape-new]')[0]!;
+    fresh.dispatch('click', {});
+
+    const input = body.querySelectorAll('input[data-zone-name]')[0];
+    expect(input, '轻点「＋」该把抽屉打开').toBeTruthy();
+    const filled = (input!.getAttribute('value') ?? '').trim();
+    expect(
+      filled,
+      '名字必须先填好 —— 空的话保存按钮是灰的，玩家看到的是一个"打不开也存不了"的板子'
+    ).not.toBe('');
+
+    const save = body.querySelectorAll('[data-zone-act="save"]')[0];
+    expect(save, '抽屉里该有保存按钮').toBeTruthy();
+    expect(
+      (save as unknown as { disabled: boolean }).disabled,
+      '保存按钮必须可点（`syncSaveButton` 按名字空不空来禁用它）'
+    ).toBe(false);
+  });
+
+  it('★★ 抽屉正开着时再点一次「＋」→ 仍然是一次**新建**（不许被幂等早退吃掉）', () => {
+    const { root, store } = mount('rows', shared);
+    // 先点一张已有的胶带，把抽屉打开在"改这一张"的状态上
+    const chip = root.querySelectorAll('[data-tape-chip]')[0]!;
+    chip.dispatch('click', {});
+    const chipName = store.run.zones.find((z) => z.id === chip.dataset['tapeChip']!)?.name;
+    expect(chipName, '架上的 chip 该对应一张真胶带').toBeTruthy();
+
+    // 再点「＋」：这一次是**新建**，不是"还是上一次那次编辑"
+    const fresh = root.querySelectorAll('[data-tape-new]')[0]!;
+    fresh.dispatch('click', {});
+    const input = body.querySelectorAll('input[data-zone-name]')[0];
+    const filled = (input?.getAttribute('value') ?? '').trim();
+    expect(filled, '「＋」该把名字换成新胶带的默认名').not.toBe(chipName);
+    expect(filled, '默认名不该是空的').not.toBe('');
+  });
+});

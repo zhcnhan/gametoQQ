@@ -357,7 +357,13 @@ if (strayWhite.length > 0) {
  *       真正的证据是 `scripts/_probe-scroll-two-writers.ts` 里的
  *       **原生对照容器**：同一发手势下去，我们和它必须同号。
  */
-for (const cls of ['room-scroll', 'slot', 'box', 'tape-chip']) {
+/*
+ * ★ 2026-10（乔子一号："那个胶带，超过5个，就不好改名字了，会超出屏幕外"）
+ *   名单里多了 **`.tape-shelf-list`**：它从一个"指望浏览器原生横滚"的条
+ *   变成了**竖向滚的容器**（滚动手势归我们这一层）。下面这两条对它同样成立 ——
+ *   它是滚动容器（要 `none`），它也会被按住（按住并移动不许变成选中文字）。
+ */
+for (const cls of ['room-scroll', 'slot', 'box', 'tape-chip', 'tape-shelf-list']) {
   /*
    * ⚠ 用"这条长规则里有没有出现这个属性"而不是"值等于某个字符串"：
    *   一个类在样式表里有多条规则（基样式 + 窄屏档），只认某一种写法会误报。
@@ -513,7 +519,7 @@ for (const [label, probe, why] of TAKEOVER_SIGNS) {
  * 带上 `-webkit-overflow-scrolling` 就是在给自己准备一次"方向反了"。
  * 顺手也守住 `.slot` 自己：格子不是滚动容器，带上它只会让祖先里多一个合成层。
  */
-for (const cls of ['room-scroll', 'dock-boxes', 'slot']) {
+for (const cls of ['room-scroll', 'dock-boxes', 'slot', 'tape-shelf-list']) {
   const rules = new RegExp(`\\.${cls}(?![\\w-])[^{}]*\\{[^}]*\\}`, 'gs');
   const bodies = code.match(rules) ?? [];
   if (bodies.some((b) => /-webkit-overflow-scrolling\s*:\s*touch/.test(b))) {
@@ -555,7 +561,7 @@ for (const cls of ['room-scroll', 'dock-boxes', 'slot']) {
  * 把那一叠的手势也上提到容器上（`bindBoxGestures` 与 `bindRoomGestures` 同构），
  * 否则容器级的手势与元素级的手势会在同一次按下上叠出两个 `ActiveGesture`。
  */
-for (const cls of ['room-scroll', 'dock-boxes']) {
+for (const cls of ['room-scroll', 'dock-boxes', 'tape-shelf-list']) {
   const tagRe = new RegExp(`<[a-z]+[^>]*class="[^"]*\\b${cls}\\b[^"]*"[^>]*>`, 'g');
   const tags = organizeSrc.match(tagRe) ?? [];
   if (tags.length === 0) {

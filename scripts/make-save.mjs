@@ -25,6 +25,7 @@ import { BOX_DEFS } from '../src/data/boxes';
 import { FIRST_STOCKPILE_DAY } from '../src/data/disaster';
 import { getIdentityDef } from '../src/data/identities';
 import { CATEGORY_ORDER } from '../src/data/items';
+import { ZONE_COLORS } from '../src/data/palette';
 import { createCursor } from '../src/model/rng';
 import { makeStack, setSlotStack } from '../src/model/shelf';
 import { createSaveGame, serialize } from '../src/state/save';
@@ -352,6 +353,69 @@ function freshRun(seed = 20261001) {
   const kb = write('day-event', run);
   console.log(
     `[make-save] day-event 站在超市 / 门口那件事还没决定 / ${kb}KB   位置：囤货期 D-7（购物篮与事件同时在）`
+  );
+}
+
+// ───────── ⑨ 胶带很多（九张）：横条放不下时还够不够得着 ─────────
+{
+  /*
+   * ★ 这一份是为了**胶带架被塞满**那一屏。
+   *
+   * 用户 m18160（乔子一号）的原话：「那个胶带，超过5个，就不好改名字了，
+   * 会超出屏幕外」—— 五张以内这条横条刚好铺满，第六张开始超出右边界；
+   * 而`.tape-chip` 写着 `touch-action: none`（它必须是"拖"的起点），
+   * 于是**手指落在胶带块上不滚**，只有块与块之间的缝（几像素）能滚。
+   * 胶带一多，缝就被挤没了 —— 那一屏只能靠改布局解决。
+   *
+   * 十四张是故意的：六张刚好越过"五张"那条线（用户报的数），
+   * 十四张能撑到**第三行** —— 换行之后列表最多只长两行（94px），
+   * 第三行必须靠"在列表里竖着划"才看得到，那正是要量的那一步。
+   * 其中八张**不贴在任何行上**（`is-idle`，"还在架上"那一种），
+   * 因为那也是真实状态：撕下来之后胶带留在架上。
+   */
+  const run = freshRun();
+  run.identityId = 'group_buyer';
+  run.phase = 'organize';
+  run.day = FIRST_STOCKPILE_DAY;
+  run.cash = 900;
+  run.actionPoints = 3;
+  run.boxesToUnpack = makeBoxes(createCursor(run.seed), 8, run.day);
+
+  const names = [
+    '主食',
+    '水',
+    '药',
+    '工具',
+    '燃料',
+    '保暖',
+    '清洁',
+    '照明',
+    '杂物',
+    '电池',
+    '绳索',
+    '纸品',
+    '洗漱',
+    '奶粉',
+  ];
+  run.zones = names.map((name, i) => ({
+    id: `zone_n${i + 1}`,
+    name,
+    color: ZONE_COLORS[i % ZONE_COLORS.length],
+  }));
+  const plan = {
+    shelf_a: ['zone_n1', 'zone_n1', 'zone_n2', 'zone_n3'],
+    shelf_b: ['zone_n4', 'zone_n4', 'zone_n5', 'zone_n6'],
+    shelf_c: [null, null, null, null],
+  };
+  run.shelves = run.shelves.map((s) => {
+    const rows = plan[s.id];
+    return rows ? { ...s, zoneIds: rows } : s;
+  });
+
+  const used = run.zones.filter((z) => run.shelves.some((s) => (s.zoneIds || []).includes(z.id))).length;
+  const kb = write('many-tapes', run);
+  console.log(
+    `[make-save] many-tapes ${run.zones.length} 张胶带（${used} 张贴在行上、${run.zones.length - used} 张还在架上）/ ${kb}KB   位置：整理期 D-7（胶带架塞满、要三行）`
   );
 }
 

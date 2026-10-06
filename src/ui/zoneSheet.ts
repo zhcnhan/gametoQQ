@@ -144,8 +144,30 @@ export class ZoneSheet {
    * ⚠ `rows` 现在**只用来定位**，不再决定"保存时贴到哪几行" ——
    * 那个决定已经交给拖拽了。这个参数保留是因为"从哪一行点进来的"
    * 仍然是"我要改哪一张"最自然的线索。
+   *
+   * @param freshDefaults ★ 新建时**先填好**的名字与颜色（从「＋」进来时给）。
+   *
+   * ## 为什么需要它（2026-10 乔子零号反馈）
+   *
+   * 他的原话：
+   *
+   * > "那个加号如果不拖动，点击一下就会打开编辑界面，但是却不能保存，有点反直觉"
+   *
+   * 机制：从「＋」进来时 `editingZone === null` → 名字是空串 →
+   * `syncSaveButton()` 判定 `blank` → 保存按钮 `disabled`。
+   * 于是玩家看到的是一个**什么都没填、也按不下去**的板子 ——
+   * 而"打开就是为了新建一张"这件事，本该由**默认值**替他完成
+   * （拖到行上那条路一直是这么做的，见 `OrganizeScreen.newTapeInput`）。
+   *
+   * ⚠ 默认值必须**从调用方传进来**，不能在这里自己造一套：名字要避重、
+   * 颜色要避重，那两件事都已经有唯一的实现（`newTapeInput`）。
    */
-  open(shelfId: string | null, rows?: number[], focusZoneId?: string): void {
+  open(
+    shelfId: string | null,
+    rows?: number[],
+    focusZoneId?: string,
+    freshDefaults?: { name: string; color: string }
+  ): void {
     this.shelfId = shelfId;
     const shelf = shelfId === null ? null : (this.host.getShelves().find((s) => s.id === shelfId) ?? null);
     /*
@@ -164,8 +186,8 @@ export class ZoneSheet {
               focusRow !== undefined ? rowZoneId(shelf, focusRow) : firstZoneIdOf(shelf)
             );
     const zone = this.editingZone;
-    this.name = zone?.name ?? '';
-    this.color = zone?.color ?? this.pickFreeColor();
+    this.name = zone?.name ?? freshDefaults?.name ?? '';
+    this.color = zone?.color ?? freshDefaults?.color ?? this.pickFreeColor();
     this.categories = [...(zone?.autoAccept?.categories ?? [])];
     /*
      * `rows` 不再被界面使用（抽屉里已经没有行选择器了），清空它 ——

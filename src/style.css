@@ -3573,10 +3573,23 @@ button:disabled {
  * 常驻区域让"拖"这个动作有起点，也让"我手上有哪些胶带"一直看得见。
  * 藏进抽屉的话每次贴都得先开抽屉，那比原来的点选还慢。
  *
- * ## 窄屏
+ * ## 窄屏 / 胶带多了（2026-10 乔子一号反馈之后改的）
  *
- * 320px 上这一条必须**横着滚**而不是换行 —— 换行会把顶栏撑高，
- * 而顶栏高一点，下面能看到的货架就少一点（那是这一屏的主体）。
+ * 他的原话：
+ *
+ * > "那个胶带，超过5个，就不好改名字了，会超出屏幕外"
+ *
+ * 改之前这一条指望**浏览器原生横滚**（`overflow-x: auto` + `touch-action: pan-x`），
+ * 而那是**从来没有生效过**的：全站手势层一律 `preventDefault`，
+ * 只在 `[data-scroll-host]` 上接管（见 `drag.ts` 文件头那句"同一块像素上
+ * 同一时刻只允许有一层逻辑"）。实测（`many-tapes` 档、9 张胶带、424×790）：
+ * 第 5 张开始被裁、第 6 张起**连视口都在外面**（x=414 / 479 / 534 / 589），
+ * 在那些位置上手指落下去命中的是顶栏 —— 横划、缝里划，`scrollLeft` 都是 0。
+ *
+ * 所以现在**不横滚了**：`.tape-shelf-list` 换行 + 两行封顶（第三行露一条边）
+ * + **竖向**滚，而竖向滚动正是手势层已经接管的那条路（`resolveScrollHost`
+ * 顺 `parentElement` 找 `data-scroll-host`）。代价是胶带多到第三行时这一条
+ * 从 44px 长到 110px，换来的是"每一张都够得着"——够不着的东西等于不存在。
  */
 .tape-shelf {
   display: flex;
@@ -3593,27 +3606,14 @@ button:disabled {
    */
   margin-top: 2px;
   padding-top: 0;
-  overflow-x: auto;
-  scrollbar-width: thin;
   /*
-   * ★ `touch-action: pan-x` —— 横条要能**横向滚**（窄屏上放不下几张胶带）。
-   *
-   * ## ⚠ 这里有一处真实的手势冲突，值得写清楚
-   *
-   * `.tape-chip` / `.tape-tool` 自己写着 `touch-action: none`（"拖"必须吃掉手势，
-   * 否则浏览器会把它当成滚动而发 `pointercancel`，长按刚成立胶带就落回去）。于是：
-   *  · 手指落在**胶带块**上 → 那一块不滚（它要给拖拽）；
-   *  · 手指落在**这一条的空白处**（两侧的 padding 与块之间的 gap）→ 能滚。
-   *
-   * 结果是"横条只能从空白处滚" —— 不理想，但它是这个交互的**必然代价**：
-   * 同一块像素既当"拖拽起点"又当"滚动把手"是做不到的。
-   * 所以下面特意给了左右 padding，让空白处**够宽**（不然这条在手机上就滚不动了）。
-   *
-   * ⚠ 反过来说：**别为了"让横条更好滚"把 `.tape-chip` 改回 `pan-x`/`pan-y`** ——
-   * `.slot` 上那条同形状的取舍已经被真机打回来一次了（玩家原话
-   * "从箱子里拖出东西，出一个极小的范围就会消失"），见 `.slot` 那一大段。
+   * ★ `touch-action: none`（原来写的是 `pan-x`）：这一条上**任何**像素都不许
+   * 再交给浏览器 —— `touch-action` 不是继承属性，只要这一层还是 `auto`/`pan-x`，
+   * 落在缝里、标签上、工具之间的空白处的那些像素就仍然归浏览器，
+   * 而"同一块像素上两个写者"正是第七次那个"滑动方向是反的"的形状。
+   * 滚动归手势层：滚的是下面的 `.tape-shelf-list`。
    */
-  touch-action: pan-x;
+  touch-action: none;
   padding-left: 2px;
   padding-right: 8px;
 }
@@ -3875,11 +3875,39 @@ button:disabled {
  */
 .tape-shelf-list {
   display: flex;
+  /*
+   * ★★ 换行 + **两行封顶** + 竖向滚（2026-10 乔子一号反馈："胶带超过 5 个就
+   * 不好改名字了，会超出屏幕外"）。口径与实测见 `.tape-shelf` 上面那一段。
+   *
+   * 110px = `--tap-min`(44) × 2 + 行距 6 × 2 + **第三行露头的 10px**。
+   * ★ 那 10px 是故意留的，不是算错：只封到"整两行"（94px）时第三行被**整个**
+   * 裁掉 —— 屏幕上一点线索都没有，玩家会以为"我只有这两行胶带"（实测 14 张：
+   * 第 10~14 张的落点上命中的是下面的货架标题，而 `scrollH 145 / clientH 94`
+   * 从外面完全看不出来）。露一条边是"下面还有"的通用做法：
+   * 第三行起走竖向滚动，滚到底时第一行同样露一条边。
+   *
+   * ★ 滚的是**竖向**，不是横向：手势层的 `applyFingerScroll` 只写 `scrollTop`，
+   * 横向 JS 滚动这一层根本不支持（所以"让原生 pan-x 真能滚"那条路也走不通，
+   * `touch-action: none` 与"浏览器自己滚"不可兼得）。
+   */
+  flex-wrap: wrap;
+  align-content: flex-start;
   gap: 6px;
+  max-height: calc(var(--tap-min) * 2 + 12px + 10px);
   flex: 1 1 auto;
   min-width: 0;
-  overflow-x: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   scrollbar-width: none;
+  /*
+   * ★ 它现在是一个**滚动容器**（模板上带着 `data-scroll-host`），所以这两条都要：
+   * `touch-action: none` —— 落在芯片上、缝里、空白处的手势全归我们这一层
+   *   （`touch-action` 不继承，容器自己不写就仍然有第二个写者）；
+   * `user-select: none` —— 按住并移动不许变成一次文本选择（同 `.slot`）。
+   */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .tape-shelf-list::-webkit-scrollbar {
